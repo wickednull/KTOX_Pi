@@ -121,6 +121,21 @@ info "KTOx main suite installed"
 chmod +x "$KTOX_DIR/ktox_device.py"
 mkdir -p "$KTOX_DIR/loot/MITM" "$KTOX_DIR/loot/Nmap" "$KTOX_DIR/loot/payloads"
 
+# Initialise git repo so auto_update.py can pull from GitHub
+step "Configuring git for over-the-air updates..."
+if [[ ! -d "$KTOX_DIR/.git" ]]; then
+    git -C "$KTOX_DIR" init -q
+    git -C "$KTOX_DIR" remote add origin https://github.com/wickednull/KTOx_Pi.git
+    git -C "$KTOX_DIR" checkout -b main 2>/dev/null || true
+    git -C "$KTOX_DIR" add -A
+    git -C "$KTOX_DIR" -c user.email="ktox@device" -c user.name="KTOx_Pi" \
+        commit -q -m "KTOx_Pi initial install $(date +%Y-%m-%d)" 2>/dev/null || true
+    info "Git repo initialised → github.com/wickednull/KTOx_Pi"
+else
+    git -C "$KTOX_DIR" remote set-url origin https://github.com/wickednull/KTOx_Pi.git
+    info "Git remote updated"
+fi
+
 # Symlink /root/KTOx -> /root/KTOx for payload compatibility
 [[ ! -e "/root/Raspyjack" ]] && ln -s "$KTOX_DIR" "/root/Raspyjack" && info "Symlinked /root/Raspyjack -> $KTOX_DIR (payload compat)"
 

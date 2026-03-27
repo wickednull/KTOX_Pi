@@ -1,160 +1,374 @@
 #!/usr/bin/env python3
 """
-KTOx *payload* – Auto‑Update (LCD‑friendly)
-===============================================
-Backs‑up the current **/root/KTOx** folder, pulls the latest changes
-from GitHub and restarts the *ktox* systemd service – while showing a
-simple progress UI on the 1.44‑inch LCD.
+KTOx_Pi payload — OTA Update
+==============================
+Pulls the latest KTOx_Pi from github.com/wickednull/KTOx_Pi,
+backs up loot, restarts all three ktox services.
+
+Shows live progress on the 1.44" LCD throughout.
 
 Controls
 --------
-* **KEY1**  ‑ launch update immediately.
-* **KEY3**  ‑ abort and return to menu.
-
-The script mirrors the button/LCD logic of *Periodic Nmap Scan* so the
-screen stays informative throughout.
+  KEY1   start update
+  KEY3   exit without updating
 """
 
-# ---------------------------------------------------------------------------
-# 0) Imports & path tweak
-# ---------------------------------------------------------------------------
-import os, sys, time, signal, subprocess, tarfile
+import os, sys, time, signal, subprocess, shutil
 from datetime import datetime
+from pathlib import Path
 
 sys.path.append(os.path.abspath(os.path.join(__file__, "..", "..")))
 
-# ---------------------------- Third‑party libs ----------------------------
-import RPi.GPIO as GPIO
-import LCD_1in44, LCD_Config
-from PIL import Image, ImageDraw, ImageFont
+try:
+    import RPi.GPIO as GPIO
+    import LCD_1in44, LCD_Config
+    from PIL import Image, ImageDraw, ImageFont
+    HAS_HW = True
+except ImportError:
+    HAS_HW = False
 
-# ---------------------------------------------------------------------------
-# 1) Constants
-# ---------------------------------------------------------------------------
-KTOX_DIR  = "/root/KTOx"
-PAYLOADS_DIR   = "/root/KTOx/payloads"         # explicitly saved as well
-BACKUP_DIR     = "/root"
-SERVICE_NAME   = "ktox"
-GIT_REMOTE     = "origin"
-GIT_BRANCH     = "main"
+# ── Constants ────────────────────────────────────────────────────────────────
 
-PINS = {"KEY1": 21, "KEY3": 16}                 # buttons we care about
-WIDTH, HEIGHT = 128, 128
-FONT = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 10)
+KTOX_DIR     = "/root/KTOx"
+LOOT_DIR     = KTOX_DIR + "/loot"
+BACKUP_DIR   = "/root/ktox_backups"
+REPO_URL     = "https://github.com/wickednull/KTOx_Pi.git"
+BRANCH       = "main"
+SERVICES     = ["ktox.service", "ktox-device.service", "ktox-webui.service"]
 
-# ---------------------------------------------------------------------------
-# 2) Hardware init
-# ---------------------------------------------------------------------------
-GPIO.setmode(GPIO.BCM)
-for p in PINS.values():
-    GPIO.setup(p, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+PINS = {"KEY1": 21, "KEY2": 20, "KEY3": 16}
+W, H = 128, 128
 
-LCD = LCD_1in44.LCD()
-LCD.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
-LCD.LCD_Clear()
+# ── LCD setup ────────────────────────────────────────────────────────────────
 
-# ---------------------------------------------------------------------------
-# 3) Helper to show centred text
-# ---------------------------------------------------------------------------
+if HAS_HW:
+    GPIO.setmode(GPIO.BCM)
+    for p in PINS.values():
+        GPIO.setup(p, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+    LCD = LCD_1in44.LCD()
+    LCD.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
 
-def show(lines, *, invert=False, spacing=2):
-    if isinstance(lines, str):
-        lines = lines.split("\n")
-    bg = "white" if invert else "black"
-    fg = "black" if invert else "#00FF00"
-    img  = Image.new("RGB", (WIDTH, HEIGHT), bg)
+try:
+    FONT_SM = ImageFont.truetype(
+        "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", 8)
+    FONT_MD = ImageFont.truetype(
+        "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf", 9)
+except Exception:
+    FONT_SM = FONT_MD = ImageFont.load_default()
+
+RED       = "#8B0000"
+RED_BRITE = "#cc1a1a"
+BG        = "#060101"
+TEXT      = "#c8c8c8"
+DIM       = "#4a2020"
+GREEN     = "#2ecc71"
+YELLOW    = "#f39c12"
+
+# ── Drawing helpers ──────────────────────────────────────────────────────────
+
+def _show(title, lines, status_col=TEXT):
+    """Render a status screen. lines = list of (text, colour) or plain str."""
+    img  = Image.new("RGB", (W, H), BG)
     draw = ImageDraw.Draw(img)
-    sizes = [draw.textbbox((0, 0), l, font=FONT)[2:] for l in lines]
-    total_h = sum(h + spacing for _, h in sizes) - spacing
-    y = (HEIGHT - total_h) // 2
-    for line, (w, h) in zip(lines, sizes):
-        x = (WIDTH - w) // 2
-        draw.text((x, y), line, font=FONT, fill=fg)
-        y += h + spacing
-    LCD.LCD_ShowImage(img, 0, 0)
 
-# ---------------------------------------------------------------------------
-# 4) Button helper
-# ---------------------------------------------------------------------------
+    # Top bar
+    draw.rectangle([0, 0, W, 11], fill="#0d0000")
+    draw.line([0, 11, W, 11], fill=RED, width=1)
+    tw = draw.textbbox((0,0), "KTOx_Pi UPDATE", font=FONT_SM)[2]
+    draw.text(((W-tw)//2, 1), "KTOx_Pi UPDATE", font=FONT_SM, fill=RED_BRITE)
 
-def pressed() -> str | None:
+    # Title
+    draw.rectangle([0, 12, W, 25], fill="#1a0000")
+    draw.line([0, 25, W, 25], fill=RED, width=1)
+    tw2 = draw.textbbox((0,0), title, font=FONT_MD)[2]
+    draw.text(((W-tw2)//2, 14), title, font=FONT_MD, fill=status_col)
+
+    # Content lines
+    y = 29
+    for item in lines:
+        if isinstance(item, tuple):
+            txt, col = item
+        else:
+            txt, col = str(item), TEXT
+        draw.text((4, y), str(txt)[:22], font=FONT_SM, fill=col)
+        y += 12
+        if y > 110:
+            break
+
+    # Bottom bar
+    draw.rectangle([0, 117, W, H], fill="#0d0000")
+    draw.line([0, 117, W, 117], fill=RED, width=1)
+
+    if HAS_HW:
+        LCD.LCD_ShowImage(img, 0, 0)
+
+
+def _btn():
+    if not HAS_HW:
+        return None
     for name, pin in PINS.items():
         if GPIO.input(pin) == 0:
             return name
     return None
 
-# ---------------------------------------------------------------------------
-# 5) Core update logic
-# ---------------------------------------------------------------------------
 
-def backup() -> tuple[bool, str]:
-    """Create a timestamped tar.gz containing KTOx + payloads."""
-    ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    archive = os.path.join(BACKUP_DIR, f"ktox_backup_{ts}.tar.gz")
+def _wait_release():
+    if HAS_HW:
+        while any(GPIO.input(p) == 0 for p in PINS.values()):
+            time.sleep(0.05)
+
+
+def _run(cmd, timeout=120):
+    """Run command, return (returncode, combined_output)."""
     try:
-        with tarfile.open(archive, "w:gz") as tar:
-            # add KTOx root (includes payloads) *and* explicit payloads path
-            tar.add(KTOX_DIR, arcname=os.path.basename(KTOX_DIR))
-        return True, archive
-    except Exception as exc:
-        return False, str(exc)
+        r = subprocess.run(
+            cmd, capture_output=True, text=True,
+            timeout=timeout,
+            shell=isinstance(cmd, str)
+        )
+        return r.returncode, (r.stdout + r.stderr).strip()
+    except subprocess.TimeoutExpired:
+        return -1, "Timeout"
+    except Exception as e:
+        return -1, str(e)
 
 
-def git_update() -> tuple[bool, str]:
-    """Fast‑forward pull the latest changes."""
+# ── Update steps ─────────────────────────────────────────────────────────────
+
+def check_internet():
+    rc, _ = _run(["curl", "-s", "--connect-timeout", "5",
+                  "--max-time", "8", "-o", "/dev/null",
+                  "https://github.com"], timeout=15)
+    return rc == 0
+
+
+def backup_loot():
+    """Back up loot dir only (not the whole install — that's huge)."""
+    if not Path(LOOT_DIR).exists():
+        return True, "No loot to back up"
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    dest = f"{BACKUP_DIR}/loot_backup_{ts}"
     try:
-        subprocess.run(["git", "-C", KTOX_DIR, "fetch", GIT_REMOTE], check=True)
-        subprocess.run(["git", "-C", KTOX_DIR, "reset", "--hard", f"{GIT_REMOTE}/{GIT_BRANCH}"], check=True)
-        return True, "OK"
-    except subprocess.CalledProcessError as exc:
-        return False, f"git error {exc.returncode}"
+        Path(BACKUP_DIR).mkdir(parents=True, exist_ok=True)
+        shutil.copytree(LOOT_DIR, dest)
+        return True, f"Saved to {dest}"
+    except Exception as e:
+        return False, str(e)
 
 
-def restart_service() -> tuple[bool, str]:
-    try:
-        subprocess.run(["systemctl", "restart", SERVICE_NAME], check=True)
-        return True, "restarted"
-    except subprocess.CalledProcessError as exc:
-        return False, f"systemctl {exc.returncode}"
+def do_git_pull():
+    """
+    Pull latest from GitHub.
+    If /root/KTOx is a git repo: git pull.
+    If not: git init + set remote + fetch + reset.
+    """
+    git_dir = Path(KTOX_DIR + "/.git")
 
-# ---------------------------------------------------------------------------
-# 6) Main
-# ---------------------------------------------------------------------------
+    if not git_dir.exists():
+        # Not a git repo yet — initialise
+        _run(["git", "-C", KTOX_DIR, "init", "-q"])
+        _run(["git", "-C", KTOX_DIR, "remote", "add", "origin", REPO_URL])
 
-running = True
+    # Make sure remote URL is correct
+    _run(["git", "-C", KTOX_DIR, "remote",
+          "set-url", "origin", REPO_URL])
+
+    # Fetch
+    rc, out = _run(["git", "-C", KTOX_DIR, "fetch", "--depth=1",
+                    "origin", BRANCH], timeout=120)
+    if rc != 0:
+        return False, f"Fetch failed: {out[:60]}"
+
+    # Hard reset to remote
+    rc, out = _run(["git", "-C", KTOX_DIR, "reset",
+                    "--hard", f"origin/{BRANCH}"])
+    if rc != 0:
+        return False, f"Reset failed: {out[:60]}"
+
+    # Confirm commit hash
+    _, commit = _run(["git", "-C", KTOX_DIR, "rev-parse", "--short", "HEAD"])
+    return True, f"HEAD: {commit.strip()}"
+
+
+def install_deps():
+    req = Path(KTOX_DIR + "/requirements.txt")
+    if not req.exists():
+        return True, "No requirements.txt"
+    rc, out = _run(
+        ["pip3", "install", "--break-system-packages", "-q",
+         "-r", str(req)],
+        timeout=180
+    )
+    return rc == 0, out[:60] if rc != 0 else "deps OK"
+
+
+def restart_services():
+    failed = []
+    for svc in SERVICES:
+        rc, out = _run(["systemctl", "restart", svc], timeout=20)
+        if rc != 0:
+            failed.append(svc.split(".")[0])
+    if failed:
+        return False, "Failed: " + ",".join(failed)
+    return True, "All services restarted"
+
+
+def get_current_version():
+    """Get installed commit hash."""
+    rc, out = _run(["git", "-C", KTOX_DIR, "rev-parse", "--short", "HEAD"])
+    return out.strip() if rc == 0 else "unknown"
+
+
+def get_remote_version():
+    """Get latest commit hash from GitHub without full fetch."""
+    rc, out = _run(
+        ["git", "ls-remote", REPO_URL, f"refs/heads/{BRANCH}"],
+        timeout=15
+    )
+    if rc == 0 and out:
+        return out.split()[0][:7]
+    return "unknown"
+
+
+# ── Main ─────────────────────────────────────────────────────────────────────
+
 signal.signal(signal.SIGINT,  lambda *_: sys.exit(0))
 signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
 
-show(["Auto‑Update", "KEY1: start", "KEY3: exit"])
+_show("READY", [
+    ("KEY1 = Update now", TEXT),
+    ("KEY3 = Exit", DIM),
+    "",
+    (f"Installed: {get_current_version()}", DIM),
+    ("github.com/wickednull", DIM),
+    ("/KTOx_Pi", DIM),
+])
 
 try:
-    while running:
-        btn = pressed()
+    # Wait for KEY1 or KEY3
+    while True:
+        btn = _btn()
+        if btn == "KEY3":
+            _show("Cancelled", [("No changes made.", DIM)], status_col=DIM)
+            time.sleep(1.5)
+            sys.exit(0)
         if btn == "KEY1":
-            while pressed() == "KEY1":
-                time.sleep(0.05)
-            # 1. Backup
-            show(["Backing‑up…"])
-            ok, info = backup()
-            if not ok:
-                show(["Backup failed", info], invert=True); time.sleep(4); break
-            # 2. Pull latest
-            show(["Updating…"])
-            ok, info = git_update()
-            if not ok:
-                show(["Update failed", info], invert=True); time.sleep(4); break
-            # 3. Restart service
-            show(["Restarting…"])
-            ok, info = restart_service()
-            if not ok:
-                show(["Restart failed", info], invert=True); time.sleep(4); break
-            show(["Update done!", "Bye 👋"])
-            time.sleep(2)
-            running = False
-        elif btn == "KEY3":
-            running = False
-        else:
-            time.sleep(0.1)
+            _wait_release()
+            break
+        time.sleep(0.1)
+
+    # ── Step 1: Check internet ────────────────────────────────────────────
+    _show("Checking...", [("Connecting to GitHub…", DIM)])
+    if not check_internet():
+        _show("NO INTERNET", [
+            ("Cannot reach GitHub.", YELLOW),
+            ("Check your network", TEXT),
+            ("and try again.", TEXT),
+        ], status_col=YELLOW)
+        time.sleep(4)
+        sys.exit(1)
+
+    # ── Step 2: Check if update needed ───────────────────────────────────
+    current = get_current_version()
+    _show("Checking...", [
+        (f"Current: {current}", TEXT),
+        ("Checking remote…", DIM),
+    ])
+    remote = get_remote_version()
+    if current != "unknown" and remote != "unknown" and current == remote[:7]:
+        _show("UP TO DATE", [
+            (f"Version: {current}", GREEN),
+            ("Nothing to update.", TEXT),
+        ], status_col=GREEN)
+        time.sleep(3)
+        sys.exit(0)
+
+    _show("UPDATE FOUND", [
+        (f"Current: {current}", TEXT),
+        (f"Remote:  {remote[:7]}", GREEN),
+        ("", ""),
+        ("KEY1 = Install", TEXT),
+        ("KEY3 = Cancel", DIM),
+    ], status_col=GREEN)
+
+    # Confirm
+    deadline = time.time() + 30
+    confirmed = False
+    while time.time() < deadline:
+        btn = _btn()
+        if btn == "KEY1":
+            _wait_release()
+            confirmed = True
+            break
+        if btn == "KEY3":
+            _wait_release()
+            break
+        time.sleep(0.1)
+
+    if not confirmed:
+        _show("Cancelled", [("No changes made.", DIM)], status_col=DIM)
+        time.sleep(1.5)
+        sys.exit(0)
+
+    # ── Step 3: Backup loot ───────────────────────────────────────────────
+    _show("BACKING UP", [("Saving loot…", DIM)])
+    ok, msg = backup_loot()
+    _show("BACKING UP", [
+        (("✔ " if ok else "✖ ") + msg[:20], GREEN if ok else YELLOW)
+    ])
+    time.sleep(0.8)
+
+    # ── Step 4: Git pull ──────────────────────────────────────────────────
+    _show("DOWNLOADING", [
+        ("Pulling from GitHub…", DIM),
+        ("This may take a", DIM),
+        ("minute…", DIM),
+    ])
+    ok, msg = do_git_pull()
+    if not ok:
+        _show("UPDATE FAILED", [
+            ("Git pull failed:", YELLOW),
+            (msg[:22], TEXT),
+            ("", ""),
+            ("Loot is safe.", DIM),
+        ], status_col=YELLOW)
+        time.sleep(5)
+        sys.exit(1)
+    _show("DOWNLOADING", [("✔ " + msg, GREEN)])
+    time.sleep(0.8)
+
+    # ── Step 5: Install deps ──────────────────────────────────────────────
+    _show("INSTALLING", [("Updating packages…", DIM)])
+    ok, msg = install_deps()
+    _show("INSTALLING", [
+        (("✔ " if ok else "⚠ ") + msg[:22], GREEN if ok else YELLOW)
+    ])
+    time.sleep(0.8)
+
+    # ── Step 6: Restart services ──────────────────────────────────────────
+    _show("RESTARTING", [("Restarting services…", DIM)])
+    ok, msg = restart_services()
+
+    if ok:
+        _show("UPDATE DONE", [
+            ("✔ KTOx_Pi updated!", GREEN),
+            (f"  {msg}", DIM),
+            ("", ""),
+            ("Restarting now…", TEXT),
+        ], status_col=GREEN)
+        time.sleep(3)
+        # The ktox.service restart will kill this process
+    else:
+        _show("PARTIAL", [
+            (msg[:22], YELLOW),
+            ("Manual restart may", TEXT),
+            ("be needed.", TEXT),
+        ], status_col=YELLOW)
+        time.sleep(4)
+
 finally:
-    LCD.LCD_Clear()
-    GPIO.cleanup()
+    if HAS_HW:
+        try:
+            GPIO.cleanup()
+        except Exception:
+            pass

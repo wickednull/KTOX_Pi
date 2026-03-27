@@ -202,7 +202,7 @@ def _setup_gpio():
 
     LCD   = LCD_1in44.LCD()
     LCD.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
-    LCD_Config.Driver_Delay_ms(5)
+    LCD_Config.Driver_Delay_ms(50)   # 50ms settle after GPIO init
     image = Image.new("RGB", (LCD.width, LCD.height), "#0a0a0a")
     draw  = ImageDraw.Draw(image)
 
@@ -218,7 +218,7 @@ def _hw_init():
         try:
             img = Image.open(logo)
             LCD.LCD_ShowImage(img, 0, 0)
-            time.sleep(1.5)
+            time.sleep(0.8)
         except Exception:
             pass
 
@@ -317,17 +317,20 @@ def start_background_loops():
 # ── Button input ───────────────────────────────────────────────────────────────
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def getButton(timeout=None):
+def getButton(timeout=120):
     """
     Block until a button press and return its pin name string.
     Checks WebUI virtual buttons (Unix socket via rj_input) first.
-    Optional timeout in seconds — returns None on expiry.
+    timeout: max seconds to wait (default 120 — prevents infinite freeze).
+    Returns None on timeout.
     """
     global _last_button, _last_button_time, _button_down_since
     start = time.time()
 
     while True:
-        if timeout and (time.time() - start) > timeout:
+        # Hard timeout — prevents infinite freeze
+        if (time.time() - start) > timeout:
+            _last_button = None
             return None
 
         # Poll WebUI payload launch request
@@ -339,12 +342,16 @@ def getButton(timeout=None):
 
         # Virtual button from WebUI (Unix socket)
         if HAS_HW:
-            v = rj_input.get_virtual_button()
-            if v:
-                return v
+            try:
+                v = rj_input.get_virtual_button()
+                if v:
+                    _last_button = None
+                    return v
+            except Exception:
+                pass
 
         if not HAS_HW:
-            time.sleep(0.2)
+            time.sleep(0.1)
             continue
 
         # Physical GPIO
@@ -363,6 +370,14 @@ def getButton(timeout=None):
             continue
 
         now = time.time()
+
+        # Stuck-button safety: if same button held >4s without being consumed,
+        # force-clear to prevent freeze
+        if pressed == _last_button and (now - _button_down_since) > 4.0:
+            _last_button = None
+            time.sleep(0.1)
+            continue
+
         if pressed != _last_button:
             _last_button       = pressed
             _last_button_time  = now
@@ -652,12 +667,17 @@ def exec_payload(filename, *args):
 
     m.render_current()
 
-    # Drain any held buttons (300 ms max)
+    # Drain any held buttons + clear stale state (500ms max)
+    global _last_button, _last_button_time, _button_down_since
+    _last_button       = None
+    _last_button_time  = 0.0
+    _button_down_since = 0.0
     if HAS_HW:
         t0 = time.time()
         while (any(GPIO.input(p) == 0 for p in PINS.values())
-               and time.time()-t0 < 0.3):
+               and time.time()-t0 < 0.5):
             time.sleep(0.03)
+    _last_button = None  # clear again after drain
 
     screen_lock.clear()
     print("[PAYLOAD] ✔ ready")
@@ -680,22 +700,48 @@ def _run(cmd, timeout=15):
 def get_ip():
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.settimeout(2)
         s.connect(("8.8.8.8", 80))
         return s.getsockname()[0]
     except Exception:
-        return "0.0.0.0"
+        pass
+    # Fallback: read from interface directly
+    try:
+        rc, out = _run(["ip","-4","addr","show",ktox_state["iface"]], timeout=3)
+        import re
+        m = re.search(r"inet (\d+\.\d+\.\d+\.\d+)", out)
+        if m: return m.group(1)
+    except Exception:
+        pass
+    return "0.0.0.0"
 
 
 def get_gateway():
-    rc, out = _run("ip route | grep default | awk '{print $3}'")
-    return out.strip().split("\n")[0] if rc == 0 else ""
+    try:
+        rc, out = _run(["ip", "route", "show", "default"], timeout=4)
+        import re
+        m = re.search(r"default via (\d+\.\d+\.\d+\.\d+)", out)
+        return m.group(1) if m else ""
+    except Exception:
+        return ""
 
 
 def detect_iface():
-    for iface in ("eth0","usb0","wlan1","wlan0"):
-        rc, _ = _run(["ip","link","show",iface])
-        if rc == 0:
-            return iface
+    """Find first active wired/USB interface — single subprocess call."""
+    try:
+        rc, out = _run(["ip","-o","link","show"], timeout=5)
+        import re
+        # Prefer eth0/usb0 (wired), then wlan1 (external wifi), then wlan0
+        ifaces = re.findall(r"\d+: (\w+):", out)
+        for preferred in ("eth0","usb0","eth1","wlan1"):
+            if preferred in ifaces:
+                return preferred
+        # Return first non-lo non-wlan0 interface
+        for i in ifaces:
+            if i not in ("lo","wlan0"):
+                return i
+    except Exception:
+        pass
     return "eth0"
 
 
@@ -1259,6 +1305,7 @@ class KTOxMenu:
             (" WebUI Status",    self._webui_status),
             (" Refresh State",   self._refresh),
             (" System Info",     self._sysinfo),
+            (" OTA Update",      partial(exec_payload,"general/auto_update")),
             (" Discord Webhook", self._discord_status),
             (" Reboot",          self._reboot),
             (" Shutdown",        self._shutdown),
@@ -1328,7 +1375,7 @@ class KTOxMenu:
                     draw.text((6, row_y+1), t, font=text_font, fill=fill)
 
             time.sleep(0.08)
-            btn = getButton(timeout=60)
+            btn = getButton(timeout=120)
 
             if btn is None:                                continue
             elif btn == "KEY_DOWN_PIN":                    sel = (sel+1) % len(labels)
@@ -1631,7 +1678,7 @@ finally:
                             t, font=text_font, fill=fill
                         )
                 time.sleep(0.08)
-                btn = getButton(timeout=60)
+                btn = getButton(timeout=120)
                 if btn is None:                                continue
                 elif btn == "KEY_DOWN_PIN":                    sel = (sel+1)%total
                 elif btn == "KEY_UP_PIN":                      sel = (sel-1)%total
@@ -1692,7 +1739,7 @@ finally:
                     draw.text((6, row_y+1), t, font=text_font, fill=fill)
 
             time.sleep(0.08)
-            btn = getButton(timeout=60)
+            btn = getButton(timeout=120)
 
             if btn is None:                                continue
             elif btn == "KEY_DOWN_PIN":                    sel = (sel+1)%len(labels)
@@ -1831,7 +1878,7 @@ def show_splash():
         draw.line([(8,96),(120,96)],  fill="#3a0000", width=1)
         _centered("authorized",     102, fill="#6b1a1a")
         _centered("eyes only",      114, fill="#6b1a1a")
-    time.sleep(2)
+    time.sleep(1)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # ── Boot sequence ──────────────────────────────────────────────────────────────
@@ -1853,13 +1900,9 @@ def boot():
 
     show_splash()
 
-    with draw_lock:
-        draw.rectangle([(0,0),(128,128)], fill="#000000")
-        _centered("Initializing…", 55, fill="#D4AC0D")
+    # Start refresh and web servers in parallel — don't block boot
+    threading.Thread(target=refresh_state, daemon=True).start()
 
-    refresh_state()
-
-    # Start device_server (WebSocket :8765) and web_server (HTTP :8080)
     for script in ("device_server.py", "web_server.py"):
         spath = Path(INSTALL_PATH + script)
         if spath.exists():
@@ -1872,7 +1915,15 @@ def boot():
             except Exception:
                 pass
 
-    time.sleep(1)
+    with draw_lock:
+        draw.rectangle([(0,0),(128,128)], fill="#000000")
+        draw.rectangle([(0,0),(128,4)],   fill=color.border)
+        draw.rectangle([(0,124),(128,128)], fill=color.border)
+        _centered("▐ KTOx_Pi ▌", 10, fill=color.border)
+        draw.line([(8,22),(120,22)], fill="#3a0000", width=1)
+        _centered("Starting…",    34, fill=color.text)
+        _centered("WebUI  :8080", 52, fill="#3a0000")
+        _centered("WS     :8765", 64, fill="#3a0000")
 
     with draw_lock:
         draw.rectangle([(0,0),(128,128)], fill="#000000")
