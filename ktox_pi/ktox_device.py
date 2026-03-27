@@ -1093,8 +1093,7 @@ def do_baseline_export():
 
 
 def do_start_mitm_suite():
-    Dialog_info("MITM Suite\nSSH + ktox.py\nor use Payloads\n> interception",
-                wait=True)
+    exec_payload(os.path.join(KTOX_DIR, "ktox_mitm.py"))
 
 
 def do_dns_spoofing():
@@ -1483,7 +1482,7 @@ finally:
             ])
 
     def _ntlm(self):
-        Dialog_info("NTLMv2 Capture:\nUse Responder\nmenu above.", wait=True)
+        self.navigate("resp")
 
     # ── WiFi actions ──────────────────────────────────────────────────────────
 
@@ -1492,13 +1491,17 @@ finally:
         if not mon:
             Dialog_info("Enable monitor\nmode first.", wait=True)
             return
-        Dialog_info("Enter BSSID &\nchannel via\nWebUI :8080\nor SSH.", wait=True)
+        exec_payload("wifi/wifi_handshake_capture")
 
     def _pmkid(self):
-        Dialog_info("PMKID Attack:\nSSH + ktox.py\nfor full config.", wait=True)
+        mon = ktox_state.get("mon_iface")
+        if not mon:
+            Dialog_info("Enable monitor\nmode first.", wait=True)
+            return
+        exec_payload("wifi/pmkid_capture")
 
     def _evil_twin(self):
-        Dialog_info("Evil Twin AP:\nSSH + ktox.py\nfor full config.", wait=True)
+        exec_payload("wifi/evil_twin")
 
     def _select_adapter(self):
         rc, out = _run(["iw","dev"])
