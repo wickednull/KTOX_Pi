@@ -371,11 +371,11 @@ def getButton(timeout=120):
 
         now = time.time()
 
-        # Stuck-button safety: if same button held >4s without being consumed,
-        # force-clear to prevent freeze
-        if pressed == _last_button and (now - _button_down_since) > 4.0:
+        # Stuck-button safety: if same button held >2s without being consumed,
+        # force-clear to prevent freeze (was 4s, reduced to 2s)
+        if pressed == _last_button and (now - _button_down_since) > 2.0:
             _last_button = None
-            time.sleep(0.1)
+            time.sleep(0.15)
             continue
 
         if pressed != _last_button:
@@ -498,6 +498,7 @@ def GetMenuString(inlist, duplicates=False):
     """
     Scrollable list.  Returns selected label string, or "" on back.
     If duplicates=True returns (int_index, label_string).
+    KEY1/KEY2/KEY3 all act as back/escape.
     """
     WINDOW = 7
     if not inlist:
@@ -528,8 +529,9 @@ def GetMenuString(inlist, duplicates=False):
                 draw.text((5, row_y+1), t, font=text_font, fill=fill)
 
         time.sleep(0.08)
-        btn = getButton()
-        if   btn == "KEY_DOWN_PIN":                    index = (index+1) % total
+        btn = getButton(timeout=120)
+        if   btn is None:                              continue   # timeout — keep waiting
+        elif btn == "KEY_DOWN_PIN":                    index = (index+1) % total
         elif btn == "KEY_UP_PIN":                      index = (index-1) % total
         elif btn in ("KEY_PRESS_PIN","KEY_RIGHT_PIN"):
             raw = inlist[index]
@@ -537,7 +539,7 @@ def GetMenuString(inlist, duplicates=False):
                 idx, txt = raw.split("#", 1)
                 return int(idx), txt
             return raw
-        elif btn in ("KEY_LEFT_PIN","KEY1_PIN"):
+        elif btn in ("KEY_LEFT_PIN","KEY1_PIN","KEY2_PIN","KEY3_PIN"):
             return (-1,"") if duplicates else ""
 
 
@@ -879,12 +881,44 @@ def _pick_host():
     if not hosts:
         Dialog_info("No hosts.\nRun scan first.", wait=True)
         return None
+
     items = []
     for h in hosts:
-        ip = h.get("ip",h[0]) if isinstance(h,dict) else h[0]
-        items.append(f" {ip}")
-    sel = GetMenuString(items)
-    return sel.strip() if sel else None
+        ip = h.get("ip", h[0] if len(h)>0 else "?") if isinstance(h,dict) else h[0]
+        items.append(ip.strip())
+
+    WINDOW = 6
+    total  = len(items)
+    sel    = 0
+
+    while True:
+        offset = max(0, min(sel-2, total-WINDOW))
+        window = items[offset:offset+WINDOW]
+
+        with draw_lock:
+            _draw_toolbar()
+            draw.rectangle([0,12,128,128], fill=color.background)
+            color.DrawBorder()
+            draw.rectangle([3,13,125,24], fill="#1a0000")
+            _centered("Pick Target", 13, font=small_font, fill=color.border)
+            draw.line([3,24,125,24], fill=color.border, width=1)
+            for i, ip in enumerate(window):
+                row_y  = 26 + 13*i
+                is_sel = (i == sel-offset)
+                if is_sel:
+                    draw.rectangle([3, row_y, 124, row_y+12], fill=color.select)
+                draw.text((5, row_y+1), ip[:22], font=text_font,
+                          fill=color.selected_text if is_sel else color.text)
+            draw.line([3,112,125,112], fill="#2a0505", width=1)
+            _centered("CTR=select  LEFT=back", 114, font=small_font, fill="#4a2020")
+
+        btn = getButton(timeout=120)
+        if   btn is None:                               continue
+        elif btn == "KEY_DOWN_PIN":                     sel = (sel+1) % total
+        elif btn == "KEY_UP_PIN":                       sel = (sel-1) % total
+        elif btn in ("KEY_PRESS_PIN","KEY_RIGHT_PIN"):  return items[sel]
+        elif btn in ("KEY_LEFT_PIN","KEY1_PIN",
+                     "KEY2_PIN","KEY3_PIN"):            return None
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # ── KTOx attack modules ────────────────────────────────────────────────────────
@@ -1414,12 +1448,51 @@ class KTOxMenu:
         if not hosts:
             Dialog_info("No hosts.\nRun scan first.", wait=True)
             return
+
+        # Build display lines
         lines = []
         for h in hosts:
-            ip  = h.get("ip",h[0]) if isinstance(h,dict) else h[0]
-            mac = h.get("mac",h[1]) if isinstance(h,dict) else (h[1] if len(h)>1 else "")
-            lines.append(f" {ip}  {mac[:8]}")
-        GetMenuString(lines)
+            ip  = h.get("ip",  h[0] if len(h)>0 else "?") if isinstance(h,dict) else h[0]
+            mac = h.get("mac", h[1] if len(h)>1 else "")  if isinstance(h,dict) else (h[1] if len(h)>1 else "")
+            lines.append(f"{ip}  {mac[:8]}".strip())
+        if not lines:
+            Dialog_info("No hosts found.", wait=True)
+            return
+
+        WINDOW = 6
+        total  = len(lines)
+        sel    = 0
+
+        while True:
+            offset = max(0, min(sel-2, total-WINDOW))
+            window = lines[offset:offset+WINDOW]
+
+            with draw_lock:
+                _draw_toolbar()
+                draw.rectangle([0,12,128,128], fill=color.background)
+                color.DrawBorder()
+                # Title
+                draw.rectangle([3,13,125,24], fill="#1a0000")
+                _centered(f"Hosts ({total})", 13, font=small_font, fill=color.border)
+                draw.line([3,24,125,24], fill=color.border, width=1)
+                # Rows
+                for i, txt in enumerate(window):
+                    row_y = 26 + 13*i
+                    is_sel = (i == sel-offset)
+                    if is_sel:
+                        draw.rectangle([3, row_y, 124, row_y+12], fill=color.select)
+                    draw.text((5, row_y+1), txt[:22], font=small_font,
+                              fill=color.selected_text if is_sel else color.text)
+                # Footer hint
+                draw.line([3,112,125,112], fill="#2a0505", width=1)
+                _centered("LEFT=back  KEY2=home", 114, font=small_font, fill="#4a2020")
+
+            btn = getButton(timeout=120)
+            if   btn is None:                                  continue
+            elif btn == "KEY_DOWN_PIN":                        sel = (sel+1) % total
+            elif btn == "KEY_UP_PIN":                         sel = (sel-1) % total
+            elif btn in ("KEY_LEFT_PIN","KEY1_PIN",
+                         "KEY2_PIN","KEY3_PIN"):              return
 
     def _ping_gw(self):
         gw = ktox_state["gateway"]
