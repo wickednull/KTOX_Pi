@@ -63,14 +63,14 @@
     /* Theme: Neon (default) */
     .device-shell.theme-neon,
     .device-shell[data-theme="neon"] {
-      box-shadow: 0 0 0 1px rgba(116,255,180,.2), 0 0 25px rgba(18,255,120,.15) inset, 0 0 40px rgba(18,255,120,.15);
+      box-shadow: 0 0 0 1px rgba(139,0,0,.3), 0 0 25px rgba(139,0,0,.12) inset, 0 0 40px rgba(139,0,0,.12);
       background: linear-gradient(145deg, rgba(15,23,42,.65), rgba(15,23,42,.35));
-      border: 1px solid rgba(16,185,129,.2);
+      border: 1px solid rgba(139,0,0,.25);
       backdrop-filter: blur(8px);
     }
     .device-shell.theme-neon .rj-btn,
     .device-shell[data-theme="neon"] .rj-btn {
-      box-shadow: 0 0 0 1px rgba(160,160,255,.25), 0 0 18px rgba(120,120,255,.18) inset;
+      box-shadow: 0 0 0 1px rgba(139,0,0,.25), 0 0 18px rgba(100,0,0,.18) inset;
     }
     .device-shell.theme-neon .rj-btn:active,
     .device-shell.theme-neon .rj-btn.active,
@@ -80,9 +80,9 @@
     }
     .device-shell.theme-neon .screen-frame,
     .device-shell[data-theme="neon"] .screen-frame {
-      border: 1px solid rgba(16,185,129,.3);
+      border: 1px solid rgba(139,0,0,.3);
       background: rgba(0,0,0,.8);
-      box-shadow: 0 0 40px rgba(18,255,120,0.18);
+      box-shadow: 0 0 40px rgba(139,0,0,0.2);
     }
 
     /* Theme: Game Boy moved to device-shell.css */
@@ -221,8 +221,8 @@
       opacity: 0.6;
     }
     .payload-status-dot.running {
-      background: #34d399;
-      box-shadow: 0 0 8px rgba(16,185,129,0.6);
+      background: #8B0000;
+      box-shadow: 0 0 8px rgba(139,0,0,0.6);
       animation: payloadPulse 1.2s ease-in-out infinite;
       opacity: 1;
     }
@@ -290,7 +290,7 @@
       transition: color .16s ease, text-shadow .16s ease;
     }
 
-    .status-tone-ok { color: #34d399 !important; text-shadow: 0 0 10px rgba(16,185,129,.28); }
+    .status-tone-ok { color: #34d399 !important; text-shadow: 0 0 10px rgba(52,211,153,.28); }
     .status-tone-warn { color: #fbbf24 !important; text-shadow: 0 0 10px rgba(251,191,36,.2); }
     .status-tone-bad { color: #fb7185 !important; text-shadow: 0 0 10px rgba(244,63,94,.22); }
 
@@ -315,8 +315,8 @@
       bottom: 8px;
       width: 3px;
       border-radius: 999px;
-      background: linear-gradient(180deg, #34d399, #8B0000);
-      box-shadow: 0 0 12px rgba(16,185,129,.55);
+      background: linear-gradient(180deg, #8B0000, #640000);
+      box-shadow: 0 0 12px rgba(139,0,0,.55);
     }
 
     #deviceTab .terminal-wrap,
@@ -460,7 +460,7 @@
           <div class="md:order-2 order-1 flex justify-center md:justify-end md:pl-6">
             <div id="deviceShell" data-theme="neon" class="device-shell theme-neon rounded-3xl p-4 md:p-5 w-fit mx-auto md:mx-0">
       <div class="pager-clip" aria-hidden="true"></div>
-      <div class="pager-brand">KTOx</div>
+      <div class="pager-brand">KTOx_Pi</div>
       <div class="pager-speaker" aria-hidden="true">
         <span></span><span></span><span></span><span></span><span></span>
       </div>

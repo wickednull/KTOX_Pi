@@ -621,7 +621,7 @@
     themeButtons.forEach(btn => {
       const isActive = btn.getAttribute('data-theme') === t.id;
       btn.classList.toggle('bg-red-800/20', isActive);
-      btn.classList.toggle('text-emerald-200', isActive);
+      btn.classList.toggle('text-red-400', isActive);
       btn.classList.toggle('border-red-400/40', isActive);
       btn.classList.toggle('bg-slate-900/40', !isActive);
       btn.classList.toggle('text-slate-300', !isActive);
@@ -644,7 +644,7 @@
     btn.classList.toggle('bg-red-800/10', active);
     btn.classList.toggle('text-red-400', active);
     btn.classList.toggle('border-red-400/30', active);
-    btn.classList.toggle('shadow-[0_0_16px_rgba(16,185,129,0.15)]', active);
+    btn.classList.toggle('shadow-[0_0_16px_rgba(139,0,0,0.2)]', active);
     btn.classList.toggle('bg-slate-800/40', !active);
     btn.classList.toggle('text-slate-300', !active);
     btn.classList.toggle('border-slate-400/20', !active);
@@ -1272,7 +1272,7 @@
     const vulnCount = hosts.reduce((sum, host) => sum + ((host && Array.isArray(host.vulnerabilities)) ? host.vulnerabilities.length : 0), 0);
     const elapsed = data && data.stats && data.stats.elapsed ? `${Number(data.stats.elapsed).toFixed(2)}s` : 'Unknown';
     const cards = [
-      { label: 'Hosts', value: String(hostCount), tone: 'text-emerald-200' },
+      { label: 'Hosts', value: String(hostCount), tone: 'text-red-400' },
       { label: 'Up', value: String(upCount), tone: 'text-cyan-200' },
       { label: 'Ports', value: String(portCount), tone: 'text-slate-100' },
       { label: 'Vulnerabilities', value: String(vulnCount), tone: vulnCount ? 'text-rose-200' : 'text-slate-100' },

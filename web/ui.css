@@ -72,8 +72,8 @@ select {
 input:focus,
 textarea:focus,
 select:focus {
-  border-color: rgba(16,185,129,.55) !important;
-  box-shadow: 0 0 0 1px rgba(16,185,129,.4), var(--rj-parity-glow) !important;
+  border-color: rgba(139,0,0,.65) !important;
+  box-shadow: 0 0 0 1px rgba(139,0,0,.5), var(--rj-parity-glow) !important;
 }
 
 /* Status placement consistency */
@@ -210,8 +210,8 @@ body::before {
   position: fixed;
   inset: 0;
   background-image:
-    linear-gradient(rgba(16,185,129,0.045) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(16,185,129,0.045) 1px, transparent 1px);
+    linear-gradient(rgba(139,0,0,0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(139,0,0,0.045) 1px, transparent 1px);
   background-size: 22px 22px;
   opacity: 0.22;
   pointer-events: none;
@@ -221,7 +221,7 @@ body::after {
   content: '';
   position: fixed;
   inset: 0;
-  background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(16,185,129,0.02) 2px, rgba(16,185,129,0.02) 4px);
+  background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(139,0,0,0.02) 2px, rgba(139,0,0,0.02) 4px);
   pointer-events: none;
   opacity: 0.3;
   z-index: 0;
@@ -250,14 +250,14 @@ main,
 #shellConnect,
 #discordWebhookSave,
 #lootPreviewClose {
-  border-color: rgba(16,185,129,0.42) !important;
-  background: rgba(16,185,129,0.16) !important;
+  border-color: rgba(139,0,0,0.45) !important;
+  background: rgba(139,0,0,0.16) !important;
   color: #d1fae5 !important;
 }
 #shellConnect:hover,
 #discordWebhookSave:hover,
 #lootPreviewClose:hover {
-  background: rgba(16,185,129,0.22) !important;
+  background: rgba(139,0,0,0.22) !important;
 }
 
 /* WebUI cards align with IDE card depth */

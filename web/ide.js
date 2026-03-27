@@ -1210,7 +1210,7 @@
       noticeModalConfirm.classList.add('bg-amber-600/80', 'border-amber-300/30', 'hover:bg-amber-500/80');
       return;
     }
-    if (tone === 'emerald'){
+    if (tone === 'red'){
       noticeModalTitle.classList.add('text-red-400');
       noticeModalConfirm.classList.add('bg-red-900/80', 'border-red-300/30', 'hover:bg-red-800/80');
       return;

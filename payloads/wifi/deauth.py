@@ -219,7 +219,7 @@ def check_interface_exists():
         
         # Check for USB dongles specifically
         show_status("Check USB dongles...")
-        usb_check = run_command("lsusb | grep -i 'realtek\|ralink\|atheros\|broadcom'")
+        usb_check = run_command("lsusb | grep -iE 'realtek|ralink|atheros|broadcom'")
         if usb_check:
             log(f"USB WiFi dongles detected: {usb_check}")
             show_status("USB dongles found!")

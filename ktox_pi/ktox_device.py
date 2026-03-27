@@ -1787,18 +1787,33 @@ m = KTOxMenu()
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def show_splash():
+    """Boot splash — shown after logo BMP."""
     with draw_lock:
         draw.rectangle([(0,0),(128,128)], fill="#000000")
-        draw.rectangle([(0,0),(128,3)],   fill=color.border)
-        draw.rectangle([(0,125),(128,128)], fill=color.border)
-        _centered("▐ KTOx ▌",    8,  fill=color.border)
-        _centered("Network",     30, fill=color.selected_text)
-        _centered("Pentest",     44, fill=color.selected_text)
-        _centered("Suite",       58, fill=color.selected_text)
-        _centered(f"v{VERSION}", 76, fill=color.border)
-        _centered("Pi Zero 2W",  90, fill=color.text)
-        _centered("authorized", 104, fill="#5a1a1a")
-        _centered("eyes only",  114, fill="#5a1a1a")
+        # Top and bottom blood-red bars
+        draw.rectangle([(0,0),(128,4)],     fill=color.border)
+        draw.rectangle([(0,124),(128,128)], fill=color.border)
+        # Side accent lines
+        draw.rectangle([(0,0),(2,128)],     fill="#3a0000")
+        draw.rectangle([(126,0),(128,128)], fill="#3a0000")
+        # Title
+        _centered("▐ KTOx_Pi ▌",  10, fill=color.border)
+        # Divider
+        draw.line([(8,22),(120,22)], fill="#3a0000", width=1)
+        # Subtitle
+        _centered("Network Control", 26, fill=color.selected_text)
+        _centered("Suite",           40, fill=color.selected_text)
+        # Divider
+        draw.line([(8,52),(120,52)], fill="#3a0000", width=1)
+        # Hardware
+        _centered("Pi Zero 2W",      58, fill=color.text)
+        _centered("Kali ARM64",      70, fill=color.text)
+        # Version
+        _centered(f"v{VERSION}",     84, fill=color.border)
+        # Bottom tagline
+        draw.line([(8,96),(120,96)],  fill="#3a0000", width=1)
+        _centered("authorized",     102, fill="#6b1a1a")
+        _centered("eyes only",      114, fill="#6b1a1a")
     time.sleep(2)
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1844,10 +1859,19 @@ def boot():
 
     with draw_lock:
         draw.rectangle([(0,0),(128,128)], fill="#000000")
-        _centered("READY",        40, fill="#1E8449")
-        _centered(f"IP: {get_ip()}",  56, fill=color.selected_text)
-        _centered(f"IF: {ktox_state['iface']}", 70, fill=color.selected_text)
-        _centered(":8080  :8765", 84, fill=color.text)
+        draw.rectangle([(0,0),(128,4)],     fill=color.border)
+        draw.rectangle([(0,124),(128,128)], fill=color.border)
+        _centered("▐ KTOx_Pi ▌",  10, fill=color.border)
+        draw.line([(8,22),(120,22)], fill="#3a0000", width=1)
+        _centered("READY",          34, fill="#2ecc71")
+        draw.line([(8,46),(120,46)], fill="#3a0000", width=1)
+        _centered(f"IP: {get_ip()}", 52, fill=color.selected_text)
+        _centered(f"IF: {ktox_state['iface']}", 64, fill=color.selected_text)
+        draw.line([(8,76),(120,76)], fill="#3a0000", width=1)
+        _centered("WebUI :8080",    82, fill=color.text)
+        _centered("WS    :8765",    94, fill=color.text)
+        draw.line([(8,106),(120,106)], fill="#3a0000", width=1)
+        _centered("authorized",    112, fill="#6b1a1a")
     time.sleep(2)
 
     with draw_lock:

@@ -17,13 +17,13 @@ KTOX_DIR="/root/KTOx"
 
 printf "\e[1;31m"
 cat << 'BANNER'
- ██╗  ██╗████████╗ ██████╗ ██╗  ██╗
- ██║ ██╔╝╚══██╔══╝██╔═══██╗╚██╗██╔╝
- █████╔╝    ██║   ██║   ██║ ╚███╔╝
- ██╔═██╗    ██║   ██║   ██║ ██╔██╗
- ██║  ██╗   ██║   ╚██████╔╝██╔╝ ██╗
- ╚═╝  ╚═╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝
-    Firmware Installer — Pi Zero 2W
+ ██╗  ██╗████████╗ ██████╗ ██╗  ██╗       ██████╗ ██╗
+ ██║ ██╔╝╚══██╔══╝██╔═══██╗╚██╗██╔╝       ██╔══██╗██║
+ █████╔╝    ██║   ██║   ██║ ╚███╔╝        ██████╔╝██║
+ ██╔═██╗    ██║   ██║   ██║ ██╔██╗        ██╔═══╝ ██║
+ ██║  ██╗   ██║   ╚██████╔╝██╔╝ ██╗       ██║     ██║
+ ╚═╝  ╚═╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝       ╚═╝     ╚═╝
+    KTOx_Pi Installer — Pi Zero 2W · wickednull
 BANNER
 printf "\e[0m\n"
 
@@ -230,20 +230,22 @@ hostnamectl set-hostname ktox 2>/dev/null || echo "ktox" > /etc/hostname
 sed -i "s/127.0.1.1.*/127.0.1.1\tktox/" /etc/hosts 2>/dev/null || true
 
 cat > /etc/motd << 'MOTD'
+[1;31m
+ ██╗  ██╗████████╗ ██████╗ ██╗  ██╗       ██████╗ ██╗
+ ██║ ██╔╝╚══██╔══╝██╔═══██╗╚██╗██╔╝       ██╔══██╗██║
+ █████╔╝    ██║   ██║   ██║ ╚███╔╝        ██████╔╝██║
+ ██╔═██╗    ██║   ██║   ██║ ██╔██╗        ██╔═══╝ ██║
+ ██║  ██╗   ██║   ╚██████╔╝██╔╝ ██╗       ██║     ██║
+ ╚═╝  ╚═╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝       ╚═╝     ╚═╝
+[0m[1;31m Network Control Suite · Pi Zero 2W · Kali ARM64[0m
+[0;31m authorized eyes only · wickednull[0m
 
- ██╗  ██╗ ████████╗ ██████╗ ██╗  ██╗
- ██║ ██╔╝ ╚══██╔══╝██╔═══██╗╚██╗██╔╝
- █████╔╝     ██║   ██║   ██║ ╚███╔╝
- ██╔═██╗     ██║   ██║   ██║ ██╔██╗
- ██║  ██╗    ██║   ╚██████╔╝██╔╝ ██╗
- ╚═╝  ╚═╝    ╚═╝    ╚═════╝ ╚═╝  ╚═╝
-  Network Pentest & Purple Team Suite
-  authorized eyes only · wickednull
-
-  WebUI:   http://[ip]:8080
-  TUI:     python3 /root/KTOx/ktox.py
-  Status:  systemctl status ktox
-  Loot:    /root/KTOx/loot/
+[1;37m  WebUI   [0m http://[ip]:8080
+[1;37m  WS      [0m ws://[ip]:8765
+[1;37m  TUI     [0m python3 /root/KTOx/ktox.py
+[1;37m  Status  [0m systemctl status ktox ktox-device ktox-webui
+[1;37m  Loot    [0m /root/KTOx/loot/
+[1;37m  Payloads[0m /root/KTOx/payloads/ (155 scripts)
 
 MOTD
 
@@ -260,17 +262,29 @@ for mod in ("RPi.GPIO","spidev","PIL","numpy","scapy","requests","websockets"):
 PY
 
 echo
-printf "\e[1;31m══════════════════════════════════════════\e[0m\n"
-printf "\e[1;32m  Installation complete!\e[0m\n"
-printf "\e[1;31m══════════════════════════════════════════\e[0m\n"
+printf "\e[1;31m"
+echo "╔══════════════════════════════════════════════╗"
+echo "║          KTOx_Pi — Install Complete          ║"
+echo "╚══════════════════════════════════════════════╝"
+printf "\e[0m"
 echo
-echo "  Controls:"
-echo "    Joystick UP/DOWN = navigate"
-echo "    Joystick CTR     = select"
-echo "    KEY1             = back"
-echo "    KEY2             = home"
-echo "    KEY3             = stop"
-echo "    KEY1+KEY3 (3s)   = stealth exit"
+printf "\e[1;37m  Hardware Controls\e[0m"
+echo ""
+echo "    Joystick UP/DOWN    navigate"
+echo "    Joystick CTR/RIGHT  select / enter"
+echo "    KEY1                back"
+echo "    KEY2                home (any depth)"
+echo "    KEY3                stop attack"
+echo "    KEY1 + KEY3 (3s)    stealth exit"
+echo
+printf "\e[1;37m  Access\e[0m"
+echo ""
+echo "    WebUI   http://[ip]:8080"
+echo "    SSH     ssh root@[ip]"
+echo "    TUI     python3 /root/KTOx/ktox.py"
+echo "    Loot    /root/KTOx/loot/"
+echo
+printf "\e[1;31m  authorized eyes only · wickednull\e[0m\n"
 echo
 printf "\e[1;33m  Rebooting in 5s… Ctrl+C to cancel\e[0m\n"
 sleep 5 && reboot

