@@ -648,7 +648,7 @@ def _auth_initialized() -> bool:
 
 def _hash_password(password: str, salt: str | None = None) -> str:
     salt = salt or secrets.token_hex(16)
-    rounds = 210000
+    rounds = 10000   # reduced from 210k — Pi Zero can't handle 210k (takes ~15s)
     dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), rounds)
     return f"pbkdf2_sha256${rounds}${salt}${_b64url_encode(dk)}"
 
