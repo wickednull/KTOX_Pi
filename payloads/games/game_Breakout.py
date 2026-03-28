@@ -261,4 +261,11 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    finally:
+        try:
+            GPIO.cleanup()
+        except Exception:
+            pass
+

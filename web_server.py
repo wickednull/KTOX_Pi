@@ -92,6 +92,13 @@ def _load_line_secret(path: Path) -> str | None:
 
 
 def _load_or_create_auth_secret() -> str:
+    """Load the HMAC session-signing secret, creating and persisting it if absent.
+
+    IMPORTANT: the secret MUST be persisted to disk so sessions survive a
+    web_server.py restart.  If we cannot write the file we print a loud warning
+    but still return the in-memory value so the server starts — the operator
+    should fix the permissions.
+    """
     existing = _load_line_secret(AUTH_SECRET_FILE)
     if existing:
         return existing
@@ -100,9 +107,10 @@ def _load_or_create_auth_secret() -> str:
         AUTH_SECRET_FILE.parent.mkdir(parents=True, exist_ok=True)
         AUTH_SECRET_FILE.write_text(generated + "\n", encoding="utf-8")
         os.chmod(AUTH_SECRET_FILE, 0o600)
-    except Exception:
-        # Fallback for environments where file creation is not possible.
-        pass
+        print(f"[WebUI] Created session secret: {AUTH_SECRET_FILE}")
+    except Exception as exc:
+        print(f"[WebUI] WARNING: could not persist session secret to {AUTH_SECRET_FILE}: {exc}")
+        print("[WebUI] WARNING: sessions will be lost on restart — check file permissions!")
     return generated
 
 HOST = os.environ.get("RJ_WEB_HOST", "0.0.0.0")
@@ -648,7 +656,7 @@ def _auth_initialized() -> bool:
 
 def _hash_password(password: str, salt: str | None = None) -> str:
     salt = salt or secrets.token_hex(16)
-    rounds = 10000   # reduced from 210k — Pi Zero can't handle 210k (takes ~15s)
+    rounds = 210000
     dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), rounds)
     return f"pbkdf2_sha256${rounds}${salt}${_b64url_encode(dk)}"
 
@@ -727,8 +735,15 @@ def _auth_context(handler: SimpleHTTPRequestHandler, query: dict) -> dict | None
     if sess:
         return {"method": "session", "user": str(sess.get("usr")), "claims": sess}
     bearer = _bearer_token_from_request(handler, query)
+    # Check shared static token first
     if TOKEN and bearer and hmac.compare_digest(bearer, TOKEN):
         return {"method": "token", "user": "token-admin", "claims": None}
+    # Also accept a signed session token delivered as a Bearer header
+    # (fallback for browsers/clients that drop the Set-Cookie header)
+    if bearer:
+        claims = _read_signed_token(bearer)
+        if claims and claims.get("typ") == "session" and int(claims.get("exp", 0)) > int(time.time()):
+            return {"method": "session", "user": str(claims.get("usr", "")), "claims": claims}
     if not _auth_initialized():
         return {"method": "bootstrap", "user": "bootstrap", "claims": None}
     return None
@@ -759,13 +774,13 @@ def _session_cookie_header(username: str, secure: bool = False, ttl_seconds: int
     claims = {"typ": "session", "usr": username, "iat": now, "exp": now + int(ttl_seconds)}
     token = _issue_signed_token(claims)
     secure_attr = "; Secure" if secure else ""
-    cookie = f"{SESSION_COOKIE_NAME}={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age={int(ttl_seconds)}{secure_attr}"
+    cookie = f"{SESSION_COOKIE_NAME}={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age={int(ttl_seconds)}{secure_attr}"
     return ("Set-Cookie", cookie)
 
 
 def _clear_session_cookie_header(secure: bool = False) -> tuple[str, str]:
     secure_attr = "; Secure" if secure else ""
-    return ("Set-Cookie", f"{SESSION_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0{secure_attr}")
+    return ("Set-Cookie", f"{SESSION_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0{secure_attr}")
 
 
 def _safe_loot_path(raw_path: str) -> Path | None:
@@ -1473,10 +1488,17 @@ class KTOxHandler(SimpleHTTPRequestHandler):
         if not ok:
             _json_response(self, {"error": msg}, status=HTTPStatus.BAD_REQUEST)
             return
+        is_https = _request_is_https(self)
+        cookie_hdr = _session_cookie_header(username, secure=is_https)
+        # Also emit the raw token value so the frontend can use it as a Bearer
+        # fallback if the browser drops the Set-Cookie (strict privacy mode, etc.)
+        now = int(time.time())
+        claims = {"typ": "session", "usr": username, "iat": now, "exp": now + SESSION_TTL_SECONDS}
+        token_value = _issue_signed_token(claims)
         _json_response(
             self,
-            {"ok": True, "initialized": True, "user": username},
-            extra_headers=[_session_cookie_header(username, secure=_request_is_https(self))],
+            {"ok": True, "initialized": True, "user": username, "token": token_value},
+            extra_headers=[cookie_hdr],
         )
 
     def _handle_auth_login(self) -> None:
@@ -1505,10 +1527,15 @@ class KTOxHandler(SimpleHTTPRequestHandler):
             return
 
         _LOGIN_FAILS[ip] = []
+        is_https = _request_is_https(self)
+        cookie_hdr = _session_cookie_header(username, secure=is_https)
+        now = int(time.time())
+        claims = {"typ": "session", "usr": username, "iat": now, "exp": now + SESSION_TTL_SECONDS}
+        token_value = _issue_signed_token(claims)
         _json_response(
             self,
-            {"ok": True, "user": username},
-            extra_headers=[_session_cookie_header(username, secure=_request_is_https(self))],
+            {"ok": True, "user": username, "token": token_value},
+            extra_headers=[cookie_hdr],
         )
 
     def _handle_auth_logout(self) -> None:

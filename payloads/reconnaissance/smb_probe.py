@@ -245,5 +245,18 @@ def main():
     return 0
 
 
+def _cleanup():
+    try:
+        GPIO.cleanup()
+    except Exception:
+        pass
+
 if __name__ == "__main__":
-    raise SystemExit(main())
+    import signal
+    signal.signal(signal.SIGINT,  lambda *_: (_cleanup(), exit(0)))
+    signal.signal(signal.SIGTERM, lambda *_: (_cleanup(), exit(0)))
+    try:
+        raise SystemExit(main())
+    finally:
+        _cleanup()
+

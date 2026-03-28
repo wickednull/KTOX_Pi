@@ -347,7 +347,8 @@
         setAuthError(data && data.error ? data.error : 'Bootstrap failed');
         return attemptBootstrap(message);
       }
-      saveAuthToken('');
+      if (data && data.token) saveAuthToken(data.token);
+      else saveAuthToken('');
       return true;
     }catch{
       setAuthError('Bootstrap request failed.');
@@ -401,7 +402,8 @@
         setAuthError(data && data.error ? data.error : 'Login failed');
         return attemptLogin(message);
       }
-      saveAuthToken('');
+      if (data && data.token) saveAuthToken(data.token);
+      else saveAuthToken('');
       return true;
     }catch{
       setAuthError('Login request failed.');

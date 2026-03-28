@@ -142,6 +142,10 @@ SNIFF_IFACE = "eth0"
 def cleanup(*_):
     global running
     running = False
+    try:
+        GPIO.cleanup()
+    except Exception:
+        pass
 
 signal.signal(signal.SIGINT, cleanup)
 signal.signal(signal.SIGTERM, cleanup)
@@ -282,4 +286,7 @@ while running:
     LCD.LCD_ShowImage(img, 0, 0)
     time.sleep(0.1)
 
-cleanup()
+try:
+    pass
+finally:
+    cleanup()

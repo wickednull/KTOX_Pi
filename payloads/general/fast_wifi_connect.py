@@ -167,4 +167,11 @@ def main():
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        raise SystemExit(main())
+    finally:
+        try:
+            import RPi.GPIO as _G; _G.cleanup()
+        except Exception:
+            pass
+

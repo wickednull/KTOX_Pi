@@ -384,7 +384,10 @@
         setAuthError(data && data.error ? data.error : 'Bootstrap failed');
         return attemptBootstrap(message);
       }
-      saveAuthToken('');
+      // Save the signed session token returned in the body as a Bearer
+      // fallback in case the browser dropped the Set-Cookie header.
+      if (data && data.token) saveAuthToken(data.token);
+      else saveAuthToken('');
       return true;
     }catch{
       setAuthError('Bootstrap request failed.');
@@ -438,7 +441,8 @@
         setAuthError(data && data.error ? data.error : 'Login failed');
         return attemptLogin(message);
       }
-      saveAuthToken('');
+      if (data && data.token) saveAuthToken(data.token);
+      else saveAuthToken('');
       return true;
     }catch{
       setAuthError('Login request failed.');

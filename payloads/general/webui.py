@@ -197,9 +197,10 @@ def main():
     except KeyboardInterrupt:
         pass
     finally:
-        # Cleanup is handled by the parent process usually, but good practice
-        # to clear if we wanted, but we'll let parent restore menu
-        pass
+        try:
+            GPIO.cleanup()
+        except Exception:
+            pass
 
 if __name__ == '__main__':
     main()

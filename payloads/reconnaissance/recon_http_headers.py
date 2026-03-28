@@ -247,6 +247,10 @@ def select_interface_menu():
 def cleanup(*_):
     global running
     running = False
+    try:
+        GPIO.cleanup()
+    except Exception:
+        pass
 
 signal.signal(signal.SIGINT, cleanup)
 signal.signal(signal.SIGTERM, cleanup)
@@ -340,70 +344,76 @@ def handle_port_input_logic(initial_port):
 
 if __name__ == '__main__':
     try:
-        import requests
-    except ImportError:
-        show_message(["ERROR:", "requests not found!"], "red")
-        time.sleep(3)
-        sys.exit(1)
+        try:
+            import requests
+        except ImportError:
+            show_message(["ERROR:", "requests not found!"], "red")
+            time.sleep(3)
+            sys.exit(1)
 
-    selected_interface = select_interface_menu()
-    if not selected_interface:
-        show_message(["No interface", "selected!", "Exiting..."], "red")
-        time.sleep(3)
-        sys.exit(1)
+        selected_interface = select_interface_menu()
+        if not selected_interface:
+            show_message(["No interface", "selected!", "Exiting..."], "red")
+            time.sleep(3)
+            sys.exit(1)
 
-    draw_ui("main", "Press OK to get")
+        draw_ui("main", "Press OK to get")
     
-    last_button_press_time = 0
-    BUTTON_DEBOUNCE_TIME = 0.3 # seconds
+        last_button_press_time = 0
+        BUTTON_DEBOUNCE_TIME = 0.3 # seconds
 
-    while running:
-        current_time = time.time()
+        while running:
+            current_time = time.time()
         
-        draw_ui("main")
-        
-        if GPIO.input(PINS["KEY3"]) == 0 and (current_time - last_button_press_time > BUTTON_DEBOUNCE_TIME):
-            last_button_press_time = current_time
-            cleanup()
-            break
-        
-        if GPIO.input(PINS["OK"]) == 0 and (current_time - last_button_press_time > BUTTON_DEBOUNCE_TIME):
-            last_button_press_time = current_time
-            get_headers(selected_interface)
             draw_ui("main")
-            time.sleep(BUTTON_DEBOUNCE_TIME)
-            while running:
-                if GPIO.input(PINS["KEY3"]) == 0 and (current_time - last_button_press_time > BUTTON_DEBOUNCE_TIME):
-                    last_button_press_time = current_time
-                    break
-                if GPIO.input(PINS["UP"]) == 0 and (current_time - last_button_press_time > BUTTON_DEBOUNCE_TIME):
-                    last_button_press_time = current_time
-                    if headers:
-                        selected_index = (selected_index - 1) % len(headers)
-                    draw_ui("main")
-                    time.sleep(BUTTON_DEBOUNCE_TIME)
-                elif GPIO.input(PINS["DOWN"]) == 0 and (current_time - last_button_press_time > BUTTON_DEBOUNCE_TIME):
-                    last_button_press_time = current_time
-                    if headers:
-                        selected_index = (selected_index + 1) % len(headers)
-                    draw_ui("main")
-                    time.sleep(BUTTON_DEBOUNCE_TIME)
-                time.sleep(0.05)
         
-        if GPIO.input(PINS["KEY2"]) == 0 and (current_time - last_button_press_time > BUTTON_DEBOUNCE_TIME):
-            last_button_press_time = current_time
-            new_ip = handle_ip_input_logic(TARGET_IP)
-            if new_ip:
-                TARGET_IP = new_ip
-            new_port = handle_port_input_logic(str(TARGET_PORT))
-            if new_port:
-                TARGET_PORT = new_port
-            time.sleep(BUTTON_DEBOUNCE_TIME)
+            if GPIO.input(PINS["KEY3"]) == 0 and (current_time - last_button_press_time > BUTTON_DEBOUNCE_TIME):
+                last_button_press_time = current_time
+                cleanup()
+                break
         
-        if GPIO.input(PINS["KEY1"]) == 0 and (current_time - last_button_press_time > BUTTON_DEBOUNCE_TIME):
-            last_button_press_time = current_time
-            show_message(["Interface selection", "is now menu-driven."], "yellow")
-            time.sleep(2)
-            time.sleep(BUTTON_DEBOUNCE_TIME)
+            if GPIO.input(PINS["OK"]) == 0 and (current_time - last_button_press_time > BUTTON_DEBOUNCE_TIME):
+                last_button_press_time = current_time
+                get_headers(selected_interface)
+                draw_ui("main")
+                time.sleep(BUTTON_DEBOUNCE_TIME)
+                while running:
+                    if GPIO.input(PINS["KEY3"]) == 0 and (current_time - last_button_press_time > BUTTON_DEBOUNCE_TIME):
+                        last_button_press_time = current_time
+                        break
+                    if GPIO.input(PINS["UP"]) == 0 and (current_time - last_button_press_time > BUTTON_DEBOUNCE_TIME):
+                        last_button_press_time = current_time
+                        if headers:
+                            selected_index = (selected_index - 1) % len(headers)
+                        draw_ui("main")
+                        time.sleep(BUTTON_DEBOUNCE_TIME)
+                    elif GPIO.input(PINS["DOWN"]) == 0 and (current_time - last_button_press_time > BUTTON_DEBOUNCE_TIME):
+                        last_button_press_time = current_time
+                        if headers:
+                            selected_index = (selected_index + 1) % len(headers)
+                        draw_ui("main")
+                        time.sleep(BUTTON_DEBOUNCE_TIME)
+                    time.sleep(0.05)
         
-        time.sleep(0.1)
+            if GPIO.input(PINS["KEY2"]) == 0 and (current_time - last_button_press_time > BUTTON_DEBOUNCE_TIME):
+                last_button_press_time = current_time
+                new_ip = handle_ip_input_logic(TARGET_IP)
+                if new_ip:
+                    TARGET_IP = new_ip
+                new_port = handle_port_input_logic(str(TARGET_PORT))
+                if new_port:
+                    TARGET_PORT = new_port
+                time.sleep(BUTTON_DEBOUNCE_TIME)
+        
+            if GPIO.input(PINS["KEY1"]) == 0 and (current_time - last_button_press_time > BUTTON_DEBOUNCE_TIME):
+                last_button_press_time = current_time
+                show_message(["Interface selection", "is now menu-driven."], "yellow")
+                time.sleep(2)
+                time.sleep(BUTTON_DEBOUNCE_TIME)
+        
+            time.sleep(0.1)
+    finally:
+        try:
+            GPIO.cleanup()
+        except Exception:
+            pass
