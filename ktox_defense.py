@@ -1263,7 +1263,7 @@ def defense_menu(iface, hosts, gateway_ip, gateway_mac):
         if gateway_ip and gateway_mac:
             expected[gateway_ip] = gateway_mac
         for h in hosts:
-            ip  = h.get("ip") or (h[0] if isinstance(h,(list,tuple)) else None)
+            ip  = h.get("ip") if isinstance(h, dict) else (h[0] if isinstance(h,(list,tuple)) else None)
             mac = h.get("mac") or (h[1] if isinstance(h,(list,tuple)) else None)
             if ip and mac: expected[ip] = mac
 
