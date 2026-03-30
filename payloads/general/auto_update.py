@@ -34,7 +34,7 @@ LOOT_DIR     = KTOX_DIR + "/loot"
 BACKUP_DIR   = "/root/ktox_backups"
 REPO_URL     = "https://github.com/wickednull/KTOx_Pi.git"
 BRANCH       = "main"
-SERVICES     = ["ktox.service", "ktox-device.service", "ktox-webui.service"]
+WEBUI_SERVICES = ["ktox-device.service", "ktox-webui.service"]
 
 PINS = {"KEY1": 21, "KEY2": 20, "KEY3": 16}
 W, H = 128, 128
@@ -245,14 +245,29 @@ def install_deps():
 
 
 def restart_services():
+    """
+    Restart webUI services (device_server + web_server) immediately.
+    Schedule ktox.service (the LCD/menu parent process) to restart after a
+    short delay so this script can finish displaying its final screen before
+    the parent process is killed and re-spawned.
+    """
     failed = []
-    for svc in SERVICES:
+    for svc in WEBUI_SERVICES:
         rc, out = _run(["systemctl", "restart", svc], timeout=20)
         if rc != 0:
             failed.append(svc.split(".")[0])
+    # Delay-restart the menu service so we can show "UPDATE DONE" first
+    try:
+        subprocess.Popen(
+            ["bash", "-c", "sleep 6 && systemctl restart ktox.service"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            close_fds=True,
+        )
+    except Exception:
+        pass
     if failed:
         return False, "Failed: " + ",".join(failed)
-    return True, "All services restarted"
+    return True, "Services restarting"
 
 
 def get_current_version():
