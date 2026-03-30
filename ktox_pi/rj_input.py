@@ -18,7 +18,7 @@ Only "press" events are queued; "release" is ignored for simple navigation.
 import os, json, threading, socket, queue, atexit
 from typing import Optional
 
-_SOCK_PATH = os.environ.get("RJ_INPUT_SOCK", "/dev/shm/rj_input.sock")
+_SOCK_PATH = os.environ.get("RJ_INPUT_SOCK", "/dev/shm/ktox_input.sock")
 
 # Map frontend button names to KTOx getButton() return values
 _BTN_MAP = {
