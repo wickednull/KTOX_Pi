@@ -239,6 +239,28 @@
     .terminal-body {
       height: 320px;
     }
+    .shell-key-btn {
+      font-family: 'JetBrains Mono', 'Courier New', monospace;
+      font-size: 10px;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 6px;
+      background: rgba(15,23,42,0.7);
+      border: 1px solid rgba(148,163,184,0.2);
+      color: #94a3b8;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
+      user-select: none;
+    }
+    .shell-key-btn:hover {
+      background: rgba(139,0,0,0.25);
+      border-color: rgba(139,0,0,0.5);
+      color: #fca5a5;
+    }
+    .shell-key-btn:active {
+      background: rgba(139,0,0,0.45);
+      color: #fff;
+    }
     .terminal-body .xterm-viewport,
     .terminal-body .xterm-screen,
     .terminal-body .xterm-scroll-area {
@@ -454,6 +476,19 @@
                 </div>
               </div>
               <div id="terminal" class="terminal-body"></div>
+              <div class="flex flex-wrap items-center gap-1.5 px-3 py-2 border-t border-slate-800/70">
+                <button class="shell-key-btn" data-shell-key="&#x03;" title="Ctrl+C">^C</button>
+                <button class="shell-key-btn" data-shell-key="&#x04;" title="Ctrl+D">^D</button>
+                <button class="shell-key-btn" data-shell-key="&#x1a;" title="Ctrl+Z">^Z</button>
+                <button class="shell-key-btn" data-shell-key="&#x0c;" title="Ctrl+L (clear)">^L</button>
+                <button class="shell-key-btn" data-shell-key="&#x01;" title="Ctrl+A (start of line)">^A</button>
+                <button class="shell-key-btn" data-shell-key="&#x05;" title="Ctrl+E (end of line)">^E</button>
+                <button class="shell-key-btn" data-shell-key="&#x0b;" title="Ctrl+K (kill to end)">^K</button>
+                <button class="shell-key-btn" data-shell-key="&#x1b;" title="Escape">ESC</button>
+                <button class="shell-key-btn" data-shell-key="&#x1b;[A" title="Arrow Up">↑</button>
+                <button class="shell-key-btn" data-shell-key="&#x1b;[B" title="Arrow Down">↓</button>
+                <button class="shell-key-btn" data-shell-key="&#x09;" title="Tab">TAB</button>
+              </div>
             </div>
           </div>
 
