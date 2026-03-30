@@ -50,16 +50,16 @@ ROOT_DIR = Path(__file__).resolve().parent
 WEB_DIR = ROOT_DIR / "web"
 LOOT_DIR = ROOT_DIR / "loot"
 PAYLOADS_DIR = ROOT_DIR / "payloads"
-PAYLOAD_STATE_PATH = Path("/dev/shm/ktox_payload_state.json")
+PAYLOAD_STATE_PATH = Path("/dev/shm/rj_payload_state.json")
 DISCORD_WEBHOOK_PATH = ROOT_DIR / "discord_webhook.txt"
 TOKEN_FILE = Path(os.environ.get("RJ_WS_TOKEN_FILE", str(ROOT_DIR / ".webui_token")))
 AUTH_FILE = Path(os.environ.get("RJ_WEB_AUTH_FILE", "/root/KTOx/.webui_auth.json"))
 AUTH_SECRET_FILE = Path(os.environ.get("RJ_WEB_AUTH_SECRET_FILE", "/root/KTOx/.webui_session_secret"))
-SESSION_COOKIE_NAME = "ktox_session"
+SESSION_COOKIE_NAME = "rj_session"
 SESSION_TTL_SECONDS = int(os.environ.get("RJ_WEB_SESSION_TTL", str(8 * 60 * 60)))
 WS_TICKET_TTL_SECONDS = int(os.environ.get("RJ_WEB_WS_TICKET_TTL", "120"))
 TAILSCALE_KEY_PATH = ROOT_DIR / ".tailscale_auth_key"
-TAILSCALE_STATUS_PATH = Path("/dev/shm/ktox_tailscale_status.json")
+TAILSCALE_STATUS_PATH = Path("/dev/shm/rj_tailscale_status.json")
 
 
 def _load_shared_token() -> str | None:
@@ -1114,7 +1114,7 @@ class KTOxHandler(SimpleHTTPRequestHandler):
             return
 
         try:
-            request_path = Path("/dev/shm/ktox_payload_request.json")
+            request_path = Path("/dev/shm/rj_payload_request.json")
             request_path.write_text(json.dumps({
                 "action": "start",
                 "path": rel_path,
@@ -1450,7 +1450,7 @@ class KTOxHandler(SimpleHTTPRequestHandler):
     def _handle_system_restart_ui(self) -> None:
         try:
             subprocess.run(
-                ["systemctl", "restart", "ktox-webui.service"],
+                ["systemctl", "restart", "ktox.service"],
                 check=True,
                 capture_output=True,
                 text=True,
