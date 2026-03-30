@@ -1,3 +1,5 @@
+![image](https://github.com/user-attachments/assets/f4f1f4b4-364d-4c60-a5c1-d06cfd0e0aea)
+
 # KTOx_Pi
 ### Raspberry Pi Zero 2W · Kali Linux ARM64 · Waveshare 1.44" LCD HAT
 
