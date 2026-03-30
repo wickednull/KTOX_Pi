@@ -912,11 +912,12 @@ def _pick_host():
             draw.line([3,112,125,112], fill="#2a0505", width=1)
             _centered("CTR=select  LEFT=back", 114, font=small_font, fill="#4a2020")
 
+        time.sleep(0.08)
         btn = getButton(timeout=120)
         if   btn is None:                               continue
         elif btn == "KEY_DOWN_PIN":                     sel = (sel+1) % total
         elif btn == "KEY_UP_PIN":                       sel = (sel-1) % total
-        elif btn in ("KEY_PRESS_PIN","KEY_RIGHT_PIN"):  return items[sel]
+        elif btn in ("KEY_PRESS_PIN","KEY_RIGHT_PIN"):  return items[sel].strip()
         elif btn in ("KEY_LEFT_PIN","KEY1_PIN",
                      "KEY2_PIN","KEY3_PIN"):            return None
 
