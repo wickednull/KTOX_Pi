@@ -846,7 +846,7 @@
       if (fitAddon){
         try { fitAddon.fit(); } catch {}
       }
-      term.write('KTOx shell ready.\\r\\n');
+      term.write('KTOx shell ready.\r\n');
     }
     return term;
   }

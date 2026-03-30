@@ -449,7 +449,9 @@ async def handle_client(ws):
                 msg_type = data.get("type")
                 if msg_type not in ("auth", "auth_session"):
                     continue
-                token_ok = msg_type == "auth" and _token_ok(data.get("token", ""))
+                token_ok = msg_type == "auth" and (
+                    _token_ok(data.get("token", "")) or _session_token_ok(data.get("token", ""))
+                )
                 sess_ok = msg_type == "auth_session" and _ws_ticket_ok(data.get("ticket", ""))
                 if token_ok or sess_ok:
                     authenticated = True
