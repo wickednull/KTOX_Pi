@@ -9,6 +9,7 @@ KTOx Payload – Transparent Ethernet MITM Bridge
 
 import os, sys, signal, subprocess, time
 sys.path.append(os.path.abspath(os.path.join(__file__, '..', '..')))
+sys.path.append(os.path.abspath(os.path.join(__file__, '..')))
 import shutil
 from datetime import datetime
 import RPi.GPIO as GPIO
@@ -16,6 +17,10 @@ import LCD_1in44
 from LCD_1in44 import LCD
 from LCD_Config import *
 from PIL import Image, ImageDraw, ImageFont
+try:
+    from _input_helper import get_button as _get_button
+except Exception:
+    _get_button = None
 
 PINS = { "KEY3": 16 }
 
@@ -44,7 +49,13 @@ def setup_gpio():
     GPIO.setup(PINS["KEY3"], GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
 def wait_key3():
-    while GPIO.input(PINS["KEY3"]) == 1:
+    while True:
+        if _get_button:
+            btn = _get_button(PINS, GPIO)
+        else:
+            btn = "KEY3" if GPIO.input(PINS["KEY3"]) == 0 else None
+        if btn == "KEY3":
+            break
         time.sleep(0.1)
 
 def cleanup():
@@ -52,7 +63,11 @@ def cleanup():
     subprocess.run(["brctl", "delbr", "br0"], stdout=subprocess.DEVNULL)
     subprocess.run(["ip", "link", "set", "eth0", "down"], stdout=subprocess.DEVNULL)
     subprocess.run(["ip", "link", "set", "eth1", "down"], stdout=subprocess.DEVNULL)
-    lcd.LCD_Clear()
+    try:
+        logo = Image.open("/root/KTOx/img/logo.bmp").convert("RGB").resize((128, 128))
+        lcd.LCD_ShowImage(logo, 0, 0)
+    except Exception:
+        lcd.LCD_Clear()
     GPIO.cleanup()
 
 def check_dependencies():

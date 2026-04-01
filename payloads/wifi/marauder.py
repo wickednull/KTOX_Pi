@@ -6,6 +6,8 @@
 # Adheres to the payload development guide.
 #
 
+import os
+import sys
 import traceback
 import re
 import shutil

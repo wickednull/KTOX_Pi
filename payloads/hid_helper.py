@@ -1,4 +1,5 @@
 import os
+import sys
 import time
 from zero_hid import Keyboard, Mouse
 

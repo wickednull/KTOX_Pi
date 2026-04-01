@@ -23,11 +23,11 @@ from PIL import Image, ImageDraw, ImageFont
 # --- Section 3: Global State & Configuration ---
 # Pin definitions
 PINS = {
-    "KEY1": 5,   # Start/Pause
-    "KEY2": 6,   # Reset
+    "KEY1": 21,  # Start/Pause
+    "KEY2": 20,  # Reset
     "KEY3": 16,  # Exit
-    "UP": 19,
-    "DOWN": 26,
+    "UP": 6,
+    "DOWN": 19,
     "OK": 13,
 }
 
