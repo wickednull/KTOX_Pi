@@ -96,7 +96,8 @@ def draw_board(snake: List[Tuple[int, int]], food: Tuple[int, int], score: int,
 
     # Optional centred message (Game Over)
     if message:
-        w, h = d.textsize(message, font=font)
+        bbox = d.textbbox((0, 0), message, font=font)
+        w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
         d.text(((WIDTH - w) // 2, (HEIGHT - h) // 2), message,
                font=font, fill=COL_TEXT)
 

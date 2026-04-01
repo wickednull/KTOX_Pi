@@ -164,7 +164,8 @@ if __name__ == "__main__":
     # Calculate character width and height for font
     _img = Image.new("RGB", (10, 10))
     _d = ImageDraw.Draw(_img)
-    CHAR_W, CHAR_H = _d.textsize("M", font=FONT)
+    _bbox = _d.textbbox((0, 0), "M", font=FONT)
+    CHAR_W, CHAR_H = _bbox[2] - _bbox[0], _bbox[3] - _bbox[1]
     COLS = WIDTH // CHAR_W
     LINES_PER_SCREEN = HEIGHT // 11 - 3 # Approx lines that fit, minus header/footer
 

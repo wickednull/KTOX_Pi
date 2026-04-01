@@ -662,7 +662,7 @@ if __name__ == '__main__':
             f.write(f"An error occurred: {e}\n")
             import traceback
             traceback.print_exc(file=f)
-        print(f"An error occurred: {e}. See /home/null/testing/doom_demake_error.log")
+        print(f"An error occurred: {e}. See /tmp/doom_demake_error.log")
     finally:
         game.cleanup()
         print("DOOM Demake: Exiting.")
