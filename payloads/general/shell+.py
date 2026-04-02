@@ -1,206 +1,200 @@
 #!/usr/bin/env python3
 """
-KTOx Terminal OS Core – DarkSec Edition v1.8
----------------------------------------------
-Full interactive PTY shell on 1.44" LCD.
-Supports wired/Bluetooth keyboards + optional GPIO buttons
-for scroll/zoom/quit.
+KTOx Terminal OS Core – DarkSec Edition v1.9
+--------------------------------------------
+Fully interactive micro shell for Waveshare 1.44" LCD
+Supports USB/Bluetooth keyboards and GPIO buttons
 """
 
 import os
 import sys
 import time
 import threading
-import select
-import pty
-import tty
-import termios
-import signal
 import fcntl
+import pty
+import select
+import re
+import signal
+
 import RPi.GPIO as GPIO
 import LCD_1in44
 from PIL import Image, ImageDraw, ImageFont
+from evdev import InputDevice, categorize, ecodes, list_devices
 
-# Optional: helper to read GPIO buttons
-try:
-    from payloads._input_helper import get_button
-except ImportError:
-    get_button = lambda pins, gpio: None
-
-# --- GPIO Buttons ---
-PINS = {"UP": 6, "DOWN": 19, "LEFT": 5, "RIGHT": 26,
-        "OK": 13, "KEY1": 21, "KEY2": 20, "KEY3": 16}
-
-GPIO.setmode(GPIO.BCM)
-for p in PINS.values():
-    GPIO.setup(p, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-
-# --- LCD & Font ---
+# --- LCD Setup ---
 WIDTH, HEIGHT = 128, 128
 LCD = LCD_1in44.LCD()
 LCD.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
 
-# Font zoom
+# --- Fonts ---
+FONT_SIZE = 8
 FONT_MIN, FONT_MAX = 6, 12
-FONT_SIZE = 10
+try:
+    FONT = ImageFont.truetype(
+        "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", FONT_SIZE)
+except:
+    FONT = ImageFont.load_default()
 
-def load_font(size):
+CHAR_W, CHAR_H = 8, 10
+COLS, ROWS = WIDTH // CHAR_W, HEIGHT // CHAR_H
+
+def set_font(size):
+    global FONT, CHAR_W, CHAR_H, COLS, ROWS, FONT_SIZE
+    FONT_SIZE = max(FONT_MIN, min(FONT_MAX, size))
     try:
-        return ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", size)
+        FONT = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", FONT_SIZE)
     except:
-        return ImageFont.load_default()
+        FONT = ImageFont.load_default()
+    _img = Image.new("RGB", (10, 10))
+    _d = ImageDraw.Draw(_img)
+    _bbox = _d.textbbox((0,0), "M", font=FONT)
+    CHAR_W, CHAR_H = _bbox[2]-_bbox[0], _bbox[3]-_bbox[1]
+    COLS, ROWS = WIDTH // CHAR_W, HEIGHT // CHAR_H
 
-FONT = load_font(FONT_SIZE)
-CHAR_W, CHAR_H = FONT.getsize("M")
-COLS, ROWS = WIDTH // CHAR_W, (HEIGHT - 14) // CHAR_H
-
-# Colors
-BG = (5, 5, 5)
-TXT = (0, 255, 65)
-HDR = (255, 0, 0)
-WARN = (255, 200, 0)
-
-# --- Shell State ---
-pty_fd = None
-pty_pid = None
-pty_output = ""
-output_lock = threading.Lock()
-scroll_offset = 0
-running = True
-busy = False
-
-# --- Cleanup ---
-def cleanup(*_):
-    global running
-    running = False
-
-signal.signal(signal.SIGINT, cleanup)
-signal.signal(signal.SIGTERM, cleanup)
-
-# --- PTY Shell ---
-def spawn_shell():
-    global pty_fd, pty_pid
-    pty_pid, pty_fd = pty.fork()
-    if pty_pid == 0:
-        os.execv("/bin/bash", ["bash", "--login"])
-    else:
-        # make PTY non-blocking
-        flags = fcntl.fcntl(pty_fd, fcntl.F_GETFL)
-        fcntl.fcntl(pty_fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
-
-# --- Read PTY output ---
-def read_pty():
-    global pty_output
-    while running:
-        if pty_fd is None:
-            time.sleep(0.05)
-            continue
-        try:
-            data = os.read(pty_fd, 1024).decode(errors="ignore")
-            if data:
-                with output_lock:
-                    pty_output += data
-                    # cap scrollback ~256 lines
-                    lines = pty_output.splitlines()
-                    if len(lines) > 256:
-                        pty_output = "\n".join(lines[-256:])
-        except OSError:
-            time.sleep(0.05)
-        except Exception:
-            pass
-
-# --- Draw LCD ---
-def draw_lcd():
-    global scroll_offset
-    img = Image.new("RGB", (WIDTH, HEIGHT), BG)
-    d = ImageDraw.Draw(img)
-    # Header
-    d.rectangle((0, 0, WIDTH, 12), fill=HDR)
-    d.text((2, 1), " KTOX OS SHELL ", fill=(255, 255, 255), font=FONT)
-    # Output
-    with output_lock:
-        lines = pty_output.splitlines()
-    visible = lines[-ROWS - scroll_offset: len(lines) - scroll_offset]
-    y = 14
-    for line in visible:
-        d.text((0, y), line[:COLS], fill=TXT, font=FONT)
-        y += CHAR_H
-    # Busy indicator
-    if busy:
-        d.text((WIDTH-32, 1), "RUN", fill=WARN, font=FONT)
-    # Cursor blink
-    cursor_x = 0
-    cursor_y = 14 + (len(visible)-1)*CHAR_H
-    if int(time.time()*2) % 2:
-        d.rectangle((cursor_x, cursor_y, cursor_x+CHAR_W, cursor_y+CHAR_H), fill=TXT)
-    LCD.LCD_ShowImage(img, 0, 0)
-
-# --- Keyboard Input ---
-def handle_keyboard():
-    while running:
-        rlist, _, _ = select.select([sys.stdin, pty_fd], [], [], 0.05)
-        for fd in rlist:
-            if fd == sys.stdin:
-                try:
-                    data = os.read(sys.stdin.fileno(), 1024)
-                    if data:
-                        os.write(pty_fd, data)
-                except Exception:
-                    pass
-            elif fd == pty_fd:
-                try:
-                    data = os.read(pty_fd, 1024).decode(errors="ignore")
-                    if data:
-                        with output_lock:
-                            pty_output += data
-                except Exception:
-                    pass
+set_font(FONT_SIZE)
 
 # --- GPIO Buttons ---
-def handle_buttons():
-    global scroll_offset, FONT_SIZE, FONT, CHAR_W, CHAR_H, COLS, ROWS
-    _prev = {p: 1 for p in PINS.values()}
-    while running:
-        btn = get_button(PINS, GPIO)
-        # Zoom
-        for pin, delta in [(PINS["KEY1"], +1), (PINS["KEY2"], -1)]:
-            state = GPIO.input(pin)
-            if _prev[pin] == 1 and state == 0:  # falling edge
-                FONT_SIZE = max(FONT_MIN, min(FONT_MAX, FONT_SIZE + delta))
-                FONT = load_font(FONT_SIZE)
-                CHAR_W, CHAR_H = FONT.getsize("M")
-                COLS, ROWS = WIDTH // CHAR_W, (HEIGHT - 14) // CHAR_H
-            _prev[pin] = state
-        # Scroll & Quit
-        if btn == "UP":
-            scroll_offset = max(0, scroll_offset + 1)
-        elif btn == "DOWN":
-            scroll_offset = max(0, scroll_offset - 1)
-        elif btn == "KEY3":
-            cleanup()
-        time.sleep(0.05)
+PINS = {"KEY1":21, "KEY2":20, "KEY3":16}
+GPIO.setmode(GPIO.BCM)
+for p in PINS.values():
+    GPIO.setup(p, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+_prev_state = {p:1 for p in PINS.values()}
 
-# --- Main ---
-def main():
-    spawn_shell()
-    threading.Thread(target=read_pty, daemon=True).start()
-    threading.Thread(target=handle_keyboard, daemon=True).start()
-    threading.Thread(target=handle_buttons, daemon=True).start()
+# --- Evdev Keyboard ---
+def find_keyboard():
+    for path in list_devices():
+        dev = InputDevice(path)
+        if ecodes.EV_KEY in dev.capabilities():
+            return dev
+    raise RuntimeError("No keyboard found")
 
-    while running:
-        draw_lcd()
-        time.sleep(0.05)
+keyboard = find_keyboard()
+keyboard.grab()
+fcntl.fcntl(keyboard.fd, fcntl.F_SETFL, fcntl.fcntl(keyboard.fd, fcntl.F_GETFL) | os.O_NONBLOCK)
 
-    LCD.LCD_Clear()
-    GPIO.cleanup()
-    if pty_fd:
-        os.close(pty_fd)
+SHIFT_KEYS = {"KEY_LEFTSHIFT", "KEY_RIGHTSHIFT"}
+KEYMAP = {**{f"KEY_{c}": c.lower() for c in "ABCDEFGHIJKLMNOPQRSTUVWXYZ"},
+          "KEY_SPACE":" ", "KEY_ENTER":"\n","KEY_KPENTER":"\n",
+          "KEY_BACKSPACE":"\x7f","KEY_TAB":"\t",
+          "KEY_MINUS":"-","KEY_EQUAL":"=","KEY_LEFTBRACE":"[",
+          "KEY_RIGHTBRACE":"]","KEY_BACKSLASH":"\\","KEY_SEMICOLON":";",
+          "KEY_APOSTROPHE":"'","KEY_GRAVE":"`","KEY_COMMA":",",
+          "KEY_DOT":".","KEY_SLASH":"/",
+          "KEY_1":"1","KEY_2":"2","KEY_3":"3","KEY_4":"4",
+          "KEY_5":"5","KEY_6":"6","KEY_7":"7","KEY_8":"8",
+          "KEY_9":"9","KEY_0":"0"}
+SHIFT_MAP = {"KEY_1":"!","KEY_2":"@","KEY_3":"#","KEY_4":"$","KEY_5":"%",
+             "KEY_6":"^","KEY_7":"&","KEY_8":"*","KEY_9":"(","KEY_0":")",
+             "KEY_MINUS":"_","KEY_EQUAL":"+","KEY_LEFTBRACE":"{","KEY_RIGHTBRACE":"}",
+             "KEY_BACKSLASH":"|","KEY_SEMICOLON":":","KEY_APOSTROPHE":'"',
+             "KEY_GRAVE":"~","KEY_COMMA":"<","KEY_DOT":">","KEY_SLASH":"?",
+             **{f"KEY_{c}": c for c in "ABCDEFGHIJKLMNOPQRSTUVWXYZ"}}
+ansi_escape = re.compile(r"\x1B\[[0-9;]*[A-Za-z]")
 
-if __name__ == "__main__":
-    # make stdin raw for PTY input
-    old_settings = termios.tcgetattr(sys.stdin)
-    tty.setcbreak(sys.stdin.fileno())
+# --- PTY Shell ---
+pid, master_fd = pty.fork()
+if pid == 0:
+    os.execv("/bin/bash", ["bash", "--login"])
+fcntl.fcntl(master_fd, fcntl.F_SETFL, fcntl.fcntl(master_fd, fcntl.F_GETFL) | os.O_NONBLOCK)
+
+poller = select.poll()
+poller.register(master_fd, select.POLLIN)
+poller.register(keyboard.fd, select.POLLIN)
+
+scrollback = []
+current_line = ""
+shift = False
+running = True
+
+def write_byte(s):
+    os.write(master_fd, s.encode())
+
+def process_shell_output():
+    global current_line, scrollback
     try:
-        main()
+        data = os.read(master_fd, 1024).decode(errors="ignore")
+    except BlockingIOError:
+        return
+    if not data:
+        return
+    clean = ansi_escape.sub("", data)
+    for ch in clean:
+        if ch=="\n":
+            scrollback.append(current_line)
+            current_line=""
+        elif ch in ("\x08","\x7f"):
+            current_line=current_line[:-1]
+        elif ch=="\r":
+            continue
+        else:
+            current_line+=ch
+            while len(current_line)>COLS:
+                scrollback.append(current_line[:COLS])
+                current_line=current_line[COLS:]
+    if len(scrollback)>256:
+        scrollback = scrollback[-256:]
+    draw_buffer()
+
+def draw_buffer():
+    img = Image.new("RGB",(WIDTH,HEIGHT),"black")
+    d = ImageDraw.Draw(img)
+    visible = scrollback[-(ROWS-1):] + [current_line]
+    y=0
+    for line in visible:
+        d.text((0,y), line.ljust(COLS)[:COLS], font=FONT, fill="#00FF00")
+        y+=CHAR_H
+    LCD.LCD_ShowImage(img,0,0)
+
+def handle_key(event):
+    global shift
+    key_name = event.keycode if isinstance(event.keycode,str) else event.keycode[0]
+    if key_name in SHIFT_KEYS:
+        shift = event.keystate==event.key_down
+        return
+    if event.keystate!=event.key_down:
+        return
+    if key_name=="KEY_ESC" or GPIO.input(PINS["KEY3"])==0:
+        cleanup()
+        return
+    char = SHIFT_MAP.get(key_name) if shift else KEYMAP.get(key_name)
+    if char is not None:
+        write_byte(char)
+
+def handle_buttons():
+    global FONT_SIZE
+    for pin, delta in ((PINS["KEY1"],+1),(PINS["KEY2"],-1)):
+        state = GPIO.input(pin)
+        if _prev_state[pin]==1 and state==0:
+            set_font(FONT_SIZE+delta)
+        _prev_state[pin]=state
+    if GPIO.input(PINS["KEY3"])==0:
+        cleanup()
+
+def cleanup(*_):
+    global running
+    running=False
+
+signal.signal(signal.SIGINT,cleanup)
+signal.signal(signal.SIGTERM,cleanup)
+
+def main():
+    draw_buffer()
+    try:
+        while running:
+            for fd,_ in poller.poll(50):
+                if fd==master_fd:
+                    process_shell_output()
+                elif fd==keyboard.fd:
+                    for ev in keyboard.read():
+                        if ev.type==ecodes.EV_KEY:
+                            handle_key(categorize(ev))
+            handle_buttons()
+            time.sleep(0.02)
     finally:
-        termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
+        LCD.LCD_Clear()
+        GPIO.cleanup()
+        try: os.close(master_fd)
+        except: pass
+
+if __name__=="__main__":
+    main()
