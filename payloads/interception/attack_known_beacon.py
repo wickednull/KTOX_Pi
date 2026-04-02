@@ -38,7 +38,22 @@ import LCD_1in44, LCD_Config
 from PIL import Image, ImageDraw, ImageFont
 from scapy.all import *
 
-INTERFACE = "wlan0mon"
+
+def _detect_monitor_iface():
+    """Find active monitor-mode interface, prefer wlan1mon over wlan0mon."""
+    for iface in ['wlan1mon', 'wlan0mon']:
+        if os.path.exists(f'/sys/class/net/{iface}'):
+            return iface
+    try:
+        import subprocess as _sp, re as _re
+        out = _sp.run(['iwconfig'], capture_output=True, text=True).stdout
+        m = _re.findall(r'^(\w+).*Mode:Monitor', out, _re.MULTILINE)
+        if m: return m[0]
+    except Exception:
+        pass
+    return 'wlan0mon'
+
+INTERFACE = _detect_monitor_iface()
 CHANNEL = "1"
 running = True
 attack_thread = None
