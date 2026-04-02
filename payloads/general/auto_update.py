@@ -354,7 +354,7 @@ try:
     _show("UPDATE FOUND", [
         (f"Current: {current}", TEXT),
         (f"Remote:  {remote[:7]}", GREEN),
-        ("", ""),
+        "",
         ("KEY1 = Install", TEXT),
         ("KEY3 = Cancel", DIM),
     ], status_col=GREEN)
@@ -397,7 +397,7 @@ try:
         _show("UPDATE FAILED", [
             ("Git pull failed:", YELLOW),
             (msg[:22], TEXT),
-            ("", ""),
+            "",
             ("Loot is safe.", DIM),
         ], status_col=YELLOW)
         time.sleep(5)
@@ -421,7 +421,7 @@ try:
         _show("UPDATE DONE", [
             ("✔ KTOx_Pi updated!", GREEN),
             (f"  {msg}", DIM),
-            ("", ""),
+            "",
             ("Restarting now…", TEXT),
         ], status_col=GREEN)
         time.sleep(3)
