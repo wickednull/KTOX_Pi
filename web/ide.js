@@ -2921,8 +2921,11 @@ if __name__ == "__main__":
 
     // ── API call ──────────────────────────────────────────────────────────────
     async function runPreview(opts = {}) {
-      const filePath = currentPathEl ? currentPathEl.textContent.trim() : '';
-      if (!filePath || filePath === 'No file selected') {
+      const displayPath = currentPathEl ? currentPathEl.textContent.trim() : '';
+      // currentPathEl stores "payloads/wifi/foo.py" for display;
+      // the API and onFileSelected need just "wifi/foo.py"
+      const filePath = displayPath.replace(/^payloads\//, '');
+      if (!filePath || displayPath === 'No file selected') {
         compatPreviewStatus.textContent = 'Open a file first';
         return;
       }
@@ -2980,7 +2983,7 @@ if __name__ == "__main__":
         if (opts.apply) {
           compatPreviewStatus.textContent = `Applied to ${data.saved_path || filePath}`;
           // Reload the file in the editor
-          const reloadPath = currentPathEl ? currentPathEl.textContent.trim() : '';
+          const reloadPath = (currentPathEl ? currentPathEl.textContent.trim() : '').replace(/^payloads\//, '');
           if (reloadPath) onFileSelected(reloadPath);
         } else if (opts.save_copy) {
           compatPreviewStatus.textContent = `Saved copy: ${data.saved_path}`;
@@ -3011,7 +3014,7 @@ if __name__ == "__main__":
 
     compatDownloadBtn.addEventListener('click', () => {
       if (!lastConverted || !lastConverted.converted) return;
-      const filePath = currentPathEl ? currentPathEl.textContent.trim() : 'payload.py';
+      const filePath = (currentPathEl ? currentPathEl.textContent.trim() : 'payload.py');
       const baseName = filePath.split('/').pop().replace(/\.py$/, '');
       const suffix   = selectedTarget === 'raspyjack' ? '.rj.py' : '.ktox.py';
       const fileName = baseName + suffix;
