@@ -61,7 +61,14 @@ except ImportError:
     WIFI_INTEGRATION_AVAILABLE = False
     monitor_mode_helper = None
 
-TARGET_INTERFACE = "wlan1"
+def _detect_monitor_target():
+    """Prefer wlan1 (USB external adapter) for monitor mode; fall back to wlan0."""
+    for iface in ['wlan1', 'wlan0']:
+        if os.path.exists(f'/sys/class/net/{iface}'):
+            return iface
+    return 'wlan1'
+
+TARGET_INTERFACE = _detect_monitor_target()
 MONITOR_INTERFACE = None
 
 PINS: dict[str, int] = {

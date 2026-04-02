@@ -57,7 +57,14 @@ except ImportError:
     def deactivate_monitor_mode(interface):
         return False
 
-TARGET_INTERFACE_BASE = "wlan1"
+def _detect_monitor_target():
+    """Prefer wlan1 (USB external adapter) for monitor mode; fall back to wlan0."""
+    for iface in ['wlan1', 'wlan0']:
+        if os.path.exists(f'/sys/class/net/{iface}'):
+            return iface
+    return 'wlan1'
+
+TARGET_INTERFACE_BASE = _detect_monitor_target()
 
 PINS: dict[str, int] = {
     "OK": 13, "KEY3": 16,

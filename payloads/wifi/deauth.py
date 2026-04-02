@@ -792,14 +792,21 @@ def switch_interface():
     # Get current interface
     current = WIFI_INTERFACE
     
-    # Determine target interface (toggle between wlan0 and wlan1)
-    if current == 'wlan0':
-        target_interface = 'wlan1'
-    elif current == 'wlan1':
-        target_interface = 'wlan0'
+    # Cycle through all available wlan* interfaces dynamically
+    try:
+        import re as _re
+        _all_ifaces = [f for f in os.listdir('/sys/class/net')
+                       if _re.match(r'^wlan\d+$', f)]
+        _all_ifaces.sort()
+    except Exception:
+        _all_ifaces = []
+    if not _all_ifaces:
+        _all_ifaces = ['wlan0', 'wlan1']
+    if current in _all_ifaces:
+        _idx = _all_ifaces.index(current)
+        target_interface = _all_ifaces[(_idx + 1) % len(_all_ifaces)]
     else:
-        # If current is not wlan0/wlan1, default to wlan1
-        target_interface = 'wlan1'
+        target_interface = _all_ifaces[0]
     
     show_status(f"Switch to {target_interface}")
     
