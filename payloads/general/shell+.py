@@ -1,203 +1,73 @@
 #!/usr/bin/env python3
 """
-KTOx Terminal OS Core – DarkSec Edition
+KTOx Terminal OS Core – DarkSec Edition v1.8
+---------------------------------------------
+Full interactive PTY shell on 1.44" LCD.
+Supports wired/Bluetooth keyboards + optional GPIO buttons
+for scroll/zoom/quit.
 """
 
-import sys
 import os
+import sys
 import time
 import threading
-import subprocess
+import select
+import pty
+import tty
+import termios
 import signal
-import getpass
-
-# --- KTOx Path ---
-KTOX_ROOT = '/root/KTOx' if os.path.isdir('/root/KTOx') else os.path.abspath(
-    os.path.join(__file__, '..', '..'))
-if KTOX_ROOT not in sys.path:
-    sys.path.insert(0, KTOX_ROOT)
-
+import fcntl
 import RPi.GPIO as GPIO
 import LCD_1in44
 from PIL import Image, ImageDraw, ImageFont
-from payloads._input_helper import get_button
 
-# --- Hardware ---
+# Optional: helper to read GPIO buttons
+try:
+    from payloads._input_helper import get_button
+except ImportError:
+    get_button = lambda pins, gpio: None
+
+# --- GPIO Buttons ---
 PINS = {"UP": 6, "DOWN": 19, "LEFT": 5, "RIGHT": 26,
         "OK": 13, "KEY1": 21, "KEY2": 20, "KEY3": 16}
-
-WIDTH, HEIGHT = 128, 128
 
 GPIO.setmode(GPIO.BCM)
 for p in PINS.values():
     GPIO.setup(p, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
+# --- LCD & Font ---
+WIDTH, HEIGHT = 128, 128
 LCD = LCD_1in44.LCD()
 LCD.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
 
-# --- Fonts ---
-try:
-    FONT = ImageFont.truetype(
-        "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", 10)
-except:
-    FONT = ImageFont.load_default()
+# Font zoom
+FONT_MIN, FONT_MAX = 6, 12
+FONT_SIZE = 10
 
-# --- Colors ---
+def load_font(size):
+    try:
+        return ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", size)
+    except:
+        return ImageFont.load_default()
+
+FONT = load_font(FONT_SIZE)
+CHAR_W, CHAR_H = FONT.getsize("M")
+COLS, ROWS = WIDTH // CHAR_W, (HEIGHT - 14) // CHAR_H
+
+# Colors
 BG = (5, 5, 5)
 TXT = (0, 255, 65)
 HDR = (255, 0, 0)
 WARN = (255, 200, 0)
 
-# --- State ---
-lines = []
-max_lines = 8
+# --- Shell State ---
+pty_fd = None
+pty_pid = None
+pty_output = ""
+output_lock = threading.Lock()
 scroll_offset = 0
-
-cmd_input = ""
-cursor_pos = 0
-
-history = []
-history_index = -1
-
 running = True
 busy = False
-
-# --- Helpers ---
-def add_line(text):
-    wrapped = [text[i:i+20] for i in range(0, len(text), 20)]
-    lines.extend(wrapped)
-
-def clear():
-    global lines
-    lines = []
-
-# --- Command Engine ---
-def run_cmd(cmd):
-    global busy
-    busy = True
-    add_line(f"# {cmd}")
-
-    # --- Built-in commands ---
-    if cmd == "clear":
-        clear()
-        busy = False
-        return
-
-    if cmd == "exit":
-        cleanup()
-        return
-
-    if cmd == "help":
-        add_line("Built-ins:")
-        add_line("scan | clear | exit")
-        busy = False
-        return
-
-    if cmd == "scan":
-        try:
-            res = subprocess.run(
-                ["iwlist", "wlan0", "scan"],
-                capture_output=True, text=True, timeout=10
-            )
-            for l in res.stdout.splitlines()[:20]:
-                add_line(l.strip())
-        except:
-            add_line("SCAN FAILED")
-        busy = False
-        return
-
-    # --- External commands ---
-    try:
-        proc = subprocess.Popen(
-            cmd, shell=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True
-        )
-
-        for line in proc.stdout:
-            add_line(line.strip())
-
-    except:
-        add_line("ERR")
-
-    busy = False
-
-def start_cmd(cmd):
-    global history, history_index
-
-    if not cmd.strip():
-        return
-
-    history.append(cmd)
-    history_index = len(history)
-
-    threading.Thread(target=run_cmd, args=(cmd,), daemon=True).start()
-
-# --- Render ---
-def draw():
-    img = Image.new("RGB", (WIDTH, HEIGHT), BG)
-    d = ImageDraw.Draw(img)
-
-    # Header
-    d.rectangle((0, 0, WIDTH, 12), fill=HDR)
-    d.text((2, 1), " KTOX OS ", fill=(255, 255, 255), font=FONT)
-
-    # Output
-    y = 14
-    visible = lines[-max_lines - scroll_offset: len(lines) - scroll_offset]
-
-    for line in visible:
-        d.text((2, y), line, fill=TXT, font=FONT)
-        y += 12
-
-    # Input line
-    cursor = "_" if int(time.time()*2) % 2 else " "
-    display_input = cmd_input[:cursor_pos] + cursor + cmd_input[cursor_pos:]
-    d.text((2, HEIGHT-12), display_input[:20], fill=TXT, font=FONT)
-
-    # Busy
-    if busy:
-        d.text((90, 1), "RUN", fill=WARN, font=FONT)
-
-    LCD.LCD_ShowImage(img, 0, 0)
-
-# --- Input Handling ---
-def handle_input(btn):
-    global cmd_input, cursor_pos, scroll_offset, history_index
-
-    if btn == "UP":
-        if history:
-            history_index = max(0, history_index - 1)
-            cmd_input = history[history_index]
-            cursor_pos = len(cmd_input)
-
-    elif btn == "DOWN":
-        if history:
-            history_index = min(len(history)-1, history_index + 1)
-            cmd_input = history[history_index]
-            cursor_pos = len(cmd_input)
-
-    elif btn == "LEFT":
-        cursor_pos = max(0, cursor_pos - 1)
-
-    elif btn == "RIGHT":
-        cursor_pos = min(len(cmd_input), cursor_pos + 1)
-
-    elif btn == "OK":
-        start_cmd(cmd_input)
-        cmd_input = ""
-        cursor_pos = 0
-
-    elif btn == "KEY1":
-        cmd_input += " "  # placeholder typing
-
-    elif btn == "KEY2":
-        cmd_input = cmd_input[:-1]
-        cursor_pos = len(cmd_input)
-
-    elif btn == "KEY3":
-        cleanup()
 
 # --- Cleanup ---
 def cleanup(*_):
@@ -207,29 +77,130 @@ def cleanup(*_):
 signal.signal(signal.SIGINT, cleanup)
 signal.signal(signal.SIGTERM, cleanup)
 
+# --- PTY Shell ---
+def spawn_shell():
+    global pty_fd, pty_pid
+    pty_pid, pty_fd = pty.fork()
+    if pty_pid == 0:
+        os.execv("/bin/bash", ["bash", "--login"])
+    else:
+        # make PTY non-blocking
+        flags = fcntl.fcntl(pty_fd, fcntl.F_GETFL)
+        fcntl.fcntl(pty_fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+
+# --- Read PTY output ---
+def read_pty():
+    global pty_output
+    while running:
+        if pty_fd is None:
+            time.sleep(0.05)
+            continue
+        try:
+            data = os.read(pty_fd, 1024).decode(errors="ignore")
+            if data:
+                with output_lock:
+                    pty_output += data
+                    # cap scrollback ~256 lines
+                    lines = pty_output.splitlines()
+                    if len(lines) > 256:
+                        pty_output = "\n".join(lines[-256:])
+        except OSError:
+            time.sleep(0.05)
+        except Exception:
+            pass
+
+# --- Draw LCD ---
+def draw_lcd():
+    global scroll_offset
+    img = Image.new("RGB", (WIDTH, HEIGHT), BG)
+    d = ImageDraw.Draw(img)
+    # Header
+    d.rectangle((0, 0, WIDTH, 12), fill=HDR)
+    d.text((2, 1), " KTOX OS SHELL ", fill=(255, 255, 255), font=FONT)
+    # Output
+    with output_lock:
+        lines = pty_output.splitlines()
+    visible = lines[-ROWS - scroll_offset: len(lines) - scroll_offset]
+    y = 14
+    for line in visible:
+        d.text((0, y), line[:COLS], fill=TXT, font=FONT)
+        y += CHAR_H
+    # Busy indicator
+    if busy:
+        d.text((WIDTH-32, 1), "RUN", fill=WARN, font=FONT)
+    # Cursor blink
+    cursor_x = 0
+    cursor_y = 14 + (len(visible)-1)*CHAR_H
+    if int(time.time()*2) % 2:
+        d.rectangle((cursor_x, cursor_y, cursor_x+CHAR_W, cursor_y+CHAR_H), fill=TXT)
+    LCD.LCD_ShowImage(img, 0, 0)
+
+# --- Keyboard Input ---
+def handle_keyboard():
+    while running:
+        rlist, _, _ = select.select([sys.stdin, pty_fd], [], [], 0.05)
+        for fd in rlist:
+            if fd == sys.stdin:
+                try:
+                    data = os.read(sys.stdin.fileno(), 1024)
+                    if data:
+                        os.write(pty_fd, data)
+                except Exception:
+                    pass
+            elif fd == pty_fd:
+                try:
+                    data = os.read(pty_fd, 1024).decode(errors="ignore")
+                    if data:
+                        with output_lock:
+                            pty_output += data
+                except Exception:
+                    pass
+
+# --- GPIO Buttons ---
+def handle_buttons():
+    global scroll_offset, FONT_SIZE, FONT, CHAR_W, CHAR_H, COLS, ROWS
+    _prev = {p: 1 for p in PINS.values()}
+    while running:
+        btn = get_button(PINS, GPIO)
+        # Zoom
+        for pin, delta in [(PINS["KEY1"], +1), (PINS["KEY2"], -1)]:
+            state = GPIO.input(pin)
+            if _prev[pin] == 1 and state == 0:  # falling edge
+                FONT_SIZE = max(FONT_MIN, min(FONT_MAX, FONT_SIZE + delta))
+                FONT = load_font(FONT_SIZE)
+                CHAR_W, CHAR_H = FONT.getsize("M")
+                COLS, ROWS = WIDTH // CHAR_W, (HEIGHT - 14) // CHAR_H
+            _prev[pin] = state
+        # Scroll & Quit
+        if btn == "UP":
+            scroll_offset = max(0, scroll_offset + 1)
+        elif btn == "DOWN":
+            scroll_offset = max(0, scroll_offset - 1)
+        elif btn == "KEY3":
+            cleanup()
+        time.sleep(0.05)
+
 # --- Main ---
 def main():
-    add_line("KTOX OS BOOT")
-    add_line(f"USER: {getpass.getuser()}")
-    add_line("TYPE 'help'")
-
-    frame_time = 0.05
+    spawn_shell()
+    threading.Thread(target=read_pty, daemon=True).start()
+    threading.Thread(target=handle_keyboard, daemon=True).start()
+    threading.Thread(target=handle_buttons, daemon=True).start()
 
     while running:
-        t0 = time.time()
-
-        btn = get_button(PINS, GPIO)
-        if btn:
-            handle_input(btn)
-
-        draw()
-
-        dt = time.time() - t0
-        if dt < frame_time:
-            time.sleep(frame_time - dt)
+        draw_lcd()
+        time.sleep(0.05)
 
     LCD.LCD_Clear()
     GPIO.cleanup()
+    if pty_fd:
+        os.close(pty_fd)
 
 if __name__ == "__main__":
-    main()
+    # make stdin raw for PTY input
+    old_settings = termios.tcgetattr(sys.stdin)
+    tty.setcbreak(sys.stdin.fileno())
+    try:
+        main()
+    finally:
+        termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
