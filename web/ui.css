@@ -307,3 +307,307 @@ main > .flex.items-center.justify-between.mb-4.md\:mb-6 {
 #deviceShell[data-theme="neon"] {
   filter: saturate(0.92) brightness(0.98);
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   MOBILE OPTIMIZATIONS
+   Targets phones < 768px with extra rules for very small (<480px)
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── Base touch improvements ─────────────────────────────────── */
+@media (max-width: 768px) {
+  /* Prevent text selection on interactive elements */
+  button, a, [data-btn], .rj-btn, .shell-key-btn,
+  #payloadSidebar button, #payloadSidebar details > summary {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+
+  /* All tappable controls: minimum 44×44 touch target (Apple HIG / WCAG) */
+  .rj-btn {
+    min-width: 44px !important;
+    min-height: 44px !important;
+  }
+
+  /* D-pad buttons bigger fingers */
+  .dpad-btn {
+    width: 46px !important;
+    height: 46px !important;
+  }
+
+  /* KEY1/KEY2/KEY3 — wider for thumb tap */
+  .key-btn {
+    min-width: 88px !important;
+    height: 44px !important;
+    font-size: 13px !important;
+    letter-spacing: 0.04em;
+  }
+
+  /* Shell quick-key row: larger tap area, more spacing */
+  .shell-key-btn {
+    padding: 6px 12px !important;
+    font-size: 11px !important;
+    min-height: 36px;
+  }
+
+  /* Input fields: prevent iOS zoom on focus (needs ≥16px font) */
+  input, textarea, select {
+    font-size: 16px !important;
+  }
+
+  /* Sidebar nav buttons: full-height tap targets */
+  #sidebar nav > button,
+  #sidebar nav > a {
+    padding-top: 0.65rem !important;
+    padding-bottom: 0.65rem !important;
+    min-height: 46px;
+  }
+
+  /* Payload category headers — easier to tap */
+  #payloadSidebar details > summary {
+    padding: 8px 6px !important;
+    min-height: 40px;
+    display: flex;
+    align-items: center;
+  }
+
+  /* Payload list items */
+  #payloadSidebar details button {
+    padding-top: 7px !important;
+    padding-bottom: 7px !important;
+    min-height: 38px;
+  }
+
+  /* Terminal: shorter on mobile so buttons are visible without scrolling */
+  .terminal-body {
+    height: min(50vh, 320px) !important;
+  }
+
+  /* Device shell: remove transform hack, let layout breathe */
+  #deviceShell {
+    transform: none !important;
+    width: 100% !important;
+    max-width: 360px;
+    margin: 0 auto;
+    padding: 12px !important;
+  }
+
+  /* Canvas: responsive — fills available width up to 260px */
+  #screen, #screen-gb, #screen-pager {
+    width: min(82vw, 260px) !important;
+    height: auto !important;
+    aspect-ratio: 1 / 1;
+  }
+
+  /* Device shell layout: stack screen → controls vertically */
+  .layout-default {
+    grid-template-columns: 1fr 1fr !important;
+    gap: 10px !important;
+    width: 100%;
+  }
+
+  /* Screen: take full row on mobile */
+  .layout-default > .order-1,
+  .layout-default > [class*="order-1"] {
+    grid-column: 1 / -1;
+  }
+
+  /* Modals: full-width, close to top, with scroll */
+  #lootPreview > div,
+  #nmapVizModal > div,
+  #tailscaleModal > div,
+  [id$="Modal"] > div {
+    margin-top: 0 !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+    max-width: 100vw !important;
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  #lootPreview > div > div,
+  #nmapVizModal > div > div,
+  #tailscaleModal > div > div,
+  [id$="Modal"] > div > div {
+    border-radius: 0 !important;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Modal body scrolls, not the whole page */
+  #lootPreviewBody,
+  #nmapVizBody {
+    flex: 1;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    max-height: calc(100dvh - 120px) !important;
+  }
+
+  /* Sidebar: close after nav tap (handled by JS, but style the animation) */
+  #sidebar {
+    transition: transform 0.22s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  }
+
+  /* Loot list rows: bigger tap targets */
+  #lootList > div, #lootList > button, #lootList [role="button"] {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+  }
+
+  /* Main padding: give more breathing room */
+  main {
+    padding-bottom: env(safe-area-inset-bottom, 16px) !important;
+    padding-top: 0.5rem !important;
+  }
+
+  /* Top bar: ensure menu toggle is always visible */
+  #menuToggle {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    padding: 0 !important;
+  }
+
+  /* Payload run status dot: bigger on mobile */
+  .payload-status-dot {
+    width: 9px !important;
+    height: 9px !important;
+  }
+
+  /* System dropdown cards: tighter on mobile */
+  #systemDropdown .rounded-lg {
+    padding: 8px !important;
+  }
+
+  /* Settings tab: full-width card */
+  #settingsTab > div,
+  #lootTab > div {
+    max-width: 100% !important;
+    border-radius: 16px !important;
+  }
+
+  /* Theme buttons: full rows on mobile */
+  #settingsTab .grid-cols-1 {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ── Very small phones (< 400px — older Androids, iPhone SE gen1) ── */
+@media (max-width: 400px) {
+  #screen, #screen-gb, #screen-pager {
+    width: min(92vw, 220px) !important;
+  }
+
+  .key-btn {
+    min-width: 76px !important;
+    font-size: 12px !important;
+  }
+
+  .dpad-btn {
+    width: 40px !important;
+    height: 40px !important;
+  }
+
+  #deviceShell {
+    padding: 8px !important;
+  }
+
+  .layout-default {
+    gap: 6px !important;
+  }
+}
+
+/* ── Safe area insets (notched phones — iPhone X+, Android cutouts) ── */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  body {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  #sidebar {
+    padding-bottom: calc(env(safe-area-inset-bottom) + 8px) !important;
+  }
+
+  /* Fixed modals need bottom padding too */
+  #lootPreview, #nmapVizModal, #tailscaleModal {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  /* Top notch */
+  header, body > .min-h-screen > aside {
+    padding-top: max(0px, env(safe-area-inset-top));
+  }
+}
+
+/* ── Active/pressed states for touch (replace hover on touch devices) ── */
+@media (hover: none) and (pointer: coarse) {
+  /* Remove hover-only effects that don't apply to touch */
+  #sidebar nav > button:hover,
+  #sidebar nav > a:hover {
+    background: rgba(15, 23, 42, 0.5) !important;
+  }
+
+  /* Add tactile pressed state instead */
+  .rj-btn:active {
+    transform: scale(0.93) !important;
+    filter: brightness(1.25) !important;
+    transition: transform 0.08s ease, filter 0.08s ease !important;
+  }
+
+  .shell-key-btn:active {
+    background: rgba(139, 0, 0, 0.50) !important;
+    border-color: rgba(139, 0, 0, 0.7) !important;
+    transform: scale(0.96) !important;
+  }
+
+  button:active:not(.rj-btn):not(.shell-key-btn) {
+    opacity: 0.75;
+    transition: opacity 0.08s ease !important;
+  }
+
+  /* Payload sidebar: no hover, just active */
+  #payloadSidebar button:active {
+    background: rgba(139, 0, 0, 0.2) !important;
+  }
+}
+
+/* ── Smooth overscroll for scrollable lists ─────────────────────── */
+#sidebar nav,
+#payloadSidebar,
+#lootList,
+.terminal-body {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  scroll-behavior: smooth;
+}
+
+/* ── Landscape phone: compact layout ───────────────────────────── */
+@media (max-height: 500px) and (orientation: landscape) {
+  .terminal-body {
+    height: min(45vh, 200px) !important;
+  }
+
+  #screen, #screen-gb, #screen-pager {
+    width: min(40vw, 160px) !important;
+  }
+
+  #deviceShell {
+    padding: 8px !important;
+  }
+
+  #sidebar {
+    overflow-y: auto;
+  }
+
+  main {
+    padding-top: 0 !important;
+    padding-bottom: 4px !important;
+  }
+}
