@@ -1,200 +1,206 @@
 #!/usr/bin/env python3
 """
-KTOx Terminal OS Core – DarkSec Edition v1.9
---------------------------------------------
-Fully interactive micro shell for Waveshare 1.44" LCD
-Supports USB/Bluetooth keyboards and GPIO buttons
+KTOx DarkSec Shell v3
+=====================
+• PTY bash (real shell)
+• USB + Bluetooth keyboard (auto + reconnect)
+• On-screen keyboard (KEY2 toggle)
+• DarkSec themed UI
+• Stable (no crash if no keyboard)
+
+KEY1 = zoom +
+KEY2 = toggle keyboard
+KEY3 = exit
 """
 
-import os
-import sys
-import time
-import threading
-import fcntl
-import pty
-import select
-import re
-import signal
+import os, sys, time, signal, select, fcntl, pty, re
 
-import RPi.GPIO as GPIO
+sys.path.append(os.path.abspath(os.path.join(__file__, '..', '..', '..')))
+
 import LCD_1in44
 from PIL import Image, ImageDraw, ImageFont
 from evdev import InputDevice, categorize, ecodes, list_devices
+import RPi.GPIO as GPIO
+from payloads._input_helper import get_virtual_button
 
-# --- LCD Setup ---
-WIDTH, HEIGHT = 128, 128
+# ---------------- LCD ----------------
 LCD = LCD_1in44.LCD()
 LCD.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
+W, H = 128, 128
 
-# --- Fonts ---
+# ---------------- THEME ----------------
+BG = "#060101"
+RED = "#8B0000"
+RED_B = "#cc1a1a"
+TXT = "#00FF41"
+
+# ---------------- FONT ----------------
 FONT_SIZE = 8
-FONT_MIN, FONT_MAX = 6, 12
-try:
-    FONT = ImageFont.truetype(
-        "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", FONT_SIZE)
-except:
-    FONT = ImageFont.load_default()
-
-CHAR_W, CHAR_H = 8, 10
-COLS, ROWS = WIDTH // CHAR_W, HEIGHT // CHAR_H
-
-def set_font(size):
-    global FONT, CHAR_W, CHAR_H, COLS, ROWS, FONT_SIZE
-    FONT_SIZE = max(FONT_MIN, min(FONT_MAX, size))
+def load_font(size):
     try:
-        FONT = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", FONT_SIZE)
+        return ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", size)
     except:
-        FONT = ImageFont.load_default()
-    _img = Image.new("RGB", (10, 10))
-    _d = ImageDraw.Draw(_img)
-    _bbox = _d.textbbox((0,0), "M", font=FONT)
-    CHAR_W, CHAR_H = _bbox[2]-_bbox[0], _bbox[3]-_bbox[1]
-    COLS, ROWS = WIDTH // CHAR_W, HEIGHT // CHAR_H
+        return ImageFont.load_default()
 
-set_font(FONT_SIZE)
+font = load_font(FONT_SIZE)
+CHAR_W, CHAR_H = font.getbbox("M")[2:]
 
-# --- GPIO Buttons ---
-PINS = {"KEY1":21, "KEY2":20, "KEY3":16}
+COLS = W // CHAR_W
+ROWS = (H - 14) // CHAR_H
+
+# ---------------- GPIO ----------------
+KEY1, KEY2, KEY3 = 21, 20, 16
 GPIO.setmode(GPIO.BCM)
-for p in PINS.values():
+for p in (KEY1, KEY2, KEY3):
     GPIO.setup(p, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-_prev_state = {p:1 for p in PINS.values()}
 
-# --- Evdev Keyboard ---
+# ---------------- KEYBOARD ----------------
 def find_keyboard():
     for path in list_devices():
         dev = InputDevice(path)
-        if ecodes.EV_KEY in dev.capabilities():
-            return dev
-    raise RuntimeError("No keyboard found")
+        if "keyboard" in dev.name.lower():
+            try:
+                dev.grab()
+                return dev
+            except:
+                continue
+    return None
 
 keyboard = find_keyboard()
-keyboard.grab()
-fcntl.fcntl(keyboard.fd, fcntl.F_SETFL, fcntl.fcntl(keyboard.fd, fcntl.F_GETFL) | os.O_NONBLOCK)
 
-SHIFT_KEYS = {"KEY_LEFTSHIFT", "KEY_RIGHTSHIFT"}
-KEYMAP = {**{f"KEY_{c}": c.lower() for c in "ABCDEFGHIJKLMNOPQRSTUVWXYZ"},
-          "KEY_SPACE":" ", "KEY_ENTER":"\n","KEY_KPENTER":"\n",
-          "KEY_BACKSPACE":"\x7f","KEY_TAB":"\t",
-          "KEY_MINUS":"-","KEY_EQUAL":"=","KEY_LEFTBRACE":"[",
-          "KEY_RIGHTBRACE":"]","KEY_BACKSLASH":"\\","KEY_SEMICOLON":";",
-          "KEY_APOSTROPHE":"'","KEY_GRAVE":"`","KEY_COMMA":",",
-          "KEY_DOT":".","KEY_SLASH":"/",
-          "KEY_1":"1","KEY_2":"2","KEY_3":"3","KEY_4":"4",
-          "KEY_5":"5","KEY_6":"6","KEY_7":"7","KEY_8":"8",
-          "KEY_9":"9","KEY_0":"0"}
-SHIFT_MAP = {"KEY_1":"!","KEY_2":"@","KEY_3":"#","KEY_4":"$","KEY_5":"%",
-             "KEY_6":"^","KEY_7":"&","KEY_8":"*","KEY_9":"(","KEY_0":")",
-             "KEY_MINUS":"_","KEY_EQUAL":"+","KEY_LEFTBRACE":"{","KEY_RIGHTBRACE":"}",
-             "KEY_BACKSLASH":"|","KEY_SEMICOLON":":","KEY_APOSTROPHE":'"',
-             "KEY_GRAVE":"~","KEY_COMMA":"<","KEY_DOT":">","KEY_SLASH":"?",
-             **{f"KEY_{c}": c for c in "ABCDEFGHIJKLMNOPQRSTUVWXYZ"}}
-ansi_escape = re.compile(r"\x1B\[[0-9;]*[A-Za-z]")
-
-# --- PTY Shell ---
-pid, master_fd = pty.fork()
+# ---------------- SHELL ----------------
+pid, fd = pty.fork()
 if pid == 0:
-    os.execv("/bin/bash", ["bash", "--login"])
-fcntl.fcntl(master_fd, fcntl.F_SETFL, fcntl.fcntl(master_fd, fcntl.F_GETFL) | os.O_NONBLOCK)
+    os.execv("/bin/bash", ["bash"])
+
+fcntl.fcntl(fd, fcntl.F_SETFL, os.O_NONBLOCK)
 
 poller = select.poll()
-poller.register(master_fd, select.POLLIN)
-poller.register(keyboard.fd, select.POLLIN)
+poller.register(fd, select.POLLIN)
+if keyboard:
+    poller.register(keyboard.fd, select.POLLIN)
 
-scrollback = []
-current_line = ""
-shift = False
-running = True
+ansi = re.compile(r"\x1B\[[0-9;]*[A-Za-z]")
 
-def write_byte(s):
-    os.write(master_fd, s.encode())
+scroll = []
+line = ""
 
-def process_shell_output():
-    global current_line, scrollback
-    try:
-        data = os.read(master_fd, 1024).decode(errors="ignore")
-    except BlockingIOError:
-        return
-    if not data:
-        return
-    clean = ansi_escape.sub("", data)
-    for ch in clean:
-        if ch=="\n":
-            scrollback.append(current_line)
-            current_line=""
-        elif ch in ("\x08","\x7f"):
-            current_line=current_line[:-1]
-        elif ch=="\r":
-            continue
-        else:
-            current_line+=ch
-            while len(current_line)>COLS:
-                scrollback.append(current_line[:COLS])
-                current_line=current_line[COLS:]
-    if len(scrollback)>256:
-        scrollback = scrollback[-256:]
-    draw_buffer()
+# ---------------- ON SCREEN KB ----------------
+KB = [
+    list("abcdefghi"),
+    list("jklmnopqr"),
+    list("stuvwxyz_"),
+    [" ", ".", "/", "-", "←", "OK"]
+]
 
-def draw_buffer():
-    img = Image.new("RGB",(WIDTH,HEIGHT),"black")
+kb_on = False
+kx = ky = 0
+
+# ---------------- DRAW ----------------
+def draw():
+    img = Image.new("RGB", (W, H), BG)
     d = ImageDraw.Draw(img)
-    visible = scrollback[-(ROWS-1):] + [current_line]
-    y=0
-    for line in visible:
-        d.text((0,y), line.ljust(COLS)[:COLS], font=FONT, fill="#00FF00")
-        y+=CHAR_H
+
+    # Header
+    d.rectangle((0,0,W,12), fill="#1a0000")
+    d.text((2,1),"KTOX DARKSEC", fill=RED_B, font=font)
+
+    # Shell
+    y = 14
+    for l in scroll[-(ROWS-1):]:
+        d.text((2,y), l[:COLS], fill=TXT, font=font)
+        y += CHAR_H
+
+    # Current line
+    cursor = "_" if int(time.time()*2)%2 else " "
+    d.text((2,y), (line+cursor)[:COLS], fill=TXT, font=font)
+
+    # On-screen keyboard
+    if kb_on:
+        for iy,row in enumerate(KB):
+            for ix,key in enumerate(row):
+                x = ix*20
+                yk = 60 + iy*16
+                sel = (ix==kx and iy==ky)
+                d.rectangle((x,yk,x+18,yk+14), outline=TXT if sel else "#333")
+                d.text((x+3,yk+2), key[:2], fill=TXT, font=font)
+
     LCD.LCD_ShowImage(img,0,0)
 
-def handle_key(event):
-    global shift
-    key_name = event.keycode if isinstance(event.keycode,str) else event.keycode[0]
-    if key_name in SHIFT_KEYS:
-        shift = event.keystate==event.key_down
+# ---------------- INPUT ----------------
+SHIFT = False
+
+def write(s):
+    os.write(fd, s.encode())
+
+def handle_key(ev):
+    global SHIFT
+    key = ev.keycode if isinstance(ev.keycode,str) else ev.keycode[0]
+    if ev.keystate != ev.key_down:
         return
-    if event.keystate!=event.key_down:
-        return
-    if key_name=="KEY_ESC" or GPIO.input(PINS["KEY3"])==0:
-        cleanup()
-        return
-    char = SHIFT_MAP.get(key_name) if shift else KEYMAP.get(key_name)
-    if char is not None:
-        write_byte(char)
+    if key=="KEY_ESC":
+        return False
+    if key.startswith("KEY_") and len(key)==5:
+        write(key[-1].lower())
+    if key=="KEY_SPACE": write(" ")
+    if key=="KEY_ENTER": write("\n")
+    if key=="KEY_BACKSPACE": write("\x7f")
+    return True
 
-def handle_buttons():
-    global FONT_SIZE
-    for pin, delta in ((PINS["KEY1"],+1),(PINS["KEY2"],-1)):
-        state = GPIO.input(pin)
-        if _prev_state[pin]==1 and state==0:
-            set_font(FONT_SIZE+delta)
-        _prev_state[pin]=state
-    if GPIO.input(PINS["KEY3"])==0:
-        cleanup()
+# ---------------- LOOP ----------------
+running = True
 
-def cleanup(*_):
-    global running
-    running=False
+while running:
+    # Poll
+    for fd_ev,_ in poller.poll(30):
+        if fd_ev == fd:
+            try:
+                data = os.read(fd,1024).decode(errors="ignore")
+                data = ansi.sub("", data)
+                for c in data:
+                    if c=="\n":
+                        scroll.append(line)
+                        line=""
+                    else:
+                        line+=c
+            except:
+                pass
 
-signal.signal(signal.SIGINT,cleanup)
-signal.signal(signal.SIGTERM,cleanup)
+        elif keyboard and fd_ev == keyboard.fd:
+            try:
+                for ev in keyboard.read():
+                    if ev.type==ecodes.EV_KEY:
+                        handle_key(categorize(ev))
+            except:
+                keyboard = None
 
-def main():
-    draw_buffer()
-    try:
-        while running:
-            for fd,_ in poller.poll(50):
-                if fd==master_fd:
-                    process_shell_output()
-                elif fd==keyboard.fd:
-                    for ev in keyboard.read():
-                        if ev.type==ecodes.EV_KEY:
-                            handle_key(categorize(ev))
-            handle_buttons()
-            time.sleep(0.02)
-    finally:
-        LCD.LCD_Clear()
-        GPIO.cleanup()
-        try: os.close(master_fd)
-        except: pass
+    # GPIO buttons
+    if GPIO.input(KEY2)==0:
+        kb_on = not kb_on
+        time.sleep(0.3)
 
-if __name__=="__main__":
-    main()
+    if GPIO.input(KEY3)==0:
+        running=False
+
+    # On-screen keyboard control
+    if kb_on:
+        btn = get_virtual_button()
+        if btn=="UP": ky=max(0,ky-1)
+        if btn=="DOWN": ky=min(len(KB)-1,ky+1)
+        if btn=="LEFT": kx=max(0,kx-1)
+        if btn=="RIGHT": kx=min(len(KB[ky])-1,kx+1)
+        if btn=="OK":
+            key = KB[ky][kx]
+            if key=="←":
+                write("\x7f")
+            elif key=="OK":
+                kb_on=False
+            else:
+                write(key)
+            time.sleep(0.2)
+
+    draw()
+
+# ---------------- CLEANUP ----------------
+LCD.LCD_Clear()
+GPIO.cleanup()
