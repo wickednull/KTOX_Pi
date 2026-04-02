@@ -196,6 +196,11 @@
       background: rgba(244,63,94,0.18);
     }
     .ide-toolbar-sep { width: 1px; height: 20px; background: rgba(148,163,184,0.15); margin: 0 4px; }
+    .compat-target-btn.selected {
+      border-color: rgba(139,0,0,0.7) !important;
+      background: rgba(139,0,0,0.12) !important;
+    }
+    .compat-target-btn.selected div:first-of-type { color: #fca5a5; }
     .cm-editor,
     .CodeMirror {
       height: 100%;
@@ -327,6 +332,8 @@
         <button id="templatesBtn" class="ide-toolbar-btn"><i class="fa-solid fa-layer-group"></i> Templates</button>
         <div class="ide-toolbar-sep"></div>
         <button id="gpioToggleBtn" class="ide-toolbar-btn"><i class="fa-solid fa-microchip"></i> GPIO</button>
+        <div class="ide-toolbar-sep"></div>
+        <button id="compatBtn" class="ide-toolbar-btn" title="Convert payload between KTOx and RaspyJack"><i class="fa-solid fa-shuffle"></i> Convert</button>
       </div>
       <!-- Right -->
       <div class="flex items-center gap-3 text-xs relative z-10">
@@ -829,6 +836,126 @@ finally:
       </div>
     </section>
   </template>
+
+  <!-- ── Platform Converter Modal ─────────────────────────────────────── -->
+  <div id="compatModal" class="hidden fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-start justify-center overflow-y-auto py-6 px-3">
+    <div class="w-full max-w-4xl rounded-2xl border border-slate-700/60 bg-slate-950/98 shadow-[0_0_60px_rgba(15,23,42,0.8)] overflow-hidden animate-fade-in">
+
+      <!-- Header -->
+      <div class="flex items-center justify-between px-5 py-3 border-b border-slate-800/70 bg-slate-900/40">
+        <div class="flex items-center gap-3">
+          <i class="fa-solid fa-shuffle text-red-400"></i>
+          <div>
+            <div class="text-sm font-bold text-red-400 tracking-wide">Platform Converter</div>
+            <div id="compatModalFile" class="text-[11px] text-slate-500 font-mono mt-0.5">No file selected</div>
+          </div>
+        </div>
+        <button id="compatModalClose" class="text-slate-400 hover:text-slate-200 w-8 h-8 flex items-center justify-center rounded-lg bg-slate-800/60 border border-slate-700/50 text-xs transition">✕</button>
+      </div>
+
+      <!-- Direction selector -->
+      <div class="px-5 py-4 border-b border-slate-800/70">
+        <div class="text-xs font-semibold text-slate-300 mb-3">Target Platform</div>
+        <div class="grid grid-cols-2 gap-3">
+          <button id="compatTargetRJ" class="compat-target-btn group flex items-center gap-3 px-4 py-3 rounded-xl border border-slate-700/50 bg-slate-900/50 hover:border-red-700/60 hover:bg-red-900/10 transition text-left" data-target="raspyjack">
+            <div class="text-2xl">🐍</div>
+            <div>
+              <div class="text-sm font-bold text-slate-200 group-hover:text-red-300 transition">→ RaspyJack</div>
+              <div class="text-[11px] text-slate-500 mt-0.5">Inject rj_input shim · update paths</div>
+            </div>
+          </button>
+          <button id="compatTargetKTOx" class="compat-target-btn group flex items-center gap-3 px-4 py-3 rounded-xl border border-slate-700/50 bg-slate-900/50 hover:border-red-700/60 hover:bg-red-900/10 transition text-left" data-target="ktox">
+            <div class="text-2xl">💀</div>
+            <div>
+              <div class="text-sm font-bold text-slate-200 group-hover:text-red-300 transition">→ KTOx_Pi</div>
+              <div class="text-[11px] text-slate-500 mt-0.5">Add _input_helper import · update paths</div>
+            </div>
+          </button>
+        </div>
+
+        <!-- Advanced paths (collapsible) -->
+        <details class="mt-3">
+          <summary class="text-[11px] text-slate-500 cursor-pointer hover:text-slate-300 transition select-none">Advanced: custom install paths</summary>
+          <div class="grid grid-cols-2 gap-3 mt-2">
+            <div>
+              <label class="block text-[11px] text-slate-400 mb-1">KTOx root</label>
+              <input id="compatKtoxRoot" type="text" value="/root/KTOx"
+                class="w-full px-2 py-1.5 rounded-lg bg-slate-900/80 border border-slate-700/60 text-slate-100 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-red-400">
+            </div>
+            <div>
+              <label class="block text-[11px] text-slate-400 mb-1">RaspyJack root</label>
+              <input id="compatRjRoot" type="text" value="/root/RaspyJack"
+                class="w-full px-2 py-1.5 rounded-lg bg-slate-900/80 border border-slate-700/60 text-slate-100 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-red-400">
+            </div>
+          </div>
+        </details>
+      </div>
+
+      <!-- Preview / diff area -->
+      <div class="px-5 py-4 border-b border-slate-800/70">
+        <div class="flex items-center justify-between mb-3">
+          <div class="text-xs font-semibold text-slate-300">Preview</div>
+          <div class="flex items-center gap-2">
+            <button id="compatPreviewBtn" class="ide-toolbar-btn ide-toolbar-btn--success">
+              <i class="fa-solid fa-eye"></i> Preview Changes
+            </button>
+            <div id="compatPreviewStatus" class="text-[11px] text-slate-500"></div>
+          </div>
+        </div>
+
+        <!-- No file / no target state -->
+        <div id="compatPreviewEmpty" class="flex flex-col items-center justify-center py-10 text-slate-600 text-sm gap-2">
+          <i class="fa-solid fa-shuffle text-3xl opacity-30"></i>
+          <div>Select a target platform and click Preview Changes</div>
+        </div>
+
+        <!-- No changes state -->
+        <div id="compatPreviewNoop" class="hidden flex flex-col items-center justify-center py-8 gap-2">
+          <i class="fa-solid fa-check-circle text-3xl text-emerald-500/60"></i>
+          <div class="text-sm text-emerald-400/80">No changes needed — file is already compatible</div>
+        </div>
+
+        <!-- Diff viewer -->
+        <div id="compatDiffWrap" class="hidden">
+          <div class="flex items-center gap-3 mb-2 text-[11px] text-slate-400">
+            <span id="compatDiffStats"></span>
+            <div class="flex items-center gap-2 ml-auto">
+              <label class="flex items-center gap-1.5 cursor-pointer select-none">
+                <input type="checkbox" id="compatDiffFull" class="rounded border-slate-600 bg-slate-900/80">
+                <span>Show full file</span>
+              </label>
+            </div>
+          </div>
+          <div id="compatDiffBody" class="rounded-xl border border-slate-800/70 overflow-auto max-h-72 bg-slate-950/60 font-mono text-[11px] leading-5">
+            <!-- diff lines injected by JS -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Action bar -->
+      <div class="px-5 py-3 flex flex-wrap items-center justify-between gap-3 bg-slate-900/30">
+        <div class="text-[11px] text-slate-500">
+          Changes are non-destructive until you click Apply.
+        </div>
+        <div class="flex items-center gap-2">
+          <button id="compatSaveCopyBtn" class="ide-toolbar-btn hidden">
+            <i class="fa-solid fa-copy"></i> Save as copy
+          </button>
+          <button id="compatDownloadBtn" class="ide-toolbar-btn hidden">
+            <i class="fa-solid fa-download"></i> Download
+          </button>
+          <button id="compatApplyBtn" class="ide-toolbar-btn ide-toolbar-btn--success hidden">
+            <i class="fa-solid fa-bolt"></i> Apply to file
+          </button>
+          <button id="compatModalCancelBtn" class="ide-toolbar-btn ide-toolbar-btn--danger">
+            <i class="fa-solid fa-xmark"></i> Close
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  <!-- ── end Platform Converter Modal ─────────────────────────────────── -->
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>

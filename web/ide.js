@@ -2788,6 +2788,255 @@ if __name__ == "__main__":
   if (templatesBtn) templatesBtn.addEventListener('click', () => openTemplateLibrary());
   if (gpioToggleBtnEl) gpioToggleBtnEl.addEventListener('click', () => toggleGpioPanel());
 
+  // ── Platform Converter ────────────────────────────────────────────────────
+  (function initCompatConverter() {
+    const compatBtn          = document.getElementById('compatBtn');
+    const compatModal        = document.getElementById('compatModal');
+    const compatModalClose   = document.getElementById('compatModalClose');
+    const compatModalCancelBtn = document.getElementById('compatModalCancelBtn');
+    const compatModalFile    = document.getElementById('compatModalFile');
+    const compatTargetRJ     = document.getElementById('compatTargetRJ');
+    const compatTargetKTOx   = document.getElementById('compatTargetKTOx');
+    const compatKtoxRoot     = document.getElementById('compatKtoxRoot');
+    const compatRjRoot       = document.getElementById('compatRjRoot');
+    const compatPreviewBtn   = document.getElementById('compatPreviewBtn');
+    const compatPreviewStatus= document.getElementById('compatPreviewStatus');
+    const compatPreviewEmpty = document.getElementById('compatPreviewEmpty');
+    const compatPreviewNoop  = document.getElementById('compatPreviewNoop');
+    const compatDiffWrap     = document.getElementById('compatDiffWrap');
+    const compatDiffBody     = document.getElementById('compatDiffBody');
+    const compatDiffStats    = document.getElementById('compatDiffStats');
+    const compatDiffFull     = document.getElementById('compatDiffFull');
+    const compatApplyBtn     = document.getElementById('compatApplyBtn');
+    const compatSaveCopyBtn  = document.getElementById('compatSaveCopyBtn');
+    const compatDownloadBtn  = document.getElementById('compatDownloadBtn');
+
+    if (!compatBtn || !compatModal) return;
+
+    let selectedTarget = null;   // 'raspyjack' | 'ktox'
+    let lastConverted  = null;   // last preview result
+    let showFull       = false;
+
+    // ── helpers ──────────────────────────────────────────────────────────────
+    function setTarget(t) {
+      selectedTarget = t;
+      compatTargetRJ.classList.toggle('selected', t === 'raspyjack');
+      compatTargetKTOx.classList.toggle('selected', t === 'ktox');
+      // Update card border style
+      [compatTargetRJ, compatTargetKTOx].forEach(btn => {
+        const active = btn.dataset.target === t;
+        btn.style.borderColor = active ? 'rgba(139,0,0,0.7)' : '';
+        btn.style.background  = active ? 'rgba(139,0,0,0.12)' : '';
+      });
+      resetPreview();
+    }
+
+    function resetPreview() {
+      lastConverted = null;
+      compatPreviewEmpty.classList.remove('hidden');
+      compatPreviewNoop.classList.add('hidden');
+      compatDiffWrap.classList.add('hidden');
+      compatApplyBtn.classList.add('hidden');
+      compatSaveCopyBtn.classList.add('hidden');
+      compatDownloadBtn.classList.add('hidden');
+      compatPreviewStatus.textContent = '';
+    }
+
+    function openModal() {
+      const currentPath = currentPathEl ? currentPathEl.textContent.trim() : '';
+      compatModalFile.textContent = currentPath || 'No file selected';
+      resetPreview();
+      compatModal.classList.remove('hidden');
+    }
+
+    function closeModal() {
+      compatModal.classList.add('hidden');
+      resetPreview();
+    }
+
+    // ── diff renderer ─────────────────────────────────────────────────────────
+    function renderDiff(diffText, original, converted) {
+      if (!diffText && !original) return;
+
+      // Count added/removed lines from unified diff
+      const diffLines = diffText.split('\n');
+      let added = 0, removed = 0;
+      diffLines.forEach(l => {
+        if (l.startsWith('+') && !l.startsWith('+++')) added++;
+        if (l.startsWith('-') && !l.startsWith('---')) removed++;
+      });
+      compatDiffStats.innerHTML =
+        `<span class="text-emerald-400">+${added} added</span> &nbsp;` +
+        `<span class="text-rose-400">−${removed} removed</span>`;
+
+      renderDiffLines(showFull ? null : diffText, original, converted);
+    }
+
+    function renderDiffLines(diffText, original, converted) {
+      compatDiffBody.innerHTML = '';
+      const frag = document.createDocumentFragment();
+
+      if (showFull) {
+        // Side-by-side: show converted file with line numbers
+        const lines = converted.split('\n');
+        const origLines = original.split('\n');
+        lines.forEach((line, i) => {
+          const row = document.createElement('div');
+          const changed = i >= origLines.length || line !== origLines[i];
+          row.className = 'flex gap-0 ' + (changed ? 'bg-emerald-900/20' : '');
+          row.innerHTML =
+            `<span class="select-none w-10 text-right pr-2 text-slate-600 shrink-0 border-r border-slate-800/50">${i+1}</span>` +
+            `<span class="px-3 whitespace-pre-wrap break-all flex-1 ${changed ? 'text-emerald-200' : 'text-slate-300'}">${escHtml(line)}</span>`;
+          frag.appendChild(row);
+        });
+      } else {
+        // Unified diff view
+        diffText.split('\n').forEach(line => {
+          if (!line) return;
+          const row = document.createElement('div');
+          row.className = 'px-3 py-0 whitespace-pre-wrap break-all ';
+          if (line.startsWith('+++') || line.startsWith('---')) {
+            row.className += 'text-slate-500 text-[10px]';
+          } else if (line.startsWith('@@')) {
+            row.className += 'text-cyan-500/70 text-[10px] bg-cyan-900/10';
+          } else if (line.startsWith('+')) {
+            row.className += 'text-emerald-300 bg-emerald-900/20';
+            line = line; // keep the + prefix
+          } else if (line.startsWith('-')) {
+            row.className += 'text-rose-300 bg-rose-900/20';
+          } else {
+            row.className += 'text-slate-500';
+          }
+          row.textContent = line;
+          frag.appendChild(row);
+        });
+      }
+
+      compatDiffBody.appendChild(frag);
+    }
+
+    function escHtml(s) {
+      return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    // ── API call ──────────────────────────────────────────────────────────────
+    async function runPreview(opts = {}) {
+      const filePath = currentPathEl ? currentPathEl.textContent.trim() : '';
+      if (!filePath || filePath === 'No file selected') {
+        compatPreviewStatus.textContent = 'Open a file first';
+        return;
+      }
+      if (!selectedTarget) {
+        compatPreviewStatus.textContent = 'Choose a target platform';
+        return;
+      }
+
+      compatPreviewStatus.textContent = 'Previewing…';
+      compatPreviewBtn.disabled = true;
+
+      try {
+        const body = {
+          path:      filePath,
+          target:    selectedTarget,
+          apply:     opts.apply     || false,
+          save_copy: opts.save_copy || false,
+          ktox_root: compatKtoxRoot.value.trim() || '/root/KTOx',
+          rj_root:   compatRjRoot.value.trim()   || '/root/RaspyJack',
+        };
+
+        const resp = await apiFetch(getApiUrl('/api/payloads/convert'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const data = await resp.json();
+
+        if (data.error) {
+          compatPreviewStatus.textContent = `Error: ${data.error}`;
+          return;
+        }
+
+        lastConverted = data;
+
+        if (!data.changed) {
+          compatPreviewEmpty.classList.add('hidden');
+          compatPreviewNoop.classList.remove('hidden');
+          compatDiffWrap.classList.add('hidden');
+          compatApplyBtn.classList.add('hidden');
+          compatSaveCopyBtn.classList.add('hidden');
+          compatPreviewStatus.textContent = 'Already compatible';
+          return;
+        }
+
+        // Show diff
+        compatPreviewEmpty.classList.add('hidden');
+        compatPreviewNoop.classList.add('hidden');
+        compatDiffWrap.classList.remove('hidden');
+        compatApplyBtn.classList.remove('hidden');
+        compatSaveCopyBtn.classList.remove('hidden');
+        compatDownloadBtn.classList.remove('hidden');
+        renderDiff(data.diff, data.original, data.converted);
+
+        if (opts.apply) {
+          compatPreviewStatus.textContent = `Applied to ${data.saved_path || filePath}`;
+          // Reload the file in the editor
+          const reloadPath = currentPathEl ? currentPathEl.textContent.trim() : '';
+          if (reloadPath) onFileSelected(reloadPath);
+        } else if (opts.save_copy) {
+          compatPreviewStatus.textContent = `Saved copy: ${data.saved_path}`;
+          loadTree();
+        } else {
+          compatPreviewStatus.textContent = 'Preview ready';
+        }
+
+      } catch (e) {
+        compatPreviewStatus.textContent = `Request failed: ${e.message}`;
+      } finally {
+        compatPreviewBtn.disabled = false;
+      }
+    }
+
+    // ── event wiring ──────────────────────────────────────────────────────────
+    compatBtn.addEventListener('click', openModal);
+    compatModalClose.addEventListener('click', closeModal);
+    compatModalCancelBtn.addEventListener('click', closeModal);
+    compatModal.addEventListener('click', e => { if (e.target === compatModal) closeModal(); });
+
+    compatTargetRJ.addEventListener('click',   () => setTarget('raspyjack'));
+    compatTargetKTOx.addEventListener('click', () => setTarget('ktox'));
+
+    compatPreviewBtn.addEventListener('click', () => runPreview());
+    compatApplyBtn.addEventListener('click',   () => runPreview({ apply: true }));
+    compatSaveCopyBtn.addEventListener('click',() => runPreview({ save_copy: true }));
+
+    compatDownloadBtn.addEventListener('click', () => {
+      if (!lastConverted || !lastConverted.converted) return;
+      const filePath = currentPathEl ? currentPathEl.textContent.trim() : 'payload.py';
+      const baseName = filePath.split('/').pop().replace(/\.py$/, '');
+      const suffix   = selectedTarget === 'raspyjack' ? '.rj.py' : '.ktox.py';
+      const fileName = baseName + suffix;
+      const blob = new Blob([lastConverted.converted], { type: 'text/x-python' });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href     = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      compatPreviewStatus.textContent = `Downloaded ${fileName}`;
+    });
+
+    compatDiffFull.addEventListener('change', () => {
+      showFull = compatDiffFull.checked;
+      if (lastConverted && lastConverted.changed) {
+        renderDiffLines(showFull ? null : lastConverted.diff, lastConverted.original, lastConverted.converted);
+      }
+    });
+
+  })();
+  // ── end Platform Converter ────────────────────────────────────────────────
+
   // Wizard modal events
   if (wizardModalClose) wizardModalClose.addEventListener('click', () => closeWizard());
   if (wizardModal) wizardModal.addEventListener('click', (e) => { if (e.target === wizardModal) closeWizard(); });

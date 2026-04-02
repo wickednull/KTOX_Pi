@@ -27,6 +27,7 @@ Environment:
 
 from __future__ import annotations
 
+import difflib
 import json
 import base64
 import hmac
@@ -36,6 +37,7 @@ import os
 import secrets
 import shutil
 import subprocess
+import textwrap
 import threading
 import time
 from http import HTTPStatus
@@ -60,6 +62,86 @@ SESSION_TTL_SECONDS = int(os.environ.get("RJ_WEB_SESSION_TTL", str(8 * 60 * 60))
 WS_TICKET_TTL_SECONDS = int(os.environ.get("RJ_WEB_WS_TICKET_TTL", "120"))
 TAILSCALE_KEY_PATH = ROOT_DIR / ".tailscale_auth_key"
 TAILSCALE_STATUS_PATH = Path("/dev/shm/rj_tailscale_status.json")
+
+
+# ── Payload compatibility converter helpers ──────────────────────────────────
+
+_RJ_SHIM = textwrap.dedent("""\
+    # ── get_button shim (added by Platform Converter for RaspyJack) ──────────
+    try:
+        import rj_input as _rj_input
+    except Exception:
+        _rj_input = None
+    _RJ_BTN_MAP = {
+        "KEY_UP_PIN": "UP",    "KEY_DOWN_PIN": "DOWN",
+        "KEY_LEFT_PIN": "LEFT","KEY_RIGHT_PIN": "RIGHT",
+        "KEY_PRESS_PIN": "OK",
+        "KEY1_PIN": "KEY1", "KEY2_PIN": "KEY2", "KEY3_PIN": "KEY3",
+    }
+    def get_button(pins, gpio):
+        if _rj_input is not None:
+            try:
+                raw = _rj_input.get_virtual_button()
+                if raw:
+                    mapped = _RJ_BTN_MAP.get(raw)
+                    if mapped:
+                        return mapped
+            except Exception:
+                pass
+        for btn, pin in pins.items():
+            if gpio.input(pin) == 0:
+                return btn
+        return None
+    # ── end shim ─────────────────────────────────────────────────────────────
+""")
+
+_KTOX_IMPORT = "from payloads._input_helper import get_button\n"
+
+
+def _compat_inject_before_first_import(source: str, injection: str) -> str:
+    lines = source.splitlines(keepends=True)
+    for i, line in enumerate(lines):
+        s = line.lstrip()
+        if s.startswith("import ") or s.startswith("from "):
+            lines.insert(i, injection if injection.endswith("\n") else injection + "\n")
+            return "".join(lines)
+    return injection + source
+
+
+def _compat_convert(source: str, target: str,
+                    ktox_root: str = "/root/KTOx",
+                    rj_root: str = "/root/RaspyJack") -> str:
+    """Convert payload source between KTOx and RaspyJack formats."""
+    result = source
+    if target == "raspyjack":
+        result = result.replace(
+            "from payloads._input_helper import get_button",
+            "__KTOX_SHIM__"
+        )
+        result = result.replace("KTOX_ROOT", "RJ_ROOT")
+        for old, new in [
+            (f"'{ktox_root}'", f"'{rj_root}'"),
+            (f'"{ktox_root}"', f'"{rj_root}"'),
+            (ktox_root, rj_root),
+        ]:
+            result = result.replace(old, new)
+        result = result.replace("__KTOX_SHIM__", _RJ_SHIM.rstrip("\n"))
+    else:  # ktox
+        result = result.replace("RJ_ROOT", "KTOX_ROOT")
+        for old, new in [
+            (f"'{rj_root}'", f"'{ktox_root}'"),
+            (f'"{rj_root}"', f'"{ktox_root}"'),
+            (rj_root, ktox_root),
+        ]:
+            result = result.replace(old, new)
+        uses_buttons = "GPIO.input(" in result or "gpio.input(" in result or "get_button" in result
+        already_imported = "from payloads._input_helper import get_button" in result
+        if uses_buttons and not already_imported:
+            result = _compat_inject_before_first_import(result, _KTOX_IMPORT)
+    return result
+
+
+# ── end converter helpers ─────────────────────────────────────────────────────
 
 
 def _load_shared_token() -> str | None:
@@ -954,6 +1036,13 @@ class KTOxHandler(SimpleHTTPRequestHandler):
                 return
             self._handle_payloads_entry_create()
             return
+        if parsed.path == "/api/payloads/convert":
+            query = parse_qs(parsed.query or "")
+            if not _auth_ok(self, query):
+                _json_response(self, {"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
+                return
+            self._handle_payloads_convert()
+            return
         _json_response(self, {"error": "not found"}, status=HTTPStatus.NOT_FOUND)
 
     def do_PUT(self):
@@ -1338,6 +1427,78 @@ class KTOxHandler(SimpleHTTPRequestHandler):
             _json_response(self, {"ok": True, "type": "file", "path": rel})
         except Exception as exc:
             _json_response(self, {"error": f"delete error: {exc}"}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+
+    def _handle_payloads_convert(self) -> None:
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(length))
+        except Exception:
+            _json_response(self, {"error": "bad request"}, status=HTTPStatus.BAD_REQUEST)
+            return
+
+        rel_path  = body.get("path", "")
+        target    = body.get("target", "raspyjack")   # "raspyjack" | "ktox"
+        apply     = bool(body.get("apply", False))
+        save_copy = bool(body.get("save_copy", False))
+        ktox_root = body.get("ktox_root", "/root/KTOx")
+        rj_root   = body.get("rj_root", "/root/RaspyJack")
+
+        if target not in ("raspyjack", "ktox"):
+            _json_response(self, {"error": "invalid target"}, status=HTTPStatus.BAD_REQUEST)
+            return
+
+        file_path = _safe_payload_path(rel_path)
+        if file_path is None or not file_path.is_file():
+            _json_response(self, {"error": "file not found"}, status=HTTPStatus.NOT_FOUND)
+            return
+
+        try:
+            source = file_path.read_text(encoding="utf-8", errors="replace")
+        except Exception as exc:
+            _json_response(self, {"error": f"read error: {exc}"}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+
+        converted = _compat_convert(source, target, ktox_root, rj_root)
+        changed   = converted != source
+
+        # Build unified diff for display
+        diff_lines = list(difflib.unified_diff(
+            source.splitlines(keepends=True),
+            converted.splitlines(keepends=True),
+            fromfile="original",
+            tofile="converted",
+            n=2,
+        ))
+        diff_text = "".join(diff_lines)
+
+        saved_path: str | None = None
+
+        if changed and apply:
+            try:
+                file_path.write_text(converted, encoding="utf-8")
+                saved_path = rel_path
+            except Exception as exc:
+                _json_response(self, {"error": f"write error: {exc}"}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+                return
+
+        if changed and save_copy:
+            suffix = ".rj.py" if target == "raspyjack" else ".ktox.py"
+            copy_path = file_path.with_name(file_path.stem + suffix)
+            try:
+                copy_path.write_text(converted, encoding="utf-8")
+                saved_path = str(copy_path.relative_to(PAYLOADS_DIR)).replace("\\", "/")
+            except Exception as exc:
+                _json_response(self, {"error": f"copy write error: {exc}"}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+                return
+
+        _json_response(self, {
+            "ok": True,
+            "changed": changed,
+            "original": source,
+            "converted": converted,
+            "diff": diff_text,
+            "saved_path": saved_path,
+        })
 
     def _handle_loot_download(self, query: dict) -> None:
         raw = unquote(query.get("path", [""])[0])
