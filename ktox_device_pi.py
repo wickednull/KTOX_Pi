@@ -760,30 +760,123 @@ def loot_count():
 # ── Stealth mode ───────────────────────────────────────────────────────────────
 # ═══════════════════════════════════════════════════════════════════════════════
 
+def _draw_stealth_clock(now):
+    """
+    Render a 128×128 decoy image that looks like a consumer clock gadget.
+    Dark blue background, large digital time, date line, fake Wi-Fi/battery icons.
+    Returns a PIL Image.
+    """
+    img  = Image.new("RGB", (128, 128), (10, 10, 40))       # dark navy background
+    draw = ImageDraw.Draw(img)
+
+    # ── Try to load a font; fall back to default ──────────────────────────────
+    try:
+        font_big  = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 32)
+        font_med  = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 14)
+        font_sml  = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 10)
+    except Exception:
+        font_big  = ImageFont.load_default()
+        font_med  = font_big
+        font_sml  = font_big
+
+    # ── Horizontal rule top ───────────────────────────────────────────────────
+    draw.line([(0, 18), (128, 18)], fill=(40, 60, 120), width=1)
+
+    # ── Fake status bar: Wi-Fi icon + battery ─────────────────────────────────
+    # Wi-Fi arcs (simple rectangles to suggest signal bars)
+    for i, (x, h, c) in enumerate([(4, 6, (80,180,255)), (8, 9, (80,180,255)), (12, 12, (80,180,255))]):
+        draw.rectangle([x, 6-h//2, x+3, 6+h//2], fill=c)
+    # Battery outline
+    draw.rectangle([108, 4, 122, 12], outline=(160,160,160), width=1)
+    draw.rectangle([122, 6,  124, 10], fill=(160,160,160))   # terminal nub
+    draw.rectangle([109, 5,  119, 11], fill=(60, 200, 80))   # charge level
+
+    # ── Header label ─────────────────────────────────────────────────────────
+    draw.text((44, 4), "HOME", font=font_sml, fill=(120, 140, 200))
+
+    # ── Large time HH:MM ──────────────────────────────────────────────────────
+    hhmm = now.strftime("%H:%M")
+    # Blink the colon every other second
+    if now.second % 2 == 0:
+        hhmm = now.strftime("%H:%M")
+    else:
+        hhmm = now.strftime("%H %M")
+
+    # Center horizontally
+    try:
+        bbox = draw.textbbox((0, 0), hhmm, font=font_big)
+        tw = bbox[2] - bbox[0]
+    except AttributeError:
+        tw = len(hhmm) * 18
+    x_time = (128 - tw) // 2
+    draw.text((x_time, 26), hhmm, font=font_big, fill=(220, 235, 255))
+
+    # ── Seconds bar ──────────────────────────────────────────────────────────
+    sec_w = int((now.second / 59) * 108)
+    draw.rectangle([(10, 65), (118, 68)], fill=(30, 40, 80))
+    draw.rectangle([(10, 65), (10 + sec_w, 68)], fill=(60, 120, 220))
+
+    # ── Date line ────────────────────────────────────────────────────────────
+    date_str = now.strftime("%a, %d %b %Y")
+    try:
+        bbox2 = draw.textbbox((0, 0), date_str, font=font_med)
+        dw = bbox2[2] - bbox2[0]
+    except AttributeError:
+        dw = len(date_str) * 8
+    draw.text(((128 - dw) // 2, 74), date_str, font=font_med, fill=(100, 130, 180))
+
+    # ── Horizontal rule bottom ────────────────────────────────────────────────
+    draw.line([(0, 94), (128, 94)], fill=(40, 60, 120), width=1)
+
+    # ── Fake indoor temperature / humidity row ───────────────────────────────
+    draw.text((6,  98), "In", font=font_sml, fill=(80, 100, 150))
+    draw.text((6,  108), "21°C  48%", font=font_sml, fill=(160, 180, 220))
+    draw.text((72, 98), "Out", font=font_sml, fill=(80, 100, 150))
+    draw.text((72, 108), "17°C  62%", font=font_sml, fill=(160, 180, 220))
+
+    return img
+
+
 def enter_stealth():
     """
-    Blank LCD (or show decoy image). Device keeps running everything.
+    Lock the LCD with a convincing decoy clock screen.
+    Device keeps running everything normally in the background.
     Exit: KEY1 + KEY3 held 3 s, or WebUI toggle (write {"stealth":false}
     to /dev/shm/ktox_stealth.json).
     """
     ktox_state["stealth"] = True
-    decoy = ktox_state.get("stealth_image")
-    if HAS_HW and LCD:
-        if decoy and os.path.exists(str(decoy)):
+    custom_decoy = ktox_state.get("stealth_image")
+
+    def _show_custom():
+        """Show a user-supplied decoy image if configured."""
+        if custom_decoy and os.path.exists(str(custom_decoy)):
             try:
-                img = Image.open(decoy).resize((128,128)).convert("RGB")
+                img = Image.open(custom_decoy).resize((128, 128)).convert("RGB")
                 with draw_lock:
                     LCD.LCD_ShowImage(img, 0, 0)
+                return True
             except Exception:
-                with draw_lock: LCD.LCD_Clear()
-        else:
-            with draw_lock: LCD.LCD_Clear()
+                pass
+        return False
 
-    held_since = None
+    held_since  = None
+    last_second = -1
     STEALTH_CMD = "/dev/shm/ktox_stealth.json"
 
     while ktox_state["stealth"]:
-        # WebUI toggle
+        # ── Render decoy display ──────────────────────────────────────────────
+        if HAS_HW and LCD:
+            if custom_decoy:
+                _show_custom()
+            else:
+                now = datetime.now()
+                if now.second != last_second:          # only redraw each second
+                    last_second = now.second
+                    img = _draw_stealth_clock(now)
+                    with draw_lock:
+                        LCD.LCD_ShowImage(img, 0, 0)
+
+        # ── WebUI toggle ──────────────────────────────────────────────────────
         try:
             if os.path.isfile(STEALTH_CMD):
                 data = json.loads(Path(STEALTH_CMD).read_text())
@@ -792,7 +885,8 @@ def enter_stealth():
                     break
         except Exception:
             pass
-        # Physical button combo
+
+        # ── Physical button combo: KEY1 + KEY3 held 3 s ───────────────────────
         if HAS_HW:
             try:
                 k1 = GPIO.input(PINS["KEY1_PIN"]) == 0
@@ -804,6 +898,7 @@ def enter_stealth():
                     held_since = None
             except Exception:
                 pass
+
         time.sleep(0.2)
 
     ktox_state["stealth"] = False
