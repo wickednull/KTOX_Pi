@@ -912,65 +912,116 @@ def _draw_stealth_clock(ts):
 
 def _stealth_clock_fallback(ts):
     """
-    Emergency fallback: draw a simple clock directly into the GLOBAL image/draw
-    objects — the same objects _display_loop shows, so LCD_ShowImage(image) is
-    guaranteed to work.  Called when _draw_stealth_clock() throws.
+    Animated decoy lock-screen clock drawn into the GLOBAL image/draw objects.
+    Uses large TrueType fonts from _stealth_fonts() with sine-wave glow,
+    blinking colon, smooth progress bar — all into global image/draw so
+    LCD_ShowImage(image, 0, 0) is guaranteed to work.
     Must be called while holding draw_lock.
     """
-    now = datetime.fromtimestamp(ts)
+    now  = datetime.fromtimestamp(ts)
     frac = ts - int(ts)
+    sf   = _stealth_fonts()   # {"big":34px, "sec":20px, "med":13px, "sml":10px}
 
-    # Dark navy background
-    draw.rectangle([0, 0, 127, 127], fill=(8, 10, 36))
+    # ── Pulsing glow: 0.0‥1.0, period ~3 s ───────────────────────────────────
+    pulse = 0.5 + 0.5 * math.sin(ts * (2 * math.pi / 3.0))  # 0..1 smooth
+    # Blinking colon: on for even seconds
+    colon = ":" if (int(ts) % 2 == 0) else " "
 
-    # Status bar line
-    draw.line([(0, 16), (128, 16)], fill=(30, 45, 100), width=1)
+    # ── Background gradient emulation (two-rect approach) ─────────────────────
+    draw.rectangle([0,  0, 127, 63],  fill=(5,  7, 22))   # top half
+    draw.rectangle([0, 64, 127, 127], fill=(8, 11, 30))   # bottom half
 
-    # HOME label
+    # ── STATUS BAR (row 0–12) ─────────────────────────────────────────────────
+    # Network label left
     try:
-        draw.text((40, 3), "HOME", font=small_font, fill=(100, 120, 180))
+        draw.text((3, 2), "KTOX", font=sf["sml"], fill=(60, 80, 140))
     except Exception:
         pass
+    # WiFi bars (3 bars, top-right area, x=88..105)
+    bar_x = 88
+    for i, h in enumerate((3, 5, 7)):
+        bx = bar_x + i * 6
+        by = 10 - h
+        col = (50, 120, 220) if i <= 2 else (30, 50, 90)
+        draw.rectangle([bx, by, bx + 3, 10], fill=col)
+    # Battery outline (x=108..122, y=3..9)
+    draw.rectangle([108, 3, 120, 9], outline=(80, 100, 160), fill=(0, 0, 0))
+    draw.rectangle([121, 5, 122, 7], fill=(80, 100, 160))   # nub
+    draw.rectangle([109, 4, 117, 8], fill=(60, 190, 80))    # 75% fill
+    # Status separator
+    draw.line([(0, 13), (128, 13)], fill=(22, 32, 80), width=1)
 
-    # Large time HH:MM
-    t_str = now.strftime("%H:%M" if frac >= 0.5 else "%H %M")
+    # ── TIME  HH:MM  (rows 18–54, centered, large font) ──────────────────────
+    t_str = now.strftime("%H") + colon + now.strftime("%M")
+    # Glow colour: blue-white pulsing
+    r = int(140 + 90 * pulse)
+    g = int(175 + 55 * pulse)
+    b = 255
+    glow_col = (r, g, b)
+    # Shadow pass (offset 1px, darker) for depth
+    shadow = (max(0, r - 80), max(0, g - 80), 80)
     try:
-        draw.text((8, 28), t_str, font=text_font, fill=(160, 200, 255))
+        bbox = draw.textbbox((0, 0), t_str, font=sf["big"])
+        tw = bbox[2] - bbox[0]
+        tx = (128 - tw) // 2
+        draw.text((tx + 1, 19), t_str, font=sf["big"], fill=shadow)
+        draw.text((tx,     18), t_str, font=sf["big"], fill=glow_col)
     except Exception:
-        pass
+        # Fallback: use tiny font at known position
+        draw.text((8, 18), t_str, font=small_font, fill=glow_col)
 
-    # Seconds
+    # ── SECONDS  SS  (rows 56–76, centred, medium font) ──────────────────────
+    sec_str = now.strftime("%S")
+    sec_col = (int(60 + 60 * pulse), int(110 + 60 * pulse), 210)
     try:
-        draw.text((90, 52), now.strftime("%S"), font=small_font, fill=(60, 90, 180))
+        bbox2 = draw.textbbox((0, 0), sec_str, font=sf["sec"])
+        sw = bbox2[2] - bbox2[0]
+        sx = (128 - sw) // 2
+        draw.text((sx, 56), sec_str, font=sf["sec"], fill=sec_col)
     except Exception:
-        pass
+        draw.text((56, 56), sec_str, font=small_font, fill=sec_col)
 
-    # Seconds progress bar
-    BAR_X, BAR_Y, BAR_W, BAR_H = 8, 65, 112, 3
+    # ── SECONDS PROGRESS BAR (row 80–83) ─────────────────────────────────────
+    BAR_X, BAR_Y, BAR_W, BAR_H = 6, 80, 116, 4
     elapsed = now.second + frac
-    filled = int(BAR_W * elapsed / 60.0)
-    draw.rectangle([BAR_X, BAR_Y, BAR_X + BAR_W, BAR_Y + BAR_H], fill=(20, 28, 68))
+    filled  = int(BAR_W * elapsed / 60.0)
+    # Track (dark)
+    draw.rectangle([BAR_X, BAR_Y, BAR_X + BAR_W, BAR_Y + BAR_H - 1],
+                   fill=(18, 24, 60))
+    # Filled portion
     if filled > 0:
-        draw.rectangle([BAR_X, BAR_Y, BAR_X + filled, BAR_Y + BAR_H], fill=(50, 110, 200))
+        bar_col = (int(40 + 40 * pulse), int(100 + 60 * pulse), 220)
+        draw.rectangle([BAR_X, BAR_Y, BAR_X + filled, BAR_Y + BAR_H - 1],
+                       fill=bar_col)
+    # Glowing tip
+    if 0 < filled < BAR_W:
+        tip_x = BAR_X + filled
+        tip_bright = (200, 230, 255)
+        draw.rectangle([tip_x - 1, BAR_Y - 1, tip_x + 1, BAR_Y + BAR_H],
+                       fill=tip_bright)
 
-    # Date
+    # ── DATE LINE (row 88–100) ────────────────────────────────────────────────
+    date_str = now.strftime("%A  %d %b %Y")
+    date_col = (75, 100, 165)
     try:
-        draw.text((8, 74), now.strftime("%a %d %b %Y"), font=small_font,
-                  fill=(85, 110, 170))
+        bbox3 = draw.textbbox((0, 0), date_str, font=sf["med"])
+        dw = bbox3[2] - bbox3[0]
+        dx = (128 - dw) // 2
+        draw.text((dx, 88), date_str, font=sf["med"], fill=date_col)
+    except Exception:
+        draw.text((4, 88), date_str, font=small_font, fill=date_col)
+
+    # ── BOTTOM DIVIDER + NOTIFICATION STUB (row 104–127) ─────────────────────
+    draw.line([(0, 104), (128, 104)], fill=(22, 32, 80), width=1)
+    # Dim lock-screen notification rows
+    notif_col = (55, 75, 130)
+    try:
+        draw.text((4, 107), "No new notifications", font=sf["sml"], fill=notif_col)
+        draw.text((4, 118), now.strftime("Updated %H:%M"),   font=sf["sml"], fill=(40, 55, 100))
     except Exception:
         pass
 
-    # Separator + weather stub
-    draw.line([(0, 88), (128, 88)], fill=(30, 45, 100), width=1)
-    try:
-        draw.text((6,  92), "Indoor",     font=small_font, fill=(70, 90, 140))
-        draw.text((6,  103), "21\xb0C  48%", font=small_font, fill=(140, 165, 215))
-        draw.text((72, 92), "Outdoor",    font=small_font, fill=(70, 90, 140))
-        draw.text((72, 103), "17\xb0C  62%", font=small_font, fill=(140, 165, 215))
-    except Exception:
-        pass
-
-    return image   # return global image so caller can pass it to LCD_ShowImage
+    return image   # global image — caller passes to LCD_ShowImage(image, 0, 0)
 
 
 def enter_stealth():
