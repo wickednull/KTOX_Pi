@@ -173,6 +173,13 @@ clients: Set = set()
 clients_lock = asyncio.Lock()
 
 
+def _pty_setup(slave_fd: int):
+    """Run in child process: become session leader and set controlling terminal.
+    This allows Ctrl+C (\\x03) to deliver SIGINT via the PTY signal mechanism."""
+    os.setsid()
+    fcntl.ioctl(slave_fd, termios.TIOCSCTTY, 0)
+
+
 # ----------------------------- Shell Session ----------------------------------
 class ShellSession:
     def __init__(self, loop: asyncio.AbstractEventLoop, ws):
@@ -181,14 +188,16 @@ class ShellSession:
         self.master_fd, self.slave_fd = pty.openpty()
         env = os.environ.copy()
         env.setdefault("TERM", "xterm-256color")
+        slave_fd = self.slave_fd
         self.proc = subprocess.Popen(
             [SHELL_CMD],
-            stdin=self.slave_fd,
-            stdout=self.slave_fd,
-            stderr=self.slave_fd,
+            stdin=slave_fd,
+            stdout=slave_fd,
+            stderr=slave_fd,
             cwd=SHELL_CWD,
             env=env,
             close_fds=True,
+            preexec_fn=lambda: _pty_setup(slave_fd),
         )
         os.close(self.slave_fd)
         os.set_blocking(self.master_fd, False)
