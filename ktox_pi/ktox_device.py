@@ -1090,6 +1090,9 @@ def _draw_stealth_theme(ts):
     global _stealth_theme_idx
     fn = _STEALTH_THEMES[_stealth_theme_idx % len(_STEALTH_THEMES)]
     return fn(ts)
+
+
+def enter_stealth():
     """
     Lock the LCD with a decoy clock screen.
     Exit: hold KEY1 + KEY3 for 3 s, or WebUI toggle
