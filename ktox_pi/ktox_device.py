@@ -905,7 +905,191 @@ def _stealth_clock_fallback(ts):
     return image   # global image — caller passes to LCD_ShowImage(image, 0, 0)
 
 
-def enter_stealth():
+# ── Stealth theme 2: Environmental sensor hub ─────────────────────────────────
+def _stealth_sensor(ts):
+    """
+    Fake smart-home environmental sensor dashboard.
+    All values drift slowly via sine waves — looks like real sensor data.
+    Draws into global image/draw. Must be called while holding draw_lock.
+    """
+    now = datetime.fromtimestamp(ts)
+    sf  = _stealth_fonts()
+
+    # Slowly drifting "sensor" values — long-period sine waves
+    temp_c   = round(21.3 + 0.4 * math.sin(ts / 97.0),  1)
+    humidity = round(47.0 + 2.1 * math.sin(ts / 131.0), 1)
+    co2      = int(  412  + 18  * math.sin(ts / 73.0))
+    pressure = round(1013.2 + 0.6 * math.sin(ts / 211.0), 1)
+    lux      = int(  238  + 14  * math.sin(ts / 53.0))
+    # AQI stays Good (lower is better) with tiny drift
+    aqi      = int(22 + 3 * abs(math.sin(ts / 180.0)))
+    aqi_label = "GOOD" if aqi < 50 else "MODERATE"
+    aqi_col   = (50, 200, 80) if aqi < 50 else (240, 180, 20)
+
+    def _bar(y, pct, col):
+        """Draw a small progress bar at row y."""
+        W = 60
+        draw.rectangle([44, y, 44 + W, y + 5], fill=(18, 24, 60))
+        filled = max(1, int(W * pct / 100))
+        draw.rectangle([44, y, 44 + filled, y + 5], fill=col)
+
+    # Background
+    draw.rectangle([0, 0, 127, 127], fill=(4, 8, 18))
+
+    # Header bar
+    draw.rectangle([0, 0, 127, 13], fill=(10, 40, 80))
+    try:
+        draw.text((3, 2),  "SENSOR HUB", font=sf["sml"], fill=(100, 160, 220))
+        draw.text((80, 2), now.strftime("%H:%M"), font=sf["sml"], fill=(160, 200, 255))
+    except Exception:
+        pass
+    draw.line([(0, 14), (128, 14)], fill=(20, 50, 100), width=1)
+
+    # Row layout — each row: label | bar | value
+    rows = [
+        # (label, bar_pct, bar_colour, value_str, value_colour)
+        ("TEMP",  min(100, int((temp_c / 40) * 100)),
+         (255, 120, 40),   f"{temp_c}\xb0C",   (255, 180, 100)),
+        ("HUMID", int(humidity),
+         (50, 160, 230),   f"{humidity}%",     (120, 200, 255)),
+        ("CO2",   min(100, int((co2 / 1000) * 100)),
+         (100, 200, 80),   f"{co2}ppm",        (140, 220, 120)),
+        ("PRESS", 55,
+         (180, 80, 220),   f"{pressure}hPa",   (200, 150, 255)),
+        ("LUX",   min(100, int(lux / 500 * 100)),
+         (220, 200, 50),   f"{lux}lx",         (240, 220, 120)),
+    ]
+
+    y = 18
+    for label, pct, bar_col, val_str, val_col in rows:
+        try:
+            draw.text((2, y),  label[:5], font=sf["sml"], fill=(80, 110, 160))
+            _bar(y + 1, pct, bar_col)
+            draw.text((107, y), val_str[:8], font=sf["sml"], fill=val_col)
+        except Exception:
+            pass
+        y += 14
+
+    # Divider + AQI row
+    draw.line([(0, y + 2), (128, y + 2)], fill=(20, 40, 80), width=1)
+    try:
+        draw.text((2, y + 5),  "AIR:",      font=sf["sml"], fill=(70, 90, 140))
+        draw.text((30, y + 5), aqi_label,   font=sf["sml"], fill=aqi_col)
+        draw.text((2, y + 16), f"AQI {aqi} · {lux}lx",
+                  font=sf["sml"], fill=(60, 80, 130))
+    except Exception:
+        pass
+
+    return image
+
+
+# ── Stealth theme 3: System / server monitor ──────────────────────────────────
+def _stealth_sysmon(ts, _start=[None]):
+    """
+    Fake system resource monitor — looks like a headless server dashboard.
+    CPU/RAM/net values drift via sine waves. Uptime counts from first call.
+    Draws into global image/draw. Must be called while holding draw_lock.
+    """
+    if _start[0] is None:
+        _start[0] = ts
+    uptime_s = int(ts - _start[0]) + 172800 + 50400  # fake: 2d 14h base
+
+    sf = _stealth_fonts()
+
+    # Fake metrics
+    cpu   = round(18.0 + 22.0 * abs(math.sin(ts / 11.0))
+                       + 8.0  * abs(math.sin(ts / 4.7)),  1)
+    ram_u = round(1.72 + 0.18 * math.sin(ts / 47.0), 2)
+    ram_t = 3.87
+    ram_p = int(ram_u / ram_t * 100)
+    disk_u = 12.4
+    disk_t = 31.9
+    disk_p = int(disk_u / disk_t * 100)
+    cpu_t = round(41.0 + 3.0 * math.sin(ts / 23.0), 1)
+    net_rx = round(abs(8.4  + 5.1 * math.sin(ts / 7.3)),  1)
+    net_tx = round(abs(1.2  + 0.9 * math.sin(ts / 9.1)),  1)
+    load1  = round(abs(0.44 + 0.18 * math.sin(ts / 31.0)), 2)
+    load5  = round(abs(0.38 + 0.10 * math.sin(ts / 61.0)), 2)
+
+    # Uptime string
+    d = uptime_s // 86400
+    h = (uptime_s % 86400) // 3600
+    m = (uptime_s % 3600)  // 60
+    up_str = f"{d}d {h:02d}h {m:02d}m"
+
+    def _bar(y, pct, col, warn_col=(220, 80, 40), warn=80):
+        W = 50
+        c = warn_col if pct >= warn else col
+        draw.rectangle([44, y, 44 + W, y + 4], fill=(18, 24, 60))
+        filled = max(1, int(W * pct / 100))
+        draw.rectangle([44, y, 44 + filled, y + 4], fill=c)
+
+    # Background
+    draw.rectangle([0, 0, 127, 127], fill=(4, 8, 18))
+
+    # Header
+    draw.rectangle([0, 0, 127, 13], fill=(20, 10, 50))
+    try:
+        draw.text((3, 2), "SYS MONITOR", font=sf["sml"], fill=(160, 100, 255))
+        draw.text((88, 2), datetime.fromtimestamp(ts).strftime("%H:%M"),
+                  font=sf["sml"], fill=(200, 160, 255))
+    except Exception:
+        pass
+    draw.line([(0, 14), (128, 14)], fill=(40, 20, 80), width=1)
+
+    y = 18
+    try:
+        draw.text((2, y), f"UP {up_str}", font=sf["sml"], fill=(70, 90, 150))
+    except Exception:
+        pass
+    y += 12
+    draw.line([(0, y), (128, y)], fill=(20, 15, 45), width=1)
+    y += 3
+
+    rows = [
+        ("CPU",  int(cpu),  (100, 180, 255), f"{cpu:.0f}%"),
+        ("RAM",  ram_p,     (180, 100, 255), f"{ram_u}/{ram_t:.0f}G"),
+        ("DISK", disk_p,    (100, 220, 160), f"{disk_u}/{disk_t:.0f}G"),
+        ("TEMP", int(cpu_t),(255, 140,  60), f"{cpu_t}\xb0C"),
+    ]
+    for label, pct, col, val in rows:
+        try:
+            draw.text((2, y),   label, font=sf["sml"], fill=(70, 80, 130))
+            _bar(y + 1, pct, col)
+            draw.text((97, y),  val,   font=sf["sml"], fill=col)
+        except Exception:
+            pass
+        y += 13
+
+    draw.line([(0, y + 1), (128, y + 1)], fill=(20, 15, 45), width=1)
+    y += 4
+    try:
+        draw.text((2, y),
+                  f"LD {load1} {load5}",
+                  font=sf["sml"], fill=(90, 100, 160))
+        draw.text((2, y + 11),
+                  f"\u2191{net_tx}KB \u2193{net_rx}KB/s",
+                  font=sf["sml"], fill=(80, 160, 120))
+    except Exception:
+        pass
+
+    return image
+
+
+# ── Theme registry ────────────────────────────────────────────────────────────
+_STEALTH_THEMES = [
+    _stealth_clock_fallback,   # 0 — animated lock-screen clock
+    _stealth_sensor,           # 1 — environmental sensor hub
+    _stealth_sysmon,           # 2 — system / server monitor
+]
+_stealth_theme_idx = 0
+
+
+def _draw_stealth_theme(ts):
+    """Call the active stealth theme renderer."""
+    global _stealth_theme_idx
+    fn = _STEALTH_THEMES[_stealth_theme_idx % len(_STEALTH_THEMES)]
+    return fn(ts)
     """
     Lock the LCD with a decoy clock screen.
     Exit: hold KEY1 + KEY3 for 3 s, or WebUI toggle
@@ -928,14 +1112,20 @@ def enter_stealth():
     except Exception:
         pass
 
+    global _stealth_theme_idx
+    _stealth_theme_idx = 0          # always start on clock theme
+    _sysmon_start = [None]          # reset sysmon uptime counter each entry
+    key2_held_since = None          # for 5-second theme-switch hold
+    THEME_HOLD_SEC  = 5.0
+
     try:
         while True:
-            # ── Draw clock ────────────────────────────────────────────────────
+            # ── Draw current theme ────────────────────────────────────────────
             if HAS_HW and LCD and image:
                 _ts = time.time()
                 with draw_lock:
                     try:
-                        _stealth_clock_fallback(_ts)   # draws into global image
+                        _draw_stealth_theme(_ts)
                         LCD.LCD_ShowImage(image, 0, 0)
                     except Exception as _e:
                         print(f"[STEALTH] {_e!r}", flush=True)
@@ -950,7 +1140,28 @@ def enter_stealth():
             except Exception:
                 pass
 
-            # ── KEY1 + KEY3 held 3 s ──────────────────────────────────────────
+            # ── KEY2 held 5 s → cycle theme ───────────────────────────────────
+            if HAS_HW:
+                try:
+                    k2 = GPIO.input(PINS["KEY2_PIN"]) == 0
+                    if k2:
+                        if key2_held_since is None:
+                            key2_held_since = time.time()
+                        elif time.time() - key2_held_since >= THEME_HOLD_SEC:
+                            _stealth_theme_idx = (
+                                _stealth_theme_idx + 1) % len(_STEALTH_THEMES)
+                            key2_held_since = None   # require re-hold for next
+                            # Brief flash to confirm theme change
+                            with draw_lock:
+                                draw.rectangle([0, 0, 127, 127], fill=(0, 0, 0))
+                                LCD.LCD_ShowImage(image, 0, 0)
+                            time.sleep(0.3)
+                    else:
+                        key2_held_since = None
+                except Exception:
+                    pass
+
+            # ── KEY1 + KEY3 held 3 s → exit ───────────────────────────────────
             if HAS_HW:
                 try:
                     k1 = GPIO.input(PINS["KEY1_PIN"]) == 0
@@ -1505,6 +1716,7 @@ def do_handshake_targeted():
 # ═══════════════════════════════════════════════════════════════════════════════
 
 PAYLOAD_CATEGORIES = [
+    ("offensive",     "Offensive"),
     ("reconnaissance","Recon"),
     ("interception",  "Intercept"),
     ("dos",           "DoS"),
