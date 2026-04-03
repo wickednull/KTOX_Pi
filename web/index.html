@@ -496,16 +496,16 @@
           </div>
 
           <div class="md:order-2 order-1 flex justify-center md:justify-end md:pl-6">
-            <div id="deviceShell" data-theme="neon" class="device-shell theme-neon rounded-3xl p-4 md:p-5 w-fit mx-auto md:mx-0">
+            <div id="deviceShell" data-theme="neon" class="device-shell theme-neon rounded-3xl p-4 md:p-5 w-full md:w-fit mx-auto md:mx-0">
       <div class="pager-clip" aria-hidden="true"></div>
       <div class="pager-brand">KTOx_Pi</div>
       <div class="pager-speaker" aria-hidden="true">
         <span></span><span></span><span></span><span></span><span></span>
       </div>
       <!-- Default layout (Neon / Pager) -->
-      <div class="layout-default grid grid-cols-[140px_140px] md:grid-cols-[120px_auto_120px] gap-3 md:gap-4 justify-items-center items-center">
+      <div class="layout-default grid grid-cols-2 md:grid-cols-[120px_auto_120px] gap-3 md:gap-4 md:justify-items-center items-center w-full">
         <!-- Left pad -->
-        <div class="order-2 md:order-1 flex md:block justify-center justify-self-start">
+        <div class="order-2 md:order-1 flex md:block justify-center">
           <div class="grid grid-cols-3 grid-rows-3 gap-1.5 w-[120px]">
             <div></div>
             <button class="rj-btn dpad-btn rounded-xl bg-slate-800/70 hover:bg-slate-700/70 w-10 h-10 flex items-center justify-center backdrop-blur ring-1 ring-white/10 hover:ring-red-400/30 transition" data-btn="UP">▲</button>
@@ -523,7 +523,7 @@
         <div class="order-1 md:order-2 col-span-2 md:col-span-1">
           <div class="screen-frame rounded-2xl p-2">
             <div class="flex items-center justify-center">
-              <canvas id="screen" width="128" height="128" class="w-[240px] md:w-[300px] aspect-square max-w-full"></canvas>
+              <canvas id="screen" width="128" height="128" class="w-full md:w-[300px] aspect-square"></canvas>
             </div>
           </div>
           <div class="pager-text mt-3 text-center text-xs text-slate-400">OK = Enter · KEY3 = Esc</div>
@@ -531,10 +531,10 @@
         </div>
 
         <!-- Right buttons -->
-        <div class="order-3 md:order-3 flex flex-col items-center gap-2 md:items-stretch justify-self-end">
-          <button class="rj-btn key-btn rounded-xl bg-fuchsia-700/80 hover:bg-fuchsia-600/80 px-3 py-2 w-24 ring-1 ring-white/10 transition" data-btn="KEY1">KEY1</button>
-          <button class="rj-btn key-btn rounded-xl bg-fuchsia-700/80 hover:bg-fuchsia-600/80 px-3 py-2 w-24 ring-1 ring-white/10 transition" data-btn="KEY2">KEY2</button>
-          <button class="rj-btn key-btn rounded-xl bg-fuchsia-700/80 hover:bg-fuchsia-600/80 px-3 py-2 w-24 ring-1 ring-white/10 transition" data-btn="KEY3">KEY3</button>
+        <div class="order-3 md:order-3 flex flex-col items-stretch gap-2 md:items-stretch">
+          <button class="rj-btn key-btn rounded-xl bg-fuchsia-700/80 hover:bg-fuchsia-600/80 px-3 py-2 w-full md:w-24 ring-1 ring-white/10 transition" data-btn="KEY1">KEY1</button>
+          <button class="rj-btn key-btn rounded-xl bg-fuchsia-700/80 hover:bg-fuchsia-600/80 px-3 py-2 w-full md:w-24 ring-1 ring-white/10 transition" data-btn="KEY2">KEY2</button>
+          <button class="rj-btn key-btn rounded-xl bg-fuchsia-700/80 hover:bg-fuchsia-600/80 px-3 py-2 w-full md:w-24 ring-1 ring-white/10 transition" data-btn="KEY3">KEY3</button>
         </div>
       </div>
 

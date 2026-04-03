@@ -384,33 +384,32 @@ main > .flex.items-center.justify-between.mb-4.md\:mb-6 {
     height: min(50vh, 320px) !important;
   }
 
-  /* Device shell: remove transform hack, let layout breathe */
+  /* Device shell: full width, no transform */
   #deviceShell {
     transform: none !important;
     width: 100% !important;
-    max-width: 360px;
+    max-width: 100% !important;
     margin: 0 auto;
-    padding: 12px !important;
+    padding: 16px 12px !important;
+    box-sizing: border-box;
   }
 
-  /* Canvas: responsive — fills available width up to 260px */
+  /* Canvas: fill device shell width */
   #screen, #screen-gb, #screen-pager {
-    width: min(82vw, 260px) !important;
+    width: 100% !important;
     height: auto !important;
     aspect-ratio: 1 / 1;
   }
 
-  /* Device shell layout: stack screen → controls vertically */
-  .layout-default {
-    grid-template-columns: 1fr 1fr !important;
-    gap: 10px !important;
-    width: 100%;
-  }
-
-  /* Screen: take full row on mobile */
+  /* Screen: full row */
   .layout-default > .order-1,
   .layout-default > [class*="order-1"] {
     grid-column: 1 / -1;
+  }
+
+  /* Layout default fills full width */
+  .layout-default {
+    width: 100%;
   }
 
   /* Modals: full-width, close to top, with scroll */
@@ -741,8 +740,4 @@ main > .flex.items-center.justify-between.mb-4.md\:mb-6 {
     padding-bottom: 1rem;
   }
 
-  /* ── Header: hide desktop title bar clutter on phone ─────────── */
-  main > .flex.items-center.justify-between .flex.items-center.gap-2 .tracking-wide {
-    display: none;
-  }
 }
