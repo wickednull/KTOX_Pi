@@ -975,56 +975,27 @@ def _stealth_clock_fallback(ts):
 
 def enter_stealth():
     """
-    Lock the LCD with a convincing decoy clock screen.
-    Device keeps running everything normally in the background.
-    Exit: KEY1 + KEY3 held 3 s, or WebUI toggle (write {"stealth":false}
-    to /dev/shm/ktox_stealth.json).
+    Lock the LCD with a decoy clock screen.
+    Exit: hold KEY1 + KEY3 for 3 s, or WebUI toggle
+    (write {"stealth":false} to /dev/shm/ktox_stealth.json).
     """
     ktox_state["stealth"] = True
-    screen_lock.set()          # freeze _display_loop so it stops overwriting the LCD
-    custom_decoy = ktox_state.get("stealth_image")
-
-    def _show_custom():
-        """Show a user-supplied decoy image if configured."""
-        if custom_decoy and os.path.exists(str(custom_decoy)):
-            try:
-                img = Image.open(custom_decoy).resize((128, 128)).convert("RGB")
-                with draw_lock:
-                    LCD.LCD_ShowImage(img, 0, 0)
-                return True
-            except Exception:
-                pass
-        return False
+    screen_lock.set()   # freeze _display_loop and _stats_loop
 
     held_since  = None
     STEALTH_CMD = "/dev/shm/ktox_stealth.json"
 
     try:
-        while ktox_state["stealth"]:
-            # ── Render decoy display (every frame ~5 fps) ─────────────────────────
-            if HAS_HW and LCD:
-                if custom_decoy:
-                    _show_custom()
-                else:
-                    _ts = time.time()
-                    # Try the animated clock first
-                    _clock_img = None
+        while True:
+            # ── Draw clock ────────────────────────────────────────────────────────
+            if HAS_HW and LCD and image:
+                _ts = time.time()
+                with draw_lock:
                     try:
-                        _clock_img = _draw_stealth_clock(_ts)
-                    except Exception as _ce:
-                        print(f"[STEALTH] clock draw error: {_ce!r}", flush=True)
-
-                    with draw_lock:
-                        try:
-                            if _clock_img is not None:
-                                # Use the fancy new-image clock
-                                LCD.LCD_ShowImage(_clock_img, 0, 0)
-                            else:
-                                # Fallback: draw into global image (always works)
-                                _fb = _stealth_clock_fallback(_ts)
-                                LCD.LCD_ShowImage(_fb, 0, 0)
-                        except Exception as _se:
-                            print(f"[STEALTH] LCD show error: {_se!r}", flush=True)
+                        _stealth_clock_fallback(_ts)   # draws into global image
+                        LCD.LCD_ShowImage(image, 0, 0)
+                    except Exception as _e:
+                        print(f"[STEALTH] {_e!r}", flush=True)
 
             # ── WebUI toggle ──────────────────────────────────────────────────────
             try:
@@ -1036,14 +1007,16 @@ def enter_stealth():
             except Exception:
                 pass
 
-            # ── Physical button combo: KEY1 + KEY3 held 3 s ───────────────────────
+            # ── KEY1 + KEY3 held 3 s ──────────────────────────────────────────────
             if HAS_HW:
                 try:
                     k1 = GPIO.input(PINS["KEY1_PIN"]) == 0
                     k3 = GPIO.input(PINS["KEY3_PIN"]) == 0
                     if k1 and k3:
-                        if held_since is None: held_since = time.time()
-                        elif time.time() - held_since >= 3.0: break
+                        if held_since is None:
+                            held_since = time.time()
+                        elif time.time() - held_since >= 3.0:
+                            break
                     else:
                         held_since = None
                 except Exception:
@@ -1052,7 +1025,7 @@ def enter_stealth():
             time.sleep(0.2)
     finally:
         ktox_state["stealth"] = False
-        screen_lock.clear()        # unfreeze display loop, hand LCD back to menu
+        screen_lock.clear()
         Dialog_info("Stealth off", wait=False, timeout=1.5)
 
 # ═══════════════════════════════════════════════════════════════════════════════
