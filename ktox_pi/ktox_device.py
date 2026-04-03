@@ -1505,6 +1505,7 @@ def do_handshake_targeted():
 # ═══════════════════════════════════════════════════════════════════════════════
 
 PAYLOAD_CATEGORIES = [
+    ("offensive",     "Offensive"),
     ("reconnaissance","Recon"),
     ("interception",  "Intercept"),
     ("dos",           "DoS"),
