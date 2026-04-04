@@ -1,256 +1,521 @@
 #!/usr/bin/env python3
 """
-KTOx *payload* – **Simple Web Browser**
-==========================================
-This payload provides a simple text-based web browser on the LCD screen,
-using the `w3m` command-line browser to render pages.
+KTOx Payload – Tiny Web Browser
+=================================
+Fetches pages with urllib, strips HTML, renders on 128×128 LCD.
 
-Features:
-- Allows the user to enter a URL.
-- Renders the specified URL using `w3m`.
-- Displays the rendered text on the LCD.
-- Allows scrolling up and down through the page content.
-- Graceful exit via KEY3 or Ctrl-C.
+Controls (BROWSER view):
+  UP / DOWN     Scroll content
+  LEFT          Back (history)
+  OK            Follow highlighted link
+  KEY1          Open URL keyboard
+  KEY2          Cycle to next link
+  KEY3          Exit
 
-Controls:
-- URL INPUT SCREEN:
-    - Use the on-screen keyboard to enter a URL.
-    - KEY2: Save/Go
-    - KEY3: Cancel and exit.
-- BROWSER VIEW:
-    - UP/DOWN: Scroll through the page content.
-    - KEY1: Enter a new URL.
-    - KEY3: Exit the payload.
+Controls (URL INPUT):
+  UP / DOWN     Prev / next char in charset
+  OK            Append char
+  LEFT          Delete last char
+  RIGHT         Add '.' (quick domain char)
+  KEY1          Add '/' separator
+  KEY2          Confirm / Go
+  KEY3          Cancel
+
+WebUI:
+  Write a URL to /dev/shm/ktox_browser_url.txt and the browser
+  will navigate there automatically within 1 second.
 """
 
-import sys
 import os
+import sys
+import re
 import time
-import signal
-import subprocess
+import html
 import threading
+import textwrap
+import urllib.request
+import urllib.parse
+import urllib.error
 
-# Add KTOx root to path for imports
-KTOX_ROOT = '/root/KTOx'
+KTOX_ROOT = "/root/KTOx"
 if os.path.isdir(KTOX_ROOT) and KTOX_ROOT not in sys.path:
     sys.path.insert(0, KTOX_ROOT)
 
 try:
     import RPi.GPIO as GPIO
-    import LCD_Config
     import LCD_1in44
     from PIL import Image, ImageDraw, ImageFont
+    HAS_HW = True
 except ImportError:
-    print("ERROR: Hardware libraries not found.", file=sys.stderr)
-    sys.exit(1)
+    HAS_HW = False
 
-# --- Global State ---
+# ── Constants ────────────────────────────────────────────────────────────────
+W, H = 128, 128
+WEBUI_URL_FILE = "/dev/shm/ktox_browser_url.txt"
+MAX_HISTORY = 20
+CHAR_SET = "abcdefghijklmnopqrstuvwxyz0123456789./:_-?=&#@%+"
+
 PINS = {
     "UP": 6, "DOWN": 19, "LEFT": 5, "RIGHT": 26, "OK": 13,
     "KEY1": 21, "KEY2": 20, "KEY3": 16,
 }
+
+# ── Module-level hardware ────────────────────────────────────────────────────
+LCD = None
+_image = None
+_draw = None
+_font_sm = None
+_font_md = None
+_font_hd = None
+
+# ── Shared state ─────────────────────────────────────────────────────────────
 RUNNING = True
-UI_LOCK = threading.Lock()
-PAGE_CONTENT_LINES = ["Enter a URL to start..."]
-SCROLL_OFFSET = 0
-CURRENT_URL = "duckduckgo.com"
+_ui_lock = threading.Lock()
 
-# --- Cleanup Handler ---
-def cleanup(*_):
-    global RUNNING
-    if not RUNNING:
+_page_lines   = ["Welcome!", "", "Press KEY1 to", "enter a URL,", "or send one via", "the WebUI."]
+_page_links   = []          # list of (display_text, href) extracted from page
+_link_idx     = 0           # currently highlighted link index
+_scroll       = 0           # line scroll offset
+_current_url  = ""
+_history      = []          # list of URLs for back navigation
+_status_msg   = ""          # one-line status shown in header
+_fetching     = False
+
+
+# ── Hardware init ─────────────────────────────────────────────────────────────
+def _init_hw():
+    global LCD, _image, _draw, _font_sm, _font_md, _font_hd
+    if not HAS_HW:
         return
-    RUNNING = False
-    print("Browser: Cleaning up GPIO...")
-    GPIO.cleanup()
-    print("Browser: Exiting.")
+    GPIO.setmode(GPIO.BCM)
+    for pin in PINS.values():
+        GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
-# --- UI Drawing ---
-def draw_ui(screen_state="browser"):
-    with UI_LOCK:
-        image = Image.new("RGB", (128, 128), "BLACK")
-        draw = ImageDraw.Draw(image)
+    LCD = LCD_1in44.LCD()
+    LCD.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
+    LCD.LCD_Clear()
+
+    _image = Image.new("RGB", (W, H), "black")
+    _draw  = ImageDraw.Draw(_image)
+
+    font_paths = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/freefont/FreeMono.ttf",
+    ]
+    def _load(size):
+        for p in font_paths:
+            try:
+                return ImageFont.truetype(p, size)
+            except Exception:
+                pass
+        return ImageFont.load_default()
+
+    _font_sm = _load(9)
+    _font_md = _load(11)
+    _font_hd = _load(12)
+
+
+# ── HTML → text ───────────────────────────────────────────────────────────────
+_BLOCK_TAGS = re.compile(
+    r'<(br|p|div|h[1-6]|li|tr|blockquote|pre|hr)[^>]*>',
+    re.IGNORECASE
+)
+_STRIP_TAGS = re.compile(r'<[^>]+>')
+_MULTI_BLANK = re.compile(r'\n{3,}')
+_LINK_RE = re.compile(r'<a\s[^>]*href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', re.IGNORECASE | re.DOTALL)
+
+
+def _extract_links(raw_html, base_url):
+    """Return list of (text, absolute_url) from <a href=...> tags."""
+    links = []
+    for href, text in _LINK_RE.findall(raw_html):
+        text = _STRIP_TAGS.sub("", text).strip()
+        text = html.unescape(text)
+        if not text:
+            continue
         try:
-            font_title = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 12)
-            font_mono = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", 10)
-        except IOError:
-            font_title = ImageFont.load_default()
-            font_mono = ImageFont.load_default()
+            href = urllib.parse.urljoin(base_url, href)
+        except Exception:
+            pass
+        links.append((text[:22], href))
+    return links
 
-        if screen_state == "browser":
-            draw.text((5, 5), f"w3m: {CURRENT_URL[:15]}", font_title, fill="CYAN")
-            draw.line([(0, 22), (128, 22)], fill="CYAN", width=1)
 
-            y = 25
-            # Display 10 lines of content based on scroll offset
-            for i in range(10):
-                line_index = SCROLL_OFFSET + i
-                if line_index < len(PAGE_CONTENT_LINES):
-                    draw.text((2, y), PAGE_CONTENT_LINES[line_index], font=font_mono, fill="WHITE")
-                y += 10
-            
-            # Scrollbar
-            if len(PAGE_CONTENT_LINES) > 10:
-                total_h = 128 - 25
-                bar_h = max(5, total_h * (10 / len(PAGE_CONTENT_LINES)))
-                bar_y = 25 + (SCROLL_OFFSET / len(PAGE_CONTENT_LINES)) * total_h
-                draw.rectangle([(124, 25), (127, 127)], fill="#333")
-                draw.rectangle([(124, bar_y), (127, bar_y + bar_h)], fill="CYAN")
-
-        LCD.LCD_ShowImage(image, 0, 0)
-
-# --- Web Content Fetching ---
-def fetch_url(url):
-    global PAGE_CONTENT_LINES, SCROLL_OFFSET
-    with UI_LOCK:
-        PAGE_CONTENT_LINES = [f"Loading {url}..."]
-        SCROLL_OFFSET = 0
-    
-    try:
-        # Use w3m to dump the rendered text content of the page
-        # -T text/html: Specify the content type
-        # -dump: Dump the rendered page to stdout
-        # -cols 20: Render for a narrow screen (approx 20 chars on our LCD)
-        command = ["w3m", "-T", "text/html", "-dump", "-cols", "20", url]
-        process = subprocess.run(command, capture_output=True, text=True, timeout=30)
-        
-        if process.returncode == 0:
-            with UI_LOCK:
-                PAGE_CONTENT_LINES = process.stdout.splitlines()
-                if not PAGE_CONTENT_LINES:
-                    PAGE_CONTENT_LINES = ["Page is empty."]
+def _html_to_text(raw_html, width=20):
+    """Strip HTML, decode entities, wrap to `width` chars."""
+    # Replace block tags with newlines
+    text = _BLOCK_TAGS.sub("\n", raw_html)
+    text = _STRIP_TAGS.sub("", text)
+    text = html.unescape(text)
+    # Collapse whitespace within lines, keep real newlines
+    lines = []
+    for line in text.splitlines():
+        line = re.sub(r'[ \t]+', ' ', line).strip()
+        if line:
+            lines.extend(textwrap.wrap(line, width) or [line])
         else:
-            with UI_LOCK:
-                error_lines = process.stderr.splitlines()
-                PAGE_CONTENT_LINES = ["w3m Error:"] + error_lines[-5:] # Show last 5 error lines
-    except FileNotFoundError:
-        with UI_LOCK:
-            PAGE_CONTENT_LINES = ["Error:", "w3m not found!", "Please install it:", "sudo apt-get", "install w3m"]
-    except subprocess.TimeoutExpired:
-        with UI_LOCK:
-            PAGE_CONTENT_LINES = ["Error:", "Request timed out."]
-    except Exception as e:
-        with UI_LOCK:
-            PAGE_CONTENT_LINES = [f"Error: {str(e)[:20]}"]
+            lines.append("")
+    # Collapse triple+ blank lines
+    out = "\n".join(lines)
+    out = _MULTI_BLANK.sub("\n\n", out)
+    return out.splitlines()
 
-# --- On-screen Keyboard for URL input ---
-def handle_text_input_logic(initial_text):
-    global CURRENT_URL
-    char_set = "abcdefghijklmnopqrstuvwxyz0123456789./:_-?=&"
-    char_index = 0
-    input_text = initial_text
+
+# ── Fetch ─────────────────────────────────────────────────────────────────────
+def _fetch(url):
+    global _page_lines, _page_links, _scroll, _link_idx, _status_msg, _fetching
+
+    # Normalise URL
+    if not re.match(r'^https?://', url, re.IGNORECASE):
+        url = "http://" + url
+
+    with _ui_lock:
+        _page_lines = [f"Loading…", url[:20]]
+        _page_links = []
+        _scroll     = 0
+        _link_idx   = 0
+        _status_msg = "fetching…"
+        _fetching   = True
+
+    try:
+        req = urllib.request.Request(
+            url,
+            headers={"User-Agent": "KTOxBrowser/1.0 (tiny LCD browser)"},
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            content_type = resp.headers.get("Content-Type", "")
+            raw = resp.read(256 * 1024)          # cap at 256 KB
+            charset = "utf-8"
+            m = re.search(r'charset=([^\s;]+)', content_type)
+            if m:
+                charset = m.group(1).strip().strip('"')
+            raw_str = raw.decode(charset, errors="replace")
+
+        links = _extract_links(raw_str, url)
+        lines = _html_to_text(raw_str, width=20)
+        if not lines:
+            lines = ["(empty page)"]
+
+        # Inject link markers into text
+        if links:
+            lines += ["", "── Links ──"]
+            for i, (txt, _) in enumerate(links):
+                lines.append(f"[{i+1}] {txt}")
+
+        with _ui_lock:
+            _page_lines = lines
+            _page_links = links
+            _scroll     = 0
+            _link_idx   = 0
+            _status_msg = f"OK  {len(lines)}L {len(links)}lk"
+
+    except urllib.error.HTTPError as e:
+        with _ui_lock:
+            _page_lines = [f"HTTP {e.code}", str(e.reason)[:20]]
+            _status_msg = f"HTTP {e.code}"
+    except urllib.error.URLError as e:
+        reason = str(e.reason)[:18]
+        with _ui_lock:
+            _page_lines = ["URL Error:", reason]
+            _status_msg = "URL Error"
+    except Exception as e:
+        with _ui_lock:
+            _page_lines = ["Error:", str(e)[:20]]
+            _status_msg = "Error"
+    finally:
+        with _ui_lock:
+            _fetching = False
+
+
+def navigate(url):
+    global _current_url, _history
+    if _current_url:
+        _history.append(_current_url)
+        if len(_history) > MAX_HISTORY:
+            _history.pop(0)
+    _current_url = url
+    t = threading.Thread(target=_fetch, args=(url,), daemon=True)
+    t.start()
+
+
+def go_back():
+    global _current_url
+    if _history:
+        url = _history.pop()
+        _current_url = url
+        t = threading.Thread(target=_fetch, args=(url,), daemon=True)
+        t.start()
+
+
+# ── Draw ──────────────────────────────────────────────────────────────────────
+_LINES_PER_PAGE = 9   # content lines visible (below 18px header)
+
+def _draw_browser():
+    """Render browser view into global _image."""
+    _draw.rectangle([(0, 0), (W, H)], fill="black")
+
+    # Header bar
+    _draw.rectangle([(0, 0), (W, 16)], fill=(0, 40, 80))
+    url_disp = (_current_url or "no url")[-20:]
+    _draw.text((2, 2), url_disp, font=_font_sm, fill="cyan")
+
+    # Status right-aligned in header
+    st = _status_msg[:10]
+    _draw.text((W - len(st)*5 - 2, 2), st, font=_font_sm, fill=(150, 150, 150))
+
+    # Content
+    y = 19
+    with _ui_lock:
+        lines = _page_lines
+        scroll = _scroll
+        fetching = _fetching
+
+    if fetching:
+        _draw.text((4, 40), "Loading…", font=_font_md, fill="yellow")
+    else:
+        for i in range(_LINES_PER_PAGE):
+            idx = scroll + i
+            if idx >= len(lines):
+                break
+            txt = lines[idx][:20]
+            color = "white"
+            # Highlight link lines
+            if txt.startswith("[") and "]" in txt:
+                color = (100, 220, 255)
+            _draw.text((2, y), txt, font=_font_sm, fill=color)
+            y += 10
+
+    # Scrollbar
+    total = max(1, len(lines))
+    if total > _LINES_PER_PAGE:
+        sb_h = H - 18
+        bar_h = max(4, int(sb_h * _LINES_PER_PAGE / total))
+        bar_y = 18 + int(sb_h * scroll / total)
+        _draw.rectangle([(125, 18), (127, H - 1)], fill=(30, 30, 30))
+        _draw.rectangle([(125, bar_y), (127, min(bar_y + bar_h, H - 1))], fill=(0, 150, 255))
+
+    # Footer hint
+    _draw.rectangle([(0, H - 10), (W, H)], fill=(20, 20, 20))
+    _draw.text((2, H - 9), "K1=URL K2=lnk K3=exit", font=_font_sm, fill=(120, 120, 120))
+
+
+def _draw_url_input(input_text, char_idx):
+    """Render URL keyboard screen into global _image."""
+    _draw.rectangle([(0, 0), (W, H)], fill="black")
+    _draw.rectangle([(0, 0), (W, 14)], fill=(0, 60, 0))
+    _draw.text((3, 2), "Enter URL", font=_font_sm, fill="lime")
+
+    # Current input (last 19 chars)
+    shown = (input_text or "")[-19:]
+    _draw.rectangle([(0, 16), (W, 30)], fill=(20, 20, 20))
+    _draw.text((2, 18), "> " + shown, font=_font_sm, fill="white")
+
+    # Character selector
+    cs = CHAR_SET
+    ci = char_idx
+    prev_c = cs[(ci - 1) % len(cs)]
+    curr_c = cs[ci]
+    next_c = cs[(ci + 1) % len(cs)]
+
+    _draw.text((10, 40), f"< {prev_c}  ", font=_font_md, fill=(100, 100, 100))
+    _draw.rectangle([(48, 36), (80, 54)], fill=(0, 80, 140))
+    _draw.text((54, 38), curr_c, font=_font_hd, fill="yellow")
+    _draw.text((84, 40), f"  {next_c} >", font=_font_md, fill=(100, 100, 100))
+
+    # Key hints
+    hints = [
+        "U/D=char  OK=add",
+        "L=del  R=dot(.)  ",
+        "K1=/  K2=GO  K3=X",
+    ]
+    y = 62
+    for h in hints:
+        _draw.text((2, y), h, font=_font_sm, fill=(160, 160, 160))
+        y += 11
+
+
+def _push():
+    if LCD and _image:
+        LCD.LCD_ShowImage(_image, 0, 0)
+
+
+# ── URL input screen ──────────────────────────────────────────────────────────
+def _url_input_screen(initial=""):
+    """Blocking on-screen URL keyboard. Returns URL string or '' if cancelled."""
+    global RUNNING
+    input_text = initial
+    char_idx   = 0
 
     while RUNNING:
-        # --- Draw UI for keyboard ---
-        img = Image.new("RGB", (128, 128), "black")
-        d = ImageDraw.Draw(img)
-        font_title = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 12)
-        font = ImageFont.load_default()
-        
-        d.text((5, 5), "Enter URL", font=font_title, fill="cyan")
-        d.line([(0, 22), (128, 22)], fill="cyan", width=1)
-        d.text((5, 30), f"> {input_text[-18:]}", font=font, fill="white") # Show last 18 chars
-        
-        d.text((5, 60), f"Char: < {char_set[char_index]} >", font_title, fill="yellow")
-        
-        d.text((5, 90), "U/D=Char | OK=Add", font=font, fill="lime")
-        d.text((5, 100), "L=Del | R=Space", font=font, fill="lime")
-        d.text((5, 110), "K2=Go | K3=Exit", font=font, fill="orange")
-        LCD.LCD_ShowImage(img, 0, 0)
+        _draw_url_input(input_text, char_idx)
+        _push()
 
-        # --- Handle Input ---
+        # Wait for button
         btn = None
+        t0 = time.time()
         while not btn and RUNNING:
             for name, pin in PINS.items():
                 if GPIO.input(pin) == 0:
                     btn = name
                     break
-            time.sleep(0.05)
-        
-        if not RUNNING: break
+            if time.time() - t0 > 60:
+                return ""          # timeout → cancel
+            time.sleep(0.04)
+
+        if not RUNNING:
+            break
 
         if btn == "KEY3":
-            return False # Canceled
-        if btn == "KEY2":
-            if input_text:
-                CURRENT_URL = input_text
-                return True # URL entered
+            return ""
+        elif btn == "KEY2":
+            return input_text.strip()
         elif btn == "OK":
-            input_text += char_set[char_index]
+            input_text += CHAR_SET[char_idx]
         elif btn == "LEFT":
             input_text = input_text[:-1]
         elif btn == "RIGHT":
-            input_text += " "
+            input_text += "."
+        elif btn == "KEY1":
+            input_text += "/"
         elif btn == "UP":
-            char_index = (char_index - 1 + len(char_set)) % len(char_set)
+            char_idx = (char_idx - 1 + len(CHAR_SET)) % len(CHAR_SET)
         elif btn == "DOWN":
-            char_index = (char_index + 1) % len(char_set)
-        
-        time.sleep(0.15) # Debounce
-    return False
+            char_idx = (char_idx + 1) % len(CHAR_SET)
+
+        time.sleep(0.12)   # debounce
+    return ""
 
 
-# --- Main Execution Block ---
-if __name__ == "__main__":
-    signal.signal(signal.SIGINT, cleanup)
-    signal.signal(signal.SIGTERM, cleanup)
+# ── WebUI URL watcher ─────────────────────────────────────────────────────────
+def _webui_watcher():
+    """Background thread: poll WEBUI_URL_FILE and navigate if updated."""
+    last_url = ""
+    while RUNNING:
+        try:
+            if os.path.exists(WEBUI_URL_FILE):
+                with open(WEBUI_URL_FILE) as f:
+                    url = f.read().strip()
+                if url and url != last_url:
+                    last_url = url
+                    navigate(url)
+        except Exception:
+            pass
+        time.sleep(0.8)
+
+
+# ── Main ──────────────────────────────────────────────────────────────────────
+def main():
+    global RUNNING, _scroll, _link_idx
+
+    _init_hw()
+    if not HAS_HW:
+        print("[web_browser] No hardware — exiting.", flush=True)
+        return
+
+    # Clean up any stale webui file
+    try:
+        os.remove(WEBUI_URL_FILE)
+    except OSError:
+        pass
+
+    # Start WebUI watcher
+    watcher = threading.Thread(target=_webui_watcher, daemon=True)
+    watcher.start()
+
+    # Initial render
+    _draw_browser()
+    _push()
+
+    held = {}   # button → time first held
 
     try:
-        # --- Hardware Initialization ---
-        GPIO.setmode(GPIO.BCM)
-        for pin in PINS.values():
-            GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-
-        LCD = LCD_1in44.LCD()
-        LCD.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
-        LCD.LCD_Clear()
-
-        current_screen = "browser"
-        
-        # Initial URL prompt
-        if not handle_text_input_logic(CURRENT_URL):
-            raise SystemExit("User canceled URL input.")
-        
-        # Initial fetch
-        fetch_thread = threading.Thread(target=fetch_url, args=(CURRENT_URL,), daemon=True)
-        fetch_thread.start()
-
-        # --- Main Loop ---
         while RUNNING:
-            draw_ui(current_screen)
+            # ── Render ──
+            _draw_browser()
+            _push()
 
-            # --- Handle Input ---
-            if GPIO.input(PINS["KEY3"]) == 0:
-                break # Exit loop
-            
-            if GPIO.input(PINS["KEY1"]) == 0:
-                if handle_text_input_logic(CURRENT_URL):
-                    fetch_thread = threading.Thread(target=fetch_url, args=(CURRENT_URL,), daemon=True)
-                    fetch_thread.start()
+            # ── Input ──
+            pressed = {}
+            for name, pin in PINS.items():
+                pressed[name] = GPIO.input(pin) == 0
+
+            now = time.time()
+            for name, is_down in pressed.items():
+                if is_down:
+                    if name not in held:
+                        held[name] = now
+                else:
+                    held.pop(name, None)
+
+            def just_pressed(name):
+                return pressed.get(name) and held.get(name, now) >= now - 0.08
+
+            if just_pressed("KEY3"):
+                break
+
+            if just_pressed("KEY1"):
+                url = _url_input_screen(_current_url or "")
+                if url:
+                    navigate(url)
                 time.sleep(0.2)
+                continue
 
-            if GPIO.input(PINS["UP"]) == 0:
-                with UI_LOCK:
-                    SCROLL_OFFSET = max(0, SCROLL_OFFSET - 1)
-                time.sleep(0.1)
+            if just_pressed("LEFT"):
+                go_back()
+                time.sleep(0.3)
+                continue
 
-            if GPIO.input(PINS["DOWN"]) == 0:
-                with UI_LOCK:
-                    # Ensure we don't scroll past the end
-                    max_scroll = len(PAGE_CONTENT_LINES) - 10
-                    SCROLL_OFFSET = min(max_scroll, SCROLL_OFFSET + 1)
-                time.sleep(0.1)
-            
+            if just_pressed("UP"):
+                with _ui_lock:
+                    _scroll = max(0, _scroll - 1)
+                time.sleep(0.08)
+                continue
+
+            if just_pressed("DOWN"):
+                with _ui_lock:
+                    max_s = max(0, len(_page_lines) - _LINES_PER_PAGE)
+                    _scroll = min(max_s, _scroll + 1)
+                time.sleep(0.08)
+                continue
+
+            if just_pressed("KEY2"):
+                # Cycle to next link
+                with _ui_lock:
+                    links = _page_links
+                if links:
+                    _link_idx = (_link_idx + 1) % len(links)
+                    # Scroll so link is visible — it's in the "Links" section
+                    base = len(_page_lines) - len(links) - 2  # "── Links ──" + blank
+                    target_line = base + _link_idx + 2
+                    _scroll = max(0, target_line - _LINES_PER_PAGE // 2)
+                time.sleep(0.2)
+                continue
+
+            if just_pressed("OK"):
+                with _ui_lock:
+                    links = _page_links
+                    idx   = _link_idx
+                if links and idx < len(links):
+                    _, href = links[idx]
+                    navigate(href)
+                time.sleep(0.3)
+                continue
+
             time.sleep(0.05)
 
-    except (KeyboardInterrupt, SystemExit):
+    except KeyboardInterrupt:
         pass
-    except Exception as e:
-        # Log any fatal error
-        with open("/tmp/browser_payload_error.log", "w") as f:
-            f.write(f"FATAL ERROR: {e}\n")
-            import traceback
-            traceback.print_exc(file=f)
     finally:
-        LCD.LCD_Clear()
-        cleanup()
+        RUNNING = False
+        try:
+            os.remove(WEBUI_URL_FILE)
+        except OSError:
+            pass
+        if LCD:
+            LCD.LCD_Clear()
+        GPIO.cleanup()
+
+
+if __name__ == "__main__":
+    main()
