@@ -1,10 +1,7 @@
 #!/usr/bin/env python3
 """
-KTOx Payload – Reliable Tiny Web Browser (Link Clicking Fixed)
-==============================================================
-- Better link extraction and highlighting
-- Fixed KEY2 cycling + auto-scroll
-- Improved OK to follow links
+KTOx Payload – Reliable Tiny Web Browser (KEY1 Crash Fixed + Links Working)
+==========================================================================
 """
 
 import os
@@ -29,13 +26,14 @@ try:
     HAS_HW = True
 except ImportError:
     HAS_HW = False
+    print("No hardware support.")
 
 try:
     from bs4 import BeautifulSoup
     HAS_BS4 = True
 except ImportError:
     HAS_BS4 = False
-    print("Warning: BeautifulSoup4 not available.")
+    print("Warning: BeautifulSoup4 not available — basic mode only.")
 
 # ── Constants ────────────────────────────────────────────────────────────────
 W, H = 128, 128
@@ -61,7 +59,7 @@ RUNNING = True
 _ui_lock = threading.Lock()
 
 _page_lines   = ["Welcome to KTOx Browser", "", "KEY1 = Enter URL"]
-_page_links   = []          # list of (display_text, full_href)
+_page_links   = []
 _link_idx     = 0
 _scroll       = 0
 _current_url  = ""
@@ -107,12 +105,11 @@ def _init_hw():
     _font_hd = _load(12)
 
 
-# ── Robust Fetch ─────────────────────────────────────────────────────────────
+# ── Robust Fetch (URL fix) ───────────────────────────────────────────────────
 def _robust_fetch(url, retries=3):
     url = (url or "").strip()
     if not url:
         url = "https://example.com"
-
     if not re.match(r'^https?://', url, re.IGNORECASE):
         url = "https://" + url
 
@@ -138,7 +135,7 @@ def _robust_fetch(url, retries=3):
             time.sleep(1.2 * (attempt + 1))
 
 
-# ── Improved Content + Link Extraction ───────────────────────────────────────
+# ── Content + Links ──────────────────────────────────────────────────────────
 def _extract_content(raw_html, base_url):
     global _page_title
     if not raw_html:
@@ -146,38 +143,26 @@ def _extract_content(raw_html, base_url):
 
     try:
         soup = BeautifulSoup(raw_html, 'lxml') if HAS_BS4 else None
-
         if soup:
             title_tag = soup.find('title')
             _page_title = (title_tag.get_text(strip=True) if title_tag else "")[:32]
 
             for tag in soup(["script", "style", "nav", "header", "footer", "aside"]):
                 tag.decompose()
-
             text = soup.get_text(separator="\n")
         else:
             text = raw_html
 
         lines = _simple_wrap(text)
 
-        # Extract links more reliably
         links = []
         if soup:
             for a in soup.find_all('a', href=True):
                 txt = a.get_text(strip=True)
-                if txt and len(txt) > 1 and not txt.startswith(('http', '#')):  # avoid some junk
+                if txt and len(txt) > 1:
                     href = urllib.parse.urljoin(base_url, a['href'])
                     if href.startswith(('http://', 'https://')):
                         links.append((txt[:22], href))
-        else:
-            # very basic fallback
-            for m in re.finditer(r'<a\s[^>]*href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', raw_html, re.I | re.DOTALL):
-                href = m.group(1)
-                txt = re.sub(r'<[^>]+>', '', m.group(2)).strip()
-                if txt and len(txt) > 1:
-                    href = urllib.parse.urljoin(base_url, href)
-                    links.append((txt[:22], href))
-
         return lines, links
     except Exception:
         return _simple_wrap(raw_html), []
@@ -216,7 +201,6 @@ def _fetch(url):
         if not lines:
             lines = ["(no readable content)"]
 
-        # Append links section cleanly
         if links:
             lines += ["", "── Links ──"]
             for i, (txt, _) in enumerate(links):
@@ -274,7 +258,7 @@ def _draw_browser():
         lines = _page_lines[:]
         scroll = _scroll
         fetching = _fetching
-        current_link_idx = _link_idx
+        cur_idx = _link_idx
 
     if fetching:
         _draw.text((10, 45), "Fetching...", font=_font_md, fill="yellow")
@@ -285,16 +269,13 @@ def _draw_browser():
                 break
             txt = lines[idx][:20]
             color = "white"
-
-            # Highlight selected link
             if txt.startswith("[") and "]" in txt:
-                color = (100, 255, 255)
-                # Add arrow for currently selected link
                 link_num = int(txt.split(']')[0][1:]) - 1 if ']' in txt else -1
-                if link_num == current_link_idx:
+                if link_num == cur_idx:
                     color = (255, 255, 100)
                     txt = "→ " + txt
-
+                else:
+                    color = (100, 255, 255)
             _draw.text((2, y), txt, font=_font_sm, fill=color)
             y += 11
 
@@ -311,13 +292,31 @@ def _draw_browser():
     _draw.text((2, H-10), "K1=URL  K2=Next  OK=Go", font=_font_sm, fill=(140, 140, 140))
 
 
-# ( _draw_url_input and _push remain the same as previous version - omitted for brevity but copy them from the last script you have )
-
-
 def _draw_url_input(input_text, char_idx):
-    # ... same as in the previous full script you received ...
-    # (keep the exact same function from the last working version)
-    pass  # placeholder - paste the full _draw_url_input from before
+    _draw.rectangle([(0, 0), (W, H)], fill="black")
+    _draw.rectangle([(0, 0), (W, 15)], fill=(0, 70, 0))
+    _draw.text((3, 2), "Enter URL", font=_font_sm, fill="lime")
+
+    shown = (input_text or "")[-19:]
+    _draw.rectangle([(0, 17), (W, 32)], fill=(30, 30, 30))
+    _draw.text((2, 19), "> " + shown, font=_font_sm, fill="white")
+
+    cs = CHAR_SET
+    ci = char_idx
+    prev_c = cs[(ci - 1) % len(cs)]
+    curr_c = cs[ci]
+    next_c = cs[(ci + 1) % len(cs)]
+
+    _draw.text((8, 42), f"< {prev_c} ", font=_font_md, fill=(110, 110, 110))
+    _draw.rectangle([(50, 38), (78, 56)], fill=(0, 90, 160))
+    _draw.text((56, 40), curr_c, font=_font_hd, fill="yellow")
+    _draw.text((82, 42), f" {next_c} >", font=_font_md, fill=(110, 110, 110))
+
+    hints = ["U/D=char  OK=add", "L=del  R=.  K1=/", "K2=GO  K3=Cancel"]
+    y = 65
+    for h in hints:
+        _draw.text((2, y), h, font=_font_sm, fill=(170, 170, 170))
+        y += 11
 
 
 def _push():
@@ -325,11 +324,60 @@ def _push():
         LCD.LCD_ShowImage(_image, 0, 0)
 
 
-# ── URL Input (same as before) ───────────────────────────────────────────────
-# Paste your existing _url_input_screen function here (unchanged)
+# ── Fixed URL Input Screen (no more crash) ───────────────────────────────────
+def _url_input_screen(initial=""):
+    global RUNNING
+    input_text = initial or ""
+    char_idx = 0
+
+    while RUNNING:
+        try:
+            _draw_url_input(input_text, char_idx)
+            _push()
+
+            btn = None
+            t0 = time.time()
+            while not btn and RUNNING and (time.time() - t0 < 90):
+                for name, pin in PINS.items():
+                    try:
+                        if GPIO.input(pin) == 0:
+                            btn = name
+                            break
+                    except Exception:
+                        pass  # protect against rare GPIO errors
+                time.sleep(0.04)
+
+            if not RUNNING or not btn:
+                return ""
+
+            if btn == "KEY3":
+                return ""
+            if btn == "KEY2":
+                cleaned = input_text.strip()
+                return cleaned if cleaned else ""
+
+            if btn == "OK":
+                input_text += CHAR_SET[char_idx]
+            elif btn == "LEFT":
+                input_text = input_text[:-1] if input_text else ""
+            elif btn == "RIGHT":
+                input_text += "."
+            elif btn == "KEY1":
+                input_text += "/"
+            elif btn == "UP":
+                char_idx = (char_idx - 1 + len(CHAR_SET)) % len(CHAR_SET)
+            elif btn == "DOWN":
+                char_idx = (char_idx + 1) % len(CHAR_SET)
+
+            time.sleep(0.12)  # debounce
+        except Exception:
+            # Safety net — exit URL screen cleanly on any error
+            return ""
+
+    return ""
 
 
-# ── WebUI Watcher (same) ─────────────────────────────────────────────────────
+# ── WebUI Watcher ────────────────────────────────────────────────────────────
 def _webui_watcher():
     last_url = ""
     while RUNNING:
@@ -345,7 +393,7 @@ def _webui_watcher():
         time.sleep(0.7)
 
 
-# ── Main Loop with Improved Link Handling ────────────────────────────────────
+# ── Main ─────────────────────────────────────────────────────────────────────
 def main():
     global RUNNING, _scroll, _link_idx
 
@@ -375,9 +423,14 @@ def main():
             _draw_browser()
             _push()
 
-            pressed = {name: GPIO.input(pin) == 0 for name, pin in PINS.items()}
-            now = time.time()
+            pressed = {}
+            for name, pin in PINS.items():
+                try:
+                    pressed[name] = GPIO.input(pin) == 0
+                except Exception:
+                    pressed[name] = False
 
+            now = time.time()
             for name, is_down in pressed.items():
                 if is_down and name not in held:
                     held[name] = now
@@ -385,7 +438,7 @@ def main():
                     held.pop(name, None)
 
             def just_pressed(name):
-                return pressed.get(name) and (now - held.get(name, 0)) < 0.15
+                return pressed.get(name) and (now - held.get(name, 0)) < 0.18
 
             if just_pressed("KEY3"):
                 break
@@ -394,7 +447,7 @@ def main():
                 url = _url_input_screen(_current_url)
                 if url:
                     navigate(url)
-                time.sleep(0.2)
+                time.sleep(0.25)
                 continue
 
             if just_pressed("LEFT"):
@@ -415,27 +468,22 @@ def main():
                 time.sleep(0.07)
                 continue
 
-            # Improved KEY2: cycle links + auto-scroll
             if just_pressed("KEY2"):
                 with _ui_lock:
                     if _page_links:
                         _link_idx = (_link_idx + 1) % len(_page_links)
-                        # Calculate approximate line number for the link
                         link_section_start = len(_page_lines) - len(_page_links) - 2
                         target_line = link_section_start + _link_idx + 2
                         _scroll = max(0, target_line - (_LINES_PER_PAGE // 2))
                 time.sleep(0.18)
                 continue
 
-            # Improved OK: follow highlighted link
             if just_pressed("OK"):
                 with _ui_lock:
-                    links = _page_links
-                    idx = _link_idx
-                if links and idx < len(links):
-                    _, href = links[idx]
-                    if href:
-                        navigate(href)
+                    if _page_links and _link_idx < len(_page_links):
+                        _, href = _page_links[_link_idx]
+                        if href:
+                            navigate(href)
                 time.sleep(0.25)
                 continue
 
