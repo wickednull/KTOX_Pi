@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """
-KTOx_Pi OSINT
-==============================================================
-Fully on-device with on-screen keyboard + Sherlock username hunting
+KTOx_Pi OSINT Payload - Dark Red Edition with Scrollable Menu + Sherlock
+======================================================================
 """
 
 import os
@@ -20,7 +19,7 @@ try:
     HAS_HW = True
 except ImportError:
     HAS_HW = False
-    print("Hardware not detected - debug mode")
+    print("Hardware not detected")
 
 try:
     from bs4 import BeautifulSoup
@@ -41,7 +40,8 @@ _font_sm = None
 _font_md = None
 
 RUNNING = True
-_menu_idx = 0
+_menu_idx = 0          # Current selected menu item
+_scroll_offset = 0     # For scrolling long menu
 
 MENU = [
     "1. My IP Info",
@@ -58,6 +58,8 @@ MENU = [
     "12. Sherlock Hunt",
     "13. Exit"
 ]
+
+VISIBLE_LINES = 8   # How many menu items fit on screen
 
 # ── Hardware Init ────────────────────────────────────────────────────────────
 def init_hw():
@@ -96,62 +98,68 @@ def push():
     if LCD and _image:
         LCD.LCD_ShowImage(_image, 0, 0)
 
-# ── Drawing ──────────────────────────────────────────────────────────────────
+# ── Drawing with Dark Red Theme ──────────────────────────────────────────────
 def draw_menu():
-    _draw.rectangle((0,0,W,H), fill="black")
-    _draw.rectangle((0,0,W,15), fill=(0,40,80))
-    _draw.text((3,2), "KTOx OSINT", font=_font_sm, fill="cyan")
+    _draw.rectangle((0, 0, W, H), fill="black")
+    _draw.rectangle((0, 0, W, 16), fill=(80, 0, 0))          # Dark red header
+    _draw.text((3, 2), "KTOx OSINT", font=_font_sm, fill="#FF4444")  # Bright red
 
-    y = 18
-    for i, item in enumerate(MENU):
-        color = (255,255,100) if i == _menu_idx else "white"
-        _draw.text((3, y), item[:20], font=_font_sm, fill=color)
-        y += 11
+    start = _scroll_offset
+    for i in range(VISIBLE_LINES):
+        idx = start + i
+        if idx >= len(MENU):
+            break
+        color = "#FF6666" if idx == _menu_idx else "#CCCCCC"   # Selected = brighter red
+        _draw.text((4, 19 + i*11), MENU[idx][:20], font=_font_sm, fill=color)
 
-    _draw.rectangle((0,H-11,W,H), fill=(30,30,30))
-    _draw.text((3,H-10), "UP/DN  K1=select", font=_font_sm, fill=(150,150,150))
+    # Scroll indicator
+    if len(MENU) > VISIBLE_LINES:
+        _draw.text((118, 110), "▼", font=_font_sm, fill="#FF4444" if _scroll_offset < len(MENU)-VISIBLE_LINES else "#444444")
+
+    _draw.rectangle((0, H-11, W, H), fill="#220000")
+    _draw.text((3, H-10), "UP/DN scroll  K1=select", font=_font_sm, fill="#FF8888")
     push()
 
 def draw_result(lines, title="Result"):
-    _draw.rectangle((0,0,W,H), fill="black")
-    _draw.rectangle((0,0,W,15), fill=(0,40,80))
-    _draw.text((3,2), title[:20], font=_font_sm, fill="cyan")
+    _draw.rectangle((0, 0, W, H), fill="black")
+    _draw.rectangle((0, 0, W, 16), fill=(80, 0, 0))
+    _draw.text((3, 2), title[:20], font=_font_sm, fill="#FF4444")
 
-    y = 18
+    y = 19
     for line in lines[:9]:
-        _draw.text((3, y), line[:20], font=_font_sm, fill="white")
+        _draw.text((3, y), line[:20], font=_font_sm, fill="#FFCCCC")
         y += 11
 
-    _draw.rectangle((0,H-11,W,H), fill=(30,30,30))
-    _draw.text((3,H-10), "K3=Back", font=_font_sm, fill=(150,150,150))
+    _draw.rectangle((0, H-11, W, H), fill="#220000")
+    _draw.text((3, H-10), "K3=Back", font=_font_sm, fill="#FF8888")
     push()
 
-# ── On-Screen Keyboard ───────────────────────────────────────────────────────
+# ── On-Screen Keyboard (Dark theme) ──────────────────────────────────────────
 def on_screen_keyboard(prompt="Enter:"):
     input_text = ""
     char_idx = 0
     while RUNNING:
         _draw.rectangle((0,0,W,H), fill="black")
-        _draw.rectangle((0,0,W,16), fill=(0,60,0))
-        _draw.text((3,2), prompt[:20], font=_font_sm, fill="lime")
+        _draw.rectangle((0,0,W,16), fill=(80,0,0))
+        _draw.text((3,2), prompt[:20], font=_font_sm, fill="#FF4444")
 
         shown = input_text[-18:] if len(input_text) > 18 else input_text
-        _draw.rectangle((0,18,W,34), fill=(25,25,25))
-        _draw.text((3,20), "> " + shown, font=_font_sm, fill="white")
+        _draw.rectangle((0,18,W,34), fill="#220000")
+        _draw.text((3,20), "> " + shown, font=_font_sm, fill="#FFCCCC")
 
         cs = CHAR_SET
         prev = cs[(char_idx-1)%len(cs)]
         curr = cs[char_idx]
         nxt = cs[(char_idx+1)%len(cs)]
-        _draw.text((10,45), f"< {prev} ", font=_font_md, fill=(100,100,100))
-        _draw.rectangle((55,42,80,60), fill=(0,80,140))
-        _draw.text((60,44), curr, font=_font_md, fill="yellow")
-        _draw.text((85,45), f" {nxt} >", font=_font_md, fill=(100,100,100))
+        _draw.text((10,45), f"< {prev} ", font=_font_md, fill="#884444")
+        _draw.rectangle((55,42,80,60), fill=(100,0,0))
+        _draw.text((60,44), curr, font=_font_md, fill="#FF6666")
+        _draw.text((85,45), f" {nxt} >", font=_font_md, fill="#884444")
 
         hints = ["U/D=char OK=add", "L=del R=. K1=/", "K2=GO K3=Cancel"]
         y = 70
         for h in hints:
-            _draw.text((3,y), h, font=_font_sm, fill=(170,170,170))
+            _draw.text((3,y), h, font=_font_sm, fill="#FF8888")
             y += 11
         push()
 
@@ -176,7 +184,7 @@ def on_screen_keyboard(prompt="Enter:"):
         time.sleep(0.1)
     return ""
 
-# ── OSINT Tools (Sherlock added) ─────────────────────────────────────────────
+# ── OSINT Tools (Sherlock included) ──────────────────────────────────────────
 def my_ip_info():
     try:
         pub = requests.get("https://api.ipify.org", timeout=8).text.strip()
@@ -263,7 +271,7 @@ def basic_port_scan():
     try:
         out = subprocess.getoutput(f"nmap -F -T4 {target} 2>/dev/null | grep open | head -5")
         lines = [line.strip()[:20] for line in out.splitlines() if line.strip()]
-        return lines or ["No open ports found"]
+        return lines or ["No open ports"]
     except:
         return ["Port scan error"]
 
@@ -272,8 +280,8 @@ def google_dork_ideas():
         "site:target.com filetype:pdf",
         "inurl:admin login",
         "intitle:index.of",
-        "intext:password filetype:txt",
-        "Use legally only"
+        "intext:password",
+        "Use carefully"
     ]
 
 def reverse_ip_lookup():
@@ -292,10 +300,7 @@ def geo_from_ip():
     try:
         r = requests.get(f"https://ipapi.co/{ip}/json/", timeout=8)
         data = r.json()
-        return [
-            f"City: {data.get('city','?')}",
-            f"Country: {data.get('country_name','?')}"
-        ]
+        return [f"City: {data.get('city','?')}", f"Country: {data.get('country_name','?')}"]
     except:
         return ["Geo failed"]
 
@@ -304,29 +309,26 @@ def sherlock_hunt():
     if not username:
         return ["Cancelled"]
 
-    draw_result(["Running Sherlock...", "This can take 30-90s"], "Sherlock")
+    draw_result(["Running Sherlock...", "May take 30-90s"], "Sherlock")
 
     try:
-        # Run Sherlock with timeout and limit output for the small screen
         cmd = ["sherlock", username, "--timeout", "20", "--print-found"]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
-
         output = result.stdout.strip()
         if output:
-            lines = [line.strip()[:20] for line in output.splitlines() if line.strip() and "http" in line]
-            return lines[:8] or ["Found profiles (see terminal)"]
-        else:
-            return ["No profiles found", "or timeout"]
+            lines = [line.strip()[:20] for line in output.splitlines() if line.strip() and ("http" in line or "Found" in line)]
+            return lines[:8] or ["Found (check terminal)"]
+        return ["No profiles found"]
     except subprocess.TimeoutExpired:
-        return ["Sherlock timed out"]
+        return ["Timed out"]
     except FileNotFoundError:
-        return ["Sherlock not found", "Run: sudo apt install sherlock"]
+        return ["Sherlock not found", "sudo apt install sherlock"]
     except Exception as e:
         return [f"Error: {str(e)[:15]}"]
 
-# ── Main Loop ────────────────────────────────────────────────────────────────
+# ── Main Loop with Scrollable Menu ───────────────────────────────────────────
 def main():
-    global RUNNING, _menu_idx
+    global RUNNING, _menu_idx, _scroll_offset
     hw_ok = init_hw()
     draw_menu()
 
@@ -370,13 +372,20 @@ def main():
 
         elif just_pressed("UP"):
             _menu_idx = (_menu_idx - 1) % len(MENU)
+            # Auto-scroll logic
+            if _menu_idx < _scroll_offset:
+                _scroll_offset = _menu_idx
+            elif _menu_idx >= _scroll_offset + VISIBLE_LINES:
+                _scroll_offset = _menu_idx - VISIBLE_LINES + 1
             draw_menu()
-            time.sleep(0.15)
+            time.sleep(0.12)
 
         elif just_pressed("DOWN"):
             _menu_idx = (_menu_idx + 1) % len(MENU)
+            if _menu_idx >= _scroll_offset + VISIBLE_LINES:
+                _scroll_offset = _menu_idx - VISIBLE_LINES + 1
             draw_menu()
-            time.sleep(0.15)
+            time.sleep(0.12)
 
         time.sleep(0.05)
 
