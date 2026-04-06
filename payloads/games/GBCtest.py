@@ -1,104 +1,55 @@
 #!/usr/bin/env python3
 import os
-import subprocess
+import sys
 import time
+from pyboy import PyBoy # You'll need: pip install pyboy
+
+# Standard KTOx Imports
+sys.path.append(os.path.abspath(os.path.join(__file__, "..", "..")))
 import RPi.GPIO as GPIO
-import threading
-from evdev import UInput, ecodes as e
+import LCD_1in44, LCD_Config
+from PIL import Image
 
-# --- CONFIG ---
-ROM_DIR = "/home/pi/ktox/roms"
-EMULATOR = "/home/pi/SameBoy/build/bin/sameboy" # Ensure this path is correct
-
-# GPIO button mapping (BCM) - Matches KTOx standard pins
-BUTTONS = {
-    5: e.KEY_UP,
-    6: e.KEY_DOWN,
-    16: e.KEY_LEFT,
-    26: e.KEY_RIGHT,
-    12: e.KEY_Z,          # A
-    13: e.KEY_X,          # B
-    20: e.KEY_ENTER,      # Start
-    21: e.KEY_LEFTSHIFT,  # Select
-    23: e.KEY_F2,         # Save
-    24: e.KEY_F3          # Load
+PINS = {
+    "UP": 6, "DOWN": 19, "LEFT": 5, "RIGHT": 26,
+    "OK": 13, "KEY1": 21, "KEY2": 20, "KEY3": 16,
 }
 
-# Environment for the 1.44" SPI Screen
-ENV = os.environ.copy()
-ENV["SDL_VIDEODRIVER"] = "fbcon"
-ENV["SDL_FBDEV"] = "/dev/fb1" 
-
-# Initialize Virtual Keyboard
-try:
-    ui = UInput()
-except:
-    print("Error: Run with sudo or check uinput permissions.")
-    exit()
-
-# --- INPUT LOGIC ---
-def input_listener():
+def main():
+    # 1. Setup Hardware
     GPIO.setmode(GPIO.BCM)
-    for pin in BUTTONS:
+    for pin in PINS.values():
         GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
     
-    last_states = {pin: 1 for pin in BUTTONS}
+    LCD_Config.GPIO_Init()
+    lcd = LCD_1in44.LCD()
+    lcd.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
+
+    # 2. Load ROM
+    rom_path = "/home/pi/ktox/roms/game.gbc"
+    # 'dummy' window means it doesn't try to open a desktop window
+    pyboy = PyBoy(rom_path, window_type="dummy") 
     
-    while True:
-        for pin, key_code in BUTTONS.items():
-            val = GPIO.input(pin)
-            if val != last_states[pin]:
-                # 1 = Press (GPIO 0), 0 = Release (GPIO 1)
-                ui.write(e.EV_KEY, key_code, 1 if val == 0 else 0)
-                ui.syn()
-                last_states[pin] = val
-        time.sleep(0.01)
-
-# --- UI & LAUNCHER ---
-def banner():
-    print("\033[91m") # DarkSec Red
-    print("┌──────────────────────────────┐")
-    print("│      KTOX // GBC CORE        │")
-    print("│      SYSTEM: DARKSEC         │")
-    print("└──────────────────────────────┘")
-    print("\033[0m")
-
-def get_roms():
-    if not os.path.exists(ROM_DIR):
-        os.makedirs(ROM_DIR)
-    return [f for f in os.listdir(ROM_DIR) if f.endswith((".gb", ".gbc"))]
-
-def main():
-    # Start input thread once
-    threading.Thread(target=input_listener, daemon=True).start()
-
-    while True:
-        os.system("clear")
-        banner()
-        roms = get_roms()
-        
-        if not roms:
-            print(f"No ROMS found in {ROM_DIR}")
-            print("Add .gb or .gbc files and restart.")
-            time.sleep(5)
-            return
-
-        for i, r in enumerate(roms):
-            print(f"\033[92m[{i}]\033[0m {r}")
-        
-        try:
-            choice = input("\nSelect ROM Index (or 'q' to quit): ")
-            if choice.lower() == 'q': break
+    try:
+        while not pyboy.tick():
+            # 3. Handle Inputs (KTOx Pins -> PyBoy)
+            if GPIO.input(PINS["UP"]) == 0: pyboy.send_input(WindowEvent.PRESS_ARROW_UP)
+            else: pyboy.send_input(WindowEvent.RELEASE_ARROW_UP)
             
-            rom_path = os.path.join(ROM_DIR, roms[int(choice)])
+            # (Add other buttons here following the same pattern)
+
+            # 4. Refresh LCD
+            # PyBoy gives us the screen buffer; we resize it to 128x128
+            screen_image = pyboy.screen_image().resize((128, 128))
+            lcd.LCD_ShowImage(screen_image, 0, 0)
             
-            print(f"\nLaunching {roms[int(choice)]}...")
-            # Use --fullscreen to fit the 128x128 display
-            subprocess.run([EMULATOR, "--fullscreen", rom_path], env=ENV)
-            
-        except (ValueError, IndexError):
-            print("Invalid selection.")
-            time.sleep(1)
+            if GPIO.input(PINS["KEY3"]) == 0: # Exit
+                break
+
+    finally:
+        pyboy.stop()
+        lcd.LCD_Clear()
+        GPIO.cleanup()
 
 if __name__ == "__main__":
     main()
