@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-KTOX GBC Injector - Stable Fixed Version
-=======================================
+KTOX GBC Injector - Stable & Safe Version
+==========================================
 Web ROM uploader + PyBoy gameplay on LCD
 """
 
@@ -22,7 +22,7 @@ except ImportError:
     HAS_HW = False
     print("Hardware not available - web server only")
 
-# Optional: if get_button exists and works, keep it; otherwise we use direct GPIO
+# Optional button helper
 try:
     from payloads._input_helper import get_button
     HAS_BUTTON_HELPER = True
@@ -53,11 +53,13 @@ def index():
                     f.save(save_path)
                     return redirect('/')
                 except Exception as e:
-                    return f"<h1 style='color:red;'>Upload failed: {str(e)}</h1>"
+                    return f"<h1 style='color:red;'>Upload failed: {str(e)}</h1><p><a href='/'>Back</a></p>"
     try:
         roms = sorted(os.listdir(ROM_DIR))
-    except:
+    except Exception as e:
         roms = []
+        print(f"ROM list error: {e}")
+
     return render_template_string('''
         <body style="background:#000; color:#0f0; font-family:monospace; text-align:center; padding:20px;">
             <h1 style="color:#f00;">KTOx // GBC_INJECTOR</h1>
@@ -75,7 +77,7 @@ def index():
     ''', roms=roms)
 
 def start_web():
-    app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)
+    app.run(host='0.0.0.0', port=5000, debug=True, use_reloader=False)  # debug=True shows real errors
 
 # --- LCD & Game ---
 def lcd_init():
@@ -92,7 +94,7 @@ def lcd_init():
 
 def play_game(lcd, rom_path):
     if not lcd or not HAS_HW:
-        print("No LCD available - cannot play")
+        print("No LCD - cannot play")
         return
 
     try:
@@ -138,7 +140,7 @@ def play_game(lcd, rom_path):
                 pyboy.send_input(WindowEvent.RELEASE_BUTTON_START)
 
             if GPIO.input(PINS["KEY3"]) == 0:
-                break  # Exit game
+                break  # Exit game back to menu
 
             # Render to LCD
             frame = pyboy.screen_image().resize((128, 128), resample=Image.NEAREST)
@@ -171,7 +173,7 @@ def rom_selector(lcd):
         if lcd:
             lcd.LCD_ShowImage(img, 0, 0)
 
-        # Button polling
+        # Button polling with debounce
         btn = None
         for name, pin in PINS.items():
             if GPIO.input(pin) == 0:
