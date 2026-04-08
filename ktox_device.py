@@ -70,13 +70,13 @@ except ImportError as _ie:
 print(f”[WARN] Hardware libs missing ({_ie}) — headless mode”)
 HAS_HW = False
 
-# rj_input / ktox_input — virtual button bridge (optional, separate from HAS_HW)
+# rj_input: try the installed name first, fall back to legacy name, then None
 
 try:
-import rj_input
+import ktox_input as rj_input
 except ImportError:
 try:
-import ktox_input as rj_input
+import rj_input
 except ImportError:
 rj_input = None
 
