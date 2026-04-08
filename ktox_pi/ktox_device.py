@@ -650,38 +650,47 @@ def exec_payload(filename, *args):
         log_fh.close()
 
     # ── Restore hardware ────────────────────────────────────────────────────
+    # screen_lock.clear() is in the finally so it ALWAYS runs, even if any
+    # restore step raises — otherwise _display_loop stays frozen on white.
     print("[PAYLOAD] ◄ Restoring hardware…")
-    _write_payload_state(False)
-    _setup_gpio()
-    _load_fonts()
-
     try:
-        rj_input.restart_listener()
-    except Exception:
-        pass
+        _write_payload_state(False)
+        _setup_gpio()
+        _load_fonts()
 
-    with draw_lock:
         try:
-            draw.rectangle((0,0,128,128), fill=color.background)
-            color.DrawBorder()
+            rj_input.restart_listener()
         except Exception:
             pass
 
-    m.render_current()
+        with draw_lock:
+            try:
+                draw.rectangle((0,0,128,128), fill=color.background)
+                color.DrawBorder()
+                if HAS_HW and LCD:
+                    LCD.LCD_ShowImage(image, 0, 0)
+            except Exception:
+                pass
 
-    # Drain any held buttons + clear stale state (500ms max)
-    global _last_button, _last_button_time, _button_down_since
-    _last_button       = None
-    _last_button_time  = 0.0
-    _button_down_since = 0.0
-    if HAS_HW:
-        t0 = time.time()
-        while (any(GPIO.input(p) == 0 for p in PINS.values())
-               and time.time()-t0 < 0.5):
-            time.sleep(0.03)
-    _last_button = None  # clear again after drain
+        try:
+            m.render_current()
+        except Exception as _re:
+            print(f"[PAYLOAD] render_current error (ignored): {_re!r}")
 
-    screen_lock.clear()
+        # Drain any held buttons + clear stale state (500ms max)
+        global _last_button, _last_button_time, _button_down_since
+        _last_button       = None
+        _last_button_time  = 0.0
+        _button_down_since = 0.0
+        if HAS_HW:
+            t0 = time.time()
+            while (any(GPIO.input(p) == 0 for p in PINS.values())
+                   and time.time()-t0 < 0.5):
+                time.sleep(0.03)
+        _last_button = None  # clear again after drain
+
+    finally:
+        screen_lock.clear()   # MUST always run — releases _display_loop
     print("[PAYLOAD] ✔ ready")
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -2455,7 +2464,10 @@ def boot():
 
     _hw_init()
 
-    show_splash()
+    try:
+        show_splash()
+    except Exception as _e:
+        print(f"[KTOx] show_splash error (ignored): {_e!r}")
 
     # Start refresh and web servers in parallel — don't block boot
     threading.Thread(target=refresh_state, daemon=True).start()
