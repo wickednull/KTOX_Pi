@@ -1,0 +1,71 @@
+# [Europe]
+ES-Barcelona 1080p | rtsp://2.143.96.98:554/11
+HU-Kaposvar 3MP | rtsp://185.174.16.81:554
+IE-Lucan 720p | rtsp://86.41.41.241:554/live/main
+BA-Mostar 1080p | rtsp://46.35.138.244:554
+# [Asia]
+VN-LangSon 720p | rtsp://117.4.96.190:554
+# [Americas]
+US-Lubbock 720p | rtsp://66.205.103.22:554
+# [Middle East / Africa]
+
+# [Scraped — non-residential]
+
+# [Scraped — non-residential]
+AR-Olivos (Telecom Personal Bs As) | rtsp://181.2.51.119:554
+AT-Linz (LIWEST Kabelmedien GmbH) | rtsp://86.56.212.95:554/11
+BR-Alfenas (NOVANET PROVEDORA DE INTERNET LTDA ME) | rtsp://181.191.20.7:554/11
+BR-Americana (TELEFÔNICA BRASIL S.A) | rtsp://177.94.202.101:554/live/main
+BR-Bagé (Claro NXT Telecomunicacoes Ltda) | rtsp://179.157.2.170:554/11
+BR-CacimbadeDentro (LEMOS E MORAIS LTDA.) | rtsp://177.86.181.26:554/11
+BR-Cafeara (B. D. MATOS & CIA LTDA - SINET INTERNET) | rtsp://177.128.17.51:554/11
+BR-Guarapuava (Claro NXT Telecomunicacoes Ltda) | rtsp://177.82.28.29:554/11
+BR-PortoAlegre (SOLUTTI NETWORKS LTDA) | rtsp://201.182.98.13:554
+BR-PortoAlegre (SOLUTTI NETWORKS LTDA) | rtsp://201.182.98.14:554
+BR-PortoAlegre (SOLUTTI NETWORKS LTDA) | rtsp://201.182.98.4:554
+BR-SãoPaulo (DVNET SOLUÇÕES E INFORMATICA LTDA) | rtsp://45.70.93.42:554
+BR-Sumaré (Desktop Sigmanet Comunicação Multimídia SA) | rtsp://201.77.114.238:554/live/main
+BR-Torres (DALZOCHIO E MATOS LTDA) | rtsp://45.191.38.65:554/11
+BR-Tramandaí (FRUGUI TELECOMUNICACOES LTDA) | rtsp://179.127.151.69:554/11
+BR-VenâncioAires (FELTEN & QUADROS TELEFONIA E INTERNET LTDA) | rtsp://45.5.224.163:554/11
+CL-PuertoVaras (Patagonia IP, SpA) | rtsp://206.62.252.178:554/11
+CN-Hohhot (China Mobile Communications Corporation) | rtsp://39.153.148.154:554/11
+CN-Ningbo (Jiaxing Jinkai Xingyuan Internet Bar) | rtsp://122.225.19.218:8554
+CO-Medellín (UNE EPM TELECOMUNICACIONES S.A.) | rtsp://181.142.116.28:554/11
+DE-Friedrichshafen (Vodafone GmbH) | rtsp://2.201.215.9:554/11
+DE-Gera (Vodafone Deutschland GmbH) | rtsp://77.24.2.137:554/11
+DE-Hamburg (KABEL-DEUTSCHLAND-CUSTOMER-SERVICES-24) | rtsp://31.17.69.20:554/11
+DE-Leipzig (KABEL-DEUTSCHLAND-CUSTOMER-SERVICES-25) | rtsp://146.52.118.141:554/11
+DE-MarburganderLahn (ARCOR AG) | rtsp://188.107.29.251:554/11
+DE-Meppen (ETN Internet GmbH & Co. KG) | rtsp://46.227.89.53:554
+DE-Neuenkirchen (inexio Informationstechnologie und Telekommunikation Gmbh) | rtsp://80.74.50.138:554/11
+DE-SchwäbischGmünd (ropa GmbH) | rtsp://37.123.122.56:554/11
+DE-Waiblingen (Vodafone BW GmbH) | rtsp://134.3.2.185:554/11
+DE-Wurzen (Vodafone GmbH) | rtsp://2.201.250.13:554/11
+DE-WykaufFöhr (LueneCom Kommunikationsloesungen GmbH) | rtsp://46.253.247.143:554/11
+ES-Cullera (DESIS INFORMATICA, SL) | rtsp://193.111.52.176:554/live/main
+ES-Narón (iteGal) | rtsp://147.78.24.8:554/live/main
+ES-SanMigueldeSalinas (AVATEL TELECOM, SA) | rtsp://45.138.246.240:554
+ES-SantFruitósdeBages (Network Hero, S.L.) | rtsp://185.32.69.250:554
+GB-Crawley (EE Limited) | rtsp://31.121.147.26:554
+GB-KingstonuponHull (KCOM GROUP LIMITED) | rtsp://194.207.157.69:554/11
+GR-Kifisiá (Ote SA (Hellenic Telecommunications Organisation) | rtsp://85.74.49.221:8554
+HK-HongKong (China Mobile Peoples Telephone Company Limited) | rtsp://182.239.81.33:8554
+HK-HongKong (HKT Limited) | rtsp://223.197.177.59:8554/11
+HR-Zagreb (Terrakom d.o.o.) | rtsp://85.94.80.18:8554
+IT-Campobasso (DIMENSIONE Srl) | rtsp://195.32.26.187:554
+IT-Cervia (Acantho S.p.a) | rtsp://77.89.48.10:554
+IT-Milan (DIMENSIONE Srl) | rtsp://195.32.11.226:554/11
+IT-Milan (NGI Spa) | rtsp://212.124.171.27:554
+IT-Milan (NGI Spa) | rtsp://88.149.253.199:554
+IT-Naples (Vodafone Italia S.p.A.) | rtsp://37.183.120.53:554/11
+IT-Rome (Bootstrap srl) | rtsp://95.128.154.102:554/live/main
+IT-Turin (Collegio San Luigi) | rtsp://78.40.130.93:554
+IT-Turin (SHELLNET S.P.A.) | rtsp://62.170.152.138:554/11
+IT-Vigevano (EOLO S.p.A.) | rtsp://128.116.216.109:554/11
+JP-Nagoya (Excite Japan Co., Ltd.) | rtsp://133.218.20.158:554/11
+JP-Nagoya (FreeBit Co., Ltd.) | rtsp://124.255.10.119:554/11
+JP-Osaka (Open Computer Network) | rtsp://180.44.55.33:554/11
+US-BatonRouge (Southern University) | rtsp://192.195.100.151:554/11
+US-BatonRouge (Southern University) | rtsp://192.195.100.152:554
+US-BatonRouge (Southern University) | rtsp://192.195.100.154:554
