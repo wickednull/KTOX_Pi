@@ -1,0 +1,870 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#05060a">
+  <title>KTOx WebUI</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm/css/xterm.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="./device-shell.css">
+  <link rel="stylesheet" href="./ui.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      color-scheme: dark;
+      --rj-bg-0: #05060a;
+      --rj-bg-1: #07090f;
+      --rj-bg-2: #0a0a0a;
+      --rj-surface: rgba(15, 23, 42, 0.42);
+      --rj-surface-strong: rgba(15, 23, 42, 0.62);
+      --rj-border: rgba(148, 163, 184, 0.2);
+      --rj-border-strong: rgba(148, 163, 184, 0.32);
+      --rj-text: #e2e8f0;
+      --rj-text-muted: #94a3b8;
+      --rj-accent: #8B0000;
+      --rj-accent-soft: rgba(139, 0, 0, 0.16);
+      --rj-danger: #f43f5e;
+      --rj-radius: 12px;
+      --rj-shadow: 0 12px 30px rgba(2, 6, 23, 0.35);
+      --rj-glow: 0 0 24px rgba(139, 0, 0, 0.18);
+    }
+    body {
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      background: radial-gradient(1200px 800px at 50% -10%, var(--rj-bg-2) 0%, var(--rj-bg-1) 55%, var(--rj-bg-0) 100%);
+      color: var(--rj-text);
+      letter-spacing: 0.01em;
+    }
+    button, a {
+      transition: background-color .16s ease, color .16s ease, border-color .16s ease, box-shadow .16s ease, transform .12s ease;
+    }
+    #sidebar {
+      background: linear-gradient(180deg, rgba(2, 6, 23, 0.72), rgba(2, 6, 23, 0.5));
+    }
+    #sidebar nav > button,
+    #sidebar nav > a {
+      border-radius: var(--rj-radius);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.02);
+    }
+    #sidebar nav > button:hover,
+    #sidebar nav > a:hover {
+      border-color: var(--rj-border-strong);
+      box-shadow: var(--rj-shadow);
+    }
+    #deviceTab .terminal-wrap,
+    #settingsTab > div,
+    #lootTab > div {
+      box-shadow: var(--rj-shadow);
+    }
+    /* shared .device-shell base in device-shell.css */
+
+    /* Theme: Neon (default) */
+    .device-shell.theme-neon,
+    .device-shell[data-theme="neon"] {
+      box-shadow: 0 0 0 1px rgba(139,0,0,.3), 0 0 25px rgba(139,0,0,.12) inset, 0 0 40px rgba(139,0,0,.12);
+      background: linear-gradient(145deg, rgba(15,23,42,.65), rgba(15,23,42,.35));
+      border: 1px solid rgba(139,0,0,.25);
+      backdrop-filter: blur(8px);
+    }
+    .device-shell.theme-neon .rj-btn,
+    .device-shell[data-theme="neon"] .rj-btn {
+      box-shadow: 0 0 0 1px rgba(139,0,0,.25), 0 0 18px rgba(100,0,0,.18) inset;
+    }
+    .device-shell.theme-neon .rj-btn:active,
+    .device-shell.theme-neon .rj-btn.active,
+    .device-shell[data-theme="neon"] .rj-btn:active,
+    .device-shell[data-theme="neon"] .rj-btn.active {
+      filter: brightness(1.2);
+    }
+    .device-shell.theme-neon .screen-frame,
+    .device-shell[data-theme="neon"] .screen-frame {
+      border: 1px solid rgba(139,0,0,.3);
+      background: rgba(0,0,0,.8);
+      box-shadow: 0 0 40px rgba(139,0,0,0.2);
+    }
+
+    /* Theme: Game Boy moved to device-shell.css */
+
+    /* Theme: Pager */
+    .device-shell.theme-pager,
+    .device-shell[data-theme="pager"] {
+      background: #c9c9c9;
+      border-radius: 18px;
+      border: 3px solid #9a9a9a;
+      box-shadow:
+        inset -6px -6px 10px rgba(0,0,0,.25),
+        inset 6px 6px 10px rgba(255,255,255,.25),
+        0 20px 40px rgba(0,0,0,.6);
+    }
+    .device-shell.theme-pager .pager-brand,
+    .device-shell[data-theme="pager"] .pager-brand { display: block; }
+    .device-shell.theme-pager .pager-speaker,
+    .device-shell[data-theme="pager"] .pager-speaker { display: flex; }
+    .device-shell.theme-pager .pager-clip,
+    .device-shell[data-theme="pager"] .pager-clip { display: block; }
+
+    .device-shell.theme-pager .screen-frame,
+    .device-shell[data-theme="pager"] .screen-frame {
+      background: #2b3a2f;
+      padding: 10px;
+      border-radius: 8px;
+      border: 3px solid #555;
+      box-shadow:
+        inset 0 0 12px rgba(0,0,0,.8),
+        0 0 6px rgba(0,255,120,.2);
+    }
+    .device-shell.theme-pager canvas,
+    .device-shell[data-theme="pager"] canvas {
+      image-rendering: pixelated;
+    }
+    .device-shell.theme-pager .rj-btn,
+    .device-shell[data-theme="pager"] .rj-btn {
+      width: 40px;
+      height: 40px;
+      background: #2a2a2a !important;
+      color: #9aff9a;
+      border-radius: 6px;
+      border: 2px solid #111;
+      box-shadow:
+        inset -3px -3px 6px rgba(255,255,255,.08),
+        inset 3px 3px 6px rgba(0,0,0,.6);
+    }
+    .device-shell.theme-pager .rj-btn:active,
+    .device-shell.theme-pager .rj-btn.active,
+    .device-shell[data-theme="pager"] .rj-btn:active,
+    .device-shell[data-theme="pager"] .rj-btn.active {
+      transform: translateY(2px);
+      box-shadow:
+        inset 3px 3px 6px rgba(255,255,255,.08),
+        inset -3px -3px 6px rgba(0,0,0,.6);
+    }
+    .device-shell.theme-pager .key-btn,
+    .device-shell[data-theme="pager"] .key-btn {
+      width: 95px;
+      height: 34px;
+      font-size: 12px;
+      letter-spacing: 1px;
+    }
+    .device-shell.theme-pager .pager-text,
+    .device-shell[data-theme="pager"] .pager-text {
+      color: #111 !important;
+    }
+    .device-shell.theme-pager .layout-default,
+    .device-shell[data-theme="pager"] .layout-default {
+      display: none;
+    }
+    .device-shell.theme-pager .layout-pager,
+    .device-shell[data-theme="pager"] .layout-pager {
+      display: block;
+    }
+
+    .pager-brand {
+      display: none;
+      text-align: center;
+      font-weight: bold;
+      font-size: 13px;
+      color: #222;
+      letter-spacing: 2px;
+      margin-bottom: 10px;
+    }
+    .pager-speaker {
+      display: none;
+      gap: 4px;
+      justify-content: center;
+      margin-bottom: 10px;
+    }
+    .pager-speaker span {
+      width: 6px;
+      height: 6px;
+      background: #444;
+      border-radius: 50%;
+      display: block;
+    }
+    .pager-clip {
+      display: none;
+      position: absolute;
+      right: -10px;
+      top: 40px;
+      width: 8px;
+      height: 90px;
+      background: #777;
+      border-radius: 4px;
+      box-shadow: inset 0 0 4px #000;
+    }
+
+    .theme-nav-btn {
+      width: 36px;
+      height: 36px;
+      border-radius: 9999px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(30,41,59,0.6);
+      border: 1px solid rgba(148,163,184,0.25);
+      transition: all 0.15s ease;
+    }
+    .theme-nav-btn:hover { background: rgba(51,65,85,0.8); }
+    .theme-label { min-width: 120px; text-align: center; }
+
+    @keyframes payloadPulse {
+      0%   { transform: scale(0.9); opacity: 0.4; }
+      50%  { transform: scale(1.4); opacity: 1; }
+      100% { transform: scale(0.9); opacity: 0.4; }
+    }
+    .payload-status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 9999px;
+      background: rgba(148,163,184,0.5);
+      opacity: 0.6;
+    }
+    .payload-status-dot.running {
+      background: #8B0000;
+      box-shadow: 0 0 8px rgba(139,0,0,0.6);
+      animation: payloadPulse 1.2s ease-in-out infinite;
+      opacity: 1;
+    }
+
+    .terminal-wrap {
+      background: transparent;
+      border: none;
+      border-radius: 0;
+      overflow: hidden;
+    }
+    .terminal-divider {
+      border-right: 1px solid rgba(148, 163, 184, 0.2);
+    }
+    .terminal-body {
+      height: 460px;
+    }
+    .shell-key-btn {
+      font-family: 'JetBrains Mono', 'Courier New', monospace;
+      font-size: 10px;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 6px;
+      background: rgba(15,23,42,0.7);
+      border: 1px solid rgba(148,163,184,0.2);
+      color: #94a3b8;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
+      user-select: none;
+    }
+    .shell-key-btn:hover {
+      background: rgba(139,0,0,0.25);
+      border-color: rgba(139,0,0,0.5);
+      color: #fca5a5;
+    }
+    .shell-key-btn:active {
+      background: rgba(139,0,0,0.45);
+      color: #fff;
+    }
+    .terminal-body .xterm-viewport,
+    .terminal-body .xterm-screen,
+    .terminal-body .xterm-scroll-area {
+      background: transparent !important;
+    }
+    .terminal-body .xterm-viewport {
+      scrollbar-width: thin;
+      scrollbar-color: rgba(148, 163, 184, 0.25) transparent;
+    }
+    .terminal-body .xterm-viewport::-webkit-scrollbar {
+      width: 8px;
+    }
+    .terminal-body .xterm-viewport::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .terminal-body .xterm-viewport::-webkit-scrollbar-thumb {
+      background: rgba(148, 163, 184, 0.25);
+      border-radius: 8px;
+    }
+
+    #logoutBtn,
+    #shellConnect,
+    #shellDisconnect,
+    #payloadsRefresh,
+    #lootUp,
+    #discordWebhookSave,
+    #discordWebhookClear,
+    #lootPreviewClose,
+    #lootPreviewDownload {
+      border-radius: 10px !important;
+      border-color: var(--rj-border) !important;
+    }
+
+    #shellConnect,
+    #discordWebhookSave,
+    #lootPreviewClose {
+      box-shadow: var(--rj-glow);
+    }
+
+    #status,
+    #shellStatus,
+    #payloadStatus,
+    #systemStatus,
+    #lootStatus,
+    #settingsStatus {
+      color: var(--rj-text-muted);
+      font-weight: 500;
+      letter-spacing: 0.015em;
+      transition: color .16s ease, text-shadow .16s ease;
+    }
+
+    .status-tone-ok { color: #34d399 !important; text-shadow: 0 0 10px rgba(52,211,153,.28); }
+    .status-tone-warn { color: #fbbf24 !important; text-shadow: 0 0 10px rgba(251,191,36,.2); }
+    .status-tone-bad { color: #fb7185 !important; text-shadow: 0 0 10px rgba(244,63,94,.22); }
+
+    @keyframes rjPulseSoft {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.03); }
+    }
+    .payload-status-dot.running {
+      animation: payloadPulse 1.2s ease-in-out infinite, rjPulseSoft 1.8s ease-in-out infinite;
+    }
+
+    #sidebar nav > button,
+    #sidebar nav > a {
+      position: relative;
+      overflow: hidden;
+    }
+    #sidebar nav > .nav-active::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 8px;
+      bottom: 8px;
+      width: 3px;
+      border-radius: 999px;
+      background: linear-gradient(180deg, #8B0000, #640000);
+      box-shadow: 0 0 12px rgba(139,0,0,.55);
+    }
+
+    #deviceTab .terminal-wrap,
+    #deviceShell,
+    #settingsTab > div,
+    #lootTab > div {
+      border-radius: 16px;
+    }
+
+    @media (max-width: 768px) {
+      main {
+        padding-left: 0.75rem !important;
+        padding-right: 0.75rem !important;
+      }
+      #deviceTab .terminal-body {
+        height: 360px;
+      }
+      #deviceShell {
+        transform: scale(.96);
+        transform-origin: top center;
+      }
+      /* Terminal tab mode: hide device shell, expand terminal full-height */
+      #deviceTab.terminal-mode .device-shell-col {
+        display: none !important;
+      }
+      #deviceTab.terminal-mode .terminal-col {
+        order: 1 !important;
+        width: 100% !important;
+        padding-right: 0 !important;
+      }
+      #deviceTab.terminal-mode .terminal-body {
+        height: calc(100dvh - 180px) !important;
+      }
+    }
+  </style>
+</head>
+<body class="min-h-screen text-slate-200">
+  <div class="min-h-screen md:flex">
+    <div id="sidebarBackdrop" class="hidden fixed inset-0 z-30 bg-black/60"></div>
+    <aside id="sidebar" class="fixed md:sticky md:top-0 md:h-screen inset-y-0 left-0 z-40 w-64 -translate-x-full md:translate-x-0 transform transition bg-slate-950/60 border-r border-slate-800/70 backdrop-blur flex flex-col">
+      <div class="p-4 border-b border-slate-800/70">
+        <div class="flex items-center gap-3 select-none">
+          <img src="./ktox.png" alt="KTOx" class="h-10 drop-shadow-[0_0_16px_rgba(139,0,0,0.35)]"/>
+          <div>
+            <div class="text-lg font-black tracking-wide"><span class="text-red-400">K</span>TOx_<span class="text-rose-400">P</span>i</div>
+            <div class="text-[11px] text-slate-400">Remote Control</div>
+          </div>
+        </div>
+      </div>
+
+      <nav class="p-3 space-y-2 flex-1 min-h-0 overflow-y-auto overscroll-contain">
+        <button id="navDevice" type="button" class="w-full px-3 py-2 rounded-xl text-left text-sm font-semibold border border-red-400/30 bg-red-800/10 text-red-400 shadow-[0_0_16px_rgba(16,185,129,0.15)]"><i class="fa-solid fa-gamepad mr-2"></i>Device</button>
+        <button id="navSystem" type="button" class="w-full px-3 py-2 rounded-xl text-left text-sm font-semibold border border-slate-400/20 bg-slate-800/40 text-slate-300 hover:text-white hover:bg-slate-700/50 transition"><i class="fa-solid fa-microchip mr-2"></i>System</button>
+        <div id="systemDropdown" class="hidden rounded-xl border border-slate-800/80 bg-slate-950/40 p-2 space-y-2">
+          <div class="flex items-center justify-between">
+            <div class="text-[11px] font-semibold text-red-400">System Monitor</div>
+            <div id="systemStatus" class="text-[10px] text-slate-400">Ready</div>
+          </div>
+
+          <div class="rounded-lg border border-slate-800/80 bg-slate-900/40 p-2">
+            <div class="text-[10px] text-slate-400 mb-1">CPU</div>
+            <div class="flex items-center justify-between">
+              <div id="sysCpuValue" class="text-sm font-semibold text-slate-100">0%</div>
+              <div id="sysTempValue" class="text-[10px] text-slate-400">--.- C</div>
+            </div>
+            <div class="mt-1 h-1.5 rounded bg-slate-800 overflow-hidden">
+              <div id="sysCpuBar" class="h-1.5 bg-red-800/80" style="width: 0%"></div>
+            </div>
+          </div>
+
+          <div class="rounded-lg border border-slate-800/80 bg-slate-900/40 p-2">
+            <div class="text-[10px] text-slate-400 mb-1">Memory</div>
+            <div id="sysMemValue" class="text-sm font-semibold text-slate-100">0%</div>
+            <div id="sysMemMeta" class="text-[10px] text-slate-400">0 / 0</div>
+            <div class="mt-1 h-1.5 rounded bg-slate-800 overflow-hidden">
+              <div id="sysMemBar" class="h-1.5 bg-cyan-500/80" style="width: 0%"></div>
+            </div>
+          </div>
+
+          <div class="rounded-lg border border-slate-800/80 bg-slate-900/40 p-2">
+            <div class="text-[10px] text-slate-400 mb-1">Disk (/)</div>
+            <div id="sysDiskValue" class="text-sm font-semibold text-slate-100">0%</div>
+            <div id="sysDiskMeta" class="text-[10px] text-slate-400">0 / 0</div>
+            <div class="mt-1 h-1.5 rounded bg-slate-800 overflow-hidden">
+              <div id="sysDiskBar" class="h-1.5 bg-fuchsia-500/80" style="width: 0%"></div>
+            </div>
+          </div>
+
+          <div class="rounded-lg border border-slate-800/80 bg-slate-900/40 p-2 text-[10px] text-slate-300 space-y-1">
+            <div>Uptime: <span id="sysUptime">-</span></div>
+            <div>Load: <span id="sysLoad">-</span></div>
+            <div>Payload: <span id="sysPayload">none</span></div>
+          </div>
+
+          <div class="rounded-lg border border-slate-800/80 bg-slate-900/40 p-2">
+            <div class="text-[10px] text-slate-400 mb-1">Interfaces</div>
+            <div id="sysInterfaces" class="text-[10px] text-slate-300 space-y-1">
+              <div class="text-slate-500">No data yet</div>
+            </div>
+          </div>
+        </div>
+        <button id="navLoot" type="button" class="w-full px-3 py-2 rounded-xl text-left text-sm font-semibold border border-slate-400/20 bg-slate-800/40 text-slate-300 hover:text-white hover:bg-slate-700/50 transition"><i class="fa-solid fa-vault mr-2"></i>Loot</button>
+        <button id="navSettings" type="button" class="w-full px-3 py-2 rounded-xl text-left text-sm font-semibold border border-slate-400/20 bg-slate-800/40 text-slate-300 hover:text-white hover:bg-slate-700/50 transition"><i class="fa-solid fa-sliders mr-2"></i>Settings</button>
+        <a id="navPayloadStudio" href="./ide.html" class="w-full px-3 py-2 rounded-xl text-left text-sm font-semibold border border-slate-400/20 bg-slate-800/40 text-slate-300 hover:text-white hover:bg-slate-700/50 transition block"><i class="fa-solid fa-code mr-2"></i>Payload Studio</a>
+
+        <div class="pt-2 border-t border-slate-800/70">
+          <div class="flex items-center justify-between px-3 pb-2">
+            <div class="text-xs font-semibold text-red-400">Payloads</div>
+            <div class="flex items-center gap-2">
+              <div class="flex items-center gap-1">
+                <span id="payloadStatusDot" class="payload-status-dot" aria-hidden="true"></span>
+                <div id="payloadStatus" class="text-[10px] text-slate-400">Ready</div>
+              </div>
+              <button id="payloadsRefresh" type="button" class="px-2 py-1 text-[10px] rounded-md bg-slate-800/70 border border-slate-600/40 text-slate-200 hover:bg-slate-700/70 transition">Refresh</button>
+            </div>
+          </div>
+          <div id="payloadSidebar" class="space-y-2 px-2 pb-2">
+            <!-- payload categories injected by app.js -->
+          </div>
+        </div>
+      </nav>
+    </aside>
+
+    <main class="flex-1 px-4 py-6 md:px-8">
+      <div class="flex items-center justify-between mb-4 md:mb-6 px-3 py-2 border border-slate-800/70 bg-slate-950/45 backdrop-blur rounded-xl">
+        <div class="flex items-center gap-2 text-[11px] text-slate-300">
+          <i class="fa-solid fa-terminal text-red-400"></i>
+          <span class="tracking-wide">WEBUI CONTROL DECK</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <button id="menuToggle" type="button" class="md:hidden px-3 py-2 rounded-lg bg-slate-800/60 border border-slate-600/40 text-slate-200"><i class="fa-solid fa-bars"></i></button>
+          <button id="logoutBtn" type="button" class="px-3 py-1.5 text-xs rounded-lg bg-slate-800/80 border border-slate-600/40 text-slate-200 hover:bg-slate-700/80 transition"><i class="fa-solid fa-right-from-bracket mr-1"></i>Logout</button>
+        </div>
+      </div>
+
+      <!-- Device card -->
+      <div id="deviceTab" class="block">
+        <div class="flex flex-col md:flex-row md:items-start md:gap-6">
+          <div class="terminal-col md:order-1 order-2 flex-1 min-w-0">
+            <div class="terminal-wrap terminal-divider md:pr-6">
+              <div class="flex items-center justify-between px-4 py-3 border-b border-slate-800/70">
+                <div class="text-sm font-semibold text-red-400">Terminal</div>
+                <div class="flex items-center gap-2">
+                  <div id="shellStatus" class="text-[11px] text-slate-400">Disconnected</div>
+                  <button id="shellConnect" type="button" class="px-3 py-1.5 text-xs rounded-lg bg-red-900/80 border border-red-300/30 text-white hover:bg-red-800/80 transition">Open</button>
+                  <button id="shellDisconnect" type="button" class="px-3 py-1.5 text-xs rounded-lg bg-slate-800/80 border border-slate-600/40 text-slate-200 hover:bg-slate-700/80 transition">Close</button>
+                </div>
+              </div>
+              <div id="terminal" class="terminal-body"></div>
+              <div class="flex flex-wrap items-center gap-1.5 px-3 py-2 border-t border-slate-800/70">
+                <button class="shell-key-btn" data-shell-key="&#x03;" title="Ctrl+C">^C</button>
+                <button class="shell-key-btn" data-shell-key="&#x04;" title="Ctrl+D">^D</button>
+                <button class="shell-key-btn" data-shell-key="&#x1a;" title="Ctrl+Z">^Z</button>
+                <button class="shell-key-btn" data-shell-key="&#x0c;" title="Ctrl+L (clear)">^L</button>
+                <button class="shell-key-btn" data-shell-key="&#x01;" title="Ctrl+A (start of line)">^A</button>
+                <button class="shell-key-btn" data-shell-key="&#x05;" title="Ctrl+E (end of line)">^E</button>
+                <button class="shell-key-btn" data-shell-key="&#x0b;" title="Ctrl+K (kill to end)">^K</button>
+                <button class="shell-key-btn" data-shell-key="&#x1b;" title="Escape">ESC</button>
+                <button class="shell-key-btn" data-shell-key="&#x1b;[A" title="Arrow Up">↑</button>
+                <button class="shell-key-btn" data-shell-key="&#x1b;[B" title="Arrow Down">↓</button>
+                <button class="shell-key-btn" data-shell-key="&#x09;" title="Tab">TAB</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="device-shell-col md:order-2 order-1 flex justify-center md:justify-end md:pl-6">
+            <div id="deviceShell" data-theme="neon" class="device-shell theme-neon rounded-3xl p-4 md:p-5 w-full md:w-fit mx-auto md:mx-0">
+      <div class="pager-clip" aria-hidden="true"></div>
+      <div class="pager-brand">KTOx_Pi</div>
+      <div class="pager-speaker" aria-hidden="true">
+        <span></span><span></span><span></span><span></span><span></span>
+      </div>
+      <!-- Default layout (Neon / Pager) -->
+      <div class="layout-default grid grid-cols-2 md:grid-cols-[120px_auto_120px] gap-3 md:gap-4 md:justify-items-center items-center w-full">
+        <!-- Left pad -->
+        <div class="order-2 md:order-1 flex md:block justify-center">
+          <div class="grid grid-cols-3 grid-rows-3 gap-1.5 w-[120px]">
+            <div></div>
+            <button class="rj-btn dpad-btn rounded-xl bg-slate-800/70 hover:bg-slate-700/70 w-10 h-10 flex items-center justify-center backdrop-blur ring-1 ring-white/10 hover:ring-red-400/30 transition" data-btn="UP">▲</button>
+            <div></div>
+            <button class="rj-btn dpad-btn rounded-xl bg-slate-800/70 hover:bg-slate-700/70 w-10 h-10 flex items-center justify-center backdrop-blur ring-1 ring-white/10 hover:ring-red-400/30 transition" data-btn="LEFT">◄</button>
+            <button class="rj-btn ok-btn rounded-xl bg-red-900/80 hover:bg-red-800/80 w-10 h-10 flex items-center justify-center ring-1 ring-red-300/40 transition" data-btn="OK" aria-label="OK"></button>
+            <button class="rj-btn dpad-btn rounded-xl bg-slate-800/70 hover:bg-slate-700/70 w-10 h-10 flex items-center justify-center backdrop-blur ring-1 ring-white/10 hover:ring-red-400/30 transition" data-btn="RIGHT">►</button>
+            <div></div>
+            <button class="rj-btn dpad-btn rounded-xl bg-slate-800/70 hover:bg-slate-700/70 w-10 h-10 flex items-center justify-center backdrop-blur ring-1 ring-white/10 hover:ring-red-400/30 transition" data-btn="DOWN">▼</button>
+            <div></div>
+          </div>
+        </div>
+
+        <!-- Screen -->
+        <div class="order-1 md:order-2 col-span-2 md:col-span-1">
+          <div class="screen-frame rounded-2xl p-2">
+            <div class="flex items-center justify-center">
+              <canvas id="screen" width="128" height="128" class="w-full md:w-[300px] aspect-square"></canvas>
+            </div>
+          </div>
+          <div class="pager-text mt-3 text-center text-xs text-slate-400">OK = Enter · KEY3 = Esc</div>
+          <div id="status" class="status-text pager-text mt-1 text-center text-[11px] text-slate-500">Connecting…</div>
+        </div>
+
+        <!-- Right buttons -->
+        <div class="order-3 md:order-3 flex flex-col items-stretch gap-2 md:items-stretch">
+          <button class="rj-btn key-btn rounded-xl bg-fuchsia-700/80 hover:bg-fuchsia-600/80 px-3 py-2 w-full md:w-24 ring-1 ring-white/10 transition" data-btn="KEY1">KEY1</button>
+          <button class="rj-btn key-btn rounded-xl bg-fuchsia-700/80 hover:bg-fuchsia-600/80 px-3 py-2 w-full md:w-24 ring-1 ring-white/10 transition" data-btn="KEY2">KEY2</button>
+          <button class="rj-btn key-btn rounded-xl bg-fuchsia-700/80 hover:bg-fuchsia-600/80 px-3 py-2 w-full md:w-24 ring-1 ring-white/10 transition" data-btn="KEY3">KEY3</button>
+          <button onclick="exitStealth()" class="rounded-xl bg-red-900/70 hover:bg-red-700/90 px-3 py-2 w-full md:w-24 ring-1 ring-red-500/30 text-red-300 hover:text-white text-xs font-bold transition" title="Exit stealth mode">EXIT<br>STEALTH</button>
+        </div>
+      </div>
+
+      <!-- Game Boy layout -->
+      <div class="layout-gameboy hidden">
+        <div class="screen-frame">
+          <canvas id="screen-gb" width="128" height="128" class="w-[240px] md:w-[300px] aspect-square"></canvas>
+        </div>
+        <div class="flex justify-between mb-4">
+          <div class="grid grid-cols-3 grid-rows-3 gap-2">
+            <div></div>
+            <button class="rj-btn" data-btn="UP">▲</button>
+            <div></div>
+            <button class="rj-btn" data-btn="LEFT">◄</button>
+            <button class="rj-btn" data-btn="OK" aria-label="OK"></button>
+            <button class="rj-btn" data-btn="RIGHT">►</button>
+            <div></div>
+            <button class="rj-btn" data-btn="DOWN">▼</button>
+            <div></div>
+          </div>
+          <div class="flex flex-col gap-2 side-buttons">
+            <button class="rj-btn key-btn" data-btn="KEY1">KEY1</button>
+            <button class="rj-btn key-btn" data-btn="KEY2">KEY2</button>
+            <button class="rj-btn key-btn" data-btn="KEY3">KEY3</button>
+          </div>
+        </div>
+        <div class="text-center text-xs text-gray-300">OK = Enter · KEY3 = Esc</div>
+        <div class="status-text text-center text-[11px] text-gray-500 mt-1">Connecting…</div>
+      </div>
+
+      <!-- Pager layout -->
+      <div class="layout-pager hidden">
+        <div class="screen-frame">
+          <canvas id="screen-pager" width="128" height="128" class="w-[240px] md:w-[300px] aspect-square"></canvas>
+        </div>
+        <div class="flex justify-between mb-4 mt-4">
+          <div class="grid grid-cols-3 grid-rows-3 gap-2">
+            <div></div>
+            <button class="rj-btn" data-btn="UP">▲</button>
+            <div></div>
+            <button class="rj-btn" data-btn="LEFT">◄</button>
+            <button class="rj-btn" data-btn="OK" aria-label="OK"></button>
+            <button class="rj-btn" data-btn="RIGHT">►</button>
+            <div></div>
+            <button class="rj-btn" data-btn="DOWN">▼</button>
+            <div></div>
+          </div>
+          <div class="flex flex-col gap-2 side-buttons">
+            <button class="rj-btn key-btn" data-btn="KEY1">KEY1</button>
+            <button class="rj-btn key-btn" data-btn="KEY2">KEY2</button>
+            <button class="rj-btn key-btn" data-btn="KEY3">KEY3</button>
+          </div>
+        </div>
+        <div class="pager-text text-center text-[11px] mt-4">OK = Enter · KEY3 = Esc</div>
+        <div class="status-text pager-text text-center text-[10px] mt-1">Connecting…</div>
+          </div>
+        </div>
+      </div>
+      </div>
+      </div>
+
+      <!-- Settings -->
+      <div id="settingsTab" class="hidden">
+        <div class="rounded-3xl border border-slate-700/60 bg-slate-900/40 backdrop-blur p-4 md:p-5 max-w-3xl mx-auto shadow-[0_0_30px_rgba(15,23,42,0.35)] space-y-4">
+          <div class="flex items-center justify-between">
+            <div class="text-sm font-semibold text-red-400">Settings</div>
+            <div class="text-[11px] text-slate-400">Current theme: <span id="themeName">Neon</span></div>
+          </div>
+
+          <div class="rounded-xl border border-slate-800/70 bg-slate-950/40 p-3">
+            <div class="text-xs font-semibold text-slate-200 mb-2">Themes</div>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <button type="button" data-theme="neon" class="px-3 py-2 rounded-lg text-left text-xs font-semibold border border-slate-500/20 bg-slate-900/40 text-slate-300 hover:bg-slate-800/60 transition">Neon</button>
+              <button type="button" data-theme="gameboy" class="px-3 py-2 rounded-lg text-left text-xs font-semibold border border-slate-500/20 bg-slate-900/40 text-slate-300 hover:bg-slate-800/60 transition">Game Boy</button>
+              <button type="button" data-theme="pager" class="px-3 py-2 rounded-lg text-left text-xs font-semibold border border-slate-500/20 bg-slate-900/40 text-slate-300 hover:bg-slate-800/60 transition">Pager</button>
+            </div>
+          </div>
+
+          <div class="rounded-xl border border-slate-800/70 bg-slate-950/40 p-3">
+            <div class="text-xs font-semibold text-slate-200 mb-2">Discord Webhook</div>
+            <label for="discordWebhookInput" class="block text-[11px] text-slate-400 mb-1">Webhook URL</label>
+            <input id="discordWebhookInput" type="password" autocomplete="off" placeholder="https://discord.com/api/webhooks/..." class="w-full px-3 py-2 rounded-lg bg-slate-900/70 border border-slate-700/60 text-slate-100 text-xs focus:outline-none focus:ring-1 focus:ring-red-400/50">
+            <div class="mt-2 flex items-center gap-2">
+              <button id="discordWebhookSave" type="button" class="px-3 py-1.5 text-xs rounded-lg bg-red-900/80 border border-red-300/30 text-white hover:bg-red-800/80 transition">Save</button>
+              <button id="discordWebhookClear" type="button" class="px-3 py-1.5 text-xs rounded-lg bg-slate-800/80 border border-slate-600/40 text-slate-200 hover:bg-slate-700/80 transition">Clear</button>
+              <div id="settingsStatus" class="text-[11px] text-slate-400">Ready</div>
+            </div>
+          </div>
+
+          <div class="rounded-xl border border-slate-800/70 bg-slate-950/40 p-3">
+            <div class="flex items-center justify-between mb-2">
+              <div class="text-xs font-semibold text-slate-200">Tailscale</div>
+              <div id="tailscaleSettingsStatus" class="text-[11px] text-slate-400">Not installed</div>
+            </div>
+            <p class="text-[11px] text-slate-400 mb-2">
+              One-time setup with a Tailscale auth key. After install, use the Tailscale payload on the device to toggle the tunnel.
+            </p>
+            <div class="flex flex-wrap gap-2">
+              <button id="tailscaleInstallBtn" type="button" class="px-3 py-1.5 text-xs rounded-lg bg-red-900/80 border border-red-300/30 text-white hover:bg-red-800/80 transition">
+                Install Tailscale
+              </button>
+              <button id="tailscaleReauthBtn" type="button" class="px-3 py-1.5 text-xs rounded-lg bg-slate-800/80 border border-slate-600/40 text-slate-200 hover:bg-slate-700/80 transition hidden">
+                Re-authenticate with new key
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Payloads (mobile full-screen tab) -->
+      <div id="payloadsTab" class="hidden">
+        <div class="flex items-center justify-between mb-3 px-1">
+          <div class="text-sm font-semibold text-red-400"><i class="fa-solid fa-bolt mr-2"></i>Payloads</div>
+          <button id="payloadsMobRefresh" type="button" class="px-2 py-1 text-[10px] rounded-md bg-slate-800/70 border border-slate-600/40 text-slate-200 hover:bg-slate-700/70 transition"><i class="fa-solid fa-rotate-right mr-1"></i>Refresh</button>
+        </div>
+        <div id="payloadsMobileList" class="space-y-2"></div>
+      </div>
+
+      <!-- Loot browser -->
+      <div id="lootTab" class="hidden">
+        <div class="rounded-3xl border border-slate-700/60 bg-slate-900/40 backdrop-blur p-4 md:p-5 max-w-3xl mx-auto shadow-[0_0_30px_rgba(15,23,42,0.35)]">
+          <div class="flex items-center justify-between mb-3">
+            <div class="text-sm font-semibold text-red-400">Loot Vault</div>
+            <div id="lootStatus" class="text-[11px] text-slate-400">Ready</div>
+          </div>
+          <div class="flex items-center gap-2 mb-3">
+            <button id="lootUp" type="button" class="px-3 py-1.5 text-xs rounded-lg bg-slate-800/70 border border-slate-600/40 text-slate-200 hover:bg-slate-700/70 transition">Up</button>
+            <div id="lootPath" class="text-xs text-slate-400 truncate">/</div>
+          </div>
+          <div id="lootList" class="divide-y divide-slate-800/80 border border-slate-800/70 rounded-xl overflow-hidden bg-slate-950/40">
+            <!-- items injected by app.js -->
+          </div>
+          <div class="mt-3 text-[11px] text-slate-500">Tip: click folders to navigate, click files to preview or download.</div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <!-- Loot preview modal -->
+  <div id="lootPreview" class="hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-sm">
+      <div class="max-w-4xl mx-auto mt-10 md:mt-16 px-4">
+        <div class="rounded-2xl border border-slate-700/60 bg-slate-950/90 shadow-[0_0_40px_rgba(15,23,42,0.65)] overflow-hidden">
+          <div class="flex items-center justify-between px-4 py-3 border-b border-slate-800/70">
+            <div class="text-sm font-semibold text-red-400 truncate" id="lootPreviewTitle">Preview</div>
+            <div class="flex items-center gap-2">
+              <a id="lootPreviewDownload" href="#" class="text-xs px-3 py-1.5 rounded-lg bg-slate-800/80 border border-slate-600/40 text-slate-200 hover:bg-slate-700/80 transition">Download</a>
+              <button id="lootPreviewClose" type="button" class="text-xs px-3 py-1.5 rounded-lg bg-red-900/80 border border-red-300/30 text-white hover:bg-red-800/80 transition">Close</button>
+            </div>
+          </div>
+          <div class="px-4 py-3">
+            <div id="lootPreviewMeta" class="text-[11px] text-slate-400 mb-2"></div>
+            <pre id="lootPreviewBody" class="text-xs text-slate-100 whitespace-pre-wrap max-h-[60vh] overflow-auto"></pre>
+          </div>
+        </div>
+      </div>
+  </div>
+
+  <!-- Nmap visualization modal -->
+  <div id="nmapVizModal" class="hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-sm">
+    <div class="max-w-6xl mx-auto mt-6 md:mt-10 px-4 pb-6">
+      <div class="rounded-2xl border border-slate-700/60 bg-slate-950/95 shadow-[0_0_40px_rgba(15,23,42,0.7)] overflow-hidden">
+        <div class="flex items-center justify-between px-4 py-3 border-b border-slate-800/70 gap-3">
+          <div class="min-w-0">
+            <div id="nmapVizTitle" class="text-sm font-semibold text-red-400 truncate">Nmap Visualization</div>
+            <div id="nmapVizMeta" class="text-[11px] text-slate-400 mt-1"></div>
+          </div>
+          <div class="flex items-center gap-2 shrink-0">
+            <a id="nmapVizDownloadXml" href="#" class="text-xs px-3 py-1.5 rounded-lg bg-slate-800/80 border border-slate-600/40 text-slate-200 hover:bg-slate-700/80 transition">XML</a>
+            <a id="nmapVizDownloadJson" href="#" download="nmap.json" class="text-xs px-3 py-1.5 rounded-lg bg-slate-800/80 border border-slate-600/40 text-slate-200 hover:bg-slate-700/80 transition">JSON</a>
+            <button id="nmapVizClose" type="button" class="text-xs px-3 py-1.5 rounded-lg bg-red-900/80 border border-red-300/30 text-white hover:bg-red-800/80 transition">Close</button>
+          </div>
+        </div>
+        <div class="px-4 py-3 border-b border-slate-800/70 flex flex-wrap items-center justify-between gap-3">
+          <div id="nmapVizStatus" class="text-[11px] text-slate-400">Ready</div>
+          <label class="inline-flex items-center gap-2 text-[11px] text-slate-300 select-none">
+            <input id="nmapVizFilterVuln" type="checkbox" class="rounded border-slate-600 bg-slate-900/80 text-red-500 focus:ring-red-400 focus:ring-offset-0">
+            <span>Show vulnerable hosts only</span>
+          </label>
+        </div>
+        <div class="px-4 py-4 max-h-[76vh] overflow-auto">
+          <div id="nmapVizError" class="hidden mb-4 rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-xs text-rose-200"></div>
+          <div id="nmapVizBody" class="space-y-4"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tailscale setup modal -->
+  <div id="tailscaleModal" class="hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-sm">
+    <div class="max-w-md mx-auto mt-16 md:mt-20 px-4">
+      <div class="rounded-2xl border border-slate-700/60 bg-slate-950/95 shadow-[0_0_30px_rgba(15,23,42,0.75)] overflow-hidden">
+        <div class="px-4 py-3 border-b border-slate-800/70 flex items-center justify-between">
+          <div class="text-sm font-semibold text-red-400">Install Tailscale</div>
+          <button id="tailscaleModalClose" type="button" class="text-slate-400 hover:text-slate-200 text-xs px-2 py-1 rounded-md bg-slate-900/60 border border-slate-700/60">✕</button>
+        </div>
+        <div class="px-4 py-3 space-y-3 text-xs">
+          <p class="text-slate-400">
+            1. Open
+            <a href="https://login.tailscale.com/admin/settings/authkeys" target="_blank" rel="noopener noreferrer" class="text-red-400 hover:text-emerald-200 underline">
+              https://login.tailscale.com/admin/settings/authkeys
+            </a>
+            and create a one-time auth key.
+          </p>
+          <p class="text-slate-400">
+            2. Paste the auth key below. It will be stored securely on the device and used to install and bring Tailscale online.
+          </p>
+          <div>
+            <label for="tailscaleKeyInput" class="block text-[11px] text-slate-400 mb-1">Tailscale auth key</label>
+            <input id="tailscaleKeyInput" type="password" autocomplete="off" class="w-full rounded-lg bg-slate-900/80 border border-slate-700/70 px-3 py-2 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-red-400 focus:border-red-400" placeholder="tskey-...">
+          </div>
+          <div id="tailscaleModalError" class="hidden text-[11px] text-rose-300"></div>
+          <div id="tailscaleModalStatus" class="text-[11px] text-slate-400"></div>
+        </div>
+        <div class="px-4 py-3 border-t border-slate-800/70 flex justify-end gap-2">
+          <button id="tailscaleModalCancel" type="button" class="px-3 py-1.5 rounded-lg bg-slate-800/80 border border-slate-600/60 text-slate-200 hover:bg-slate-700/80 text-xs">Cancel</button>
+          <button id="tailscaleModalSave" type="button" class="px-3 py-1.5 rounded-lg bg-red-900/80 border border-red-300/30 text-white hover:bg-red-800/80 text-xs">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Auth token modal -->
+  <div id="authModal" class="hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-sm">
+    <div class="max-w-md mx-auto mt-16 md:mt-20 px-4">
+      <div class="rounded-2xl border border-slate-700/60 bg-slate-950/95 shadow-[0_0_30px_rgba(15,23,42,0.75)] overflow-hidden">
+        <div class="px-4 py-3 border-b border-slate-800/70 flex items-center justify-between">
+          <div id="authModalTitle" class="text-sm font-semibold text-red-400">Authentication Required</div>
+          <button id="authModalClose" type="button" class="text-slate-400 hover:text-slate-200 text-xs px-2 py-1 rounded-md bg-slate-900/60 border border-slate-700/60">✕</button>
+        </div>
+        <div class="px-4 py-3 space-y-2 text-xs">
+          <div id="authModalMessage" class="text-slate-400">Enter your WebUI token to continue.</div>
+          <div id="authModalRules" class="hidden rounded-lg border border-slate-800/70 bg-slate-900/30 p-2">
+            <div class="text-[11px] font-semibold text-slate-200 mb-1">Rules</div>
+            <ul class="text-[11px] text-slate-400 space-y-1">
+              <li>Username must be 3-32 characters</li>
+              <li>Password must be at least 8 characters</li>
+              <li>Passwords must match</li>
+            </ul>
+          </div>
+          <input id="authModalUsername" type="text" autocomplete="username" class="w-full rounded-lg bg-slate-900/80 border border-slate-700/70 px-3 py-2 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-red-400 focus:border-red-400" placeholder="Username">
+          <input id="authModalPassword" type="password" autocomplete="current-password" class="w-full rounded-lg bg-slate-900/80 border border-slate-700/70 px-3 py-2 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-red-400 focus:border-red-400" placeholder="Password">
+          <input id="authModalPasswordConfirm" type="password" autocomplete="new-password" class="hidden w-full rounded-lg bg-slate-900/80 border border-slate-700/70 px-3 py-2 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-red-400 focus:border-red-400" placeholder="Confirm password">
+          <input id="authModalToken" type="password" autocomplete="off" class="hidden w-full rounded-lg bg-slate-900/80 border border-slate-700/70 px-3 py-2 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-red-400 focus:border-red-400" placeholder="Recovery token">
+          <div id="authModalError" class="hidden text-[11px] text-rose-300"></div>
+          <button id="authModalToggleRecovery" type="button" class="text-[11px] text-cyan-300 hover:text-cyan-200">Use recovery token instead</button>
+        </div>
+        <div class="px-4 py-3 border-t border-slate-800/70 flex justify-end gap-2">
+          <button id="authModalCancel" type="button" class="px-3 py-1.5 rounded-lg bg-slate-800/80 border border-slate-600/60 text-slate-200 hover:bg-slate-700/80 text-xs">Cancel</button>
+          <button id="authModalConfirm" type="button" class="px-3 py-1.5 rounded-lg bg-red-900/80 border border-red-300/30 text-white hover:bg-red-800/80 text-xs">Continue</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mobile bottom navigation (hidden on desktop via CSS) -->
+  <nav id="mobileNav" aria-label="Mobile navigation">
+    <button class="mob-nav-btn mob-nav-active" data-mobnav="device" aria-label="Device">
+      <i class="fa-solid fa-gamepad"></i>
+      <span>Device</span>
+    </button>
+    <button class="mob-nav-btn" data-mobnav="terminal" aria-label="Terminal">
+      <i class="fa-solid fa-terminal"></i>
+      <span>Terminal</span>
+    </button>
+    <button class="mob-nav-btn" data-mobnav="payloads" aria-label="Payloads">
+      <i class="fa-solid fa-bolt"></i>
+      <span>Payloads</span>
+    </button>
+    <button class="mob-nav-btn" data-mobnav="loot" aria-label="Loot">
+      <i class="fa-solid fa-vault"></i>
+      <span>Loot</span>
+    </button>
+    <button class="mob-nav-btn" data-mobnav="settings" aria-label="Settings">
+      <i class="fa-solid fa-sliders"></i>
+      <span>Settings</span>
+    </button>
+  </nav>
+
+  <!-- Stealth exit banner — fixed top bar, always reachable -->
+  <div id="stealthBanner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:9999;background:#7f1d1d;border-bottom:2px solid #ef4444;padding:10px 16px;display:none;align-items:center;justify-content:space-between;gap:12px;">
+    <span style="color:#fca5a5;font-size:13px;font-weight:600;letter-spacing:.04em;">&#128274; STEALTH MODE ACTIVE</span>
+    <button onclick="exitStealthHttp()" style="background:#ef4444;color:#fff;border:none;border-radius:8px;padding:8px 20px;font-size:13px;font-weight:700;cursor:pointer;letter-spacing:.05em;">EXIT STEALTH</button>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/xterm/lib/xterm.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit/lib/xterm-addon-fit.min.js"></script>
+  <script src="./shared.js"></script>
+  <script src="./app.js"></script>
+  <script>
+    // Stealth banner — polls stealth state and provides HTTP-based exit
+    (function(){
+      var banner = document.getElementById('stealthBanner');
+      var POLL_MS = 2000;
+      var pollTimer = null;
+
+      function showBanner(){ if(banner) banner.style.display='flex'; }
+      function hideBanner(){ if(banner) banner.style.display='none'; }
+
+      window.exitStealthHttp = function(){
+        fetch('/api/stealth/exit', {method:'POST', credentials:'include'})
+          .then(function(r){ if(r.ok) hideBanner(); })
+          .catch(function(){});
+      };
+
+      function pollStealth(){
+        fetch('/api/stealth/status', {credentials:'include'})
+          .then(function(r){ return r.ok ? r.json() : null; })
+          .then(function(d){
+            if(d && d.active) showBanner(); else hideBanner();
+          })
+          .catch(hideBanner);
+        pollTimer = setTimeout(pollStealth, POLL_MS);
+      }
+      pollStealth();
+    })();
+  </script>
+</body>
+</html>
+
