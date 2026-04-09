@@ -2472,11 +2472,8 @@ def show_splash():
         draw.line([(8,96),(120,96)],  fill="#3a0000", width=1)
         _centered("authorized",     102, fill="#6b1a1a")
         _centered("eyes only",      114, fill="#6b1a1a")
-        try:
-            if HAS_HW and LCD:
-                LCD.LCD_ShowImage(image, 0, 0)
-        except Exception:
-            pass
+        if HAS_HW and LCD:
+            LCD.LCD_ShowImage(image, 0, 0)
     time.sleep(1)
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -2526,11 +2523,8 @@ def boot():
         _centered("Starting…",    34, fill=color.text)
         _centered("WebUI  :8080", 52, fill="#3a0000")
         _centered("WS     :8765", 64, fill="#3a0000")
-        try:
-            if HAS_HW and LCD:
-                LCD.LCD_ShowImage(image, 0, 0)
-        except Exception:
-            pass
+        if HAS_HW and LCD:
+            LCD.LCD_ShowImage(image, 0, 0)
 
     with draw_lock:
         draw.rectangle([(0,0),(128,128)], fill="#000000")
@@ -2547,11 +2541,8 @@ def boot():
         _centered("WS    :8765",    94, fill=color.text)
         draw.line([(8,106),(120,106)], fill="#3a0000", width=1)
         _centered("authorized",    112, fill="#6b1a1a")
-        try:
-            if HAS_HW and LCD:
-                LCD.LCD_ShowImage(image, 0, 0)
-        except Exception:
-            pass
+        if HAS_HW and LCD:
+            LCD.LCD_ShowImage(image, 0, 0)
     time.sleep(2)
 
     with draw_lock:
