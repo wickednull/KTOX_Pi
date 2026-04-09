@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import threading
 """
 KTOx payload – Mini Honeypot
 =================================
@@ -31,6 +30,7 @@ Notes:
 """
 
 from __future__ import annotations
+import threading
 
 import argparse
 import asyncio

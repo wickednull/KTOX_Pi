@@ -48,44 +48,46 @@ import threading # Added threading import as it was missing
 def is_root():
     return os.geteuid() == 0
 
-# Prefer installed KTOx path; fallback to repo-relative
-PREFERRED_KTOX = '/root/KTOx'
-if os.path.isdir(PREFERRED_KTOX):
-    if PREFERRED_KTOX not in sys.path:
-        sys.path.insert(0, PREFERRED_KTOX)
-else:
-    KTOX_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'KTOx'))
-    if os.path.isdir(KTOX_PATH) and KTOX_PATH not in sys.path:
-        sys.path.insert(0, KTOX_PATH)
+# KTOx pathing
+_BASE = os.path.dirname(os.path.abspath(__file__))
+_PAYLOADS_DIR = os.path.abspath(os.path.join(_BASE, '..'))
+if _PAYLOADS_DIR not in sys.path:
+    sys.path.insert(0, _PAYLOADS_DIR)
+if os.path.isdir('/root/KTOx') and '/root/KTOx' not in sys.path:
+    sys.path.insert(0, '/root/KTOx')
 
 # ----------------------------
-# Third-party library imports 
+# Third-party library imports
 # ----------------------------
 try:
     import RPi.GPIO as GPIO
-    import LCD_Config
     import LCD_1in44
     from PIL import Image, ImageDraw, ImageFont
-except ImportError:
-    print("ERROR: Hardware libraries (RPi.GPIO, LCD, PIL) not found.", file=sys.stderr)
-    print("Please run 'sudo pip3 install RPi.GPIO spidev Pillow'.", file=sys.stderr)
+except Exception as e:
+    print(f"[ERROR] Hardware libs missing: {e}", file=sys.stderr)
     sys.exit(1)
 
 # ----------------------------
-# KTOx WiFi Integration
+# WiFi helpers
 # ----------------------------
+def get_available_interfaces():
+    try:
+        import re as _re
+        out = subprocess.run(['iw', 'dev'], capture_output=True, text=True, timeout=5).stdout
+        return _re.findall(r'Interface\s+(\S+)', out)
+    except Exception:
+        return []
+
 try:
-    from wifi.ktox_integration import get_available_interfaces
     import monitor_mode_helper
     WIFI_INTEGRATION_AVAILABLE = True
-except ImportError:
+except Exception:
     WIFI_INTEGRATION_AVAILABLE = False
-    def get_available_interfaces():
-        return []
-    def activate_monitor_mode(interface):
-        return None
-    def deactivate_monitor_mode(interface):
-        return False
+    class monitor_mode_helper:
+        @staticmethod
+        def activate_monitor_mode(iface): return None
+        @staticmethod
+        def deactivate_monitor_mode(iface): return False
 
 WIFI_INTERFACE = None
 ORIGINAL_WIFI_INTERFACE = None

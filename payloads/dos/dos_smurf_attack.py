@@ -48,7 +48,29 @@ if os.path.isdir(wifi_subdir) and wifi_subdir not in sys.path:
 import RPi.GPIO as GPIO
 import LCD_1in44, LCD_Config
 from PIL import Image, ImageDraw, ImageFont
-from wifi import ktox_integration as rji
+class _ktox_integration_stub:
+    @staticmethod
+    def get_best_interface():
+        try:
+            import re as _re, subprocess as _sub
+            out = _sub.run(['iw', 'dev'], capture_output=True, text=True, timeout=5).stdout
+            ifaces = _re.findall(r'Interface (\S+)', out)
+            for pref in ('wlan1', 'wlan2', 'wlan0'):
+                if pref in ifaces:
+                    return pref
+            return ifaces[0] if ifaces else 'wlan0'
+        except Exception:
+            return 'wlan0'
+    @staticmethod
+    def get_available_interfaces():
+        try:
+            import re as _re, subprocess as _sub
+            out = _sub.run(['iw', 'dev'], capture_output=True, text=True, timeout=5).stdout
+            return _re.findall(r'Interface (\S+)', out)
+        except Exception:
+            return []
+
+rji = _ktox_integration_stub()
 from scapy.all import IP, ICMP, send, conf, get_if_addr, get_if_hwaddr, get_if_mask
 conf.verb = 0
 

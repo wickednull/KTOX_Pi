@@ -29,33 +29,34 @@ import threading
 def is_root():
     return os.geteuid() == 0
 
-# Dynamically add KTOx path
-KTOX_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'KTOx'))
-if KTOX_PATH not in sys.path:
-    sys.path.append(KTOX_PATH)
+# KTOx pathing
+KTOX_ROOT = '/root/KTOx' if os.path.isdir('/root/KTOx') else os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+if KTOX_ROOT not in sys.path:
+    sys.path.insert(0, KTOX_ROOT)
+_payloads_dir = os.path.join(KTOX_ROOT, 'payloads')
+if os.path.isdir(_payloads_dir) and _payloads_dir not in sys.path:
+    sys.path.insert(0, _payloads_dir)
 
 # ----------------------------
-# Third-party library imports 
+# Third-party library imports
 # ----------------------------
 try:
     import RPi.GPIO as GPIO
-    import LCD_1in44, LCD_Config
+    import LCD_1in44
     from PIL import Image, ImageDraw, ImageFont
-except ImportError:
+except Exception:
     print("ERROR: Hardware libraries (RPi.GPIO, LCD, PIL) not found.", file=sys.stderr)
-    print("Please run 'sudo pip3 install RPi.GPIO spidev Pillow'.", file=sys.stderr)
     sys.exit(1)
 
 # ----------------------------
-# KTOx WiFi Integration
+# WiFi helpers
 # ----------------------------
 try:
     import monitor_mode_helper
     WIFI_INTEGRATION_AVAILABLE = True
-except ImportError:
+except Exception:
     WIFI_INTEGRATION_AVAILABLE = False
-    def deactivate_monitor_mode(interface):
-        return False
+    monitor_mode_helper = None
 
 def _detect_monitor_target():
     """Prefer wlan1 (USB external adapter) for monitor mode; fall back to wlan0."""
