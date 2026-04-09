@@ -32,37 +32,15 @@ if os.path.isdir('/root/KTOx') and '/root/KTOx' not in sys.path:
     sys.path.insert(0, '/root/KTOx')
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))) # Add parent directory for monitor_mode_helper
-try:
-    import RPi.GPIO as GPIO
-    import LCD_1in44
-    from PIL import Image, ImageDraw, ImageFont
-except Exception as e:
-    print(f"[ERROR] Hardware libs missing: {e}", file=sys.stderr)
-    sys.exit(1)
-
-def get_available_interfaces():
-    try:
-        import re as _re
-        out = subprocess.run(['iw', 'dev'], capture_output=True, text=True, timeout=5).stdout
-        return _re.findall(r'Interface\s+(\S+)', out)
-    except Exception:
-        return []
-
-def get_best_interface():
-    ifaces = get_available_interfaces()
-    for pref in ('wlan1', 'wlan2', 'wlan0'):
-        if pref in ifaces:
-            return pref
-    return ifaces[0] if ifaces else 'wlan0'
-
-try:
-    import monitor_mode_helper
-except Exception:
-    class monitor_mode_helper:
-        @staticmethod
-        def activate_monitor_mode(iface): return None
-        @staticmethod
-        def deactivate_monitor_mode(iface): return False
+import RPi.GPIO as GPIO
+import LCD_Config
+import LCD_1in44
+from PIL import Image, ImageDraw, ImageFont
+from wifi.ktox_integration import (
+    get_best_interface,
+    get_available_interfaces,
+)
+import monitor_mode_helper
 
 # Load PINS from KTOx gui_conf.json
 PINS: dict[str, int] = {"UP": 6, "DOWN": 19, "LEFT": 5, "RIGHT": 26, "OK": 13, "KEY1": 21, "KEY2": 20, "KEY3": 16}

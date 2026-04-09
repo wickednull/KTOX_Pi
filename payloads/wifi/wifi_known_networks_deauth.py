@@ -46,37 +46,15 @@ if os.path.isdir('/root/KTOx') and '/root/KTOx' not in sys.path:
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))) # Add parent directory for monitor_mode_helper
 
+import RPi.GPIO as GPIO
+import LCD_Config
+import LCD_1in44
+from PIL import Image, ImageDraw, ImageFont
+from scapy.all import *
+conf.verb = 0
+from wifi.ktox_integration import get_available_interfaces
 import re
-try:
-    import RPi.GPIO as GPIO
-    import LCD_1in44
-    from PIL import Image, ImageDraw, ImageFont
-except Exception as e:
-    print(f"[ERROR] Hardware libs missing: {e}", file=sys.stderr)
-    sys.exit(1)
-
-try:
-    from scapy.all import *
-    conf.verb = 0
-    SCAPY_OK = True
-except Exception:
-    SCAPY_OK = False
-
-def get_available_interfaces():
-    try:
-        out = subprocess.run(['iw', 'dev'], capture_output=True, text=True, timeout=5).stdout
-        return re.findall(r'Interface\s+(\S+)', out)
-    except Exception:
-        return []
-
-try:
-    import monitor_mode_helper
-except Exception:
-    class monitor_mode_helper:
-        @staticmethod
-        def activate_monitor_mode(iface): return None
-        @staticmethod
-        def deactivate_monitor_mode(iface): return False
+import monitor_mode_helper
 
 WIFI_INTERFACE = None
 ORIGINAL_WIFI_INTERFACE = None

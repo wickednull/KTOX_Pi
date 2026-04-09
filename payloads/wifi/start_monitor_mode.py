@@ -30,32 +30,34 @@ import threading
 def is_root():
     return os.geteuid() == 0
 
-# KTOx pathing
-KTOX_ROOT = '/root/KTOx' if os.path.isdir('/root/KTOx') else os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+# Prefer /root/KTOx for imports; fallback to repo-relative
+KTOX_ROOT = '/root/KTOx' if os.path.isdir('/root/KTOx') else os.path.abspath(os.path.join(__file__, '..', '..'))
 if KTOX_ROOT not in sys.path:
     sys.path.insert(0, KTOX_ROOT)
-_payloads_dir = os.path.join(KTOX_ROOT, 'payloads')
-if os.path.isdir(_payloads_dir) and _payloads_dir not in sys.path:
-    sys.path.insert(0, _payloads_dir)
+# Also add wifi subdir if present (some helpers may live there)
+_wifi_dir = os.path.join(KTOX_ROOT, 'wifi')
+if os.path.isdir(_wifi_dir) and _wifi_dir not in sys.path:
+    sys.path.insert(0, _wifi_dir)
 
 # ----------------------------
-# Third-party library imports
+# Third-party library imports 
 # ----------------------------
 try:
     import RPi.GPIO as GPIO
-    import LCD_1in44
+    import LCD_1in44, LCD_Config
     from PIL import Image, ImageDraw, ImageFont
-except Exception:
+except ImportError:
     print("ERROR: Hardware libraries (RPi.GPIO, LCD, PIL) not found.", file=sys.stderr)
+    print("Please run 'sudo pip3 install RPi.GPIO spidev Pillow'.", file=sys.stderr)
     sys.exit(1)
 
 # ----------------------------
-# WiFi helpers
+# KTOx WiFi Integration
 # ----------------------------
 try:
     import monitor_mode_helper
     WIFI_INTEGRATION_AVAILABLE = True
-except Exception:
+except ImportError:
     WIFI_INTEGRATION_AVAILABLE = False
     monitor_mode_helper = None
 

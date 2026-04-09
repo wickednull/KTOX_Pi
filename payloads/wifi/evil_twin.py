@@ -59,30 +59,28 @@ else:
         sys.path.insert(0, KTOX_PATH)
 
 # ----------------------------
-# Third-party library imports
+# Third-party library imports 
 # ----------------------------
 try:
     import RPi.GPIO as GPIO
+    import LCD_Config
     import LCD_1in44
     from PIL import Image, ImageDraw, ImageFont
-except Exception:
+except ImportError:
     print("ERROR: Hardware libraries (RPi.GPIO, LCD, PIL) not found.", file=sys.stderr)
+    print("Please run 'sudo pip3 install RPi.GPIO spidev Pillow'.", file=sys.stderr)
     sys.exit(1)
 
 # ----------------------------
-# WiFi helpers
+# KTOx WiFi Integration
 # ----------------------------
-def get_best_interface():
-    try:
-        import re as _re
-        out = subprocess.run(['iw', 'dev'], capture_output=True, text=True, timeout=5).stdout
-        ifaces = _re.findall(r'Interface\s+(\S+)', out)
-        for pref in ('wlan1', 'wlan2', 'wlan0'):
-            if pref in ifaces:
-                return pref
-        return ifaces[0] if ifaces else 'wlan1'
-    except Exception:
-        return 'wlan1'
+try:
+    from wifi.ktox_integration import get_best_interface
+    WIFI_INTEGRATION_AVAILABLE = True
+except ImportError:
+    WIFI_INTEGRATION_AVAILABLE = False
+    def get_best_interface():
+        return "wlan1" # Fallback
 
 # Load PINS from KTOx gui_conf.json when possible
 PINS: dict[str, int] = {"UP": 6, "DOWN": 19, "LEFT": 5, "RIGHT": 26, "OK": 13, "KEY1": 21, "KEY2": 20, "KEY3": 16}

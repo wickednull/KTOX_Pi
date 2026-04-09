@@ -27,41 +27,28 @@ import subprocess
 from collections import deque
 
 # KTOx pathing
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-_PAYLOADS_DIR = os.path.abspath(os.path.join(BASE_DIR, '..'))
-if _PAYLOADS_DIR not in sys.path:
-    sys.path.insert(0, _PAYLOADS_DIR)
+BASE_DIR = os.path.dirname(__file__)
+sys.path.append(os.path.abspath(os.path.join(BASE_DIR, '..', '..')))
 if os.path.isdir('/root/KTOx') and '/root/KTOx' not in sys.path:
     sys.path.insert(0, '/root/KTOx')
 
 # Hardware/UI imports
 try:
     import RPi.GPIO as GPIO
+    import LCD_Config
     import LCD_1in44
     from PIL import Image, ImageDraw, ImageFont
 except Exception as e:
     print(f"[ERROR] LCD/GPIO deps missing: {e}", file=sys.stderr)
     sys.exit(1)
 
-# WiFi helpers
-def get_available_interfaces():
-    try:
-        import re as _re
-        out = subprocess.run(['iw', 'dev'], capture_output=True, text=True, timeout=5).stdout
-        return _re.findall(r'Interface\s+(\S+)', out)
-    except Exception:
-        return []
-
+# WiFi utilities
 try:
+    from wifi.ktox_integration import get_available_interfaces
     import monitor_mode_helper
     WIFI_OK = True
 except Exception:
     WIFI_OK = False
-    class monitor_mode_helper:
-        @staticmethod
-        def activate_monitor_mode(iface): return None
-        @staticmethod
-        def deactivate_monitor_mode(iface): return False
 
 # Scapy for 802.11
 try:

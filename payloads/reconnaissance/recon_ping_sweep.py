@@ -42,26 +42,8 @@ import LCD_1in44, LCD_Config
 from PIL import Image, ImageDraw, ImageFont
 from scapy.all import *
 conf.verb = 0
-def get_available_interfaces():
-    try:
-        import re as _re, subprocess as _sub
-        out = _sub.run(['iw', 'dev'], capture_output=True, text=True, timeout=5).stdout
-        return _re.findall(r'Interface (\S+)', out)
-    except Exception:
-        return []
-
-def set_ktox_interface(iface):
-    pass
-
-try:
-    from wifi.wifi_manager import WiFiManager
-except Exception:
-    class WiFiManager:
-        def __init__(self): pass
-        def get_interface(self): return 'wlan0'
-        def get_available_interfaces(self): return get_available_interfaces()
-        def connect(self, *a, **kw): return False
-        def disconnect(self, *a, **kw): return False
+from wifi.ktox_integration import get_available_interfaces, set_ktox_interface
+from wifi.wifi_manager import WiFiManager
 
 PINS: dict[str, int] = { "OK": 13, "KEY3": 16, "KEY1": 21, "UP": 6, "DOWN": 19, "LEFT": 5, "RIGHT": 26 }
 GPIO.setmode(GPIO.BCM)
