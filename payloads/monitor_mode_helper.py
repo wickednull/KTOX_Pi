@@ -24,6 +24,9 @@ from wifi.monitor_mode_helper import (          # noqa: F401  (re-export)
     _iface_exists,
     _iface_mode,
     _is_onboard,
+    _current_monitor_ifaces,
+    _get_phy,
+    _ensure_up,
 )
 
 __all__ = [

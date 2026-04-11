@@ -1,158 +1,202 @@
 #!/usr/bin/env python3
 """
-KTOx *payload* – **Stop Monitor Mode (wlan1)**
-=================================================
-This payload attempts to deactivate monitor mode on the specified Wi-Fi interface
-(defaulting to `wlan1`) and restore it to managed mode. This is useful after
-completing Wi-Fi reconnaissance or attacks that require monitor mode.
-
-Features:
-- Automatically attempts to put `wlan1` into managed mode.
-- Displays status messages on the LCD regarding the deactivation process.
-- Uses `WiFiManager` for robust interface management.
-- Graceful exit via Ctrl-C or SIGTERM.
+KTOx payload — Stop Monitor Mode
+==================================
+Restores the USB WiFi dongle from monitor mode back to managed mode
+and restarts NetworkManager / wpa_supplicant.
 
 Controls:
-- This payload is designed to be executed directly.
-- No interactive controls after launch, it performs its function and exits.
+  KEY3 — exit after result is shown
 """
 import sys
 import os
 import time
 import signal
-import subprocess
-import threading
 
-# ----------------------------
-# KTOx PATH and ROOT check
-# ----------------------------
-def is_root():
-    return os.geteuid() == 0
+# ── Path setup ────────────────────────────────────────────────────────────────
+KTOX_ROOT = '/root/KTOx' if os.path.isdir('/root/KTOx') else \
+    os.path.abspath(os.path.join(__file__, '..', '..', '..'))
+for _p in (KTOX_ROOT, os.path.join(KTOX_ROOT, 'wifi')):
+    if os.path.isdir(_p) and _p not in sys.path:
+        sys.path.insert(0, _p)
 
-# Prefer /root/KTOx for imports; fallback to repo-relative
-KTOX_ROOT = '/root/KTOx' if os.path.isdir('/root/KTOx') else os.path.abspath(os.path.join(__file__, '..', '..', '..'))
-if KTOX_ROOT not in sys.path:
-    sys.path.insert(0, KTOX_ROOT)
-# Add wifi subdir so 'import monitor_mode_helper' finds wifi/monitor_mode_helper.py
-_wifi_dir = os.path.join(KTOX_ROOT, 'wifi')
-if os.path.isdir(_wifi_dir) and _wifi_dir not in sys.path:
-    sys.path.insert(0, _wifi_dir)
-
-# ----------------------------
-# Third-party library imports 
-# ----------------------------
+# ── Hardware ──────────────────────────────────────────────────────────────────
 try:
     import RPi.GPIO as GPIO
-    import LCD_1in44, LCD_Config
+    import LCD_1in44
     from PIL import Image, ImageDraw, ImageFont
-except ImportError:
-    print("ERROR: Hardware libraries (RPi.GPIO, LCD, PIL) not found.", file=sys.stderr)
-    print("Please run 'sudo pip3 install RPi.GPIO spidev Pillow'.", file=sys.stderr)
-    sys.exit(1)
+    HAS_HW = True
+except ImportError as e:
+    print(f"[WARN] Hardware not available: {e}")
+    HAS_HW = False
 
-# ----------------------------
-# KTOx WiFi Integration
-# ----------------------------
+# ── Monitor mode helper ───────────────────────────────────────────────────────
 try:
-    import monitor_mode_helper
-    WIFI_INTEGRATION_AVAILABLE = True
+    from wifi.monitor_mode_helper import (
+        deactivate_monitor_mode,
+        _iface_mode,
+        _iface_exists,
+        _current_monitor_ifaces,
+    )
+    MON_OK = True
 except ImportError:
-    WIFI_INTEGRATION_AVAILABLE = False
-    monitor_mode_helper = None
+    try:
+        import monitor_mode_helper as _mmh
+        deactivate_monitor_mode = _mmh.deactivate_monitor_mode
+        MON_OK = True
+        def _iface_mode(i): return ""
+        def _iface_exists(i): return False
+        def _current_monitor_ifaces(): return []
+    except ImportError:
+        MON_OK = False
 
-def _detect_monitor_target():
-    """Prefer wlan1 (USB external adapter) for monitor mode; fall back to wlan0."""
-    for iface in ['wlan1', 'wlan0']:
-        if os.path.exists(f'/sys/class/net/{iface}'):
-            return iface
-    return 'wlan1'
-
-TARGET_INTERFACE_BASE = _detect_monitor_target()
-
-PINS: dict[str, int] = {
-    "OK": 13, "KEY3": 16,
-}
-
-GPIO.setmode(GPIO.BCM)
-for pin in PINS.values():
-    GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-
-LCD = LCD_1in44.LCD()
-LCD.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
+PINS = {"OK": 13, "KEY1": 21, "KEY2": 20, "KEY3": 16}
 WIDTH, HEIGHT = 128, 128
-FONT = ImageFont.load_default()
-FONT_TITLE = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 12)
+_running = True
 
-running = True
 
-def cleanup(*_):
-    global running
-    running = False
+def _cleanup(*_):
+    global _running
+    _running = False
 
-signal.signal(signal.SIGINT, cleanup)
-signal.signal(signal.SIGTERM, cleanup)
 
-def draw_message(lines, color="lime"):
-    img = Image.new("RGB", (WIDTH, HEIGHT), "black")
-    d = ImageDraw.Draw(img)
-    y = 40
-    for line in lines:
-        bbox = d.textbbox((0, 0), line, font=FONT_TITLE)
-        w = bbox[2] - bbox[0]
-        x = (WIDTH - w) // 2
-        d.text((x, y), line, font=FONT_TITLE, fill=color)
-        y += 15
-    LCD.LCD_ShowImage(img, 0, 0)
+signal.signal(signal.SIGINT, _cleanup)
+signal.signal(signal.SIGTERM, _cleanup)
+
+_lcd = None
+_font = None
+
+
+def _init_hw():
+    global _lcd, _font
+    if not HAS_HW:
+        return
+    try:
+        GPIO.setmode(GPIO.BCM)
+        for pin in PINS.values():
+            GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+        _lcd = LCD_1in44.LCD()
+        _lcd.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
+        try:
+            _font = ImageFont.truetype(
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 10)
+        except Exception:
+            _font = ImageFont.load_default()
+    except Exception as e:
+        print(f"[WARN] LCD init failed: {e}")
+
+
+def _show(lines, title_color=(255, 255, 0), body_color=(0, 220, 0)):
+    for ln in lines:
+        print(f"  {ln}")
+    if not (_lcd and _font):
+        return
+    try:
+        img = Image.new("RGB", (WIDTH, HEIGHT), "black")
+        d = ImageDraw.Draw(img)
+        d.rectangle((0, 0, WIDTH, 12), fill=(20, 20, 20))
+        d.text((2, 1), "STOP MON MODE", font=_font, fill=(0, 200, 255))
+        y = 16
+        for i, ln in enumerate(lines[:7]):
+            col = title_color if i == 0 else body_color
+            d.text((2, y), str(ln)[:22], font=_font, fill=col)
+            y += 15
+        _lcd.LCD_ShowImage(img, 0, 0)
+    except Exception as e:
+        print(f"[WARN] LCD show failed: {e}")
+
+
+def _wait_key3():
+    if not HAS_HW:
+        time.sleep(3)
+        return
+    _show(["", "Press KEY3 to exit"], body_color=(100, 100, 100))
+    while _running:
+        if GPIO.input(PINS["KEY3"]) == 0:
+            break
+        time.sleep(0.05)
+
 
 def main():
-    draw_message(["Deactivating monitor", f"mode on {TARGET_INTERFACE_BASE}...", "Please wait."], "yellow")
+    _init_hw()
 
-    print(f"Attempting to deactivate monitor mode on {TARGET_INTERFACE_BASE}...", file=sys.stderr)
-    try:
-        if not monitor_mode_helper:
-            raise ImportError("monitor_mode_helper not available in path")
-        success = monitor_mode_helper.deactivate_monitor_mode(TARGET_INTERFACE_BASE)
-        if success:
-            draw_message(["Monitor mode", "DEACTIVATED!", f"Interface: {TARGET_INTERFACE_BASE}"], "lime")
-            print(f"Successfully deactivated monitor mode on {TARGET_INTERFACE_BASE}", file=sys.stderr)
-        else:
-            draw_message(["ERROR:", "Failed to deactivate", "monitor mode!"], "red")
-            print(f"ERROR: monitor_mode_helper.deactivate_monitor_mode failed for {TARGET_INTERFACE_BASE}", file=sys.stderr)
-    except Exception as e:
-        draw_message(["CRITICAL ERROR:", str(e)[:20]], "red")
-        print(f"Critical error during monitor mode deactivation: {e}", file=sys.stderr)
-    
-    time.sleep(5)
+    if not MON_OK:
+        _show(["IMPORT ERROR", "monitor_mode_helper", "not found!"],
+              title_color=(255, 0, 0))
+        _wait_key3()
+        return 1
+
+    # Step 1 — find monitor interfaces
+    _show(["Step 1/2", "Scanning for monitor", "interfaces..."])
+    time.sleep(0.4)
+
+    # Find all interfaces currently in monitor mode
+    mon_ifaces = _current_monitor_ifaces()
+
+    if not mon_ifaces:
+        _show(["NO MONITOR INTERFACES",
+               "Nothing is in monitor",
+               "mode right now.",
+               "NM/wpa will restart."],
+              title_color=(0, 200, 255))
+        print("[INFO] No interfaces in monitor mode found.")
+        # Still restart services in case they were stopped earlier
+        try:
+            from wifi.monitor_mode_helper import _start_interfering_services
+            _start_interfering_services()
+        except Exception:
+            pass
+        _wait_key3()
+        return 0
+
+    _show([f"Found: {', '.join(mon_ifaces)}", "Step 2/2",
+           "Restoring managed...", "Please wait..."])
+    print(f"[INFO] Deactivating monitor mode on: {mon_ifaces}")
+    time.sleep(0.3)
+
+    # Step 2 — deactivate each
+    failed = []
+    for iface in mon_ifaces:
+        ok = deactivate_monitor_mode(iface)
+        if not ok:
+            failed.append(iface)
+
+    if not failed:
+        _show(["MANAGED MODE RESTORED",
+               f"Was: {', '.join(mon_ifaces)}",
+               "NM/wpa restarted",
+               "WiFi back online shortly"],
+              title_color=(0, 255, 0))
+        print("[OK] Monitor mode deactivated successfully.")
+        _wait_key3()
+        return 0
+    else:
+        _show(["PARTIAL FAILURE",
+               f"Failed: {', '.join(failed)}",
+               "Check debug log:",
+               "/root/KTOx/loot/",
+               "ktox_debug.log"],
+              title_color=(255, 150, 0))
+        print(f"[WARN] Failed to deactivate: {failed}")
+        _wait_key3()
+        return 1
+
 
 if __name__ == "__main__":
-    if not is_root():
-        print("ERROR: This script requires root privileges.", file=sys.stderr)
-        # Attempt to display on LCD if possible
-        try:
-            LCD = LCD_1in44.LCD()
-            LCD.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
-            img = Image.new("RGB", (128, 128), "black")
-            d = ImageDraw.Draw(img)
-            FONT_TITLE = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 12)
-            d.text((10, 40), "ERROR:\nRoot privileges\nrequired.", font=FONT_TITLE, fill="red")
-            LCD.LCD_ShowImage(img, 0, 0)
-        except Exception as e:
-            print(f"Could not display error on LCD: {e}", file=sys.stderr)
+    if os.geteuid() != 0:
+        print("ERROR: requires root (run with sudo)")
         sys.exit(1)
-
-    if not WIFI_INTEGRATION_AVAILABLE:
-        draw_message(["ERROR:", "WiFi integration not found."], "red")
-        time.sleep(5)
-        sys.exit(1)
-        
     try:
-        main()
-    except SystemExit:
-        pass
-    except KeyboardInterrupt:
-        draw_message(["Payload", "interrupted."], "yellow")
-        time.sleep(2)
+        rc = main()
     finally:
-        LCD.LCD_Clear()
-        GPIO.cleanup()
-        print("Stop Monitor Mode payload finished.")
+        if _lcd:
+            try:
+                _lcd.LCD_Clear()
+            except Exception:
+                pass
+        if HAS_HW:
+            try:
+                GPIO.cleanup()
+            except Exception:
+                pass
+    raise SystemExit(rc)
