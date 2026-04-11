@@ -2414,6 +2414,101 @@ class KTOxMenu:
                     self.which = "home"; return
             return
 
+        # ── Payload category grid view ────────────────────────────────────────
+        if key == "pay":
+            cats   = [(cat_key, cat_label)
+                      for cat_key, cat_label in PAYLOAD_CATEGORIES
+                      if _list_payloads(cat_key)]
+            if not cats:
+                Dialog_info("No payloads found.\nDrop .py files into\n/payloads/<cat>/", wait=True)
+                return
+
+            total  = len(cats)
+            COLS   = 2
+            ROWS   = 4
+            PAGE   = COLS * ROWS     # 8 cells per page
+            # Cell geometry (128×128 screen, title strip y=13-24, grid y=26+)
+            _CW    = 62              # cell width
+            _CH    = 24              # cell height
+            _GX    = 3              # grid left margin
+            _GY    = 26             # grid top margin
+            _GAP   = 2              # gap between columns
+            sel    = 0              # flat category index
+
+            while True:
+                page         = sel // PAGE
+                page_start   = page * PAGE
+                page_cats    = cats[page_start:page_start + PAGE]
+                sel_in_page  = sel - page_start
+                sel_row      = sel_in_page // COLS
+                sel_col      = sel_in_page % COLS
+                num_pages    = (total + PAGE - 1) // PAGE
+
+                with draw_lock:
+                    _draw_toolbar()
+                    color.DrawMenuBackground()
+                    color.DrawBorder()
+                    # Title strip
+                    draw.rectangle([3, 13, 125, 24], fill="#1a0000")
+                    _pg_lbl = f"PAYLOADS  {page+1}/{num_pages}" if num_pages > 1 else "PAYLOADS"
+                    _centered(_pg_lbl[:20], 13, font=small_font, fill=color.border)
+                    draw.line([(3, 24), (125, 24)], fill=color.border, width=1)
+                    # Grid cells
+                    for idx, (ckey, clabel) in enumerate(page_cats):
+                        crow = idx // COLS
+                        ccol = idx % COLS
+                        cx   = _GX + ccol * (_CW + _GAP)
+                        cy   = _GY + crow * _CH
+                        is_sel = (crow == sel_row and ccol == sel_col)
+                        # Cell background
+                        cell_fill = color.select if is_sel else "#0d0000"
+                        draw.rectangle([cx, cy, cx + _CW - 1, cy + _CH - 2],
+                                       fill=cell_fill, outline=color.border)
+                        txt_fill = color.selected_text if is_sel else color.text
+                        icon = _FA_ICONS.get(clabel, "")
+                        if icon and icon_font:
+                            draw.text((cx + 3, cy + 2), icon, font=icon_font, fill=txt_fill)
+                            draw.text((cx + 16, cy + 3), clabel[:7], font=small_font, fill=txt_fill)
+                        else:
+                            draw.text((cx + 3, cy + 6), clabel[:8], font=small_font, fill=txt_fill)
+                        # Payload count badge — bottom-right corner of cell
+                        n = len(_list_payloads(ckey))
+                        draw.text((cx + _CW - 14, cy + _CH - 11),
+                                  str(n), font=small_font, fill="#8B0000")
+                    # Page indicator pips
+                    if num_pages > 1:
+                        for pi in range(num_pages):
+                            px = 60 + pi * 6
+                            pc = color.border if pi == page else "#330000"
+                            draw.rectangle([px, 124, px + 4, 127], fill=pc)
+
+                time.sleep(0.08)
+                btn = getButton(timeout=120)
+                if btn is None:
+                    continue
+                elif btn == "KEY_DOWN_PIN":
+                    sel = (sel + COLS) % total  # move one row down
+                elif btn == "KEY_UP_PIN":
+                    sel = (sel - COLS) % total  # move one row up
+                elif btn == "KEY_RIGHT_PIN":
+                    sel = (sel + 1) % total
+                elif btn == "KEY_LEFT_PIN":
+                    if sel > 0:
+                        sel -= 1
+                    else:
+                        return  # back at first category
+                elif btn in ("KEY_PRESS_PIN",):
+                    ckey = cats[sel][0]
+                    saved      = self.which
+                    self.which = f"pay_{ckey}"
+                    self.navigate(f"pay_{ckey}")
+                    self.which = saved
+                elif btn == "KEY1_PIN":
+                    return
+                elif btn == "KEY2_PIN":
+                    self.which = "home"; return
+            return
+
         # Standard navigate
         tree = self._menu()
 
