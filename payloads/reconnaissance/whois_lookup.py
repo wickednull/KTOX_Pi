@@ -16,7 +16,7 @@ Controls:
   KEY2       -- Export results
   KEY3       -- Exit
 
-Loot: /root/Raspyjack/loot/WHOIS/whois_YYYYMMDD_HHMMSS.json
+Loot: /root/KTOx/loot/WHOIS/whois_YYYYMMDD_HHMMSS.json
 """
 
 import os
@@ -48,8 +48,8 @@ WIDTH, HEIGHT = LCD_1in44.LCD_WIDTH, LCD_1in44.LCD_HEIGHT
 ROWS_VISIBLE = 5
 ROW_H = 12
 
-LOOT_SRC_DIR = "/root/Raspyjack/loot/MITM"
-LOOT_DIR = "/root/Raspyjack/loot/WHOIS"
+LOOT_SRC_DIR = "/root/KTOx/loot/MITM"
+LOOT_DIR = "/root/KTOx/loot/WHOIS"
 WHOIS_SERVER = "whois.iana.org"
 WHOIS_PORT = 43
 WHOIS_TIMEOUT = 10

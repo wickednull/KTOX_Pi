@@ -23,7 +23,7 @@ Controls
   KEY2       -- Export all captures to loot
   KEY3       -- Exit
 
-Loot: /root/Raspyjack/loot/Handshakes/
+Loot: /root/KTOx/loot/Handshakes/
 """
 
 import os
@@ -68,7 +68,7 @@ WIDTH, HEIGHT = LCD.width, LCD.height
 font = scaled_font()
 
 # ── Constants ────────────────────────────────────────────────────────────────
-LOOT_DIR = "/root/Raspyjack/loot/Handshakes"
+LOOT_DIR = "/root/KTOx/loot/Handshakes"
 CHANNELS_24 = list(range(1, 14))
 ROWS_VISIBLE = 6
 ROW_H = 12

@@ -29,10 +29,14 @@ import threading
 def is_root():
     return os.geteuid() == 0
 
-# Dynamically add KTOx path
-KTOX_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'KTOx'))
-if KTOX_PATH not in sys.path:
-    sys.path.append(KTOX_PATH)
+# Prefer /root/KTOx for imports; fallback to repo-relative
+KTOX_ROOT = '/root/KTOx' if os.path.isdir('/root/KTOx') else os.path.abspath(os.path.join(__file__, '..', '..', '..'))
+if KTOX_ROOT not in sys.path:
+    sys.path.insert(0, KTOX_ROOT)
+# Add wifi subdir so 'import monitor_mode_helper' finds wifi/monitor_mode_helper.py
+_wifi_dir = os.path.join(KTOX_ROOT, 'wifi')
+if os.path.isdir(_wifi_dir) and _wifi_dir not in sys.path:
+    sys.path.insert(0, _wifi_dir)
 
 # ----------------------------
 # Third-party library imports 
@@ -54,8 +58,7 @@ try:
     WIFI_INTEGRATION_AVAILABLE = True
 except ImportError:
     WIFI_INTEGRATION_AVAILABLE = False
-    def deactivate_monitor_mode(interface):
-        return False
+    monitor_mode_helper = None
 
 def _detect_monitor_target():
     """Prefer wlan1 (USB external adapter) for monitor mode; fall back to wlan0."""
@@ -106,6 +109,8 @@ def main():
 
     print(f"Attempting to deactivate monitor mode on {TARGET_INTERFACE_BASE}...", file=sys.stderr)
     try:
+        if not monitor_mode_helper:
+            raise ImportError("monitor_mode_helper not available in path")
         success = monitor_mode_helper.deactivate_monitor_mode(TARGET_INTERFACE_BASE)
         if success:
             draw_message(["Monitor mode", "DEACTIVATED!", f"Interface: {TARGET_INTERFACE_BASE}"], "lime")

@@ -11,7 +11,7 @@ bind first, then authenticated bind using credentials from config.
 Dumps: Users, Groups, Computers, OUs, GPOs, Domain Trusts,
 Password Policy, and SPN targets (Kerberoasting).
 
-Saves structured JSON to /root/Raspyjack/loot/LDAPDump/.
+Saves structured JSON to /root/KTOx/loot/LDAPDump/.
 
 Controls
 --------
@@ -55,8 +55,8 @@ font = scaled_font()
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-LOOT_DIR = "/root/Raspyjack/loot/LDAPDump"
-CONFIG_DIR = "/root/Raspyjack/config/ldap_dumper"
+LOOT_DIR = "/root/KTOx/loot/LDAPDump"
+CONFIG_DIR = "/root/KTOx/config/ldap_dumper"
 CREDS_FILE = os.path.join(CONFIG_DIR, "creds.json")
 os.makedirs(LOOT_DIR, exist_ok=True)
 os.makedirs(CONFIG_DIR, exist_ok=True)

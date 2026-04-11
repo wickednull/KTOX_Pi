@@ -17,7 +17,7 @@ Controls:
   KEY2       -- Export results to loot
   KEY3       -- Exit
 
-Loot: /root/Raspyjack/loot/Telnet/telnet_YYYYMMDD_HHMMSS.json
+Loot: /root/KTOx/loot/Telnet/telnet_YYYYMMDD_HHMMSS.json
 """
 
 import os
@@ -45,8 +45,8 @@ PINS = {
 }
 WIDTH, HEIGHT = LCD_1in44.LCD_WIDTH, LCD_1in44.LCD_HEIGHT
 ROWS_VISIBLE = 5
-LOOT_DIR = "/root/Raspyjack/loot/Telnet"
-NMAP_LOOT = "/root/Raspyjack/loot"
+LOOT_DIR = "/root/KTOx/loot/Telnet"
+NMAP_LOOT = "/root/KTOx/loot"
 
 # ---------------------------------------------------------------------------
 # Default credential pairs for IoT / routers / switches

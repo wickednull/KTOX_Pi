@@ -27,7 +27,7 @@ Controls:
   KEY2      -- Toggle Pixie / Brute mode
   KEY3      -- Exit
 
-Loot: /root/Raspyjack/loot/WPS/
+Loot: /root/KTOx/loot/WPS/
 """
 
 import os
@@ -64,7 +64,7 @@ font = scaled_font()
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-LOOT_DIR = "/root/Raspyjack/loot/WPS"
+LOOT_DIR = "/root/KTOx/loot/WPS"
 os.makedirs(LOOT_DIR, exist_ok=True)
 
 ROWS_VISIBLE = 6

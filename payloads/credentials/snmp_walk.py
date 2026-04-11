@@ -15,7 +15,7 @@ Controls:
   KEY2       -- Export results to loot
   KEY3       -- Exit
 
-Loot: /root/Raspyjack/loot/SNMP/snmp_YYYYMMDD_HHMMSS.json
+Loot: /root/KTOx/loot/SNMP/snmp_YYYYMMDD_HHMMSS.json
 """
 
 import os
@@ -56,7 +56,7 @@ PINS = {
 WIDTH, HEIGHT = LCD_1in44.LCD_WIDTH, LCD_1in44.LCD_HEIGHT
 ROWS_VISIBLE = 6
 ROW_H = 12
-LOOT_DIR = "/root/Raspyjack/loot/SNMP"
+LOOT_DIR = "/root/KTOx/loot/SNMP"
 
 COMMUNITY_STRINGS = [
     "public", "private", "community", "manager", "admin",

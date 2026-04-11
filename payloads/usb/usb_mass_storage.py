@@ -53,7 +53,7 @@ GADGET_PATH = os.path.join(CONFIGFS_BASE, GADGET_NAME)
 IMAGE_PATH = "/tmp/raspyjack_usb.img"
 MOUNT_PATH = "/tmp/raspyjack_usb_mount"
 IMAGE_SIZE_MB = 64
-TEMPLATE_DIR = "/root/Raspyjack/templates/usb"
+TEMPLATE_DIR = "/root/KTOx/templates/usb"
 
 TEMPLATES = ["empty", "documents", "autorun"]
 

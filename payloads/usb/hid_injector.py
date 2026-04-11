@@ -10,7 +10,7 @@ Configure the Pi Zero as a USB HID keyboard via Linux USB gadget API
 Setup / Prerequisites:
   - Requires Pi Zero USB OTG port. Connect Pi to target via USB.
   - Kernel must support configfs USB gadget.
-  - DuckyScript files in /root/Raspyjack/payloads/hid_scripts/.
+  - DuckyScript files in /root/KTOx/payloads/hid_scripts/.
 
 Supported DuckyScript commands:
   STRING, ENTER, DELAY, GUI, ALT, CTRL, SHIFT, TAB, ESCAPE,
@@ -23,8 +23,8 @@ Controls:
   KEY2      -- Test mode (show keystrokes on LCD only)
   KEY3      -- Exit
 
-Scripts: /root/Raspyjack/payloads/hid_scripts/
-Loot:    /root/Raspyjack/loot/HIDInjector/
+Scripts: /root/KTOx/payloads/hid_scripts/
+Loot:    /root/KTOx/loot/HIDInjector/
 """
 
 import os
@@ -58,8 +58,8 @@ font = scaled_font()
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-SCRIPTS_DIR = "/root/Raspyjack/payloads/hid_scripts"
-LOOT_DIR = "/root/Raspyjack/loot/HIDInjector"
+SCRIPTS_DIR = "/root/KTOx/payloads/hid_scripts"
+LOOT_DIR = "/root/KTOx/loot/HIDInjector"
 GADGET_BASE = "/sys/kernel/config/usb_gadget"
 GADGET_NAME = "raspyjack_hid"
 HID_DEV = "/dev/hidg0"

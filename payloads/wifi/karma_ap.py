@@ -27,7 +27,7 @@ Controls:
   KEY2      -- Show connected clients
   KEY3      -- Exit + full cleanup
 
-Loot: /root/Raspyjack/loot/KarmaAP/
+Loot: /root/KTOx/loot/KarmaAP/
 """
 
 import os
@@ -66,7 +66,7 @@ font = scaled_font()
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-LOOT_DIR = "/root/Raspyjack/loot/KarmaAP"
+LOOT_DIR = "/root/KTOx/loot/KarmaAP"
 os.makedirs(LOOT_DIR, exist_ok=True)
 
 HOSTAPD_CONF = "/tmp/raspyjack_karma_hostapd.conf"

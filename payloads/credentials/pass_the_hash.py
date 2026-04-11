@@ -25,7 +25,7 @@ Controls:
   KEY2  -- Execute command on authenticated target
   KEY3  -- Exit
 
-Loot: /root/Raspyjack/loot/PtH/
+Loot: /root/KTOx/loot/PtH/
 """
 
 import os
@@ -63,10 +63,10 @@ font = scaled_font()
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-LOOT_DIR = "/root/Raspyjack/loot/PtH"
-CRACKED_DIR = "/root/Raspyjack/loot/CrackedNTLM"
-RELAY_DIR = "/root/Raspyjack/loot/NTLMRelay"
-RESPONDER_LOG_DIR = "/root/Raspyjack/Responder/logs"
+LOOT_DIR = "/root/KTOx/loot/PtH"
+CRACKED_DIR = "/root/KTOx/loot/CrackedNTLM"
+RELAY_DIR = "/root/KTOx/loot/NTLMRelay"
+RESPONDER_LOG_DIR = "/root/KTOx/Responder/logs"
 
 ROWS_VISIBLE = 6
 ROW_H = 12

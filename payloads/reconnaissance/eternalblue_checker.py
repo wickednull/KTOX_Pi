@@ -8,7 +8,7 @@ Scans local subnet for port 445 hosts, then sends SMB1 negotiate +
 session setup + tree connect + Trans2 PeekNamedPipe to check MS17-010.
 STATUS_INSUFF_SERVER_RESOURCES (0xC0000205) = VULNERABLE.
 
-Results: /root/Raspyjack/loot/EternalBlue/scan_TIMESTAMP.json
+Results: /root/KTOx/loot/EternalBlue/scan_TIMESTAMP.json
 Controls: OK=Start, UP/DOWN=Scroll, KEY3=Exit
 """
 
@@ -34,7 +34,7 @@ LCD.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
 WIDTH, HEIGHT = LCD.width, LCD.height
 font = scaled_font()
 
-LOOT_DIR = "/root/Raspyjack/loot/EternalBlue"
+LOOT_DIR = "/root/KTOx/loot/EternalBlue"
 os.makedirs(LOOT_DIR, exist_ok=True)
 
 SMB_PORT = 445

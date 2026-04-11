@@ -22,7 +22,7 @@ Controls
   KEY2       -- Export GPX file
   KEY3       -- Exit
 
-Loot: /root/Raspyjack/loot/GPS/
+Loot: /root/KTOx/loot/GPS/
 """
 
 import os
@@ -62,7 +62,7 @@ font = scaled_font()
 
 SERIAL_PORTS = ["/dev/ttyUSB0", "/dev/serial0", "/dev/ttyAMA0"]
 BAUD_RATE = 9600
-LOOT_DIR = "/root/Raspyjack/loot/GPS"
+LOOT_DIR = "/root/KTOx/loot/GPS"
 DEBOUNCE = 0.22
 
 lock = threading.Lock()

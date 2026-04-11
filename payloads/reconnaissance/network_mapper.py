@@ -50,8 +50,8 @@ font = scaled_font()
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-NMAP_LOOT = "/root/Raspyjack/loot/Nmap"
-LOOT_DIR = "/root/Raspyjack/loot/NetMap"
+NMAP_LOOT = "/root/KTOx/loot/Nmap"
+LOOT_DIR = "/root/KTOx/loot/NetMap"
 os.makedirs(LOOT_DIR, exist_ok=True)
 
 IP_RE = re.compile(r"\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b")

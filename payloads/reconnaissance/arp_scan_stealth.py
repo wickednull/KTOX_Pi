@@ -16,7 +16,7 @@ Controls:
   KEY2       -- Export results to loot
   KEY3       -- Exit
 
-Loot: /root/Raspyjack/loot/StealthScan/scan_YYYYMMDD_HHMMSS.json
+Loot: /root/KTOx/loot/StealthScan/scan_YYYYMMDD_HHMMSS.json
 """
 
 import os
@@ -58,7 +58,7 @@ WIDTH, HEIGHT = LCD_1in44.LCD_WIDTH, LCD_1in44.LCD_HEIGHT
 ROWS_VISIBLE = 6
 ROW_H = 12
 
-LOOT_DIR = "/root/Raspyjack/loot/StealthScan"
+LOOT_DIR = "/root/KTOx/loot/StealthScan"
 
 # Common OUI prefixes for vendor hint (abbreviated)
 OUI_HINTS = {

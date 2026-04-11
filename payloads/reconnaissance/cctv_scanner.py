@@ -63,8 +63,8 @@ font = scaled_font()
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-LOOT_DIR = "/root/Raspyjack/loot/CCTV"
-CONFIG_DIR = "/root/Raspyjack/config/cctv_scanner"
+LOOT_DIR = "/root/KTOx/loot/CCTV"
+CONFIG_DIR = "/root/KTOx/config/cctv_scanner"
 os.makedirs(LOOT_DIR, exist_ok=True)
 os.makedirs(CONFIG_DIR, exist_ok=True)
 

@@ -32,7 +32,7 @@ KEY_DOWN = 19
 KEY_PRESS = 13
 KEY3 = 16
 
-LOOT_DIR = "/root/Raspyjack/loot/DHCP"
+LOOT_DIR = "/root/KTOx/loot/DHCP"
 popup_message = ""
 popup_until = 0.0
 WPAD_DIR = "/tmp/raspyjack_wpad"

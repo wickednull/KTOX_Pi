@@ -20,7 +20,7 @@ Controls:
   KEY2      -- Export results to loot
   KEY3      -- Exit
 
-Loot: /root/Raspyjack/loot/MACLookup/<timestamp>.json
+Loot: /root/KTOx/loot/MACLookup/<timestamp>.json
 """
 
 import os
@@ -56,9 +56,9 @@ font = scaled_font()
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-LOOT_DIR = "/root/Raspyjack/loot/MACLookup"
-NMAP_LOOT = "/root/Raspyjack/loot/Nmap"
-OUI_CACHE = "/root/Raspyjack/loot/MACLookup/oui_cache.json"
+LOOT_DIR = "/root/KTOx/loot/MACLookup"
+NMAP_LOOT = "/root/KTOx/loot/Nmap"
+OUI_CACHE = "/root/KTOx/loot/MACLookup/oui_cache.json"
 OUI_URL = "https://standards-oui.ieee.org/oui/oui.txt"
 os.makedirs(LOOT_DIR, exist_ok=True)
 
@@ -314,7 +314,7 @@ def _load_from_loot():
                         all_macs[mac] = f"Nmap/{fname[:12]}"
 
     # Also check other loot directories
-    loot_root = "/root/Raspyjack/loot"
+    loot_root = "/root/KTOx/loot"
     if os.path.isdir(loot_root):
         for subdir in os.listdir(loot_root):
             if subdir in ("MACLookup",):

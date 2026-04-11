@@ -15,7 +15,7 @@ Controls:
   KEY2      -- Export results to loot
   KEY3      -- Exit
 
-Loot: /root/Raspyjack/loot/OSDetect/<timestamp>.json
+Loot: /root/KTOx/loot/OSDetect/<timestamp>.json
 """
 
 import os
@@ -49,7 +49,7 @@ font = scaled_font()
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-LOOT_DIR = "/root/Raspyjack/loot/OSDetect"
+LOOT_DIR = "/root/KTOx/loot/OSDetect"
 os.makedirs(LOOT_DIR, exist_ok=True)
 
 ROWS_VISIBLE = 7

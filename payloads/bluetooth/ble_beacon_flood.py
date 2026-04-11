@@ -17,7 +17,7 @@ Controls:
   KEY2 -- Randomise all beacon parameters
   KEY3 -- Exit
 
-Loot: /root/Raspyjack/loot/BLEBeacon/<timestamp>.json
+Loot: /root/KTOx/loot/BLEBeacon/<timestamp>.json
 """
 
 import os
@@ -57,7 +57,7 @@ font = scaled_font()
 HCI_DEV = "hci0"
 MODES = ["iBeacon", "Eddystone", "Both"]
 
-LOOT_DIR = "/root/Raspyjack/loot/BLEBeacon"
+LOOT_DIR = "/root/KTOx/loot/BLEBeacon"
 os.makedirs(LOOT_DIR, exist_ok=True)
 
 EDDYSTONE_URLS = [

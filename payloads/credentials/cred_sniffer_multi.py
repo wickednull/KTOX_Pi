@@ -17,7 +17,7 @@ Controls:
   KEY2      -- Export to loot
   KEY3      -- Exit
 
-Loot: /root/Raspyjack/loot/CredSniff/
+Loot: /root/KTOx/loot/CredSniff/
 """
 
 import os
@@ -55,7 +55,7 @@ font = scaled_font()
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-LOOT_DIR = "/root/Raspyjack/loot/CredSniff"
+LOOT_DIR = "/root/KTOx/loot/CredSniff"
 os.makedirs(LOOT_DIR, exist_ok=True)
 
 PROTOCOLS = ["FTP", "Telnet", "SMTP", "HTTP", "Kerberos",

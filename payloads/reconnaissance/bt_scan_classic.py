@@ -18,7 +18,7 @@ Controls:
   KEY2      -- Export JSON to loot
   KEY3      -- Exit
 
-Loot: /root/Raspyjack/loot/BTClassic/<timestamp>.json
+Loot: /root/KTOx/loot/BTClassic/<timestamp>.json
 """
 
 import os
@@ -54,7 +54,7 @@ font = scaled_font()
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-LOOT_DIR = "/root/Raspyjack/loot/BTClassic"
+LOOT_DIR = "/root/KTOx/loot/BTClassic"
 os.makedirs(LOOT_DIR, exist_ok=True)
 
 ROWS_VISIBLE = 7

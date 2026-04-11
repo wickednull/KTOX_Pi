@@ -23,7 +23,7 @@ Controls
   KEY2       -- Export JSON to loot
   KEY3       -- Exit
 
-Loot: /root/Raspyjack/loot/BLEScan/
+Loot: /root/KTOx/loot/BLEScan/
 """
 
 import os
@@ -60,7 +60,7 @@ font = scaled_font()
 
 # ── Constants ────────────────────────────────────────────────────────────────
 HCI_DEV = "hci0"
-LOOT_DIR = "/root/Raspyjack/loot/BLEScan"
+LOOT_DIR = "/root/KTOx/loot/BLEScan"
 ROWS_VISIBLE = 7
 ROW_H = 12
 SORT_MODES = ["rssi", "name", "count"]

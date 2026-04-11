@@ -4,15 +4,15 @@ RaspyJack Payload -- HTTP Exfiltration
 =======================================
 Author: 7h30th3r0n3
 
-Reads files from /root/Raspyjack/loot/, encodes in base64, and
+Reads files from /root/KTOx/loot/, encodes in base64, and
 sends as POST chunks to a configurable URL.
 
 Setup / Prerequisites:
-  - Edit config at /root/Raspyjack/config/http_exfil/config.json with
+  - Edit config at /root/KTOx/config/http_exfil/config.json with
     target_url of your exfil server.
   - Server must accept POST requests with JSON body.
 
-Config: /root/Raspyjack/config/http_exfil/config.json
+Config: /root/KTOx/config/http_exfil/config.json
   Fields: target_url, chunk_size, headers, auth_token
 
 Chunk format (JSON POST):
@@ -60,9 +60,9 @@ font = scaled_font()
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-LOOT_ROOT = "/root/Raspyjack/loot"
+LOOT_ROOT = "/root/KTOx/loot"
 LOOT_DIR = os.path.join(LOOT_ROOT, "HTTPExfil")
-CONFIG_DIR = "/root/Raspyjack/config/http_exfil"
+CONFIG_DIR = "/root/KTOx/config/http_exfil"
 CONFIG_PATH = os.path.join(CONFIG_DIR, "config.json")
 DEBOUNCE = 0.25
 

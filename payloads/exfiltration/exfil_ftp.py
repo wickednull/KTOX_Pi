@@ -4,7 +4,7 @@ RaspyJack Payload -- Mini FTP Server for Loot Retrieval
 =========================================================
 Author: 7h30th3r0n3
 
-Lightweight FTP server serving /root/Raspyjack/loot/ read-only.
+Lightweight FTP server serving /root/KTOx/loot/ read-only.
 Uses ``pyftpdlib`` when available; otherwise falls back to a minimal
 socket-based FTP server supporting LIST, RETR, PWD, CWD, TYPE, PASV,
 and QUIT.
@@ -54,8 +54,8 @@ font = scaled_font()
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-LOOT_ROOT = "/root/Raspyjack/loot"
-CONFIG_DIR = "/root/Raspyjack/config/exfil_ftp"
+LOOT_ROOT = "/root/KTOx/loot"
+CONFIG_DIR = "/root/KTOx/config/exfil_ftp"
 CONFIG_PATH = os.path.join(CONFIG_DIR, "config.json")
 os.makedirs(CONFIG_DIR, exist_ok=True)
 

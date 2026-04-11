@@ -26,7 +26,7 @@ import sys
 import subprocess
 
 # Add WiFi system to path
-sys.path.append('/root/Raspyjack/wifi/')
+sys.path.append('/root/KTOx/wifi/')
 
 def main():
     """Launch the WiFi management interface."""
@@ -35,7 +35,7 @@ def main():
         print("="*50)
         
         # Check if WiFi system is available
-        wifi_interface_path = '/root/Raspyjack/wifi/wifi_lcd_interface.py'
+        wifi_interface_path = '/root/KTOx/wifi/wifi_lcd_interface.py'
         
         if not os.path.exists(wifi_interface_path):
             print("❌ WiFi management system not found!")

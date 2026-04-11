@@ -408,7 +408,7 @@ PINS = {
     "OK": 13, "KEY1": 21, "KEY2": 20, "KEY3": 16,
 }
 WIDTH, HEIGHT = LCD.width, LCD.height
-LOG_FILE = "/root/Raspyjack/loot/network/wifi_installer.log"
+LOG_FILE = "/root/KTOx/loot/network/wifi_installer.log"
 ONBOARD_DRIVERS = {"brcmfmac", "brcmsmac", "b43", "b43legacy"}
 
 GPIO.setmode(GPIO.BCM)

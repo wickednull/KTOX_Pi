@@ -60,7 +60,7 @@ font = scaled_font()
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-LOOT_DIR = "/root/Raspyjack/loot/SpyCam"
+LOOT_DIR = "/root/KTOx/loot/SpyCam"
 os.makedirs(LOOT_DIR, exist_ok=True)
 
 DEBOUNCE = 0.22

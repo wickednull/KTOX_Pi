@@ -62,7 +62,7 @@ font = scaled_font()
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-LOOT_ROOT = "/root/Raspyjack/loot"
+LOOT_ROOT = "/root/KTOx/loot"
 BLE_LOOT_DIR = os.path.join(LOOT_ROOT, "BLEExfil")
 DEBOUNCE = 0.25
 

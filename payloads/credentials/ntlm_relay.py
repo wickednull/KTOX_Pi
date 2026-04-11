@@ -4,12 +4,12 @@ RaspyJack Payload -- NTLM Relay Attack
 ========================================
 Author: 7h30th3r0n3
 
-Wrapper around the vendored Responder tool at /root/Raspyjack/Responder/.
+Wrapper around the vendored Responder tool at /root/KTOx/Responder/.
 Captures NTLM hashes via poisoning and optionally relays them to a
 target host.
 
 Setup / Prerequisites:
-  - Requires Responder installed at /root/Raspyjack/Responder/.
+  - Requires Responder installed at /root/KTOx/Responder/.
   - Best results when run after ARP MITM or silent bridge setup.
 
 Steps:
@@ -26,7 +26,7 @@ Controls:
   KEY2      -- Export captured hashes
   KEY3      -- Exit + kill Responder
 
-Loot: /root/Raspyjack/loot/NTLMRelay/
+Loot: /root/KTOx/loot/NTLMRelay/
 """
 
 import os
@@ -62,10 +62,10 @@ font = scaled_font()
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-LOOT_DIR = "/root/Raspyjack/loot/NTLMRelay"
+LOOT_DIR = "/root/KTOx/loot/NTLMRelay"
 os.makedirs(LOOT_DIR, exist_ok=True)
 
-RESPONDER_DIR = "/root/Raspyjack/Responder"
+RESPONDER_DIR = "/root/KTOx/Responder"
 RESPONDER_SCRIPT = os.path.join(RESPONDER_DIR, "Responder.py")
 RESPONDER_LOG_DIR = os.path.join(RESPONDER_DIR, "logs")
 SERVICE_TYPES = ["SMB", "HTTP"]

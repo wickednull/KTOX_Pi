@@ -65,7 +65,7 @@ font = scaled_font()
 
 PN532_I2C_ADDR = 0x24
 I2C_BUS = 1
-LOOT_DIR = "/root/Raspyjack/loot/NFC"
+LOOT_DIR = "/root/KTOx/loot/NFC"
 DEBOUNCE = 0.22
 
 DEFAULT_KEYS = [

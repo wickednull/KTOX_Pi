@@ -10,7 +10,7 @@ using John the Ripper. Scans loot directories for crack targets.
 Setup / Prerequisites:
   - Requires aircrack-ng for .cap handshake files.
   - Requires john for PMKID hash cracking.
-  - Optional wordlists: /root/Raspyjack/loot/wordlists/rockyou.txt,
+  - Optional wordlists: /root/KTOx/loot/wordlists/rockyou.txt,
     custom.txt
 
 Controls:
@@ -20,7 +20,7 @@ Controls:
   KEY2       -- Export cracked results to loot
   KEY3       -- Exit (kills cracking process)
 
-Loot: /root/Raspyjack/loot/CrackedWPA/
+Loot: /root/KTOx/loot/CrackedWPA/
 """
 
 import os
@@ -60,11 +60,11 @@ font = scaled_font()
 AIRCRACK_BIN = "/usr/bin/aircrack-ng"
 JOHN_BIN = "/usr/sbin/john"
 DEFAULT_WORDLIST = "/usr/share/john/password.lst"
-ROCKYOU_WORDLIST = "/root/Raspyjack/loot/wordlists/rockyou.txt"
-CUSTOM_WORDLIST = "/root/Raspyjack/loot/wordlists/custom.txt"
-HANDSHAKE_DIR = "/root/Raspyjack/loot/Handshakes"
-PMKID_DIR = "/root/Raspyjack/loot/PMKID"
-LOOT_DIR = "/root/Raspyjack/loot/CrackedWPA"
+ROCKYOU_WORDLIST = "/root/KTOx/loot/wordlists/rockyou.txt"
+CUSTOM_WORDLIST = "/root/KTOx/loot/wordlists/custom.txt"
+HANDSHAKE_DIR = "/root/KTOx/loot/Handshakes"
+PMKID_DIR = "/root/KTOx/loot/PMKID"
+LOOT_DIR = "/root/KTOx/loot/CrackedWPA"
 ROWS_VISIBLE = 6
 ROW_H = 12
 

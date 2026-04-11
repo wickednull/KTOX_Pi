@@ -15,7 +15,7 @@ Auto-refreshes every 10 seconds.
 Setup / Prerequisites
 ---------------------
 - Various RaspyJack attack payloads populate loot directories.
-- Read access to /root/Raspyjack/loot/ and /root/Raspyjack/Responder/logs/.
+- Read access to /root/KTOx/loot/ and /root/KTOx/Responder/logs/.
 
 Controls
 --------
@@ -58,20 +58,20 @@ font = scaled_font()
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-LOOT_DIR = "/root/Raspyjack/loot/CredDashboard"
+LOOT_DIR = "/root/KTOx/loot/CredDashboard"
 os.makedirs(LOOT_DIR, exist_ok=True)
 
 SCAN_DIRS = {
-    "Responder":   "/root/Raspyjack/Responder/logs",
-    "HTTPCreds":   "/root/Raspyjack/loot/HTTPCreds",
-    "CrackedNTLM": "/root/Raspyjack/loot/CrackedNTLM",
-    "CrackedWPA":  "/root/Raspyjack/loot/CrackedWPA",
-    "Telnet":      "/root/Raspyjack/loot/Telnet",
-    "CredSniff":   "/root/Raspyjack/loot/CredSniff",
-    "SSDP":        "/root/Raspyjack/loot/SSDP",
-    "CaptivePortal": "/root/Raspyjack/loot/CaptivePortal",
-    "EvilTwin":    "/root/Raspyjack/loot/EvilTwin",
-    "EnterpriseTwin": "/root/Raspyjack/loot/EnterpriseEvilTwin",
+    "Responder":   "/root/KTOx/Responder/logs",
+    "HTTPCreds":   "/root/KTOx/loot/HTTPCreds",
+    "CrackedNTLM": "/root/KTOx/loot/CrackedNTLM",
+    "CrackedWPA":  "/root/KTOx/loot/CrackedWPA",
+    "Telnet":      "/root/KTOx/loot/Telnet",
+    "CredSniff":   "/root/KTOx/loot/CredSniff",
+    "SSDP":        "/root/KTOx/loot/SSDP",
+    "CaptivePortal": "/root/KTOx/loot/CaptivePortal",
+    "EvilTwin":    "/root/KTOx/loot/EvilTwin",
+    "EnterpriseTwin": "/root/KTOx/loot/EnterpriseEvilTwin",
 }
 
 PROTOCOLS = ["ALL", "NTLM", "HTTP", "WPA", "Telnet", "SSDP", "Other"]

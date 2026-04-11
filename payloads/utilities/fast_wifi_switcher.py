@@ -27,8 +27,8 @@ import signal
 from payloads._display_helper import ScaledDraw, scaled_font
 
 # Add the required paths
-sys.path.append('/root/Raspyjack/')
-sys.path.append('/root/Raspyjack/wifi/')
+sys.path.append('/root/KTOx/')
+sys.path.append('/root/KTOx/wifi/')
 
 try:
     # Import RaspyJack LCD functions (PROPER WAY)

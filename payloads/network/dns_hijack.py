@@ -18,7 +18,7 @@ Controls:
   KEY2       -- Export intercepted log
   KEY3       -- Exit
 
-Loot: /root/Raspyjack/loot/DNSHijack/
+Loot: /root/KTOx/loot/DNSHijack/
 """
 
 import os
@@ -65,7 +65,7 @@ font = scaled_font()
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-LOOT_DIR = "/root/Raspyjack/loot/DNSHijack"
+LOOT_DIR = "/root/KTOx/loot/DNSHijack"
 os.makedirs(LOOT_DIR, exist_ok=True)
 
 ROWS_VISIBLE = 5

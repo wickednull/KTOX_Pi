@@ -5,7 +5,7 @@ RaspyJack Payload -- Reverse Shell Generator & Server
 Author: 7h30th3r0n3
 
 Generate reverse shell one-liners, serve them via HTTP, start listeners.
-Loots generated commands to /root/Raspyjack/loot/Shells/.
+Loots generated commands to /root/KTOx/loot/Shells/.
 
 Controls:
   UP/DOWN  = scroll shell types / menu
@@ -46,7 +46,7 @@ WIDTH, HEIGHT = LCD.width, LCD.height
 font = scaled_font()
 
 DEBOUNCE = 0.25
-LOOT_DIR = "/root/Raspyjack/loot/Shells"
+LOOT_DIR = "/root/KTOx/loot/Shells"
 DEFAULT_PORT = 4444
 HTTP_PORT = 8888
 

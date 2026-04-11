@@ -64,7 +64,7 @@ font = scaled_font()
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-LOOT_DIR = "/root/Raspyjack/loot/ICMPRedirect"
+LOOT_DIR = "/root/KTOx/loot/ICMPRedirect"
 os.makedirs(LOOT_DIR, exist_ok=True)
 
 ROWS_VISIBLE = 5

@@ -9,7 +9,7 @@ USB port 1 (host mode) reads keystrokes via evdev.
 USB port 2 (OTG) is configured as a HID gadget (/dev/hidg0)
 that forwards every keystroke transparently to the target.
 
-All keystrokes are logged to /root/Raspyjack/loot/Keylogger/.
+All keystrokes are logged to /root/KTOx/loot/Keylogger/.
 
 Setup / Prerequisites:
   - Requires 2 USB ports. Port 1: keyboard plugged in (host mode,
@@ -56,7 +56,7 @@ font = scaled_font()
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-LOOT_DIR = "/root/Raspyjack/loot/Keylogger"
+LOOT_DIR = "/root/KTOx/loot/Keylogger"
 GADGET_BASE = "/sys/kernel/config/usb_gadget"
 GADGET_NAME = "raspyjack_keylog"
 HID_DEV = "/dev/hidg0"

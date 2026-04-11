@@ -19,7 +19,7 @@ Controls:
   KEY2        -- Configure pins (cycle preset configs)
   KEY3        -- Exit
 
-Config: /root/Raspyjack/config/tripwire.json
+Config: /root/KTOx/config/tripwire.json
 """
 
 import os
@@ -50,7 +50,7 @@ WIDTH, HEIGHT = LCD_1in44.LCD_WIDTH, LCD_1in44.LCD_HEIGHT
 ROWS_VISIBLE = 5
 ROW_H = 12
 
-CONFIG_PATH = "/root/Raspyjack/config/tripwire.json"
+CONFIG_PATH = "/root/KTOx/config/tripwire.json"
 
 # Preset pin configurations
 PIN_PRESETS = [

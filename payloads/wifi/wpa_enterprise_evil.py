@@ -30,7 +30,7 @@ Controls:
   KEY2      -- Show captured credentials
   KEY3      -- Exit + cleanup
 
-Loot: /root/Raspyjack/loot/EnterpriseEvilTwin/
+Loot: /root/KTOx/loot/EnterpriseEvilTwin/
 """
 
 import os
@@ -69,7 +69,7 @@ font = scaled_font()
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-LOOT_DIR = "/root/Raspyjack/loot/EnterpriseEvilTwin"
+LOOT_DIR = "/root/KTOx/loot/EnterpriseEvilTwin"
 os.makedirs(LOOT_DIR, exist_ok=True)
 
 HOSTAPD_CONF = "/tmp/raspyjack_ent_hostapd.conf"

@@ -28,7 +28,7 @@ Controls:
   KEY2      -- Export captured data
   KEY3      -- Exit + full cleanup
 
-Loot: /root/Raspyjack/loot/NACBypass/
+Loot: /root/KTOx/loot/NACBypass/
 """
 
 import os
@@ -65,7 +65,7 @@ font = scaled_font()
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-LOOT_DIR = "/root/Raspyjack/loot/NACBypass"
+LOOT_DIR = "/root/KTOx/loot/NACBypass"
 os.makedirs(LOOT_DIR, exist_ok=True)
 
 BRIDGE = "br0"

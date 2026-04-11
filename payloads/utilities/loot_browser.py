@@ -4,7 +4,7 @@ RaspyJack Payload -- Loot Browser
 ----------------------------------
 Author: 7h30th3r0n3
 
-Browse /root/Raspyjack/loot/ on the LCD.
+Browse /root/KTOx/loot/ on the LCD.
 
 Controls:
   UP/DOWN  = navigate files/dirs
@@ -41,7 +41,7 @@ LCD.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
 WIDTH, HEIGHT = LCD.width, LCD.height
 font = scaled_font()
 
-LOOT_ROOT = "/root/Raspyjack/loot"
+LOOT_ROOT = "/root/KTOx/loot"
 DEBOUNCE = 0.25
 
 
