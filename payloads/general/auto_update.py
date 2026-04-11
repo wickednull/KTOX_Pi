@@ -159,16 +159,45 @@ def backup_loot():
         return False, str(e)
 
 
+def _py_valid(path):
+    """Return True if path is a valid Python file (syntax check)."""
+    import py_compile
+    try:
+        py_compile.compile(str(path), doraise=True)
+        return True
+    except Exception:
+        return False
+
+
+def _safe_copy(src_path, dst_path, skipped):
+    """
+    Copy src_path → dst_path only if the file passes a Python syntax
+    check (for .py files).  Broken files are skipped so a bad upstream
+    commit can never overwrite a working installation.
+    """
+    import shutil as _shutil
+    if src_path.suffix == ".py" and not _py_valid(src_path):
+        skipped.append(src_path.name)
+        print(f"[OTA] SKIP {src_path.name}: syntax error in downloaded file")
+        return
+    _shutil.copy2(src_path, dst_path)
+
+
 def do_git_pull():
     """
     Clone the latest repo to a temp dir, then copy files into KTOX_DIR
     exactly as install.sh does — preserving the installed file layout.
     A direct git reset --hard would overwrite the flat install structure
     with the raw repo layout, breaking the services.
+
+    Every .py file is syntax-checked before being deployed.  Files that
+    fail the check are skipped so a corrupted upstream commit cannot
+    overwrite a working installation.
     """
-    import tempfile, shutil as _shutil
+    import shutil as _shutil
 
     tmp = f"/tmp/ktox_update_{int(time.time())}"
+    skipped = []
 
     try:
         rc, out = _run(
@@ -188,7 +217,7 @@ def do_git_pull():
         ]:
             s = src / "ktox_pi" / fname
             if s.exists():
-                _shutil.copy2(s, dst / fname)
+                _safe_copy(s, dst / fname, skipped)
 
         # Files from repo root → flat into KTOX_DIR
         root_files = [
@@ -198,22 +227,47 @@ def do_git_pull():
             "ktox_extended.py", "ktox_defense.py", "ktox_stealth.py",
             "ktox_netattack.py", "ktox_wifi.py", "ktox_dashboard.py",
             "ktox_repl.py", "ktox_config.py",
-            "ktox_device_pi.py",   # Pi-specific device/menu script
+            "ktox_device_pi.py",
             "payload_compat.py",
         ]
         for fname in root_files:
             s = src / fname
             if s.exists():
-                _shutil.copy2(s, dst / fname)
+                _safe_copy(s, dst / fname, skipped)
+
+        # Directories that must never be overwritten — user data lives here
+        PRESERVE_DIRS = {
+            "roms",   # Game Boy / emulator ROMs uploaded by user
+            "loot",   # Captured credentials / scan results
+        }
 
         # Directories — replace in-place (keep loot/ and credentials untouched)
-        for dname in ["web", "payloads", "wifi", "Responder", "DNSSpoof", "assets"]:
+        # For payloads/ we do a file-by-file validated copy instead of rmtree+copytree
+        # so a single bad file in the repo can't nuke the whole payloads directory.
+        for dname in ["web", "wifi", "Responder", "DNSSpoof", "assets"]:
+            if dname in PRESERVE_DIRS:
+                continue
             s = src / dname
             d = dst / dname
             if s.exists():
                 if d.exists():
                     _shutil.rmtree(d)
                 _shutil.copytree(s, d)
+
+        # payloads/ — validated file-by-file copy, skipping preserve dirs
+        src_payloads = src / "payloads"
+        dst_payloads = dst / "payloads"
+        if src_payloads.exists():
+            for src_file in src_payloads.rglob("*"):
+                if src_file.is_dir():
+                    continue
+                rel = src_file.relative_to(src_payloads)
+                # Skip any path that passes through a preserved directory name
+                if any(part in PRESERVE_DIRS for part in rel.parts):
+                    continue
+                dst_file = dst_payloads / rel
+                dst_file.parent.mkdir(parents=True, exist_ok=True)
+                _safe_copy(src_file, dst_file, skipped)
 
         # img/logo.bmp
         s = src / "img" / "logo.bmp"
@@ -229,7 +283,11 @@ def do_git_pull():
         except Exception:
             pass
 
-        return True, f"HEAD: {commit}"
+        if skipped:
+            msg = f"HEAD:{commit} skip:{len(skipped)}"
+        else:
+            msg = f"HEAD: {commit}"
+        return True, msg
 
     except Exception as e:
         return False, str(e)[:60]

@@ -53,7 +53,7 @@ LCD.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
 WIDTH, HEIGHT = LCD.width, LCD.height
 font = scaled_font()
 
-ROMS_DIR = "/root/Raspyjack/roms"
+ROMS_DIR = "/root/KTOx/roms"
 ROM_EXTENSIONS = (".gb", ".gbc")
 KEY3_HOLD_EXIT = 1.0  # seconds to hold KEY3 for exit
 

@@ -133,6 +133,7 @@ info "KTOx main suite installed"
 
 chmod +x "$KTOX_DIR/ktox_device.py"
 mkdir -p "$KTOX_DIR/loot/MITM" "$KTOX_DIR/loot/Nmap" "$KTOX_DIR/loot/payloads"
+mkdir -p "$KTOX_DIR/roms"   # Game Boy / emulator ROMs — never overwritten by OTA
 
 # Initialise git repo so auto_update.py can pull from GitHub
 step "Configuring git for over-the-air updates..."
