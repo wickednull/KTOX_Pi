@@ -1000,7 +1000,7 @@ def mode_arp_storm():
     console.print(Panel(
         f"  {tag('Target:',  C_BLOOD)}   [{C_WHITE}]ff:ff:ff:ff:ff:ff (BROADCAST)[/{C_WHITE}]\n"
         f"  {tag('Rate:',    C_STEEL)}   [{C_ASH}]{pps} pkts/sec[/{C_ASH}]\n"
-        f"  {tag('Cap:',     C_STEEL)}   [{C_ASH}]{cap if cap else "unlimited"}[/{C_ASH}]\n\n"
+        f"  {tag('Cap:',     C_STEEL)}   [{C_ASH}]{cap if cap else 'unlimited'}[/{C_ASH}]\n\n"
         f"  [{C_DIM}]Ctrl+C to stop[/{C_DIM}]",
         border_style=C_RUST, padding=(1,2),
         title=f"[bold {C_BLOOD}]◈ STORMING[/bold {C_BLOOD}]"
@@ -1184,9 +1184,9 @@ def mode_gateway_dos():
 
     section("GATEWAY DoS ACTIVE")
     console.print(Panel(
-        f"  {tag("Target:",  C_BLOOD)}   [{C_WHITE}]{default_gateway_ip}[/{C_WHITE}]  [{C_STEEL}]{gw_mac}[/{C_STEEL}]\n"
-        f"  {tag("Rate:",    C_STEEL)}   [{C_ASH}]{pps} pkts/sec[/{C_ASH}]\n"
-        f"  {tag("Cap:",     C_STEEL)}   [{C_ASH}]{cap if cap else "unlimited"}[/{C_ASH}]\n\n"
+        f"  {tag('Target:',  C_BLOOD)}   [{C_WHITE}]{default_gateway_ip}[/{C_WHITE}]  [{C_STEEL}]{gw_mac}[/{C_STEEL}]\n"
+        f"  {tag('Rate:',    C_STEEL)}   [{C_ASH}]{pps} pkts/sec[/{C_ASH}]\n"
+        f"  {tag('Cap:',     C_STEEL)}   [{C_ASH}]{cap if cap else 'unlimited'}[/{C_ASH}]\n\n"
         f"  [{C_DIM}]Ctrl+C to stop[/{C_DIM}]",
         border_style=C_RUST, padding=(1,2),
         title=f"[bold {C_BLOOD}]◈ FLOODING GATEWAY[/bold {C_BLOOD}]"
@@ -1265,9 +1265,9 @@ def mode_arp_cage():
 
     section("ARP CAGE ACTIVE")
     console.print(Panel(
-        f"  {tag("Target:",  C_BLOOD)}   [{C_WHITE}]{target_ip}[/{C_WHITE}]  [{C_STEEL}]{target_mac}[/{C_STEEL}]\n"
-        f"  {tag("Peers:",   C_STEEL)}   [{C_ASH}]{len(hosts_list)-1} hosts being faked[/{C_ASH}]\n"
-        f"  {tag("Rate:",    C_STEEL)}   [{C_ASH}]{ppm} pkts/min[/{C_ASH}]\n\n"
+        f"  {tag('Target:',  C_BLOOD)}   [{C_WHITE}]{target_ip}[/{C_WHITE}]  [{C_STEEL}]{target_mac}[/{C_STEEL}]\n"
+        f"  {tag('Peers:',   C_STEEL)}   [{C_ASH}]{len(hosts_list)-1} hosts being faked[/{C_ASH}]\n"
+        f"  {tag('Rate:',    C_STEEL)}   [{C_ASH}]{ppm} pkts/min[/{C_ASH}]\n\n"
         f"  [{C_DIM}]Ctrl+C to stop and re-ARP[/{C_DIM}]",
         border_style=C_RUST, padding=(1,2),
         title=f"[bold {C_BLOOD}]◈ CAGED[/bold {C_BLOOD}]"
