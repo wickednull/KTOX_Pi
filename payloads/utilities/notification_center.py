@@ -11,9 +11,9 @@ append JSON-line events.
 Setup / Prerequisites
 ---------------------
 - RaspyJack base system with LCD hat.
-- Payloads append events to /root/Raspyjack/loot/.notifications.jsonl
+- Payloads append events to /root/KTOx/loot/.notifications.jsonl
   Format: {"timestamp": ..., "source": ..., "message": ..., "severity": ...}
-- Discord webhook URL in /root/Raspyjack/discord_webhook.txt (optional).
+- Discord webhook URL in /root/KTOx/discord_webhook.txt (optional).
 
 Controls
 --------
@@ -54,9 +54,9 @@ LCD.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
 WIDTH, HEIGHT = LCD.width, LCD.height
 font = scaled_font()
 
-LOOT_ROOT = "/root/Raspyjack/loot"
+LOOT_ROOT = "/root/KTOx/loot"
 NOTIF_FILE = os.path.join(LOOT_ROOT, ".notifications.jsonl")
-WEBHOOK_FILE = "/root/Raspyjack/discord_webhook.txt"
+WEBHOOK_FILE = "/root/KTOx/discord_webhook.txt"
 POLL_INTERVAL = 10
 DEBOUNCE = 0.22
 

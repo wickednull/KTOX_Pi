@@ -11,7 +11,7 @@ Setup / Prerequisites
 ---------------------
 - Bluetooth adapter (hci0)
 - apt install bluez pulseaudio-module-bluetooth (or bluealsa)
-- Audio file at /root/Raspyjack/config/bt_audio/payload.wav
+- Audio file at /root/KTOx/config/bt_audio/payload.wav
   (or default system beep is used)
 
 Controls
@@ -56,7 +56,7 @@ font = scaled_font()
 
 # ── Constants ────────────────────────────────────────────────────────────────
 HCI_DEV = "hci0"
-AUDIO_FILE = "/root/Raspyjack/config/bt_audio/payload.wav"
+AUDIO_FILE = "/root/KTOx/config/bt_audio/payload.wav"
 ROWS_VISIBLE = 6
 ROW_H = 12
 

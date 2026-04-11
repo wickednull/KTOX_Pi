@@ -54,7 +54,7 @@ font = scaled_font()
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-LOOT_BASE = "/root/Raspyjack/loot"
+LOOT_BASE = "/root/KTOx/loot"
 CHUNK_SIZE = 48
 XOR_KEY = b"R4spy_J4ck!"
 

@@ -2,7 +2,7 @@
 """
 RaspyJack *payload* – Auto-Update (LCD-friendly)
 ===============================================
-Backs-up the current **/root/Raspyjack** folder, pulls the latest changes
+Backs-up the current **/root/KTOx** folder, pulls the latest changes
 from GitHub and restarts the *raspyjack* systemd service – while showing a
 simple progress UI on the 1.44-inch LCD.
 
@@ -12,7 +12,7 @@ Controls
 * **KEY3**  - abort and return to menu.
 
 After update, it runs:
-  /root/Raspyjack/install_raspyjack.sh
+  /root/KTOx/install_raspyjack.sh
 then reboots (after LCD/GPIO cleanup).
 """
 
@@ -36,13 +36,13 @@ from payloads._input_helper import get_button
 # ---------------------------------------------------------------------------
 # 1) Constants
 # ---------------------------------------------------------------------------
-RASPYJACK_DIR   = "/root/Raspyjack"
-PAYLOADS_DIR    = "/root/Raspyjack/payloads"
+RASPYJACK_DIR   = "/root/KTOx"
+PAYLOADS_DIR    = "/root/KTOx/payloads"
 BACKUP_DIR      = "/root"
 SERVICE_NAME    = "raspyjack"
 GIT_REMOTE      = "origin"
 GIT_BRANCH      = "main"
-INSTALL_SCRIPT  = "/root/Raspyjack/install_raspyjack.sh"
+INSTALL_SCRIPT  = "/root/KTOx/install_raspyjack.sh"
 
 PINS = {"KEY1": 21, "KEY3": 16}
 WIDTH, HEIGHT = LCD.width, LCD.height
@@ -219,7 +219,7 @@ def restart_service() -> tuple[bool, str]:
         return False, f"systemctl {exc.returncode}"
 
 def run_install_script() -> tuple[bool, str]:
-    """Run /root/Raspyjack/install_raspyjack.sh before reboot."""
+    """Run /root/KTOx/install_raspyjack.sh before reboot."""
     if not os.path.isfile(INSTALL_SCRIPT):
         return False, "install script missing"
     if not os.access(INSTALL_SCRIPT, os.X_OK):

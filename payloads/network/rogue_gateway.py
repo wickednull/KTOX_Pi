@@ -68,7 +68,7 @@ font = scaled_font()
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-LOOT_DIR = "/root/Raspyjack/loot/RogueGateway"
+LOOT_DIR = "/root/KTOx/loot/RogueGateway"
 os.makedirs(LOOT_DIR, exist_ok=True)
 
 ROWS_VISIBLE = 4

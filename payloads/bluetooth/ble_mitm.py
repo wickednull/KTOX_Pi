@@ -24,7 +24,7 @@ Controls
   KEY2       -- Export GATT traffic log
   KEY3       -- Exit
 
-Loot: /root/Raspyjack/loot/BLE_MITM/
+Loot: /root/KTOx/loot/BLE_MITM/
 """
 
 import os
@@ -61,7 +61,7 @@ font = scaled_font()
 
 # ── Constants ────────────────────────────────────────────────────────────────
 HCI_DEV = "hci0"
-LOOT_DIR = "/root/Raspyjack/loot/BLE_MITM"
+LOOT_DIR = "/root/KTOx/loot/BLE_MITM"
 ROWS_VISIBLE = 6
 ROW_H = 12
 VIEWS = ["devices", "log"]

@@ -11,7 +11,7 @@ schedule in a JSON file and launches payloads as subprocesses.
 Setup / Prerequisites
 ---------------------
 - RaspyJack base system with LCD hat.
-- Payloads located under /root/Raspyjack/payloads/.
+- Payloads located under /root/KTOx/payloads/.
 
 Controls
 --------
@@ -52,9 +52,9 @@ LCD.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
 WIDTH, HEIGHT = LCD.width, LCD.height
 font = scaled_font()
 
-SCHEDULE_DIR = "/root/Raspyjack/config/scheduler"
+SCHEDULE_DIR = "/root/KTOx/config/scheduler"
 SCHEDULE_FILE = os.path.join(SCHEDULE_DIR, "schedule.json")
-PAYLOADS_ROOT = "/root/Raspyjack/payloads"
+PAYLOADS_ROOT = "/root/KTOx/payloads"
 CHECK_INTERVAL = 30
 DEBOUNCE = 0.22
 

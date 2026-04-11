@@ -52,7 +52,7 @@ WIDTH, HEIGHT = LCD_1in44.LCD_WIDTH, LCD_1in44.LCD_HEIGHT
 ROWS_VISIBLE = 6
 ROW_H = 12
 
-LOOT_DIR = "/root/Raspyjack/loot"
+LOOT_DIR = "/root/KTOx/loot"
 SPEED_MODES = ["1x", "5x", "max"]
 
 # ---------------------------------------------------------------------------

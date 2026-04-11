@@ -5,7 +5,7 @@ RaspyJack Payload -- CCTV Live Viewer
 Author: 7h30th3r0n3
 
 Streams MJPEG video feeds to the LCD.  Loads camera URLs from
-``/root/Raspyjack/loot/CCTV/cctv_live.txt`` (format: ``Name | URL``).
+``/root/KTOx/loot/CCTV/cctv_live.txt`` (format: ``Name | URL``).
 Also accepts manual URL input via config file.
 
 Reads the HTTP multipart/x-mixed-replace stream, extracts JPEG frames,
@@ -23,8 +23,8 @@ resizes them to LCD, and displays on the LCD in real time.
 - **Adaptive render rate** -- LCD refresh decoupled from stream FPS
 
 Loads cameras from:
-  ``/root/Raspyjack/loot/CCTV/cctv_live.txt``        (scanner output)
-  ``/root/Raspyjack/config/cctv_viewer/manual_urls.txt``  (manual)
+  ``/root/KTOx/loot/CCTV/cctv_live.txt``        (scanner output)
+  ``/root/KTOx/config/cctv_viewer/manual_urls.txt``  (manual)
 
 URL format: ``Name | URL`` or ``Name | URL | user:pass``
 
@@ -98,10 +98,10 @@ WIDTH, HEIGHT = LCD.width, LCD.height
 font = scaled_font()
 
 # -- Paths ---------------------------------------------------------------------
-LIVE_FILE = "/root/Raspyjack/loot/CCTV/cctv_live.txt"
-CONFIG_DIR = "/root/Raspyjack/config/cctv_viewer"
-SCREENSHOT_DIR = "/root/Raspyjack/loot/CCTV/screenshots"
-RECORDING_DIR = "/root/Raspyjack/loot/CCTV/recordings"
+LIVE_FILE = "/root/KTOx/loot/CCTV/cctv_live.txt"
+CONFIG_DIR = "/root/KTOx/config/cctv_viewer"
+SCREENSHOT_DIR = "/root/KTOx/loot/CCTV/screenshots"
+RECORDING_DIR = "/root/KTOx/loot/CCTV/recordings"
 MANUAL_URLS_FILE = os.path.join(CONFIG_DIR, "manual_urls.txt")
 for d in (CONFIG_DIR, SCREENSHOT_DIR, RECORDING_DIR):
     os.makedirs(d, exist_ok=True)

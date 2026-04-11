@@ -28,8 +28,8 @@ WIDTH, HEIGHT = LCD.width, LCD.height
 font = scaled_font()
 
 # -- Constants ---------------------------------------------------------------
-LOOT_BASE = "/root/Raspyjack/loot/BloodHound"
-CREDS_PATH = "/root/Raspyjack/config/bloodhound/creds.json"
+LOOT_BASE = "/root/KTOx/loot/BloodHound"
+CREDS_PATH = "/root/KTOx/config/bloodhound/creds.json"
 CONFIG_DIR = os.path.dirname(CREDS_PATH)
 LDAP_PORT = 389
 DEBOUNCE = 0.22

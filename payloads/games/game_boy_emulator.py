@@ -4,7 +4,7 @@ RaspyJack Payload -- Game Boy Emulator
 ---------------------------------------
 Play Game Boy / Game Boy Color ROMs on the LCD using PyBoy.
 
-Place .gb or .gbc ROM files in /root/Raspyjack/roms/
+Place .gb or .gbc ROM files in /root/KTOx/roms/
 The emulator renders frames to the LCD at ~20 FPS on Pi Zero 2.
 
 Controls:
@@ -98,7 +98,7 @@ def _draw_browser(roms, cursor, scroll):
     if not roms:
         d.text((4, 30), "No ROMs found!", font=font, fill=(255, 100, 100))
         d.text((4, 45), "Place .gb/.gbc in:", font=font, fill=(150, 150, 150))
-        d.text((4, 58), "/root/Raspyjack/", font=font, fill=(0, 200, 0))
+        d.text((4, 58), "/root/KTOx/", font=font, fill=(0, 200, 0))
         d.text((4, 70), "  roms/", font=font, fill=(0, 200, 0))
         d.text((4, 95), "KEY3 = Exit", font=font, fill=(100, 100, 100))
     else:
@@ -294,7 +294,7 @@ def _run_emulator(rom_path):
 def _auto_install():
     """Try to install PyBoy automatically."""
     import subprocess
-    install_script = "/root/Raspyjack/scripts/install_pyboy.sh"
+    install_script = "/root/KTOx/scripts/install_pyboy.sh"
 
     img = Image.new("RGB", (WIDTH, HEIGHT), "black")
     d = ScaledDraw(img)

@@ -63,8 +63,8 @@ font = scaled_font()
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-LOOT_DIR = "/root/Raspyjack/loot/ADRecon"
-CONFIG_DIR = "/root/Raspyjack/config/ad_recon"
+LOOT_DIR = "/root/KTOx/loot/ADRecon"
+CONFIG_DIR = "/root/KTOx/config/ad_recon"
 os.makedirs(LOOT_DIR, exist_ok=True)
 os.makedirs(CONFIG_DIR, exist_ok=True)
 

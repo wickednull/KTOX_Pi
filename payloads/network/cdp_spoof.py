@@ -20,7 +20,7 @@ Controls:
   KEY2       -- Export neighbor table
   KEY3       -- Exit
 
-Loot: /root/Raspyjack/loot/CDPSpoof/
+Loot: /root/KTOx/loot/CDPSpoof/
 """
 
 import os
@@ -65,7 +65,7 @@ font = scaled_font()
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-LOOT_DIR = "/root/Raspyjack/loot/CDPSpoof"
+LOOT_DIR = "/root/KTOx/loot/CDPSpoof"
 os.makedirs(LOOT_DIR, exist_ok=True)
 
 CDP_MULTICAST = "01:00:0c:cc:cc:cc"

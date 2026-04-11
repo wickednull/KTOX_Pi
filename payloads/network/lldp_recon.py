@@ -16,7 +16,7 @@ Controls:
   KEY2       -- Export JSON to loot
   KEY3       -- Exit
 
-Loot: /root/Raspyjack/loot/LLDPRecon/
+Loot: /root/KTOx/loot/LLDPRecon/
 """
 
 import os
@@ -60,7 +60,7 @@ font = scaled_font()
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-LOOT_DIR = "/root/Raspyjack/loot/LLDPRecon"
+LOOT_DIR = "/root/KTOx/loot/LLDPRecon"
 os.makedirs(LOOT_DIR, exist_ok=True)
 
 LLDP_ETHERTYPE = 0x88CC

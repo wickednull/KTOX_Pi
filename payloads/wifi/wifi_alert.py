@@ -12,7 +12,7 @@ Setup / Prerequisites
 ---------------------
 - USB WiFi dongle with monitor mode support (e.g. Alfa AWUS036ACH)
 - pip install scapy requests
-- Watchlist: /root/Raspyjack/config/wifi_alert/watchlist.json
+- Watchlist: /root/KTOx/config/wifi_alert/watchlist.json
   Format: {"targets": [{"mac": "AA:BB:CC:DD:EE:FF", "label": "Phone"},
                          {"ssid": "EvilCorp", "label": "Corp AP"}],
             "discord_webhook": "https://discord.com/api/webhooks/..."}
@@ -74,9 +74,9 @@ WIDTH, HEIGHT = LCD.width, LCD.height
 font = scaled_font()
 
 # ── Constants ────────────────────────────────────────────────────────────────
-CONFIG_DIR = "/root/Raspyjack/config/wifi_alert"
+CONFIG_DIR = "/root/KTOx/config/wifi_alert"
 CONFIG_FILE = os.path.join(CONFIG_DIR, "watchlist.json")
-LOOT_DIR = "/root/Raspyjack/loot/WiFiAlert"
+LOOT_DIR = "/root/KTOx/loot/WiFiAlert"
 CHANNELS_24 = list(range(1, 14))
 ROWS_VISIBLE = 7
 ROW_H = 12

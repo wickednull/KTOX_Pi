@@ -21,7 +21,7 @@ Controls:
   KEY2      -- Export data
   KEY3      -- Exit
 
-Loot: /root/Raspyjack/loot/TrunkDump/
+Loot: /root/KTOx/loot/TrunkDump/
 
 Setup: Switch must support DTP (Cisco default on many switches).
 """
@@ -69,7 +69,7 @@ font = scaled_font()
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-LOOT_DIR = "/root/Raspyjack/loot/TrunkDump"
+LOOT_DIR = "/root/KTOx/loot/TrunkDump"
 os.makedirs(LOOT_DIR, exist_ok=True)
 ROWS_VISIBLE = 6
 

@@ -19,7 +19,7 @@ Controls:
   KEY2       -- Export cracked passwords to loot
   KEY3       -- Exit (kills john process)
 
-Loot: /root/Raspyjack/loot/CrackedNTLM/
+Loot: /root/KTOx/loot/CrackedNTLM/
 """
 
 import os
@@ -58,10 +58,10 @@ font = scaled_font()
 # ---------------------------------------------------------------------------
 JOHN_BIN = "/usr/sbin/john"
 DEFAULT_WORDLIST = "/usr/share/john/password.lst"
-CUSTOM_WORDLIST = "/root/Raspyjack/loot/wordlists/custom.txt"
-RESPONDER_LOG_DIR = "/root/Raspyjack/Responder/logs"
-RELAY_LOOT_DIR = "/root/Raspyjack/loot/NTLMRelay"
-LOOT_DIR = "/root/Raspyjack/loot/CrackedNTLM"
+CUSTOM_WORDLIST = "/root/KTOx/loot/wordlists/custom.txt"
+RESPONDER_LOG_DIR = "/root/KTOx/Responder/logs"
+RELAY_LOOT_DIR = "/root/KTOx/loot/NTLMRelay"
+LOOT_DIR = "/root/KTOx/loot/CrackedNTLM"
 ROWS_VISIBLE = 6
 ROW_H = 12
 

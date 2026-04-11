@@ -4,7 +4,7 @@ RaspyJack Payload -- Kerberoast & AS-REP Roast
 Kerberoasting / AS-REP Roasting via impacket (GetUserSPNs.py, GetNPUsers.py).
 Auto-detects DC, collects TGS/AS-REP hashes in hashcat format.
 Controls: OK=start, KEY1=toggle mode, KEY3=exit
-Loot: /root/Raspyjack/loot/Kerberoast/
+Loot: /root/KTOx/loot/Kerberoast/
 """
 import os, sys, json, time, socket, shutil, threading, subprocess
 from datetime import datetime
@@ -28,8 +28,8 @@ LCD.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
 WIDTH, HEIGHT = LCD.width, LCD.height
 font = scaled_font()
 
-LOOT_DIR = "/root/Raspyjack/loot/Kerberoast"
-CREDS_PATH = "/root/Raspyjack/config/kerberoast/creds.json"
+LOOT_DIR = "/root/KTOx/loot/Kerberoast"
+CREDS_PATH = "/root/KTOx/config/kerberoast/creds.json"
 MODES = ["Kerberoast", "AS-REP Roast"]
 DC_PORTS = [88, 389]
 SCAN_TIMEOUT = 1.5

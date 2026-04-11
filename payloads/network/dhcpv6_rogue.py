@@ -72,7 +72,7 @@ font = scaled_font()
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-LOOT_DIR = "/root/Raspyjack/loot/DHCPv6Rogue"
+LOOT_DIR = "/root/KTOx/loot/DHCPv6Rogue"
 os.makedirs(LOOT_DIR, exist_ok=True)
 
 DHCPV6_SERVER_PORT = 547

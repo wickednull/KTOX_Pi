@@ -38,7 +38,7 @@ WIDTH, HEIGHT = LCD.width, LCD.height
 font = scaled_font()
 font_big = scaled_font(12)
 
-CONF_PATH = "/root/Raspyjack/gui_conf.json"
+CONF_PATH = "/root/KTOx/gui_conf.json"
 
 DISPLAY_OPTIONS = [
     ("ST7735_128", "1.44\" 128x128"),

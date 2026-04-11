@@ -16,7 +16,7 @@ Controls:
   KEY2         -- Add 30 minutes
   KEY3         -- Exit
 
-Config: /root/Raspyjack/config/timer.json (for Discord webhook)
+Config: /root/KTOx/config/timer.json (for Discord webhook)
 """
 
 import os
@@ -54,7 +54,7 @@ PHASE_COLORS = {
     "Cleanup": "#AAAAAA",
 }
 
-CONFIG_PATH = "/root/Raspyjack/config/timer.json"
+CONFIG_PATH = "/root/KTOx/config/timer.json"
 
 # ---------------------------------------------------------------------------
 # Shared state

@@ -14,7 +14,7 @@ Controls:
   KEY1      -- Toggle view (hosts / shares / files)
   KEY3      -- Exit
 
-Loot: /root/Raspyjack/loot/SMBCrawl/crawl_<timestamp>.json
+Loot: /root/KTOx/loot/SMBCrawl/crawl_<timestamp>.json
 """
 
 import os
@@ -51,7 +51,7 @@ font = scaled_font()
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-LOOT_DIR = "/root/Raspyjack/loot/SMBCrawl"
+LOOT_DIR = "/root/KTOx/loot/SMBCrawl"
 os.makedirs(LOOT_DIR, exist_ok=True)
 
 MAX_DEPTH = 3

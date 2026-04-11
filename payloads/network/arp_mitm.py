@@ -23,7 +23,7 @@ Controls:
   KEY2      -- Export connection log
   KEY3      -- Exit + restore ARP tables
 
-Loot: /root/Raspyjack/loot/ArpMitm/
+Loot: /root/KTOx/loot/ArpMitm/
 """
 
 import os
@@ -60,7 +60,7 @@ font = scaled_font()
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-LOOT_DIR = "/root/Raspyjack/loot/ArpMitm"
+LOOT_DIR = "/root/KTOx/loot/ArpMitm"
 os.makedirs(LOOT_DIR, exist_ok=True)
 
 ROWS_VISIBLE = 6

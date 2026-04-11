@@ -25,7 +25,7 @@ Controls:
   KEY2      -- Show captured data
   KEY3      -- Exit + cleanup gadget
 
-Loot: /root/Raspyjack/loot/USBEthMITM/
+Loot: /root/KTOx/loot/USBEthMITM/
 """
 
 import os
@@ -61,7 +61,7 @@ font = scaled_font()
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-LOOT_DIR = "/root/Raspyjack/loot/USBEthMITM"
+LOOT_DIR = "/root/KTOx/loot/USBEthMITM"
 os.makedirs(LOOT_DIR, exist_ok=True)
 
 GADGET_BASE = "/sys/kernel/config/usb_gadget"

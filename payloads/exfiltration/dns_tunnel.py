@@ -8,7 +8,7 @@ Encodes files from the loot directory into base32 DNS subdomain labels
 and sends them as TXT queries to a configurable external domain.
 
 Setup / Prerequisites:
-  - Edit config at /root/Raspyjack/config/dns_tunnel/config.json.
+  - Edit config at /root/KTOx/config/dns_tunnel/config.json.
   - Requires an external domain you control with a DNS server
     logging queries.
 
@@ -20,7 +20,7 @@ Controls:
   KEY2        -- (unused)
   KEY3        -- Exit
 
-Config: /root/Raspyjack/config/dns_tunnel/config.json
+Config: /root/KTOx/config/dns_tunnel/config.json
 """
 
 import os
@@ -57,9 +57,9 @@ font = scaled_font()
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-LOOT_BASE = "/root/Raspyjack/loot"
+LOOT_BASE = "/root/KTOx/loot"
 LOOT_DIR = os.path.join(LOOT_BASE, "DNSTunnel")
-CONFIG_DIR = "/root/Raspyjack/config/dns_tunnel"
+CONFIG_DIR = "/root/KTOx/config/dns_tunnel"
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
 os.makedirs(LOOT_DIR, exist_ok=True)
 os.makedirs(CONFIG_DIR, exist_ok=True)

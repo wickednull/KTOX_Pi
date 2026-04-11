@@ -23,7 +23,7 @@ Controls
   KEY2          -- Export JSON to loot
   KEY3          -- Exit
 
-Loot: /root/Raspyjack/loot/WiFiSurvey/
+Loot: /root/KTOx/loot/WiFiSurvey/
 """
 
 import os
@@ -69,7 +69,7 @@ WIDTH, HEIGHT = LCD.width, LCD.height
 font = scaled_font()
 
 # ── Constants ────────────────────────────────────────────────────────────────
-LOOT_DIR = "/root/Raspyjack/loot/WiFiSurvey"
+LOOT_DIR = "/root/KTOx/loot/WiFiSurvey"
 CHANNELS_24 = list(range(1, 14))
 ROWS_VISIBLE = 7
 ROW_H = 12

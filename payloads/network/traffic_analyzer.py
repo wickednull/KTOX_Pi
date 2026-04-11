@@ -22,7 +22,7 @@ Controls:
   KEY2        -- Export snapshot
   KEY3        -- Exit
 
-Loot: /root/Raspyjack/loot/TrafficAnalyzer/
+Loot: /root/KTOx/loot/TrafficAnalyzer/
 
 Setup: No special requirements.
 """
@@ -67,7 +67,7 @@ font = scaled_font()
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-LOOT_DIR = "/root/Raspyjack/loot/TrafficAnalyzer"
+LOOT_DIR = "/root/KTOx/loot/TrafficAnalyzer"
 os.makedirs(LOOT_DIR, exist_ok=True)
 ROWS_VISIBLE = 6
 VIEWS = ["dashboard", "connections", "dns"]

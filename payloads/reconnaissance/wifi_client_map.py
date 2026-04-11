@@ -20,7 +20,7 @@ Controls:
   KEY2        -- Export results to loot
   KEY3        -- Exit
 
-Loot: /root/Raspyjack/loot/ClientMap/<timestamp>.json
+Loot: /root/KTOx/loot/ClientMap/<timestamp>.json
 """
 
 import os
@@ -55,7 +55,7 @@ font = scaled_font()
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-LOOT_DIR = "/root/Raspyjack/loot/ClientMap"
+LOOT_DIR = "/root/KTOx/loot/ClientMap"
 os.makedirs(LOOT_DIR, exist_ok=True)
 
 ROWS_VISIBLE = 7

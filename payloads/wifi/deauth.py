@@ -25,10 +25,17 @@ DURING ATTACK:
 
 import os, sys, time, signal, subprocess, threading
 sys.path.append(os.path.abspath(os.path.join(__file__, '..', '..')))
+_root = os.path.abspath(os.path.join(__file__, '..', '..', '..'))
+if _root not in sys.path:
+    sys.path.insert(0, _root)
 
 import RPi.GPIO as GPIO
 import LCD_1in44, LCD_Config
 from PIL import Image, ImageDraw, ImageFont
+from wifi.monitor_mode_helper import (
+    activate_monitor_mode, deactivate_monitor_mode,
+    find_monitor_capable_interface, _iface_mode,
+)
 
 # WiFi Integration - Import dynamic interface support
 try:
@@ -198,137 +205,61 @@ def run_command(cmd, timeout=None):
 def check_interface_exists():
     """Check if the WiFi interface exists and is available."""
     global WIFI_INTERFACE
-    
+
     log(f"Checking if interface {WIFI_INTERFACE} exists")
     show_status("Checking iface...")
-    
-    result = run_command(f"iwconfig {WIFI_INTERFACE}")
-    
-    if "No such device" in result:
-        log(f"Interface {WIFI_INTERFACE} not found, trying alternatives")
-        show_status("Finding iface...")
-        
-        # Try alternative interfaces
-        for iface in INTERFACE_PATTERNS:
-            result = run_command(f"iwconfig {iface}")
-            if "No such device" not in result and "IEEE 802.11" in result:
-                log(f"Found working interface: {iface}")
-                WIFI_INTERFACE = iface
-                show_status(f"Found {iface}")
-                return True
-        
-        # Check for USB dongles specifically
-        show_status("Check USB dongles...")
-        usb_check = run_command("lsusb | grep -iE 'realtek|ralink|atheros|broadcom'")
-        if usb_check:
-            log(f"USB WiFi dongles detected: {usb_check}")
-            show_status("USB dongles found!")
-            time.sleep(1)
-            show_status("Plug in USB dongle")
-            time.sleep(2)
-        else:
-            show_status("No USB dongles!")
-            time.sleep(1)
-        
-        show_status("No WiFi found!")
-        return False
-    
-    show_status(f"Using {WIFI_INTERFACE}")
-    return True
+
+    if os.path.exists(f"/sys/class/net/{WIFI_INTERFACE}"):
+        show_status(f"Using {WIFI_INTERFACE}")
+        return True
+
+    log(f"Interface {WIFI_INTERFACE} not found, trying alternatives")
+    show_status("Finding iface...")
+
+    # Try to find any monitor-capable interface first
+    found = find_monitor_capable_interface()
+    if found:
+        log(f"Found monitor-capable interface: {found}")
+        WIFI_INTERFACE = found
+        show_status(f"Found {found}")
+        return True
+
+    # Fall back to any wlan interface
+    for iface in INTERFACE_PATTERNS:
+        if os.path.exists(f"/sys/class/net/{iface}"):
+            log(f"Using fallback interface: {iface}")
+            WIFI_INTERFACE = iface
+            show_status(f"Found {iface}")
+            return True
+
+    show_status("No WiFi found!")
+    return False
 
 def setup_monitor_mode():
-    """Set up monitor mode on the WiFi interface."""
+    """Set up monitor mode on the WiFi interface using the canonical helper."""
     global WIFI_INTERFACE
-    
-    log("Setting up monitor mode")
+
+    log(f"Setting up monitor mode on {WIFI_INTERFACE}")
     show_status("Setup monitor...")
-    
-    # Check if this is the onboard Raspberry Pi WiFi
-    driver_check = run_command(f"ethtool -i {WIFI_INTERFACE} 2>/dev/null || echo 'unknown'")
-    if "brcmfmac" in driver_check:
-        log("DETECTED: Onboard Raspberry Pi WiFi (Broadcom 43430)")
-        show_status("ONBOARD WIFI!")
-        time.sleep(1)
-        show_status("NO MONITOR MODE!")
-        time.sleep(1)
-        show_status("USE USB DONGLE!")
-        time.sleep(2)
-        
-        show([
-            "ONBOARD WIFI LIMITATION",
-            "Broadcom 43430 chip",
-            "NO monitor mode support",
-            "Use USB WiFi dongle"
-        ])
-        time.sleep(3)
-        
-        show([
-            "RECOMMENDED DONGLES:",
-            "Alfa AWUS036ACH",
-            "TP-Link TL-WN722N v1", 
-            "Panda PAU09"
-        ])
-        time.sleep(3)
-        
-        show_status("Switch to USB dongle")
-        return False
-    
-    # Kill interfering processes
-    show_status("Stopping NM...")
-    run_command("pkill -f NetworkManager")
-    run_command("pkill -f wpa_supplicant")
-    time.sleep(1)
-    
-    # Check current mode
-    iwconfig_result = run_command(f"iwconfig {WIFI_INTERFACE}")
-    log(f"Current interface status: {iwconfig_result[:200]}")
-    
-    if "Mode:Monitor" in iwconfig_result:
-        log("Interface already in monitor mode")
-        show_status("Monitor ready!")
-        time.sleep(1)
-        return True
-    
-    # Try to enable monitor mode
-    show_status("Enable monitor...")
-    
-    # Method 1: Use airmon-ng
-    log("Trying airmon-ng method")
-    show_status("Try airmon-ng...")
-    result = run_command(f"airmon-ng start {WIFI_INTERFACE}")
-    log(f"airmon-ng result: {result}")
-    
-    # Check if a monitor interface was created
-    for iface in [f"{WIFI_INTERFACE}mon", WIFI_INTERFACE]:
-        check_result = run_command(f"iwconfig {iface}")
-        if "Mode:Monitor" in check_result:
-            log(f"Monitor mode enabled on {iface}")
-            WIFI_INTERFACE = iface
-            show_status("Monitor OK!")
-            time.sleep(1)
-            return True
-    
-    # Method 2: Manual iwconfig method
-    log("Trying manual iwconfig method")
-    show_status("Manual setup...")
-    run_command(f"ifconfig {WIFI_INTERFACE} down")
-    time.sleep(0.5)
-    run_command(f"iwconfig {WIFI_INTERFACE} mode monitor")
-    time.sleep(0.5)
-    run_command(f"ifconfig {WIFI_INTERFACE} up")
-    time.sleep(1)
-    
-    # Verify monitor mode
-    check_result = run_command(f"iwconfig {WIFI_INTERFACE}")
-    if "Mode:Monitor" in check_result:
-        log("Monitor mode enabled via iwconfig")
+
+    mon = activate_monitor_mode(WIFI_INTERFACE)
+    if mon:
+        log(f"Monitor mode active on {mon}")
+        WIFI_INTERFACE = mon
         show_status("Monitor OK!")
         time.sleep(1)
         return True
-    
-    log("Failed to enable monitor mode")
+
+    log("Failed to enable monitor mode — try USB WiFi dongle (brcmfmac not supported)")
     show_status("Monitor FAILED!")
-    time.sleep(2)
+    time.sleep(1)
+    show([
+        "MONITOR MODE FAILED",
+        "brcmfmac onboard",
+        "NOT supported",
+        "Use USB WiFi dongle",
+    ])
+    time.sleep(3)
     return False
 
 def validate_setup():
@@ -511,26 +442,18 @@ def start_direct_python_attack():
                 try:
                     # Set channel
                     log_attack(f"Setting channel {target['channel']}...")
-                    channel_result = run_command(f"iwconfig {WIFI_INTERFACE} channel {target['channel']}")
+                    run_command(f"iw dev {WIFI_INTERFACE} set channel {target['channel']}")
                     time.sleep(0.5)
-                    
+
                     if attack_stop_event.is_set():
                         break
-                    
-                    # Verify channel (simplified check)
-                    verify_result = run_command(f"iwconfig {WIFI_INTERFACE}")
-                    if f"Channel:{target['channel']}" in verify_result or f"Frequency:" in verify_result:
-                        log_attack(f"Channel {target['channel']} set successfully")
-                    else:
-                        log_attack(f"WARNING: Channel {target['channel']} may not be set correctly")
-                        log_attack(f"iwconfig output: {verify_result[:100]}")
-                    
-                    # Check interface mode
-                    if "Mode:Monitor" in verify_result:
+
+                    # Check interface mode via iw (no iwconfig)
+                    mode = _iface_mode(WIFI_INTERFACE)
+                    if mode == "monitor":
                         log_attack("Interface in Monitor mode - GOOD")
                     else:
-                        log_attack("WARNING: Interface not in Monitor mode!")
-                        log_attack(f"Current mode: {verify_result}")
+                        log_attack(f"WARNING: Interface not in Monitor mode! (mode={mode})")
                     
                     # RESEARCH-BASED MAXIMUM DEAUTH AGGRESSION
                     log_attack("Starting RESEARCH-BASED MAXIMUM DEAUTH AGGRESSION...")
@@ -697,22 +620,24 @@ def simple_cleanup():
     try:
         log("Starting simple cleanup")
         show_status("Cleaning up...")
-        
+
         # Stop all attacks
         stop_all_attacks()
-        
+
         # Kill any remaining processes
         run_command("pkill -f aireplay-ng 2>/dev/null || true")
         run_command("pkill -f airodump-ng 2>/dev/null || true")
-        
-        # Try to restart network manager (ignore errors)
-        run_command("systemctl start NetworkManager 2>/dev/null || true")
-        
+
+        # Restore managed mode via canonical helper
+        try:
+            deactivate_monitor_mode(WIFI_INTERFACE)
+        except Exception as e:
+            log(f"deactivate_monitor_mode error: {e}")
+
         log("Simple cleanup completed")
-        
+
     except Exception as e:
         log(f"Error during cleanup: {str(e)}")
-        # Continue anyway
         pass
 
 def signal_handler(signum, frame):

@@ -21,7 +21,7 @@ Controls:
   KEY1       -- Toggle passive / active mode
   KEY3       -- Exit
 
-Loot: /root/Raspyjack/loot/VLANMap/
+Loot: /root/KTOx/loot/VLANMap/
 """
 
 import os
@@ -68,7 +68,7 @@ font = scaled_font()
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-LOOT_DIR = "/root/Raspyjack/loot/VLANMap"
+LOOT_DIR = "/root/KTOx/loot/VLANMap"
 os.makedirs(LOOT_DIR, exist_ok=True)
 
 DTP_MCAST = "01:00:0c:cc:cc:cc"

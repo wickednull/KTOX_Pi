@@ -63,7 +63,7 @@ WIDTH, HEIGHT = LCD.width, LCD.height
 font = scaled_font()
 
 # ── Constants ────────────────────────────────────────────────────────────────
-CONFIG_FILE = "/root/Raspyjack/config/ssid_pool/ssids.json"
+CONFIG_FILE = "/root/KTOx/config/ssid_pool/ssids.json"
 DEFAULT_SSIDS = [
     "Free WiFi", "Hotel_Guest", "Airport_WiFi", "Corporate_Net",
     "Starbucks_Free", "xfinitywifi", "Google_Starbucks",

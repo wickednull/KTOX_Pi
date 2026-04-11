@@ -5,7 +5,7 @@ RaspyJack Payload -- USB Drive Auto-Copy
 Author: 7h30th3r0n3
 
 Monitors for USB mass storage insertion using pyudev (or polling /dev/sd*).
-When detected: mount the drive, copy all of /root/Raspyjack/loot/ to the
+When detected: mount the drive, copy all of /root/KTOx/loot/ to the
 USB under a timestamped folder, then unmount.
 
 Setup / Prerequisites
@@ -55,7 +55,7 @@ font = scaled_font()
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-LOOT_ROOT = "/root/Raspyjack/loot"
+LOOT_ROOT = "/root/KTOx/loot"
 MOUNT_POINT = "/mnt/raspyjack_usb"
 os.makedirs(MOUNT_POINT, exist_ok=True)
 

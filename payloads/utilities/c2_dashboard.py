@@ -12,7 +12,7 @@ Setup / Prerequisites
 ---------------------
 - RaspyJack base system with LCD hat.
 - systemd services: raspyjack, raspyjack-device, raspyjack-webui, caddy.
-- Discord webhook URL in /root/Raspyjack/discord_webhook.txt (optional).
+- Discord webhook URL in /root/KTOx/discord_webhook.txt (optional).
 
 Controls
 --------
@@ -52,8 +52,8 @@ LCD.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
 WIDTH, HEIGHT = LCD.width, LCD.height
 font = scaled_font()
 
-LOOT_ROOT = "/root/Raspyjack/loot"
-WEBHOOK_FILE = "/root/Raspyjack/discord_webhook.txt"
+LOOT_ROOT = "/root/KTOx/loot"
+WEBHOOK_FILE = "/root/KTOx/discord_webhook.txt"
 SERVICES = ["raspyjack", "raspyjack-device", "raspyjack-webui", "caddy"]
 VIEWS = ["Overview", "Payloads", "Loot", "Network"]
 REFRESH_INTERVAL = 5.0

@@ -53,12 +53,12 @@ LCD.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
 WIDTH, HEIGHT = LCD.width, LCD.height
 font = scaled_font()
 
-LOOT_DIR = "/root/Raspyjack/loot/Persistence"
+LOOT_DIR = "/root/KTOx/loot/Persistence"
 CRED_DIRS = [
-    "/root/Raspyjack/loot/CrackedNTLM",
-    "/root/Raspyjack/loot/DefaultCreds",
-    "/root/Raspyjack/loot/SSH",
-    "/root/Raspyjack/loot/PtH",
+    "/root/KTOx/loot/CrackedNTLM",
+    "/root/KTOx/loot/DefaultCreds",
+    "/root/KTOx/loot/SSH",
+    "/root/KTOx/loot/PtH",
 ]
 IMPLANT_NAME = "RJUpdate"
 os.makedirs(LOOT_DIR, exist_ok=True)

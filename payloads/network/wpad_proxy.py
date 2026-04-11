@@ -24,7 +24,7 @@ Controls:
   KEY2      -- Export captured data
   KEY3      -- Exit + cleanup
 
-Loot: /root/Raspyjack/loot/WPAD/
+Loot: /root/KTOx/loot/WPAD/
 """
 
 import os
@@ -66,7 +66,7 @@ font = scaled_font()
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-LOOT_DIR = "/root/Raspyjack/loot/WPAD"
+LOOT_DIR = "/root/KTOx/loot/WPAD"
 os.makedirs(LOOT_DIR, exist_ok=True)
 
 DNSMASQ_CONF = "/tmp/raspyjack_wpad_dnsmasq.conf"

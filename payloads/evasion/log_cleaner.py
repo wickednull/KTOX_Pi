@@ -5,7 +5,7 @@ RaspyJack Payload -- Engagement Log Cleaner
 Author: 7h30th3r0n3
 
 Selective cleanup of forensic artifacts after an engagement.
-Protects /root/Raspyjack/loot/ (operator data).
+Protects /root/KTOx/loot/ (operator data).
 
 Controls:
   UP/DOWN  = scroll items

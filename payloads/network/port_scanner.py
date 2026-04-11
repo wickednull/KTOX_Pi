@@ -21,7 +21,7 @@ Controls:
   KEY2      -- Export results
   KEY3      -- Exit
 
-Loot: /root/Raspyjack/loot/PortScan/
+Loot: /root/KTOx/loot/PortScan/
 """
 
 import os
@@ -66,7 +66,7 @@ font = scaled_font()
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-LOOT_DIR = "/root/Raspyjack/loot/PortScan"
+LOOT_DIR = "/root/KTOx/loot/PortScan"
 os.makedirs(LOOT_DIR, exist_ok=True)
 ROWS_VISIBLE = 6
 

@@ -19,7 +19,7 @@ Controls:
   KEY2       -- Export results to loot
   KEY3       -- Exit
 
-Loot: /root/Raspyjack/loot/I2CScan/scan_YYYYMMDD_HHMMSS.json
+Loot: /root/KTOx/loot/I2CScan/scan_YYYYMMDD_HHMMSS.json
 Requires: smbus2
 """
 
@@ -57,7 +57,7 @@ ROWS_VISIBLE = 6
 ROW_H = 12
 
 I2C_BUS = 1
-LOOT_DIR = "/root/Raspyjack/loot/I2CScan"
+LOOT_DIR = "/root/KTOx/loot/I2CScan"
 
 # Built-in I2C address database (hex address -> description)
 I2C_DEVICES = {

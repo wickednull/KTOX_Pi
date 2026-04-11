@@ -5,13 +5,13 @@ RaspyJack Payload -- Advanced Captive Portal
 Author: 7h30th3r0n3
 
 Captive portal with template selection. Serves phishing pages
-from /root/Raspyjack/DNSSpoof/sites/ or built-in templates.
+from /root/KTOx/DNSSpoof/sites/ or built-in templates.
 
 Setup / Prerequisites
 ---------------------
 - USB WiFi dongle with monitor mode support (e.g. Alfa AWUS036ACH)
 - apt install hostapd dnsmasq-base
-- Optional: phishing templates in /root/Raspyjack/DNSSpoof/sites/
+- Optional: phishing templates in /root/KTOx/DNSSpoof/sites/
 - Dongle is auto-detected on wlan1+ (onboard wlan0 is reserved for WebUI)
 
 Flow:
@@ -30,7 +30,7 @@ Controls:
   KEY2        -- Export to loot
   KEY3        -- Exit + cleanup
 
-Loot: /root/Raspyjack/loot/CaptivePortal/
+Loot: /root/KTOx/loot/CaptivePortal/
 """
 
 import os
@@ -70,10 +70,10 @@ font = scaled_font()
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-LOOT_DIR = "/root/Raspyjack/loot/CaptivePortal"
+LOOT_DIR = "/root/KTOx/loot/CaptivePortal"
 os.makedirs(LOOT_DIR, exist_ok=True)
 
-SITES_DIR = "/root/Raspyjack/DNSSpoof/sites"
+SITES_DIR = "/root/KTOx/DNSSpoof/sites"
 HOSTAPD_CONF = "/tmp/raspyjack_captive_hostapd.conf"
 DNSMASQ_CONF = "/tmp/raspyjack_captive_dnsmasq.conf"
 PORTAL_PORT = 80

@@ -21,7 +21,7 @@ Controls:
   KEY2       -- Export pcap to loot
   KEY3       -- Exit
 
-Loot: /root/Raspyjack/loot/Handshakes/hs_YYYYMMDD_HHMMSS.pcap
+Loot: /root/KTOx/loot/Handshakes/hs_YYYYMMDD_HHMMSS.pcap
 """
 
 import os
@@ -39,6 +39,14 @@ import LCD_Config
 from PIL import Image, ImageDraw, ImageFont
 from payloads._display_helper import ScaledDraw, scaled_font
 from payloads._input_helper import get_button
+from payloads._debug_helper import log as _dbg
+
+_root = os.path.abspath(os.path.join(__file__, "..", "..", ".."))
+if _root not in sys.path:
+    sys.path.insert(0, _root)
+from wifi.monitor_mode_helper import (
+    activate_monitor_mode, deactivate_monitor_mode, find_monitor_capable_interface,
+)
 
 try:
     from scapy.all import (
@@ -60,7 +68,7 @@ PINS = {
 WIDTH, HEIGHT = LCD_1in44.LCD_WIDTH, LCD_1in44.LCD_HEIGHT
 ROWS_VISIBLE = 6
 ROW_H = 12
-LOOT_DIR = "/root/Raspyjack/loot/Handshakes"
+LOOT_DIR = "/root/KTOx/loot/Handshakes"
 CHANNELS_24 = list(range(1, 14))
 
 # ---------------------------------------------------------------------------
@@ -80,112 +88,6 @@ _running = True
 _target_ap = None
 
 
-# ---------------------------------------------------------------------------
-# Onboard WiFi detection
-# ---------------------------------------------------------------------------
-
-def _is_onboard_wifi_iface(iface):
-    """True for onboard Pi WiFi (SDIO/mmc path or brcmfmac driver)."""
-    try:
-        devpath = os.path.realpath(f"/sys/class/net/{iface}/device")
-        if "mmc" in devpath:
-            return True
-    except Exception:
-        pass
-    try:
-        driver = os.path.basename(
-            os.path.realpath(f"/sys/class/net/{iface}/device/driver"))
-        if driver == "brcmfmac":
-            return True
-    except Exception:
-        pass
-    return False
-
-
-def _find_usb_wifi():
-    """Find a USB WiFi dongle suitable for monitor mode."""
-    candidates = []
-    try:
-        for name in os.listdir("/sys/class/net"):
-            if name == "lo":
-                continue
-            if os.path.isdir(f"/sys/class/net/{name}/wireless"):
-                if not _is_onboard_wifi_iface(name):
-                    candidates.append(name)
-    except Exception:
-        pass
-    no_mon = {"brcmfmac", "b43", "wl"}
-    good, fallback = [], []
-    for iface in candidates:
-        drv = ""
-        try:
-            drv = os.path.basename(
-                os.path.realpath(f"/sys/class/net/{iface}/device/driver"))
-        except Exception:
-            pass
-        (fallback if drv in no_mon else good).append(iface)
-    return (good or fallback or [None])[0]
-
-
-def _monitor_up(iface):
-    """Put iface into monitor mode. Returns monitor interface name or None."""
-    for cmd in [
-        ["nmcli", "device", "set", iface, "managed", "no"],
-        ["sudo", "pkill", "-f", f"wpa_supplicant.*{iface}"],
-        ["sudo", "pkill", "-f", f"dhcpcd.*{iface}"],
-    ]:
-        try:
-            subprocess.run(cmd, capture_output=True, timeout=5)
-        except Exception:
-            pass
-    time.sleep(0.5)
-    try:
-        subprocess.run(["sudo", "airmon-ng", "start", iface],
-                       capture_output=True, timeout=30)
-        for name in (f"{iface}mon", iface):
-            r = subprocess.run(["iwconfig", name],
-                               capture_output=True, text=True, timeout=5)
-            if "Mode:Monitor" in r.stdout:
-                return name
-    except Exception:
-        pass
-    try:
-        subprocess.run(["sudo", "ip", "link", "set", iface, "down"],
-                       check=True, timeout=10)
-        subprocess.run(["sudo", "iw", iface, "set", "monitor", "none"],
-                       check=True, timeout=10)
-        subprocess.run(["sudo", "ip", "link", "set", iface, "up"],
-                       check=True, timeout=10)
-        time.sleep(0.5)
-        r = subprocess.run(["iwconfig", iface],
-                           capture_output=True, text=True, timeout=5)
-        if "Mode:Monitor" in r.stdout:
-            return iface
-    except Exception:
-        pass
-    return None
-
-
-def _monitor_down(iface):
-    """Restore interface to managed mode."""
-    if not iface:
-        return
-    base = iface.replace("mon", "")
-    try:
-        subprocess.run(["sudo", "airmon-ng", "stop", iface],
-                       capture_output=True, timeout=10)
-    except Exception:
-        pass
-    for cmd in [
-        ["sudo", "ip", "link", "set", base, "down"],
-        ["sudo", "iw", base, "set", "type", "managed"],
-        ["sudo", "ip", "link", "set", base, "up"],
-        ["nmcli", "device", "set", base, "managed", "yes"],
-    ]:
-        try:
-            subprocess.run(cmd, capture_output=True, timeout=5)
-        except Exception:
-            pass
 
 
 def _set_channel(iface, ch):
@@ -497,7 +399,7 @@ def main():
         GPIO.cleanup()
         return 1
 
-    usb_iface = _find_usb_wifi()
+    usb_iface = find_monitor_capable_interface()
     if not usb_iface:
         img = Image.new("RGB", (WIDTH, HEIGHT), "black")
         d = ScaledDraw(img)
@@ -507,7 +409,7 @@ def main():
         GPIO.cleanup()
         return 1
 
-    mon_iface = _monitor_up(usb_iface)
+    mon_iface = activate_monitor_mode(usb_iface)
     if not mon_iface:
         img = Image.new("RGB", (WIDTH, HEIGHT), "black")
         d = ScaledDraw(img)
@@ -598,7 +500,7 @@ def main():
 
     finally:
         _running = False
-        _monitor_down(mon_iface)
+        deactivate_monitor_mode(mon_iface)
         time.sleep(0.3)
         try:
             lcd.LCD_Clear()
