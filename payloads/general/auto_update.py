@@ -210,14 +210,28 @@ def do_git_pull():
         src = Path(tmp)
         dst = Path(KTOX_DIR)
 
-        # Files from ktox_pi/ subdirectory → flat into KTOX_DIR
+        # Core device files — mirror install.sh priority:
+        #   root-level file wins; fall back to ktox_pi/ if absent.
+        # This ensures the canonical root version (e.g. with `except Exception`
+        # for OSError from spidev) is always what gets deployed, not the older
+        # ktox_pi/ variant that only catches ImportError.
         for fname in [
             "ktox_device.py", "LCD_1in44.py", "LCD_Config.py",
-            "rj_input.py", "ktox_lcd.py", "ktox_payload_runner.py",
+            "ktox_lcd.py", "ktox_payload_runner.py",
         ]:
-            s = src / "ktox_pi" / fname
+            s = src / fname                    # root-level preferred
+            if not s.exists():
+                s = src / "ktox_pi" / fname    # fall back to ktox_pi/
             if s.exists():
                 _safe_copy(s, dst / fname, skipped)
+
+        # ktox_input.py lives in ktox_pi/; install as both names so that
+        # `import ktox_input as rj_input` (root ktox_device.py) and
+        # `import rj_input` (older scripts) both work after update.
+        ki_src = src / "ktox_pi" / "ktox_input.py"
+        if ki_src.exists():
+            _safe_copy(ki_src, dst / "ktox_input.py", skipped)
+            _safe_copy(ki_src, dst / "rj_input.py",   skipped)
 
         # Files from repo root → flat into KTOX_DIR
         root_files = [
