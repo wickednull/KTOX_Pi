@@ -162,6 +162,48 @@ def get_virtual_button() -> Optional[str]:
         return None
 
 
+def get_held_buttons() -> set:
+    """
+    Return set of currently held button names (e.g. {'KEY1_PIN', 'KEY_UP_PIN'}).
+    Works both in the main process and in payload subprocesses via the shared file.
+    """
+    now = time.monotonic()
+    held = set()
+
+    # In-process held state
+    with _held_lock:
+        expired = [k for k, exp in _held.items() if now >= exp]
+        for k in expired:
+            del _held[k]
+        held.update(_held.keys())
+
+    # Shared file (works in subprocesses)
+    try:
+        with open(_HELD_PATH) as f:
+            content = f.read().strip()
+        if content:
+            pin_nums = {int(p) for p in content.split(",") if p.strip()}
+            for btn, pin in _PIN_NAME_TO_NUM.items():
+                if pin in pin_nums:
+                    held.add(btn)
+    except Exception:
+        pass
+
+    return held
+
+
+def flush():
+    """Clear all queued and held button state."""
+    with _held_lock:
+        _held.clear()
+    _write_held_file()
+    try:
+        while True:
+            _q.get_nowait()
+    except queue.Empty:
+        pass
+
+
 def is_pin_held(pin: int) -> bool:
     """
     Return True if the WebUI is currently holding the button mapped to *pin*.

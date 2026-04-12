@@ -684,6 +684,13 @@ def exec_payload(filename, *args):
         except Exception:
             pass
 
+        # Flush any virtual button events that piled up while the payload ran
+        # so they don't trigger unintended menu actions after returning.
+        try:
+            rj_input.flush()
+        except Exception:
+            pass
+
         with draw_lock:
             try:
                 draw.rectangle((0, 0, 128, 128), fill=color.background)
