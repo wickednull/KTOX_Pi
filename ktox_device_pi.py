@@ -2453,7 +2453,6 @@ class KTOxMenu:
             (" Payloads",      "pay"),
             (" Loot",          "loot"),
             (" Stealth",       enter_stealth),
-            (" Lock",          OpenLockMenu),
             (" System",        "sys"),
         ),
 
@@ -2531,6 +2530,7 @@ class KTOxMenu:
             (" System Info",     self._sysinfo),
             (" OTA Update",      partial(exec_payload,"general/auto_update")),
             (" Discord Webhook", self._discord_status),
+            (" Lock",            OpenLockMenu),
             (" Reboot",          self._reboot),
             (" Shutdown",        self._shutdown),
         ),
