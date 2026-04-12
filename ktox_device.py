@@ -22,6 +22,7 @@
 #   KEY3                 stop attack / exit payload
 
 import os, sys, time, json, threading, subprocess, signal, socket, ipaddress, math
+import base64, hashlib, hmac, secrets
 from datetime import datetime
 from functools import partial
 from pathlib import Path
@@ -130,13 +131,14 @@ ktox_state = {
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class Defaults:
-    start_text    = [10, 20]
-    text_gap      = 14
-    install_path  = INSTALL_PATH
-    payload_path  = PAYLOAD_DIR + "/"
-    payload_log   = PAYLOAD_LOG
-    imgstart_path = "/root/"
-    config_file   = KTOX_DIR + "/gui_conf.json"
+    start_text      = [10, 20]
+    text_gap        = 14
+    install_path    = INSTALL_PATH
+    payload_path    = PAYLOAD_DIR + "/"
+    payload_log     = PAYLOAD_LOG
+    imgstart_path   = "/root/"
+    config_file     = KTOX_DIR + "/gui_conf.json"
+    screensaver_gif = KTOX_DIR + "/img/screensaver/default.gif"
 
 default = Defaults()
 
@@ -173,6 +175,11 @@ class ColorScheme:
             self.select        = c.get("SELECTED_TEXT_BACKGROUND", self.select)
             self.gamepad       = c.get("GAMEPAD",            self.gamepad)
             self.gamepad_fill  = c.get("GAMEPAD_FILL",       self.gamepad_fill)
+            # Load lock config and screensaver path
+            _lock_load_from_config(data)
+            p = data.get("PATHS", {}).get("SCREENSAVER_GIF", "")
+            if p:
+                default.screensaver_gif = p
         except Exception:
             pass
 
@@ -332,6 +339,12 @@ def getButton(timeout=120):
         if (time.time() - start) > timeout:
             _last_button = None
             return None
+
+        # Auto-lock check
+        if _should_auto_lock():
+            lock_device("Auto lock")
+            start = time.time()  # Reset timeout after returning from lock
+            continue
 
         # Poll WebUI payload launch request
         if not screen_lock.is_set():
@@ -777,6 +790,588 @@ def refresh_state():
 def loot_count():
     try: return len(list(Path(LOOT_DIR).glob("**/*")))
     except: return 0
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ── PIN / Sequence Lock Screen ─────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ── Constants ─────────────────────────────────────────────────────────────────
+
+LOCK_PIN_PBKDF2_ROUNDS   = 40000
+LOCK_SCREEN_STATIC_SECS  = 1.2
+LOCK_MODE_PIN            = "pin"
+LOCK_MODE_SEQUENCE       = "sequence"
+LOCK_SEQUENCE_LENGTH     = 6
+LOCK_SEQUENCE_ALLOWED    = ("KEY_UP_PIN","KEY_DOWN_PIN","KEY_LEFT_PIN",
+                             "KEY_RIGHT_PIN","KEY1_PIN","KEY2_PIN")
+LOCK_SEQUENCE_LABELS     = {"KEY_UP_PIN":"UP","KEY_DOWN_PIN":"DOWN",
+                             "KEY_LEFT_PIN":"LEFT","KEY_RIGHT_PIN":"RIGHT",
+                             "KEY1_PIN":"KEY1","KEY2_PIN":"KEY2"}
+LOCK_SEQUENCE_TOKENS     = {"KEY_UP_PIN":"U","KEY_DOWN_PIN":"D",
+                             "KEY_LEFT_PIN":"L","KEY_RIGHT_PIN":"R",
+                             "KEY1_PIN":"1","KEY2_PIN":"2"}
+LOCK_SEQUENCE_DEBOUNCE   = 0.06
+LOCK_TIMEOUT_OPTIONS     = [(0,"Never"),(15,"15 sec"),(30,"30 sec"),
+                             (60,"1 min"),(300,"5 min"),(600,"10 min")]
+
+LOCK_DEFAULTS = {
+    "enabled": False, "mode": LOCK_MODE_PIN,
+    "pin_hash": "", "sequence_hash": "",
+    "sequence_length": LOCK_SEQUENCE_LENGTH, "auto_lock_seconds": 0,
+}
+
+# ── Runtime state ─────────────────────────────────────────────────────────────
+
+lock_config  = LOCK_DEFAULTS.copy()
+lock_runtime = {
+    "locked": False, "last_activity": time.monotonic(),
+    "in_lock_flow": False, "suspend_auto_lock": False,
+    "showing_screensaver": False,
+}
+_lock_ss_cache = {"path": None, "mtime": None, "frames": [], "durations": []}
+_random_screensaver = False
+
+# ── Crypto helpers ────────────────────────────────────────────────────────────
+
+def _b64url(raw: bytes) -> str:
+    return base64.urlsafe_b64encode(raw).decode().rstrip("=")
+
+def _hash_pin(pin: str, rounds: int = LOCK_PIN_PBKDF2_ROUNDS) -> str:
+    salt = secrets.token_hex(16)
+    dk   = hashlib.pbkdf2_hmac("sha256", pin.encode(), salt.encode(), rounds)
+    return f"pbkdf2_sha256${rounds}${salt}${_b64url(dk)}"
+
+def _verify_pin(pin: str, encoded: str) -> bool:
+    try:
+        algo, rounds, salt, digest = encoded.split("$", 3)
+        if algo != "pbkdf2_sha256": return False
+        dk = hashlib.pbkdf2_hmac("sha256", pin.encode(), salt.encode(), int(rounds))
+        return hmac.compare_digest(_b64url(dk), digest)
+    except Exception:
+        return False
+
+def _hash_sequence(seq: list) -> str:
+    return _hash_pin("|".join(seq))
+
+def _verify_sequence(seq: list, encoded: str) -> bool:
+    return _verify_pin("|".join(seq), encoded)
+
+# ── Config helpers ────────────────────────────────────────────────────────────
+
+def _lock_mode() -> str:
+    m = str(lock_config.get("mode") or LOCK_MODE_PIN)
+    return m if m in (LOCK_MODE_PIN, LOCK_MODE_SEQUENCE) else LOCK_MODE_PIN
+
+def _lock_mode_label(mode=None) -> str:
+    return "Sequence" if (mode or _lock_mode()) == LOCK_MODE_SEQUENCE else "PIN"
+
+def _lock_has_pin() -> bool:
+    return bool(str(lock_config.get("pin_hash") or "").strip())
+
+def _lock_has_sequence() -> bool:
+    return bool(str(lock_config.get("sequence_hash") or "").strip())
+
+def _lock_has_secret(mode=None) -> bool:
+    return _lock_has_sequence() if (mode or _lock_mode()) == LOCK_MODE_SEQUENCE else _lock_has_pin()
+
+def _lock_is_enabled() -> bool:
+    return bool(lock_config.get("enabled")) and _lock_has_secret()
+
+def _lock_timeout_label(secs=None) -> str:
+    v = int(lock_config.get("auto_lock_seconds") or 0) if secs is None else int(secs)
+    for c, lbl in LOCK_TIMEOUT_OPTIONS:
+        if c == v: return lbl
+    return f"{v} sec" if v > 0 else "Never"
+
+def _mark_user_activity():
+    lock_runtime["last_activity"] = time.monotonic()
+
+def _should_auto_lock() -> bool:
+    if lock_runtime["locked"] or lock_runtime["in_lock_flow"] or lock_runtime["suspend_auto_lock"]:
+        return False
+    if not _lock_is_enabled(): return False
+    t = int(lock_config.get("auto_lock_seconds") or 0)
+    return t > 0 and (time.monotonic() - lock_runtime["last_activity"]) >= t
+
+def _lock_load_from_config(data: dict):
+    """Called from ColorScheme.load_from_file — populates lock_config."""
+    raw = data.get("LOCK", {})
+    if not isinstance(raw, dict): return
+    lock_config["enabled"]          = bool(raw.get("enabled", False))
+    mode = str(raw.get("mode", LOCK_MODE_PIN)).strip().lower()
+    lock_config["mode"]             = mode if mode in (LOCK_MODE_PIN, LOCK_MODE_SEQUENCE) else LOCK_MODE_PIN
+    lock_config["pin_hash"]         = str(raw.get("pin_hash") or "").strip()
+    lock_config["sequence_hash"]    = str(raw.get("sequence_hash") or "").strip()
+    lock_config["auto_lock_seconds"] = max(0, int(raw.get("auto_lock_seconds") or 0))
+    if lock_config["enabled"] and not _lock_has_secret():
+        lock_config["enabled"] = False
+
+def _lock_save_config():
+    """Persist lock config into gui_conf.json alongside colors."""
+    try:
+        path = default.config_file
+        try:
+            data = json.loads(Path(path).read_text())
+        except Exception:
+            data = {}
+        data["LOCK"] = {
+            "enabled": bool(lock_config.get("enabled")),
+            "mode": _lock_mode(),
+            "pin_hash": str(lock_config.get("pin_hash") or ""),
+            "sequence_hash": str(lock_config.get("sequence_hash") or ""),
+            "auto_lock_seconds": max(0, int(lock_config.get("auto_lock_seconds") or 0)),
+        }
+        data.setdefault("PATHS", {})["SCREENSAVER_GIF"] = default.screensaver_gif
+        tmp = path + ".tmp"
+        Path(tmp).write_text(json.dumps(data, indent=4, sort_keys=True))
+        os.replace(tmp, path)
+        try: os.chmod(path, 0o600)
+        except Exception: pass
+    except Exception as e:
+        print(f"[LOCK] save_config error: {e}")
+
+# ── Button helpers (used during lock UI) ─────────────────────────────────────
+
+def _wait_button_release(timeout=1.0):
+    deadline = time.monotonic() + max(0.0, timeout)
+    while time.monotonic() < deadline:
+        try:
+            if all(GPIO.input(p) != 0 for p in PINS.values()):
+                return
+        except Exception:
+            return
+        time.sleep(0.01)
+
+def _get_lock_button():
+    """Non-blocking: return pressed button name or None."""
+    if HAS_HW:
+        try:
+            v = rj_input.get_virtual_button()
+            if v: _mark_user_activity(); return v
+        except Exception:
+            pass
+        try:
+            for name, pin in PINS.items():
+                if GPIO.input(pin) == 0:
+                    _mark_user_activity(); return name
+        except Exception:
+            pass
+    return None
+
+def _get_sequence_button(held: set):
+    """Non-blocking sequence input: returns (button, new_held_set)."""
+    if HAS_HW:
+        try:
+            v = rj_input.get_virtual_button()
+            if v: _mark_user_activity(); return v, held
+        except Exception:
+            pass
+    cur = set()
+    try:
+        for name, pin in PINS.items():
+            if GPIO.input(pin) == 0: cur.add(name)
+    except Exception:
+        return None, held
+    for btn in ("KEY_PRESS_PIN", "KEY3_PIN", *LOCK_SEQUENCE_ALLOWED):
+        if btn in cur and btn not in held:
+            _mark_user_activity(); return btn, cur
+    return None, cur
+
+# ── GIF screensaver ───────────────────────────────────────────────────────────
+
+def _load_ss_frames():
+    from PIL import ImageSequence as _IS
+    path = str(default.screensaver_gif or "").strip()
+    if not path or not os.path.isfile(path): return [], []
+    try: mtime = os.path.getmtime(path)
+    except OSError: return [], []
+    c = _lock_ss_cache
+    if c["path"] == path and c["mtime"] == mtime and c["frames"]:
+        return c["frames"], c["durations"]
+    frames, durs = [], []
+    try:
+        with Image.open(path) as gif:
+            for f in _IS.Iterator(gif):
+                frames.append(f.convert("RGB").resize((128, 128)).copy())
+                ms = f.info.get("duration") or gif.info.get("duration") or 100
+                durs.append(max(0.08, ms / 1000.0))
+    except Exception:
+        frames, durs = [], []
+    c.update({"path": path, "mtime": mtime if frames else None,
+               "frames": frames, "durations": durs})
+    return frames, durs
+
+def _draw_ss_frame(frame):
+    try:
+        with draw_lock:
+            image.paste(frame)
+            draw.text((118, 2), "\uf023", fill=color.selected_text, font=icon_font)
+        if HAS_HW and LCD: LCD.LCD_ShowImage(image, 0, 0)
+    except Exception: pass
+
+def _apply_random_screensaver():
+    if not _random_screensaver: return
+    sdir = os.path.join(default.install_path, "img", "screensaver")
+    try:
+        gifs = [f for f in os.listdir(sdir) if f.lower().endswith(".gif")]
+        if gifs:
+            import random as _r
+            default.screensaver_gif = os.path.join(sdir, _r.choice(gifs))
+    except Exception: pass
+
+def _show_lock_wake(reason="Locked"):
+    try:
+        with draw_lock:
+            draw.rectangle([0,0,128,128], fill=color.background)
+            draw.line([(0,12),(128,12)], fill=color.border, width=5)
+            draw.text((64, 35), "\uf023", font=icon_font, fill=color.selected_text, anchor="mm")
+            draw.text((64, 55), reason,   font=text_font,  fill=color.selected_text, anchor="mm")
+            draw.text((64, 75), "Press a key", font=text_font, fill=color.text, anchor="mm")
+        if HAS_HW and LCD: LCD.LCD_ShowImage(image, 0, 0)
+    except Exception: pass
+
+def _play_ss_until_input(reason="Locked") -> str:
+    """Show static wake screen, then GIF loop. Returns first button pressed."""
+    _show_lock_wake(reason)
+    deadline = time.monotonic() + LOCK_SCREEN_STATIC_SECS
+    while time.monotonic() < deadline:
+        b = _get_lock_button()
+        if b: return b
+        time.sleep(0.01)
+
+    frames, durs = _load_ss_frames()
+    if not frames:
+        while True:
+            b = _get_lock_button()
+            if b: return b
+            time.sleep(0.01)
+
+    lock_runtime["showing_screensaver"] = True
+    try:
+        idx = 0
+        while True:
+            _draw_ss_frame(frames[idx])
+            t0 = time.monotonic()
+            while time.monotonic() - t0 < durs[idx]:
+                b = _get_lock_button()
+                if b: return b
+                time.sleep(0.01)
+            idx = (idx + 1) % len(frames)
+    finally:
+        lock_runtime["showing_screensaver"] = False
+
+# ── PIN keypad UI ─────────────────────────────────────────────────────────────
+
+_KEYPAD = (("1","2","3"),("4","5","6"),("7","8","9"),("C","0","OK"))
+
+def _draw_pin_screen(title, prompt, entered, row, col):
+    try:
+        with draw_lock:
+            draw.rectangle([0,0,128,128], fill=color.background)
+            draw.line([(0,12),(128,12)], fill=color.border, width=5)
+            draw.text((4, 1),  title,  font=text_font, fill=color.selected_text)
+            draw.text((4, 14), prompt, font=text_font, fill=color.text)
+            for i in range(4):
+                x0 = 6 + i * 28; y0 = 28; x1 = x0+22; y1 = y0+14
+                filled = i < len(entered)
+                draw.rectangle([x0,y0,x1,y1],
+                               fill=(color.select if filled else "#07140b"),
+                               outline=(color.selected_text if filled else color.border))
+                draw.text(((x0+x1)//2, (y0+y1)//2),
+                          "*" if filled else "•",
+                          font=text_font, fill=color.selected_text, anchor="mm")
+            for r, row_keys in enumerate(_KEYPAD):
+                for c2, key in enumerate(row_keys):
+                    kx = 6  + c2 * 38; ky = 48 + r * 18
+                    kx1 = kx+32; ky1 = ky+14
+                    sel = (r == row and c2 == col)
+                    draw.rectangle([kx,ky,kx1,ky1],
+                                   fill=(color.select if sel else "#07140b"),
+                                   outline=(color.selected_text if sel else color.border))
+                    draw.text(((kx+kx1)//2, (ky+ky1)//2),
+                              key, font=text_font,
+                              fill=(color.selected_text if sel else color.text),
+                              anchor="mm")
+        if HAS_HW and LCD: LCD.LCD_ShowImage(image, 0, 0)
+    except Exception: pass
+
+def _enter_pin(title, prompt, allow_cancel=True) -> "str | None":
+    entered = []; row = 0; col = 0; hint = prompt
+    prev_susp = lock_runtime["suspend_auto_lock"]
+    lock_runtime["suspend_auto_lock"] = True
+    try:
+        while True:
+            _draw_pin_screen(title, hint, entered, row, col)
+            btn = getButton(timeout=120)
+            if btn is None: continue
+            if btn == "KEY_UP_PIN":    row = (row-1) % 4
+            elif btn == "KEY_DOWN_PIN": row = (row+1) % 4
+            elif btn == "KEY_LEFT_PIN": col = (col-1) % 3
+            elif btn == "KEY_RIGHT_PIN": col = (col+1) % 3
+            elif btn == "KEY1_PIN":
+                if entered: entered.pop()
+                hint = prompt
+            elif btn == "KEY3_PIN":
+                if allow_cancel: return None
+            elif btn in ("KEY2_PIN", "KEY_PRESS_PIN"):
+                key = _KEYPAD[row][col]
+                if key == "C":
+                    if entered: entered.pop()
+                    hint = prompt
+                elif key == "OK":
+                    if len(entered) == 4: return "".join(entered)
+                    hint = "Need 4 digits"
+                elif len(entered) < 4:
+                    entered.append(key)
+                    if len(entered) == 4: return "".join(entered)
+    finally:
+        lock_runtime["suspend_auto_lock"] = prev_susp
+
+# ── Sequence UI ───────────────────────────────────────────────────────────────
+
+def _draw_seq_screen(title, prompt, entered, mask=False):
+    try:
+        with draw_lock:
+            draw.rectangle([0,0,128,128], fill=color.background)
+            draw.line([(0,12),(128,12)], fill=color.border, width=5)
+            draw.text((4, 1),  title,  font=text_font, fill=color.selected_text)
+            draw.text((4, 14), prompt, font=text_font, fill=color.text)
+            progress = f"{len(entered)}/{LOCK_SEQUENCE_LENGTH}"
+            draw.text((124, 1), progress, font=text_font, fill="#7fdc9c", anchor="ra")
+            for i in range(LOCK_SEQUENCE_LENGTH):
+                x0 = 4 + i*20; y0 = 32; x1 = x0+16; y1 = y0+16
+                filled = i < len(entered)
+                tok = ("*" if mask else LOCK_SEQUENCE_TOKENS.get(entered[i],"?")) if filled else "•"
+                draw.rectangle([x0,y0,x1,y1],
+                               fill=(color.select if filled else "#07140b"),
+                               outline=(color.selected_text if filled else color.border))
+                draw.text(((x0+x1)//2,(y0+y1)//2), tok, font=text_font,
+                          fill=color.selected_text, anchor="mm")
+            if entered and not mask:
+                lbl = LOCK_SEQUENCE_LABELS.get(entered[-1], "")
+                draw.text((4, 54), f"Last: {lbl}", font=text_font, fill="#88f0aa")
+            draw.text((4, 118), "OK=back  K3=exit", font=text_font, fill="#6ea680")
+        if HAS_HW and LCD: LCD.LCD_ShowImage(image, 0, 0)
+    except Exception: pass
+
+def _enter_sequence(title, prompt, allow_cancel=True, mask=False) -> "list | None":
+    entered = []; hint = prompt; held = set()
+    prev_susp = lock_runtime["suspend_auto_lock"]
+    lock_runtime["suspend_auto_lock"] = True
+    _wait_button_release(0.35)
+    try:
+        while True:
+            _draw_seq_screen(title, hint, entered, mask)
+            btn, held = _get_sequence_button(held)
+            if not btn: time.sleep(0.005); continue
+            if btn == "KEY3_PIN":
+                if allow_cancel: return None
+                continue
+            if btn == "KEY_PRESS_PIN":
+                if entered: entered.pop()
+                hint = prompt; continue
+            if btn not in LOCK_SEQUENCE_ALLOWED: continue
+            entered.append(btn)
+            hint = prompt
+            if len(entered) >= LOCK_SEQUENCE_LENGTH:
+                return entered.copy()
+    finally:
+        lock_runtime["suspend_auto_lock"] = prev_susp
+
+# ── Public lock API ───────────────────────────────────────────────────────────
+
+def lock_device(reason="Locked") -> bool:
+    """Show GIF screensaver then PIN/sequence challenge. Returns True on unlock."""
+    _apply_random_screensaver()
+    if not _lock_has_secret(): return False
+    if lock_runtime["locked"]: return True
+
+    lock_runtime["locked"] = True
+    prev_susp = lock_runtime["suspend_auto_lock"]
+    lock_runtime["in_lock_flow"] = True
+    lock_runtime["suspend_auto_lock"] = True
+    show_kp = False
+    _wait_button_release()
+    try:
+        while True:
+            if not show_kp:
+                _play_ss_until_input(reason)
+                _wait_button_release(); show_kp = True; continue
+
+            if _lock_mode() == LOCK_MODE_SEQUENCE:
+                entered = _enter_sequence("Unlock", "Enter 6-step seq",
+                                          allow_cancel=False, mask=True)
+                stored  = str(lock_config.get("sequence_hash") or "")
+                if entered and _verify_sequence(entered, stored):
+                    lock_runtime["locked"] = False; _mark_user_activity()
+                    m.render_current(); return True
+                Dialog_info("Wrong sequence", wait=False, timeout=1.0)
+            else:
+                entered = _enter_pin("Unlock", "Enter 4-digit PIN",
+                                     allow_cancel=False)
+                stored  = str(lock_config.get("pin_hash") or "")
+                if entered and _verify_pin(entered, stored):
+                    lock_runtime["locked"] = False; _mark_user_activity()
+                    m.render_current(); return True
+                Dialog_info("Wrong PIN", wait=False, timeout=1.0)
+    finally:
+        lock_runtime["showing_screensaver"] = False
+        lock_runtime["in_lock_flow"] = False
+        lock_runtime["suspend_auto_lock"] = prev_susp
+
+# ── Lock settings ─────────────────────────────────────────────────────────────
+
+def _set_pin_flow(require_current=False) -> bool:
+    if require_current:
+        cur = _enter_pin("Change PIN", "Current PIN")
+        if not cur or not _verify_pin(cur, str(lock_config.get("pin_hash") or "")):
+            Dialog_info("Wrong PIN", wait=False, timeout=1.2); return False
+    while True:
+        first = _enter_pin("Set PIN", "New 4-digit PIN")
+        if first is None: return False
+        conf  = _enter_pin("Confirm PIN", "Re-enter PIN")
+        if conf is None: return False
+        if first != conf:
+            Dialog_info("PIN mismatch", wait=False, timeout=1.2); continue
+        lock_config["pin_hash"] = _hash_pin(first)
+        _lock_save_config()
+        Dialog_info("PIN saved", wait=False, timeout=1.0); return True
+
+def _set_sequence_flow(require_current=False) -> bool:
+    if require_current:
+        cur = _enter_sequence("Change Seq", "Current 6-step")
+        if not cur or not _verify_sequence(cur, str(lock_config.get("sequence_hash") or "")):
+            Dialog_info("Wrong sequence", wait=False, timeout=1.2); return False
+    while True:
+        first = _enter_sequence("Set Sequence", "Enter new 6-step")
+        if first is None: return False
+        conf  = _enter_sequence("Confirm Seq", "Repeat 6-step", mask=True)
+        if conf is None: return False
+        if first != conf:
+            Dialog_info("Seq mismatch", wait=False, timeout=1.2); continue
+        lock_config["sequence_hash"] = _hash_sequence(first)
+        _lock_save_config()
+        Dialog_info("Sequence saved", wait=False, timeout=1.0); return True
+
+def _set_active_secret(require_current=False) -> bool:
+    if _lock_mode() == LOCK_MODE_SEQUENCE: return _set_sequence_flow(require_current)
+    return _set_pin_flow(require_current)
+
+def _verify_current_secret() -> bool:
+    if not _lock_has_secret(): return True
+    if _lock_mode() == LOCK_MODE_SEQUENCE:
+        cur = _enter_sequence("Verify Seq", "Current 6-step", mask=True)
+        return bool(cur and _verify_sequence(cur, str(lock_config.get("sequence_hash") or "")))
+    cur = _enter_pin("Verify PIN", "Current PIN")
+    return bool(cur and _verify_pin(cur, str(lock_config.get("pin_hash") or "")))
+
+def _select_ss_gif() -> None:
+    """Browse GIF files in img/screensaver/ and set as screensaver."""
+    from PIL import ImageSequence as _IS
+    sdir = os.path.join(default.install_path, "img", "screensaver")
+    os.makedirs(sdir, exist_ok=True)
+    try:
+        gifs = sorted(f for f in os.listdir(sdir) if f.lower().endswith(".gif"))
+    except Exception:
+        gifs = []
+    if not gifs:
+        Dialog_info("No GIFs found\nin img/screensaver/", wait=False, timeout=1.5)
+        return
+    idx = 0
+    frames, durs = [], []
+    need_load = True
+    while True:
+        if need_load:
+            gpath = os.path.join(sdir, gifs[idx])
+            Dialog_info(f"Loading...\n{gifs[idx][:16]}", wait=False)
+            frames, durs = [], []
+            try:
+                with Image.open(gpath) as g:
+                    for f in _IS.Iterator(g):
+                        frames.append(f.convert("RGB").resize((128, 128)).copy())
+                        durs.append(max(0.08, (f.info.get("duration") or 100) / 1000.0))
+            except Exception:
+                Dialog_info("Cannot load GIF", wait=False, timeout=1.0); return
+            fidx = 0; need_load = False
+        try:
+            with draw_lock:
+                image.paste(frames[fidx])
+                draw.rectangle([0,114,128,128], fill="#000000")
+                draw.text((2,115), gifs[idx][:20], font=text_font, fill="#888888")
+            if HAS_HW and LCD: LCD.LCD_ShowImage(image, 0, 0)
+        except Exception: pass
+        time.sleep(durs[fidx]); fidx = (fidx+1) % len(frames)
+        btn = _get_lock_button()
+        if btn in ("KEY1_PIN","KEY3_PIN"): break
+        elif btn == "KEY_PRESS_PIN":
+            default.screensaver_gif = os.path.join(sdir, gifs[idx])
+            _lock_ss_cache["path"] = None
+            _lock_save_config()
+            Dialog_info(f"Screensaver set\n{gifs[idx][:16]}", wait=False, timeout=1.2)
+            break
+        elif btn in ("KEY_LEFT_PIN","KEY_UP_PIN"):
+            idx = (idx-1) % len(gifs); need_load = True; time.sleep(0.2)
+        elif btn in ("KEY_RIGHT_PIN","KEY_DOWN_PIN"):
+            idx = (idx+1) % len(gifs); need_load = True; time.sleep(0.2)
+
+def OpenLockMenu() -> None:
+    """Lock settings menu — accessible from System menu."""
+    global _random_screensaver
+    while True:
+        rand_lbl = "ON" if _random_screensaver else "OFF"
+        opts = [
+            " Lock now",
+            f" {'Deactivate' if lock_config.get('enabled') else 'Activate'} lock",
+            f" Lock type: {_lock_mode_label()}",
+            f" Change {_lock_mode_label()}",
+            f" Auto-lock: {_lock_timeout_label()}",
+            " Screensaver GIF",
+            f" Random screensaver: {rand_lbl}",
+        ]
+        sel = GetMenuString(opts)
+        if not sel: return
+        s = sel.strip()
+        if s == "Lock now":
+            if not _lock_has_secret() and not _set_active_secret(): continue
+            lock_device("Locked")
+        elif s.startswith("Activate") or s.startswith("Deactivate"):
+            if not _lock_has_secret():
+                if not _set_active_secret(): continue
+            lock_config["enabled"] = not bool(lock_config.get("enabled"))
+            _lock_save_config()
+            Dialog_info("Lock enabled" if lock_config["enabled"] else "Lock disabled",
+                        wait=False, timeout=1.0)
+        elif s.startswith("Lock type"):
+            prev = _lock_mode()
+            labels = [" PIN", " Sequence"]
+            choice = GetMenuString(labels)
+            if not choice: continue
+            new_mode = LOCK_MODE_SEQUENCE if "Sequence" in choice else LOCK_MODE_PIN
+            if new_mode == prev: continue
+            if _lock_has_secret() and not _verify_current_secret(): continue
+            lock_config["mode"] = new_mode
+            if not _lock_has_secret(new_mode):
+                if not _set_active_secret(): lock_config["mode"] = prev; continue
+            _lock_save_config()
+            Dialog_info(f"Lock type\n{_lock_mode_label(new_mode)}", wait=False, timeout=1.0)
+        elif s.startswith("Change"):
+            _set_active_secret(require_current=_lock_has_secret())
+        elif s.startswith("Auto-lock"):
+            labels = [f" {lbl}" for _, lbl in LOCK_TIMEOUT_OPTIONS]
+            choice = GetMenuString(labels)
+            if not choice: continue
+            for v, lbl in LOCK_TIMEOUT_OPTIONS:
+                if lbl in choice:
+                    lock_config["auto_lock_seconds"] = v
+                    _lock_save_config()
+                    Dialog_info(f"Auto-lock\n{_lock_timeout_label(v)}", wait=False, timeout=1.0)
+                    break
+        elif s == "Screensaver GIF":
+            _select_ss_gif()
+        elif s.startswith("Random screensaver"):
+            _random_screensaver = not _random_screensaver
+            Dialog_info(f"Random screensaver\n{'ON' if _random_screensaver else 'OFF'}",
+                        wait=False, timeout=1.2)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # ── Stealth mode ───────────────────────────────────────────────────────────────
@@ -1981,6 +2576,7 @@ class KTOxMenu:
             (" System Info",     self._sysinfo),
             (" OTA Update",      partial(exec_payload,"general/auto_update")),
             (" Discord Webhook", self._discord_status),
+            (" Lock",            OpenLockMenu),
             (" Reboot",          self._reboot),
             (" Shutdown",        self._shutdown),
         ),
