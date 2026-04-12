@@ -1,26 +1,77 @@
-# RaspyJack HTTPS reverse proxy template (self-signed).
-# Installer writes a runtime copy to /etc/caddy/Caddyfile using detected IPs.
-# Binds to local IP only — Tailscale serve handles its own port 443.
+# KTOX_Pi HTTPS Reverse Proxy (Self-Signed / Internal TLS)
+# ========================================================
+# Purpose:
+# Securely expose the KTOX_Pi web interface and WebSocket control
+# channels over HTTPS using Caddy with an internal CA.
+#
+# Designed for:
+# - Raspberry Pi  / KTOX toolkit
+# - Local network access (LAN)
+# - Tailscale / remote access
+#
+# Key Features:
+# - Self-signed TLS via "tls internal"
+# - WebSocket support for live control/UI (/ws)
+# - Reverse proxy to:
+#     - 127.0.0.1:8080 → Web UI + API
+#     - 127.0.0.1:8765 → WebSocket control stream
+# - Logs all traffic for debugging
+#
+# Binding Behavior:
+# - Uses https://0.0.0.0 to listen on ALL interfaces:
+#     - localhost
+#     - LAN IP (e.g., 192.168.x.x)
+#     - Tailscale IP
+#
+# Notes:
+# - Do NOT use "localhost" binding if you want remote access
+# - Tailscale "serve" can still sit in front of this if needed
+# - Logs are written to /var/log/ktox_caddy.log
+#
+# Installer Notes:
+# - Can be safely copied to: /etc/caddy/Caddyfile
+# - No dynamic IP injection required
+# - Works out-of-the-box on most Pi setups
+#
 
 {
     auto_https disable_redirects
-    # default_bind is set dynamically by the autoconfig script to the local IP
 }
 
-# Replace with your device IP if deploying manually.
-https://localhost {
+https://0.0.0.0 {
+
     tls internal
 
-    # WebSocket stream/input endpoint
-    @ws path /ws*
+    # ── WebSocket Endpoint (Live Control / Stream) ──
+    @ws {
+        path /ws*
+        header Connection *Upgrade*
+        header Upgrade websocket
+    }
+
     reverse_proxy @ws 127.0.0.1:8765 {
         header_up X-Forwarded-Proto {scheme}
         header_up X-Forwarded-Host {host}
+        header_up X-Real-IP {remote_host}
     }
 
-    # Web UI + API
+    # ── API Endpoint (Future Expansion Ready) ──
+    @api {
+        path /api/*
+    }
+
+    reverse_proxy @api 127.0.0.1:8080
+
+    # ── Main Web UI ──
     reverse_proxy 127.0.0.1:8080 {
         header_up X-Forwarded-Proto {scheme}
         header_up X-Forwarded-Host {host}
+        header_up X-Real-IP {remote_host}
+    }
+
+    # ── Logging (Critical for Debugging) ──
+    log {
+        output file /var/log/ktox_caddy.log
+        format console
     }
 }
