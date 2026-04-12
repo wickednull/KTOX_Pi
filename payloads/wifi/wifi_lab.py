@@ -53,10 +53,23 @@ def get_available_interfaces():
     except Exception:
         return []
 
-# WiFi integration
+# WiFi integration — load canonical helper by direct file path to avoid
+# sys.path / namespace-package ambiguity when payloads/ is on sys.path.
+monitor_mode_helper = None
 try:
-    import monitor_mode_helper
-    WIFI_OK = True
+    import importlib.util as _ilu
+    _mmh_candidates = [
+        '/root/KTOx/wifi/monitor_mode_helper.py',
+        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                     'wifi', 'monitor_mode_helper.py'),
+    ]
+    for _mmh_path in _mmh_candidates:
+        if os.path.isfile(_mmh_path):
+            _spec = _ilu.spec_from_file_location('_wifi_mmh', _mmh_path)
+            monitor_mode_helper = _ilu.module_from_spec(_spec)
+            _spec.loader.exec_module(monitor_mode_helper)
+            break
+    WIFI_OK = monitor_mode_helper is not None
 except Exception:
     WIFI_OK = False
 

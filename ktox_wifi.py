@@ -211,11 +211,11 @@ class MonitorMode:
 
     def detect_monitor_interface(self):
         """
-        Scan iw dev for any interface ending in 'mon'.
-        More reliable than parsing airmon-ng output text.
+        Scan all wireless interfaces for one actually in monitor mode.
+        Checks via 'iw dev <iface> info' — handles any naming scheme.
         """
         for iface in self.get_interfaces():
-            if iface.endswith("mon"):
+            if self._get_mode(iface) == "monitor":
                 return iface
         return None
 
@@ -291,7 +291,11 @@ class MonitorMode:
             info("Killing conflicting processes...")
             _run(["airmon-ng", "check", "kill"])
             self._nm_killed = True
-            time.sleep(0.5)
+            time.sleep(1)  # Give kernel time to settle after service kills
+
+            # airmon-ng check kill can bring the interface DOWN — restore it
+            _run(["ip", "link", "set", self.iface, "up"])
+            time.sleep(0.3)
 
             info(f"Starting monitor mode on {self.iface}...")
             _run(["airmon-ng", "start", self.iface])
@@ -319,7 +323,11 @@ class MonitorMode:
         _run(["systemctl", "stop", "wpa_supplicant"])
         _run(["killall", "-q", "wpa_supplicant"])
         self._nm_killed = True
-        time.sleep(0.5)
+        time.sleep(1)
+
+        # Restore interface after service kills may bring it down
+        _run(["ip", "link", "set", self.iface, "up"])
+        time.sleep(0.3)
 
         if not self._phy:
             err(f"Cannot find PHY for {self.iface}")
@@ -332,19 +340,44 @@ class MonitorMode:
             _run(["iw", "dev", stale, "del"])
             time.sleep(0.3)
 
+        # Strategy 1: add a new virtual monitor interface
         r = _run(["iw", self._phy, "interface", "add", mon_name, "type", "monitor"])
-        if r.returncode != 0:
-            _run(["ip", "link", "set", self.iface, "down"])
-            r2 = _run(["iw", "dev", self.iface, "set", "type", "monitor"])
-            if r2.returncode != 0:
-                err("All methods failed.")
-                _run(["ip", "link", "set", self.iface, "up"])
-                return self.iface
-            _run(["ip", "link", "set", self.iface, "up"])
-            self.mon_iface = self.iface
-        else:
+        if r.returncode == 0:
             _run(["ip", "link", "set", mon_name, "up"])
-            self.mon_iface = mon_name
+            time.sleep(0.3)
+            if self._get_mode(mon_name) == "monitor":
+                self.mon_iface = mon_name
+                ok(f"Monitor mode enabled (iw add) → {self.mon_iface}")
+                _loot("MONITOR_ENABLE", {"iface": self.iface, "mon": self.mon_iface, "method": "iw-add"})
+                MonitorMode._active[self._original] = self
+                return self.mon_iface
+
+        # Strategy 2: set existing interface type to monitor
+        _run(["ip", "link", "set", self.iface, "down"])
+        time.sleep(0.2)
+        r2 = _run(["iw", "dev", self.iface, "set", "type", "monitor"])
+        _run(["ip", "link", "set", self.iface, "up"])
+        time.sleep(0.5)
+        if self._get_mode(self.iface) == "monitor":
+            self.mon_iface = self.iface
+            ok(f"Monitor mode enabled (iw set) → {self.mon_iface}")
+            _loot("MONITOR_ENABLE", {"iface": self.iface, "mon": self.mon_iface, "method": "iw-set"})
+            MonitorMode._active[self._original] = self
+            return self.mon_iface
+
+        # Strategy 3: iw phy set monitor none
+        _run(["ip", "link", "set", self.iface, "down"])
+        time.sleep(0.2)
+        r3 = _run(["iw", "phy", self._phy, "set", "monitor", "none"])
+        _run(["ip", "link", "set", self.iface, "up"])
+        time.sleep(0.5)
+        if self._get_mode(self.iface) == "monitor":
+            self.mon_iface = self.iface
+        elif self.detect_monitor_interface():
+            self.mon_iface = self.detect_monitor_interface()
+        else:
+            err("All iw strategies failed.")
+            return self.iface
 
         ok(f"Monitor mode enabled (iw) → {self.mon_iface}")
         _loot("MONITOR_ENABLE", {"iface": self.iface, "mon": self.mon_iface, "method": "iw"})
