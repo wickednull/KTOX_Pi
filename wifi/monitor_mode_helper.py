@@ -32,7 +32,7 @@ import time
 
 try:
     from payloads._debug_helper import log as _log
-except ImportError:
+except Exception:
     def _log(msg, level="INFO", tag="MON"):
         ts = time.strftime("%H:%M:%S")
         print(f"[{ts}] [{level}] [{tag}] {msg}", flush=True)
