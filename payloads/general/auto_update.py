@@ -291,6 +291,15 @@ def do_git_pull():
             (dst / "img").mkdir(exist_ok=True)
             _shutil.copy2(s, dst / "img" / "logo.bmp")
 
+        # Check if requirements.txt changed (while tmp still exists)
+        needs_pip = False
+        try:
+            new_req = (src / "requirements.txt").read_text()
+            cur_req_path = dst / "requirements.txt"
+            needs_pip = not cur_req_path.exists() or cur_req_path.read_text() != new_req
+        except Exception:
+            needs_pip = True  # Can't tell — run pip to be safe
+
         # Record the upstream commit hash for version tracking
         _, commit = _run(["git", "-C", tmp, "rev-parse", "--short", "HEAD"])
         commit = commit.strip()
@@ -303,10 +312,10 @@ def do_git_pull():
             msg = f"HEAD:{commit} skip:{len(skipped)}"
         else:
             msg = f"HEAD: {commit}"
-        return True, msg
+        return True, msg, needs_pip
 
     except Exception as e:
-        return False, str(e)[:60]
+        return False, str(e)[:60], False
     finally:
         _shutil.rmtree(tmp, ignore_errors=True)
 
@@ -320,7 +329,7 @@ def install_deps():
          "-r", str(req)],
         timeout=300
     )
-    return rc == 0, out[:60] if rc != 0 else "deps OK"
+    return rc == 0, out[:60] if rc != 0 else "deps updated"
 
 
 def restart_services():
@@ -466,7 +475,7 @@ try:
         ("This may take a", DIM),
         ("minute…", DIM),
     ])
-    ok, msg = do_git_pull()
+    ok, msg, needs_pip = do_git_pull()
     if not ok:
         _show("UPDATE FAILED", [
             ("Git pull failed:", YELLOW),
@@ -479,13 +488,17 @@ try:
     _show("DOWNLOADING", [("✔ " + msg, GREEN)])
     time.sleep(0.8)
 
-    # ── Step 5: Install deps ──────────────────────────────────────────────
-    _show("INSTALLING", [("Updating packages…", DIM)])
-    ok, msg = install_deps()
-    _show("INSTALLING", [
-        (("✔ " if ok else "⚠ ") + msg[:22], GREEN if ok else YELLOW)
-    ])
-    time.sleep(0.8)
+    # ── Step 5: Install deps (only if requirements.txt changed) ──────────
+    if needs_pip:
+        _show("INSTALLING", [("Updating packages…", DIM)])
+        ok, msg = install_deps()
+        _show("INSTALLING", [
+            (("✔ " if ok else "⚠ ") + msg[:22], GREEN if ok else YELLOW)
+        ])
+        time.sleep(0.8)
+    else:
+        _show("INSTALLING", [("deps unchanged, skip", DIM)])
+        time.sleep(0.5)
 
     # ── Step 6: Restart services ──────────────────────────────────────────
     _show("RESTARTING", [("Restarting services…", DIM)])
