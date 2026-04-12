@@ -259,7 +259,7 @@ def do_git_pull():
         # Directories — replace in-place (keep loot/ and credentials untouched)
         # For payloads/ we do a file-by-file validated copy instead of rmtree+copytree
         # so a single bad file in the repo can't nuke the whole payloads directory.
-        for dname in ["web", "wifi", "Responder", "DNSSpoof", "assets"]:
+        for dname in ["web", "wifi", "Responder", "DNSSpoof", "assets", "scripts"]:
             if dname in PRESERVE_DIRS:
                 continue
             s = src / dname
