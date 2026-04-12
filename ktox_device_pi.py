@@ -1012,7 +1012,7 @@ def _show_lock_wake(reason="Locked"):
             draw.text((64, 35), "\uf023", font=icon_font, fill=color.selected_text, anchor="mm")
             draw.text((64, 55), reason,   font=text_font,  fill=color.selected_text, anchor="mm")
             draw.text((64, 75), "Press a key", font=text_font, fill=color.text, anchor="mm")
-        if HAS_HW and LCD: LCD.LCD_ShowImage(image, 0, 0)
+            if HAS_HW and LCD: LCD.LCD_ShowImage(image, 0, 0)
     except Exception: pass
 
 def _play_ss_until_input(reason="Locked") -> str:
@@ -1032,7 +1032,6 @@ def _play_ss_until_input(reason="Locked") -> str:
             time.sleep(0.01)
 
     lock_runtime["showing_screensaver"] = True
-    screen_lock.set()   # stop _display_loop from touching the SPI bus
     try:
         idx = 0
         while True:
@@ -1044,7 +1043,6 @@ def _play_ss_until_input(reason="Locked") -> str:
                 time.sleep(0.008)
             idx = (idx + 1) % len(frames)
     finally:
-        screen_lock.clear()
         lock_runtime["showing_screensaver"] = False
 
 # ── PIN keypad UI ─────────────────────────────────────────────────────────────
@@ -1081,7 +1079,7 @@ def _draw_pin_screen(title, prompt, entered, row, col):
                               key, font=text_font,
                               fill=(color.selected_text if sel else color.text),
                               anchor="mm")
-        if HAS_HW and LCD: LCD.LCD_ShowImage(image, 0, 0)
+            if HAS_HW and LCD: LCD.LCD_ShowImage(image, 0, 0)
     except Exception: pass
 
 def _enter_pin(title, prompt, allow_cancel=True) -> "str | None":
@@ -1141,7 +1139,7 @@ def _draw_seq_screen(title, prompt, entered, mask=False):
                 lbl = LOCK_SEQUENCE_LABELS.get(entered[-1], "")
                 draw.text((4, 54), f"Last: {lbl}", font=text_font, fill="#88f0aa")
             draw.text((4, 118), "OK=back  K3=exit", font=text_font, fill="#6ea680")
-        if HAS_HW and LCD: LCD.LCD_ShowImage(image, 0, 0)
+            if HAS_HW and LCD: LCD.LCD_ShowImage(image, 0, 0)
     except Exception: pass
 
 def _enter_sequence(title, prompt, allow_cancel=True, mask=False) -> "list | None":
@@ -1180,6 +1178,7 @@ def lock_device(reason="Locked") -> bool:
     prev_susp = lock_runtime["suspend_auto_lock"]
     lock_runtime["in_lock_flow"] = True
     lock_runtime["suspend_auto_lock"] = True
+    screen_lock.set()   # own the SPI bus for the entire lock session
     show_kp = False
     _wait_button_release()
     try:
@@ -1205,6 +1204,7 @@ def lock_device(reason="Locked") -> bool:
                     m.render_current(); return True
                 Dialog_info("Wrong PIN", wait=False, timeout=1.0)
     finally:
+        screen_lock.clear()
         lock_runtime["showing_screensaver"] = False
         lock_runtime["in_lock_flow"] = False
         lock_runtime["suspend_auto_lock"] = prev_susp
