@@ -992,9 +992,17 @@ def _load_ss_frames():
     try:
         with Image.open(path) as gif:
             for f in _IS.Iterator(gif):
-                frames.append(f.convert("RGB").resize((128, 128)).copy())
+                frame = f.convert("RGB").resize((128, 128)).copy()
+                # Pre-bake lock icon so _draw_ss_frame needs zero PIL work
+                try:
+                    _tmp_draw = ImageDraw.Draw(frame)
+                    _tmp_draw.text((118, 2), "\uf023",
+                                   fill=color.selected_text, font=icon_font)
+                except Exception:
+                    pass
+                frames.append(frame)
                 ms = f.info.get("duration") or gif.info.get("duration") or 100
-                durs.append(max(0.08, ms / 1000.0))
+                durs.append(max(0.05, ms / 1000.0))
     except Exception:
         frames, durs = [], []
     c.update({"path": path, "mtime": mtime if frames else None,
@@ -1002,11 +1010,9 @@ def _load_ss_frames():
     return frames, durs
 
 def _draw_ss_frame(frame):
+    """Write pre-composited frame directly to LCD — no PIL overhead."""
     try:
-        with draw_lock:
-            image.paste(frame)
-            draw.text((118, 2), "\uf023", fill=color.selected_text, font=icon_font)
-        if HAS_HW and LCD: LCD.LCD_ShowImage(image, 0, 0)
+        if HAS_HW and LCD: LCD.LCD_ShowImage(frame, 0, 0)
     except Exception: pass
 
 def _apply_random_screensaver():
@@ -1047,6 +1053,7 @@ def _play_ss_until_input(reason="Locked") -> str:
             time.sleep(0.01)
 
     lock_runtime["showing_screensaver"] = True
+    screen_lock.set()   # stop _display_loop from touching the SPI bus
     try:
         idx = 0
         while True:
@@ -1055,9 +1062,10 @@ def _play_ss_until_input(reason="Locked") -> str:
             while time.monotonic() - t0 < durs[idx]:
                 b = _get_lock_button()
                 if b: return b
-                time.sleep(0.01)
+                time.sleep(0.008)
             idx = (idx + 1) % len(frames)
     finally:
+        screen_lock.clear()
         lock_runtime["showing_screensaver"] = False
 
 # ── PIN keypad UI ─────────────────────────────────────────────────────────────
