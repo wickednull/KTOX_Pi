@@ -251,8 +251,9 @@ def do_git_pull():
 
         # Directories that must never be overwritten — user data lives here
         PRESERVE_DIRS = {
-            "roms",   # Game Boy / emulator ROMs uploaded by user
-            "loot",   # Captured credentials / scan results
+            "roms",        # Game Boy / emulator ROMs uploaded by user
+            "loot",        # Captured credentials / scan results
+            "screensaver", # User GIF screensavers (img/screensaver/)
         }
 
         # Directories — replace in-place (keep loot/ and credentials untouched)
