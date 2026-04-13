@@ -358,6 +358,7 @@ def getButton(timeout=120):
             try:
                 v = rj_input.get_virtual_button()
                 if v:
+                    _mark_user_activity()
                     _last_button = None
                     return v
             except Exception:
@@ -395,6 +396,7 @@ def getButton(timeout=120):
             _last_button       = pressed
             _last_button_time  = now
             _button_down_since = now
+            _mark_user_activity()
             return pressed
 
         if (now - _last_button_time) < _debounce_s:
