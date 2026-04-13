@@ -36,6 +36,8 @@ _BTN_MAP = {
     "KEY1": "KEY1_PIN",
     "KEY2": "KEY2_PIN",
     "KEY3": "KEY3_PIN",
+    # Special command — passed through as-is; handled in getButton()
+    "MANUAL_LOCK": "MANUAL_LOCK",
 }
 
 # Map KTOx pin names to GPIO pin numbers (BCM numbering)
