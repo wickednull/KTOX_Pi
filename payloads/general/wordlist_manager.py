@@ -15,6 +15,8 @@ Controls
   KEY1        download all missing entries
   KEY2        refresh installed status
   KEY3        exit
+
+Author: wickednull
 """
 
 import os, sys, time, threading, urllib.request, gzip, shutil
@@ -42,6 +44,15 @@ PINS = {"UP": 6, "DOWN": 19, "LEFT": 5, "RIGHT": 26,
 W, H = 128, 128
 WORDLIST_DIR   = Path("/usr/share/wordlists")
 HASHCAT_DIR    = Path("/usr/share/hashcat/rules")
+
+# ── Game Boy DMG colour palette ───────────────────────────────────────────────
+GB_BG    = "#0f380f"   # darkest  — background
+GB_DARK  = "#306230"   # dark     — title bars, borders, selected rows
+GB_MID   = "#8bac0f"   # medium   — dim text, footer hints
+GB_LIGHT = "#9bbc0f"   # light    — active / installed items
+GB_WHITE = "#e0f8d0"   # lightest — bright / important text
+GB_ERR   = "#7a1a1a"   # error title bar
+GB_ERRT  = "#c04040"   # error body text
 
 # ── catalog ───────────────────────────────────────────────────────────────────
 # Each entry:
@@ -138,7 +149,6 @@ def _font(size=8):
 
 FONT_SM  = _font(8)
 FONT_MD  = _font(9)
-FONT_BOLD= _font(9)
 
 lcd_hw = None
 
@@ -156,11 +166,13 @@ if HAS_HW:
         lcd_hw = None
 
 
-def lcd_show(title, lines, title_col="#00aaff", text_col="#ffffff"):
-    img  = Image.new("RGB", (W, H), "black")
+def lcd_show(title, lines, title_col=None, text_col=None):
+    title_col = title_col or GB_DARK
+    text_col  = text_col  or GB_WHITE
+    img  = Image.new("RGB", (W, H), GB_BG)
     draw = ImageDraw.Draw(img)
     draw.rectangle((0, 0, W, 14), fill=title_col)
-    draw.text((3, 2), title[:20], fill="white", font=FONT_MD)
+    draw.text((3, 2), title[:20], fill=GB_WHITE, font=FONT_MD)
     y = 18
     for ln in (lines or []):
         draw.text((3, y), str(ln)[:21], fill=text_col, font=FONT_SM)
@@ -194,7 +206,6 @@ def refresh_status():
 
 # ── download / decompress ─────────────────────────────────────────────────────
 
-# Shared state updated by worker thread
 _dl = {
     "active":  False,
     "name":    "",
@@ -226,7 +237,6 @@ def _decompress_gz(entry):
                     break
                 fout.write(chunk)
                 written += len(chunk)
-                # gz is compressed so actual ratio ~10x; use input as proxy
                 pct = min(99, int(written / max(total, 1) * 100))
                 _set_dl(pct=pct, msg=f"Decomp {pct}%")
         _set_dl(pct=100, msg="Done!", done=True)
@@ -265,7 +275,6 @@ def _download(entry):
         _set_dl(pct=100, msg="Done!", done=True)
 
     except Exception as exc:
-        # clean up partial file
         try:
             tmp.unlink(missing_ok=True)
         except Exception:
@@ -294,23 +303,22 @@ def _wait_for_worker(t):
             msg  = _dl["msg"]
             err  = _dl["error"]
 
-        bar_w = W - 6
+        bar_w  = W - 6
         filled = int(bar_w * pct / 100)
 
-        img  = Image.new("RGB", (W, H), "black")
+        img  = Image.new("RGB", (W, H), GB_BG)
         draw = ImageDraw.Draw(img)
-        draw.rectangle((0, 0, W, 14), fill="#005599")
-        draw.text((3, 2), "DOWNLOADING", fill="white", font=FONT_MD)
-        draw.text((3, 20), name[:21], fill="#aaddff", font=FONT_SM)
-        draw.text((3, 34), msg[:21],  fill="#ffffff",  font=FONT_SM)
-        # progress bar
-        draw.rectangle((3, 50, W - 3, 62), outline="#445566", fill="#111111")
+        draw.rectangle((0, 0, W, 14), fill=GB_DARK)
+        draw.text((3, 2),  "DOWNLOADING",  fill=GB_WHITE, font=FONT_MD)
+        draw.text((3, 20), name[:21],       fill=GB_LIGHT, font=FONT_SM)
+        draw.text((3, 34), msg[:21],        fill=GB_WHITE, font=FONT_SM)
+        draw.rectangle((3, 50, W - 3, 62), outline=GB_DARK, fill=GB_BG)
         if filled:
-            draw.rectangle((3, 50, 3 + filled, 62), fill="#00cc44")
-        draw.text((3, 66), f"{pct}%", fill="#aaffaa", font=FONT_SM)
+            draw.rectangle((3, 50, 3 + filled, 62), fill=GB_LIGHT)
+        draw.text((3, 66), f"{pct}%", fill=GB_LIGHT, font=FONT_SM)
         if err:
-            draw.text((3, 80), "ERR:", fill="#ff4444", font=FONT_SM)
-            draw.text((3, 91), err[:21], fill="#ff8888", font=FONT_SM)
+            draw.text((3, 80), "ERR:",      fill=GB_ERR,  font=FONT_SM)
+            draw.text((3, 91), err[:21],    fill=GB_ERRT, font=FONT_SM)
 
         if lcd_hw:
             try:
@@ -330,21 +338,21 @@ def _wait_for_worker(t):
 
 # ── menu rendering ────────────────────────────────────────────────────────────
 
-VISIBLE = 5   # entries visible at once in the list
+VISIBLE = 5
 
 
 def _render_menu(cursor, scroll):
     """Draw the scrollable catalog list."""
-    img  = Image.new("RGB", (W, H), "black")
+    img  = Image.new("RGB", (W, H), GB_BG)
     draw = ImageDraw.Draw(img)
 
     # Title bar
-    draw.rectangle((0, 0, W, 14), fill="#005599")
-    draw.text((3, 2), "WORDLISTS", fill="white", font=FONT_MD)
+    draw.rectangle((0, 0, W, 14), fill=GB_DARK)
+    draw.text((3, 2), "WORDLISTS", fill=GB_WHITE, font=FONT_MD)
 
     # Count installed
     n_inst = sum(1 for e in CATALOG if e.get("installed"))
-    draw.text((78, 3), f"{n_inst}/{len(CATALOG)}", fill="#aaddff", font=FONT_SM)
+    draw.text((78, 3), f"{n_inst}/{len(CATALOG)}", fill=GB_LIGHT, font=FONT_SM)
 
     # List items
     y = 18
@@ -356,26 +364,25 @@ def _render_menu(cursor, scroll):
 
         prefix = ">" if sel else " "
         status = "*" if inst else ("~" if cdec else " ")
-        # name truncated to fit with prefix and status marker
         name14 = entry["name"][:13]
-        line = f"{prefix}{status}{name14}"
+        line   = f"{prefix}{status}{name14}"
 
         if sel:
-            draw.rectangle((0, y, W, y + 10), fill="#003366")
-            draw.text((3, y), line, fill="#ffdd44", font=FONT_SM)
+            draw.rectangle((0, y, W, y + 10), fill=GB_DARK)
+            draw.text((3, y), line, fill=GB_WHITE, font=FONT_SM)
         elif inst:
-            draw.text((3, y), line, fill="#55ff55", font=FONT_SM)
+            draw.text((3, y), line, fill=GB_LIGHT, font=FONT_SM)
         elif cdec:
-            draw.text((3, y), line, fill="#ffaa00", font=FONT_SM)
+            draw.text((3, y), line, fill=GB_MID,   font=FONT_SM)
         else:
-            draw.text((3, y), line, fill="#aaaaaa", font=FONT_SM)
+            draw.text((3, y), line, fill=GB_MID,   font=FONT_SM)
 
         y += 11
 
-    # Footer / help
-    draw.line((0, H - 22, W, H - 22), fill="#334455")
-    draw.text((3, H - 20), "OK=DL  K1=ALL  K3=quit", fill="#667788", font=FONT_SM)
-    draw.text((3, H - 10), "*=inst  ~=gz avail", fill="#445566", font=FONT_SM)
+    # Footer
+    draw.line((0, H - 22, W, H - 22), fill=GB_DARK)
+    draw.text((3, H - 20), "OK=DL  K1=ALL  K3=quit", fill=GB_MID, font=FONT_SM)
+    draw.text((3, H - 10), "*=inst  ~=gz avail",      fill=GB_MID, font=FONT_SM)
 
     if lcd_hw:
         try:
@@ -391,10 +398,11 @@ def _render_menu(cursor, scroll):
 
 def _show_result(entry, error):
     if error:
-        lcd_show("ERROR", [entry["name"], "", error], title_col="#cc0000", text_col="#ff6666")
+        lcd_show("ERROR", [entry["name"], "", error],
+                 title_col=GB_ERR, text_col=GB_ERRT)
     else:
         lcd_show("DONE", [entry["name"], "", "Installed OK!", f"-> {entry['dest']}"],
-                 title_col="#006600", text_col="#55ff55")
+                 text_col=GB_LIGHT)
     time.sleep(2)
 
 
@@ -435,7 +443,7 @@ def main():
                 entry = CATALOG[cursor]
                 if entry.get("installed"):
                     lcd_show("SKIP", [entry["name"], "", "Already installed."],
-                             title_col="#555500", text_col="#aaaa00")
+                             text_col=GB_MID)
                     time.sleep(1.5)
                     _render_menu(cursor, scroll)
                 else:
@@ -447,39 +455,37 @@ def main():
                     _render_menu(cursor, scroll)
 
             elif btn == "KEY1":
-                # Download all missing
                 missing = [e for e in CATALOG if not e.get("installed")]
                 if not missing:
                     lcd_show("ALL DONE", ["All entries", "already installed."],
-                             title_col="#005500", text_col="#55ff55")
+                             text_col=GB_LIGHT)
                     time.sleep(2)
                     _render_menu(cursor, scroll)
                 else:
                     for i, entry in enumerate(missing):
                         lcd_show("BATCH DL",
-                                 [f"{i+1}/{len(missing)}", entry["name"]],
-                                 title_col="#005599")
+                                 [f"{i+1}/{len(missing)}", entry["name"]])
                         time.sleep(0.3)
                         t = _start_worker(entry)
                         _wait_for_worker(t)
                     refresh_status()
-                    ok  = sum(1 for e in CATALOG if e.get("installed"))
+                    ok = sum(1 for e in CATALOG if e.get("installed"))
                     lcd_show("BATCH DONE",
                              [f"{ok}/{len(CATALOG)} installed",
                               f"{len(missing)} attempted"],
-                             title_col="#006600", text_col="#55ff55")
+                             text_col=GB_LIGHT)
                     time.sleep(2.5)
                     _render_menu(cursor, scroll)
 
             elif btn == "KEY2":
-                lcd_show("REFRESH", ["Checking status..."], title_col="#004488")
+                lcd_show("REFRESH", ["Checking status..."])
                 refresh_status()
                 time.sleep(0.5)
                 _render_menu(cursor, scroll)
 
             elif btn == "KEY3":
                 lcd_show("EXIT", ["Wordlist Manager", "closed."],
-                         title_col="#330000", text_col="#aaaaaa")
+                         text_col=GB_MID)
                 time.sleep(1)
                 break
 
