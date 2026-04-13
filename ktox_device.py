@@ -79,10 +79,9 @@ _debounce_s        = 0.10
 _repeat_delay      = 0.25
 _repeat_interval   = 0.08
 
-# ── Manual-lock combo: hold KEY1 + KEY2 + KEY3 for this many seconds ──────────
-_LOCK_COMBO = frozenset({"KEY1_PIN", "KEY2_PIN", "KEY3_PIN"})
-_LOCK_COMBO_SECS = 1.5
-_combo_held_since = 0.0   # monotonic timestamp when combo first detected; 0 = not held
+# ── Manual-lock: hold KEY3 for this many seconds to lock from anywhere ─────────
+_LOCK_HOLD_BTN  = "KEY3_PIN"
+_LOCK_HOLD_SECS = 2.0
 
 # ── Live status text (updated by _stats_loop) ─────────────────────────────────
 
@@ -379,45 +378,36 @@ def getButton(timeout=120):
             time.sleep(0.1)
             continue
 
-        # Physical GPIO — read ALL held pins so combo detection works
-        global _combo_held_since
-        held_pins = set()
-        pressed   = None
+        # Physical GPIO
+        pressed = None
         for name, pin in PINS.items():
             try:
                 if GPIO.input(pin) == 0:
-                    held_pins.add(name)
-                    if pressed is None:
-                        pressed = name   # first found used for single-button logic
+                    pressed = name
+                    break
             except Exception:
                 pass
-
-        now = time.time()
-
-        # ── Manual-lock combo: KEY1 + KEY2 + KEY3 held ────────────────────────
-        if _LOCK_COMBO.issubset(held_pins):
-            if _combo_held_since == 0.0:
-                _combo_held_since = time.monotonic()
-            elif (time.monotonic() - _combo_held_since) >= _LOCK_COMBO_SECS:
-                _combo_held_since = 0.0
-                _last_button = None
-                _mark_user_activity()
-                lock_device("Manual lock")
-                start = time.time()
-                continue
-            time.sleep(0.01)
-            continue
-        else:
-            _combo_held_since = 0.0
 
         if pressed is None:
             _last_button = None
             time.sleep(0.01)
             continue
 
-        # Stuck-button safety: if same button held >2s without being consumed,
-        # force-clear to prevent freeze
-        if pressed == _last_button and (now - _button_down_since) > 2.0:
+        now = time.time()
+
+        # ── KEY3 long-hold → lock screen ──────────────────────────────────────
+        # If KEY3 is held for _LOCK_HOLD_SECS, trigger lock instead of repeating.
+        if (pressed == _LOCK_HOLD_BTN
+                and pressed == _last_button
+                and (now - _button_down_since) >= _LOCK_HOLD_SECS):
+            _last_button = None
+            _mark_user_activity()
+            lock_device("Manual lock")
+            start = time.time()
+            continue
+
+        # Stuck-button safety: non-KEY3 buttons held >2s are discarded
+        if pressed == _last_button and pressed != _LOCK_HOLD_BTN and (now - _button_down_since) > 2.0:
             _last_button = None
             time.sleep(0.15)
             continue
