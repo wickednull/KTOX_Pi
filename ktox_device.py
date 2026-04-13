@@ -121,7 +121,7 @@ def _load_fonts():
 
 ktox_state = {
     "iface":       "eth0",
-    "wifi_iface":  "wlan0",
+    "wifi_iface":  "wlan0",   # updated by _init_wifi_iface() after GPIO setup
     "gateway":     "",
     "hosts":       [],
     "running":     None,
@@ -129,6 +129,20 @@ ktox_state = {
     "stealth":     False,
     "stealth_image": None,
 }
+
+def _init_wifi_iface():
+    """Called once after hardware init. Prefer wlan1 (external adapter) over wlan0."""
+    import re as _re
+    try:
+        rc, out = _run(["iw", "dev"])
+        ifaces = _re.findall(r"Interface\s+(\w+)", out) if rc == 0 else []
+    except Exception:
+        ifaces = []
+    for candidate in ("wlan1", "wlan2", "wlan3"):
+        if candidate in ifaces:
+            ktox_state["wifi_iface"] = candidate
+            return
+    # Keep wlan0 if it's the only one available
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # ── Defaults / config class ────────────────────────────────────────────────────
@@ -222,6 +236,7 @@ def _hw_init():
     """Full boot initialisation."""
     _setup_gpio()
     _load_fonts()
+    _init_wifi_iface()   # auto-select wlan1 if present
     color.load_from_file()
     # Show KTOx/KTOx logo BMP if available
     logo = Path(INSTALL_PATH + "img/logo.bmp")
@@ -2037,31 +2052,62 @@ def do_mitm(target_ip):
 
 
 def do_wifi_monitor_on():
-    Dialog_info("Enabling\nmonitor mode…", wait=False, timeout=1)
-    _run(["airmon-ng","check","kill"], timeout=10)
-    rc, out = _run(["airmon-ng","start",ktox_state["wifi_iface"]], timeout=15)
-    import re
-    mo = re.search(r"(wlan\w*mon|mon\d+)", out)
+    import re as _re
+    iface = ktox_state["wifi_iface"]
+    Dialog_info(f"Enabling mon\n{iface}…", wait=False, timeout=1)
+
+    # Kill interfering processes then try airmon-ng
+    _run(["airmon-ng", "check", "kill"], timeout=10)
+    _run(["ip", "link", "set", iface, "up"], timeout=5)
+    rc, out = _run(["airmon-ng", "start", iface], timeout=20)
+
+    # Detect newly created monitor interface
+    mon = None
+    mo = _re.search(r"((?:wlan|mon)\w*mon\w*|mon\d+)", out)
     if mo:
-        ktox_state["mon_iface"] = mo.group(1)
-        Dialog_info(f"Monitor on:\n{mo.group(1)}", wait=True)
+        mon = mo.group(1)
+    if not mon:
+        _, out2 = _run(["iw", "dev"])
+        for candidate in _re.findall(r"Interface\s+(\w+)", out2):
+            if "mon" in candidate:
+                mon = candidate
+                break
+
+    if mon:
+        ktox_state["mon_iface"] = mon
+        Dialog_info(f"Monitor on:\n{mon}", wait=True)
+        return
+
+    # airmon-ng failed — try iw fallback
+    Dialog_info("Trying iw\nfallback…", wait=False, timeout=1)
+    _run(["systemctl", "stop", "NetworkManager"], timeout=5)
+    _run(["ip", "link", "set", iface, "down"], timeout=5)
+    _run(["iw", "dev", iface, "set", "type", "monitor"], timeout=5)
+    _run(["ip", "link", "set", iface, "up"], timeout=5)
+    _, out3 = _run(["iw", "dev", iface, "info"])
+    if "monitor" in out3.lower():
+        ktox_state["mon_iface"] = iface
+        Dialog_info(f"Monitor on:\n{iface} (iw)", wait=True)
     else:
-        rc3, out3 = _run(["iw","dev"])
-        for iface in re.findall(r"Interface\s+(\w+)", out3):
-            if iface.endswith("mon"):
-                ktox_state["mon_iface"] = iface
-                Dialog_info(f"Monitor on:\n{iface}", wait=True)
-                return
-        Dialog_info("Monitor FAILED.\nCheck adapter.", wait=True)
+        Dialog_info("Monitor FAILED\nCheck adapter.", wait=True)
 
 
 def do_wifi_monitor_off():
     mon = ktox_state.get("mon_iface")
+    iface = ktox_state["wifi_iface"]
     if not mon:
         Dialog_info("Not in monitor\nmode.", wait=True)
         return
-    _run(["airmon-ng","stop",mon], timeout=10)
-    _run(["systemctl","start","NetworkManager"], timeout=5)
+
+    # Try airmon-ng first, then iw fallback
+    rc, _ = _run(["airmon-ng", "stop", mon], timeout=10)
+    if rc != 0 or mon == iface:
+        # iw fallback: restore managed mode
+        _run(["ip", "link", "set", mon, "down"], timeout=5)
+        _run(["iw", "dev", mon, "set", "type", "managed"], timeout=5)
+        _run(["ip", "link", "set", mon, "up"], timeout=5)
+
+    _run(["systemctl", "start", "NetworkManager"], timeout=8)
     ktox_state["mon_iface"] = None
     Dialog_info("Monitor off.\nNM restarted.", wait=True)
 

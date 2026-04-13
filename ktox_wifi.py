@@ -1293,8 +1293,13 @@ def wifi_menu():
     ifaces = _get_wireless_interfaces()
 
     # Persistent interface selection — survives across menu iterations
-    # Default to first available, user can change with [I]
-    selected_iface = ifaces[0] if ifaces else "wlan0"
+    # Prefer wlan1 (external attack adapter) over wlan0 (built-in)
+    def _pick_default(iface_list):
+        for candidate in ("wlan1", "wlan2", "wlan3"):
+            if candidate in iface_list:
+                return candidate
+        return iface_list[0] if iface_list else "wlan0"
+    selected_iface = _pick_default(ifaces)
 
     while True:
         section("WiFi ENGINE")
@@ -1459,19 +1464,21 @@ def wifi_menu():
                 ap.start()
 
             elif choice == "7":
-                # Use class registry for safe restore
                 if MonitorMode._active:
+                    # Save originals BEFORE disable_all() clears the registry
+                    orig_ifaces = list(MonitorMode._active.keys())
                     MonitorMode.disable_all()
-                    # Reset selected_iface back to original managed interface
-                    orig = list(MonitorMode._active.keys())
-                    if orig:
-                        selected_iface = orig[0]
+                    # Return to the original managed interface
+                    if orig_ifaces:
+                        selected_iface = orig_ifaces[0]
+                        ok(f"Monitor disabled — interface reset to {selected_iface}")
+                    else:
+                        ok("Monitor disabled.")
                 else:
                     warn(f"No tracked monitor instance. Attempting direct restore of {iface}...")
                     mon = MonitorMode(iface)
                     mon.mon_iface = iface
-                    mon._iw_restore(iface)
-                    _run(["systemctl", "start", "NetworkManager"])
+                    mon.disable()   # use proper disable() — _iw_restore() doesn't exist
                     ok("Attempted restore — verify with: iw dev")
 
             else:
