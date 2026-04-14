@@ -6,7 +6,7 @@ Author: wickednull
 
 - QWERTY on-screen keyboard
 - Scrollable conversation history
-- Uses curl + correct model name (gemini-1.5-flash)
+- Uses curl with correct model name
 - Filters initial greeting from API requests
 - Shows clear API errors on LCD
 """
@@ -60,16 +60,16 @@ LOOT_DIR = "/root/KTOx/loot/GeminiChat"
 os.makedirs(LOOT_DIR, exist_ok=True)
 
 def get_api_key():
+    """Return API key from environment or file, stripped of whitespace and carriage returns."""
     # Try environment first
     key = os.environ.get("GEMINI_API_KEY")
     if key:
-        return key.strip()
-    # Then file
+        return key.strip().replace('\r', '')
+    # Then try file
     if os.path.exists(KEY_FILE):
         with open(KEY_FILE, "r") as f:
             raw = f.read()
-            # Remove any trailing newline or carriage return
-            return raw.strip()
+            return raw.strip().replace('\r', '')
     return None
 
 API_KEY = get_api_key()
@@ -101,7 +101,7 @@ def wait_btn(timeout=0.1):
     return None
 
 # ----------------------------------------------------------------------
-# Improved QWERTY keyboard
+# QWERTY keyboard
 # ----------------------------------------------------------------------
 KEYBOARD_ROWS = [
     "qwertyuiop",
@@ -169,7 +169,7 @@ def osk_input(prompt="Ask Gemini:", initial=""):
         time.sleep(0.05)
 
 # ----------------------------------------------------------------------
-# Gemini API (curl) – corrected roles and model
+# Gemini API (curl) – uses list arguments, no shell interpretation
 # ----------------------------------------------------------------------
 def gemini_chat(user_input, history):
     """
@@ -181,22 +181,21 @@ def gemini_chat(user_input, history):
         # Skip the initial greeting (so first message is from user)
         if "Gemini ready" in content:
             continue
-        # Skip empty messages
         if not content.strip():
             continue
-        # Map internal role to API role: "user" stays "user", "assistant" becomes "model"
+        # Map internal role to API role: "assistant" -> "model"
         api_role = "user" if role == "user" else "model"
         contents.append({"role": api_role, "parts": [{"text": content}]})
     
-    # Add the current user input
+    # Add current user input
     contents.append({"role": "user", "parts": [{"text": user_input}]})
     
     payload = json.dumps({"contents": contents})
     
-    # Correct model name – no spaces, exact string
     model = "gemini-1.5-flash"
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={API_KEY}"
     
+    # Use list form to avoid shell escaping issues
     cmd = ["curl", "-s", "-X", "POST", url, "-H", "Content-Type: application/json", "-d", payload]
     
     try:
@@ -212,7 +211,6 @@ def gemini_chat(user_input, history):
         
         candidates = data.get("candidates", [])
         if candidates:
-            # Check for safety blocks
             if candidates[0].get("finishReason") == "SAFETY":
                 return "Error: Response blocked by safety filters."
             parts = candidates[0].get("content", {}).get("parts", [])
@@ -230,7 +228,7 @@ def gemini_chat(user_input, history):
 # ----------------------------------------------------------------------
 class ConversationView:
     def __init__(self):
-        self.history = []  # list of (role, content) where role = "user" or "assistant"
+        self.history = []  # (role, content)
         self.lines = []
         self.scroll = 0
 
@@ -281,7 +279,7 @@ def main():
             pass
         return
 
-    # Quick API test with a simple hello
+    # Quick API test
     draw_screen(["Testing API key...", "Please wait"], title="GEMINI")
     test_response = gemini_chat("Hello", [])
     if test_response.startswith("API error") or test_response.startswith("Error") or test_response.startswith("Request failed"):
@@ -291,7 +289,6 @@ def main():
         return
 
     viewer = ConversationView()
-    # Add greeting (display only – will be filtered from API)
     viewer.add_message("assistant", "Gemini ready. Ask me anything.")
     state = "conversation"
 
@@ -320,7 +317,7 @@ def main():
             viewer.draw()
         time.sleep(0.05)
 
-    # Save session to loot
+    # Save session
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"session_{ts}.txt"
     filepath = os.path.join(LOOT_DIR, filename)
