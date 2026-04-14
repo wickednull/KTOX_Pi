@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """
-KTOx Gemini Chat – Working with curl (404 fixed)
+KTOx payload – Gemini Chat (Final Working)
+===========================================
+Author: wickednull
+
+Full QWERTY keyboard, scrollable conversation, API key from file.
+Works with latest Gemini models.
 """
 
 import os
@@ -45,16 +50,18 @@ def font(size=9):
 f9 = font(9)
 
 # ----------------------------------------------------------------------
-# API key
+# API key and directories
 # ----------------------------------------------------------------------
 KEY_FILE = "/root/KTOx/gemini_key.txt"
 LOOT_DIR = "/root/KTOx/loot/GeminiChat"
 os.makedirs(LOOT_DIR, exist_ok=True)
 
 def get_api_key():
+    # Try environment variable first
     key = os.environ.get("GEMINI_API_KEY")
     if key:
         return key.strip()
+    # Then try file
     if os.path.exists(KEY_FILE):
         with open(KEY_FILE, "r") as f:
             return f.read().strip()
@@ -63,7 +70,7 @@ def get_api_key():
 API_KEY = get_api_key()
 
 # ----------------------------------------------------------------------
-# LCD helpers
+# LCD drawing helpers
 # ----------------------------------------------------------------------
 def draw_screen(lines, title="GEMINI CHAT", title_color="#8B0000", text_color="#FFBBBB"):
     img = Image.new("RGB", (W, H), "#0A0000")
@@ -89,7 +96,7 @@ def wait_btn(timeout=0.1):
     return None
 
 # ----------------------------------------------------------------------
-# Keyboard
+# Improved QWERTY keyboard
 # ----------------------------------------------------------------------
 KEYBOARD_ROWS = [
     "qwertyuiop",
@@ -157,42 +164,65 @@ def osk_input(prompt="Ask Gemini:", initial=""):
         time.sleep(0.05)
 
 # ----------------------------------------------------------------------
-# Gemini API using curl (correct model name)
+# Gemini API (curl) – fully corrected
 # ----------------------------------------------------------------------
 def gemini_chat(user_input, history):
-    """Send chat request to Gemini API using curl. Returns response text."""
-    # Build conversation history
+    """
+    Send chat request to Gemini API.
+    history: list of (role, content) where role is "user" or "assistant"
+    """
+    # Build contents array for API
     contents = []
     for role, content in history:
-        contents.append({"role": "user" if role == "user" else "model", "parts": [{"text": content}]})
+        # Skip empty messages and the initial greeting (so first message is from user)
+        if not content.strip() or content == "Gemini ready. Ask me anything.":
+            continue
+        api_role = "user" if role == "user" else "model"
+        contents.append({"role": api_role, "parts": [{"text": content}]})
+    
+    # Add current user input
     contents.append({"role": "user", "parts": [{"text": user_input}]})
+    
     payload = json.dumps({"contents": contents})
     
-    # Use a stable model – if you have access to gemini-2.0-flash-exp, you can change it
-    model = "gemini-1.5-flash"   # <-- CORRECTED SPELLING
+    # Use a stable, supported model
+    model = "gemini-1.5-flash"   # or "gemini-2.0-flash-exp" if you prefer
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={API_KEY}"
     
     cmd = ["curl", "-s", "-X", "POST", url, "-H", "Content-Type: application/json", "-d", payload]
+    
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        if not result.stdout:
+            return "Error: No response from API"
+        
         data = json.loads(result.stdout)
+        
         if "error" in data:
-            return f"API error: {data['error'].get('message', 'Unknown')}"
+            err_msg = data["error"].get("message", "Unknown error")
+            return f"API error: {err_msg}"
+        
         candidates = data.get("candidates", [])
         if candidates:
+            # Check for safety block
+            if candidates[0].get("finishReason") == "SAFETY":
+                return "Error: Response blocked by safety filters."
             parts = candidates[0].get("content", {}).get("parts", [])
             if parts:
-                return parts[0].get("text", "No text")
-        return "Unexpected API response"
+                return parts[0].get("text", "No text returned")
+        
+        return "Unexpected API response structure"
+    except json.JSONDecodeError:
+        return f"Invalid JSON response: {result.stdout[:100]}"
     except Exception as e:
         return f"Request failed: {str(e)}"
 
 # ----------------------------------------------------------------------
-# Conversation viewer
+# Conversation viewer (scrollable)
 # ----------------------------------------------------------------------
 class ConversationView:
     def __init__(self):
-        self.history = []
+        self.history = []  # (role, content)
         self.lines = []
         self.scroll = 0
 
@@ -243,7 +273,17 @@ def main():
             pass
         return
 
+    # Test API key quickly (optional)
+    draw_screen(["Testing API key...", "Please wait"], title="GEMINI")
+    test_response = gemini_chat("Hello", [])
+    if test_response.startswith("API error") or test_response.startswith("Error") or test_response.startswith("Request failed"):
+        draw_screen(["API key invalid", test_response[:22], "", "Check your key", "KEY3 to exit"], title_color="#FF4444")
+        while wait_btn(0.5) != "KEY3":
+            pass
+        return
+
     viewer = ConversationView()
+    # Add greeting to display only – it will be filtered out when sent to API
     viewer.add_message("assistant", "Gemini ready. Ask me anything.")
     state = "conversation"
 
