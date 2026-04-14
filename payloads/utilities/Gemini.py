@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-KTOx payload – Gemini Chat (Final)
-===================================
+KTOx payload – Gemini Chat
+======================================
 Author: wickednull
 
 - QWERTY on-screen keyboard
 - Scrollable conversation history
-- Uses curl with correct model name
-- Filters initial greeting from API requests
-- Shows clear API errors on LCD
+- Uses x-goog-api-key header (safer)
+- Supports gemini-2.0-flash and fallbacks
+- Lists available models for debugging
 """
 
 import os
@@ -61,15 +61,12 @@ os.makedirs(LOOT_DIR, exist_ok=True)
 
 def get_api_key():
     """Return API key from environment or file, stripped of whitespace and carriage returns."""
-    # Try environment first
     key = os.environ.get("GEMINI_API_KEY")
     if key:
         return key.strip().replace('\r', '')
-    # Then try file
     if os.path.exists(KEY_FILE):
         with open(KEY_FILE, "r") as f:
-            raw = f.read()
-            return raw.strip().replace('\r', '')
+            return f.read().strip().replace('\r', '')
     return None
 
 API_KEY = get_api_key()
@@ -169,34 +166,46 @@ def osk_input(prompt="Ask Gemini:", initial=""):
         time.sleep(0.05)
 
 # ----------------------------------------------------------------------
-# Gemini API (curl) – uses list arguments, no shell interpretation
+# Gemini API (2026) – uses header for API key, model list fallback
 # ----------------------------------------------------------------------
-def gemini_chat(user_input, history):
+def list_available_models():
+    """Return list of model names available for this API key."""
+    if not API_KEY:
+        return []
+    url = "https://generativelanguage.googleapis.com/v1beta/models"
+    cmd = ["curl", "-s", "-X", "GET", url, "-H", f"x-goog-api-key: {API_KEY}"]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        data = json.loads(result.stdout)
+        models = [m["name"].replace("models/", "") for m in data.get("models", [])]
+        return models
+    except:
+        return []
+
+def gemini_chat(user_input, history, model="gemini-2.0-flash"):
     """
-    Send chat request to Gemini API.
-    history: list of (role, content) where role is "user" or "assistant"
+    Send chat request using x-goog-api-key header.
+    Returns response text or error message.
     """
     contents = []
     for role, content in history:
-        # Skip the initial greeting (so first message is from user)
         if "Gemini ready" in content:
             continue
         if not content.strip():
             continue
-        # Map internal role to API role: "assistant" -> "model"
         api_role = "user" if role == "user" else "model"
         contents.append({"role": api_role, "parts": [{"text": content}]})
     
-    # Add current user input
     contents.append({"role": "user", "parts": [{"text": user_input}]})
-    
     payload = json.dumps({"contents": contents})
     
-    model = "gemini-1.5-flash"
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={API_KEY}"
-    
-    # Use list form to avoid shell escaping issues
-    cmd = ["curl", "-s", "-X", "POST", url, "-H", "Content-Type: application/json", "-d", payload]
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+    cmd = [
+        "curl", "-s", "-X", "POST", url,
+        "-H", "Content-Type: application/json",
+        "-H", f"x-goog-api-key: {API_KEY}",
+        "-d", payload
+    ]
     
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
@@ -204,7 +213,6 @@ def gemini_chat(user_input, history):
             return "Error: No response from API"
         
         data = json.loads(result.stdout)
-        
         if "error" in data:
             err_msg = data["error"].get("message", "Unknown error")
             return f"API error: {err_msg}"
@@ -216,7 +224,6 @@ def gemini_chat(user_input, history):
             parts = candidates[0].get("content", {}).get("parts", [])
             if parts:
                 return parts[0].get("text", "No text returned")
-        
         return "Unexpected API response structure"
     except json.JSONDecodeError:
         return f"Invalid JSON: {result.stdout[:80]}"
@@ -224,11 +231,11 @@ def gemini_chat(user_input, history):
         return f"Request failed: {str(e)[:30]}"
 
 # ----------------------------------------------------------------------
-# Conversation viewer (scrollable)
+# Conversation viewer
 # ----------------------------------------------------------------------
 class ConversationView:
     def __init__(self):
-        self.history = []  # (role, content)
+        self.history = []
         self.lines = []
         self.scroll = 0
 
@@ -279,17 +286,30 @@ def main():
             pass
         return
 
-    # Quick API test
-    draw_screen(["Testing API key...", "Please wait"], title="GEMINI")
-    test_response = gemini_chat("Hello", [])
-    if test_response.startswith("API error") or test_response.startswith("Error") or test_response.startswith("Request failed"):
-        draw_screen(["API key invalid", test_response[:22], "", "Check your key", "KEY3 to exit"], title_color="#FF4444")
+    # Optional: list available models for debugging
+    draw_screen(["Checking API...", "Listing models..."], title="GEMINI")
+    models = list_available_models()
+    if not models:
+        draw_screen(["No models found", "Check API key", "KEY3 to exit"], title_color="#FF4444")
         while wait_btn(0.5) != "KEY3":
             pass
         return
 
+    # Pick the first suitable model from the list
+    preferred = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-pro"]
+    selected_model = None
+    for p in preferred:
+        if p in models:
+            selected_model = p
+            break
+    if not selected_model and models:
+        selected_model = models[0]  # fallback to first available
+
+    draw_screen([f"Using model:", selected_model, "Starting chat..."], title="GEMINI", title_color="#00AA00")
+    time.sleep(1)
+
     viewer = ConversationView()
-    viewer.add_message("assistant", "Gemini ready. Ask me anything.")
+    viewer.add_message("assistant", f"Gemini ({selected_model}) ready. Ask me anything.")
     state = "conversation"
 
     while True:
@@ -310,7 +330,7 @@ def main():
                 state = "conversation"
                 continue
             draw_screen(["Thinking...", "Please wait"], title="GEMINI", title_color="#444400")
-            response = gemini_chat(user_input, viewer.history)
+            response = gemini_chat(user_input, viewer.history, selected_model)
             viewer.add_message("user", user_input)
             viewer.add_message("assistant", response)
             state = "conversation"
@@ -322,7 +342,7 @@ def main():
     filename = f"session_{ts}.txt"
     filepath = os.path.join(LOOT_DIR, filename)
     with open(filepath, "w") as f:
-        f.write(f"KTOx Gemini Chat Session\nDate: {datetime.now().isoformat()}\n")
+        f.write(f"KTOx Gemini Chat Session\nDate: {datetime.now().isoformat()}\nModel: {selected_model}\n")
         f.write("-" * 40 + "\n")
         for role, content in viewer.history:
             f.write(f"{role.upper()}: {content}\n\n")
