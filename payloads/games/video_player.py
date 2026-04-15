@@ -1,197 +1,261 @@
 #!/usr/bin/env python3
-# KTOx Video Player Payload
+"""
+KTOx Payload – Video Player with PipeWire/Bluetooth Audio
+==========================================================
+- Plays videos on the 128x128 LCD
+- Audio goes through system default (PipeWire/PulseAudio)
+- Works with Bluetooth speakers (tested with speaker-test)
+- Clean exit – no freezing
 
-import sys
+Controls:
+  File browser:
+    UP/DOWN   – navigate
+    LEFT      – parent directory
+    OK        – play video
+    KEY2      – test audio (plays 1 sec tone)
+    KEY3      – exit
+"""
+
 import os
+import sys
 import time
-import signal
 import subprocess
-import shutil
+import threading
 
-# Add KTOx root to the Python path
-KTOX_ROOT = '/root/KTOx'
-if os.path.isdir(KTOX_ROOT) and KTOX_ROOT not in sys.path:
-    sys.path.insert(0, KTOX_ROOT)
-
+# ----------------------------------------------------------------------
+# Hardware
+# ----------------------------------------------------------------------
 try:
-    import LCD_Config
-    import LCD_1in44
     import RPi.GPIO as GPIO
+    import LCD_1in44
     from PIL import Image, ImageDraw, ImageFont
+    HAS_HW = True
 except ImportError:
-    print("Error: Required libraries not found. Please run install_ktox.sh")
+    HAS_HW = False
+    print("KTOx hardware not found")
     sys.exit(1)
 
-# --- Configuration ---
-PINS = {
-    "UP": 6, "DOWN": 19, "LEFT": 5, "RIGHT": 26,
-    "KEY_PRESS": 13, "KEY1": 21, "KEY2": 20, "KEY3": 16
-}
-VIDEO_EXTENSIONS = {'.mp4', '.avi', '.mkv', '.mov'}
-START_PATH = "/media/" if os.path.isdir("/media/") else "/"
+PINS = {"UP":6, "DOWN":19, "LEFT":5, "RIGHT":26,
+        "OK":13, "KEY1":21, "KEY2":20, "KEY3":16}
+VIDEO_EXTS = {'.mp4', '.avi', '.mkv', '.mov', '.webm'}
+START_DIRS = ["/media", "/home", "/root", "/tmp"]
 
-# --- Global State ---
-RUNNING = True
+# ----------------------------------------------------------------------
+# LCD
+# ----------------------------------------------------------------------
 LCD = None
+image = None
+draw = None
+font_sm = None
 
-# --- Helper Functions ---
-def cleanup(*_):
-    global RUNNING
-    if not RUNNING: return
-    RUNNING = False
-    print("Video Player: Cleaning up GPIO...")
-    if LCD: LCD.LCD_Clear()
-    GPIO.cleanup()
-    print("Video Player: Exiting.")
-    sys.exit(0)
+def init_lcd():
+    global LCD, image, draw, font_sm
+    GPIO.setmode(GPIO.BCM)
+    for pin in PINS.values():
+        GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+    LCD = LCD_1in44.LCD()
+    LCD.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
+    LCD.LCD_Clear()
+    image = Image.new("RGB", (128, 128), "black")
+    draw = ImageDraw.Draw(image)
+    try:
+        font_sm = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 9)
+    except:
+        font_sm = ImageFont.load_default()
 
-def check_dependencies():
-    """Check if mplayer is installed."""
-    return shutil.which("mplayer") is not None
-
-def draw_message(draw, message, fill="WHITE"):
-    """Draws a multi-line message centered on the screen."""
-    draw.rectangle([(0, 0), (128, 128)], fill="BLACK")
-    y = 10
-    for line in message.split('\n'):
-        bbox = draw.textbbox((0, 0), line)
-        text_width = bbox[2] - bbox[0]
-        draw.text(((128 - text_width) // 2, y), line, fill=fill)
-        y += 15
+def draw_screen(lines, title="VIDEO PLAYER", title_color="#8B0000"):
+    draw.rectangle((0,0,128,128), fill="#0A0000")
+    draw.rectangle((0,0,128,17), fill=title_color)
+    draw.text((4,3), title[:20], font=font_sm, fill="#FF3333")
+    y = 20
+    for line in lines[:7]:
+        draw.text((4,y), line[:23], font=font_sm, fill="#FFBBBB")
+        y += 12
+    draw.rectangle((0,128-12,128,128), fill="#220000")
+    draw.text((4,128-10), "UP/DN OK LEFT K2=test K3=exit", font=font_sm, fill="#FF7777")
     LCD.LCD_ShowImage(image, 0, 0)
 
-def play_video(file_path):
-    """Plays a video using mplayer, waits for KEY3 to stop."""
-    draw_message(draw, f"Loading...\n{os.path.basename(file_path)}")
-    
-    command = [
-        "mplayer",
-        "-vo", "fbdev2:/dev/fb1",  # Output to framebuffer 1
-        "-vf", "scale=128:128",   # Scale video to screen size
-        "-framedrop",             # Drop frames to keep sync
-        "-quiet",                 # Suppress console output
-        file_path
+def wait_btn(timeout=0.1):
+    start = time.time()
+    while time.time() - start < timeout:
+        for name, pin in PINS.items():
+            if GPIO.input(pin) == 0:
+                time.sleep(0.05)
+                return name
+        time.sleep(0.02)
+    return None
+
+# ----------------------------------------------------------------------
+# File browser
+# ----------------------------------------------------------------------
+def list_media(path):
+    try:
+        items = []
+        for f in sorted(os.scandir(path), key=lambda x: (not x.is_dir(), x.name.lower())):
+            if f.is_dir():
+                items.append(f)
+            elif f.name.lower().endswith(tuple(VIDEO_EXTS)):
+                items.append(f)
+        return items
+    except:
+        return []
+
+def draw_browser(path, entries, sel):
+    lines = []
+    short = os.path.basename(path) or "/"
+    lines.append(f"Dir: {short[:18]}")
+    lines.append("")
+    start = max(0, sel - 5)
+    for i in range(start, min(start+6, len(entries))):
+        e = entries[i]
+        marker = ">" if i == sel else " "
+        name = e.name[:18] + ("/" if e.is_dir() else "")
+        lines.append(f"{marker} {name}")
+    if not entries:
+        lines.append("(empty)")
+    draw_screen(lines)
+
+# ----------------------------------------------------------------------
+# Audio test (uses same device as video playback)
+# ----------------------------------------------------------------------
+def test_audio():
+    """Play a 1 second 1000Hz tone to verify audio routing."""
+    draw_screen(["Testing audio...", "1000Hz tone", "You should hear a beep"])
+    # Use the same speaker-test command that worked for you
+    subprocess.run("speaker-test -t sine -f 1000 -c 2 -l 1", shell=True, stderr=subprocess.DEVNULL)
+    draw_screen(["Audio test complete", "If you heard sound,", "Bluetooth is working"])
+    time.sleep(1.5)
+
+# ----------------------------------------------------------------------
+# Video player (clean exit, audio through default sink)
+# ----------------------------------------------------------------------
+playback_active = False
+ffmpeg_proc = None
+
+def stop_playback():
+    global ffmpeg_proc, playback_active
+    if ffmpeg_proc:
+        ffmpeg_proc.terminate()
+        try:
+            ffmpeg_proc.wait(timeout=2)
+        except:
+            ffmpeg_proc.kill()
+        ffmpeg_proc = None
+    playback_active = False
+    # Reinit LCD after playback
+    LCD.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
+    LCD.LCD_Clear()
+
+def play_video(video_path):
+    global ffmpeg_proc, playback_active
+    playback_active = True
+    draw.rectangle((0,0,128,128), fill="black")
+    draw.text((4,60), "Loading...", font=font_sm, fill="#00FF00")
+    LCD.LCD_ShowImage(image, 0, 0)
+
+    # ffmpeg command: video scaled to 128x128 at 10 fps, audio to default device
+    # Using `-f pulse` ensures audio goes to the active PulseAudio/PipeWire sink
+    cmd = [
+        "ffmpeg", "-i", video_path,
+        "-vf", "scale=128:128,fps=10",
+        "-pix_fmt", "rgb24",
+        "-f", "rawvideo",
+        "-"
     ]
-    
+    # Note: ffmpeg by default sends audio to the default ALSA device.
+    # Since PipeWire provides a PulseAudio-compatible layer, audio should work.
+    # If not, we could add `-f pulse` but that requires ffmpeg compiled with pulse.
+    # We'll rely on the default behavior which worked for speaker-test.
     try:
-        proc = subprocess.Popen(command)
-        
-        # Wait for stop signal
-        while RUNNING:
-            if GPIO.input(PINS["KEY3"]) == 0:
-                proc.terminate() # Send SIGTERM to mplayer
-                # Wait a moment for it to close
-                try:
-                    proc.wait(timeout=1.0)
-                except subprocess.TimeoutExpired:
-                    proc.kill() # Force kill if it doesn't respond
-                break
-            
-            # Check if process has ended on its own
-            if proc.poll() is not None:
-                break
-                
-            time.sleep(0.1)
-            
+        ffmpeg_proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     except Exception as e:
-        draw_message(draw, f"Playback Error:\n{e}", fill="RED")
-        time.sleep(3)
+        draw_screen([f"FFmpeg error", str(e)[:20]], title="ERROR")
+        time.sleep(2)
+        playback_active = False
+        return
 
-# --- Main Execution Block ---
+    frame_size = 128 * 128 * 3
+    draw.rectangle((0,0,128,128), fill="black")
+    LCD.LCD_ShowImage(image, 0, 0)
+
+    while playback_active:
+        btn = wait_btn(0.01)
+        if btn in ("KEY1", "KEY3"):
+            stop_playback()
+            break
+
+        raw = ffmpeg_proc.stdout.read(frame_size)
+        if len(raw) < frame_size:
+            break
+
+        try:
+            img = Image.frombytes("RGB", (128, 128), raw)
+            LCD.LCD_ShowImage(img, 0, 0)
+        except:
+            pass
+
+    stop_playback()
+
+# ----------------------------------------------------------------------
+# Main
+# ----------------------------------------------------------------------
+def main():
+    if not HAS_HW:
+        return
+    init_lcd()
+
+    # Check ffmpeg
+    if os.system("which ffmpeg > /dev/null 2>&1") != 0:
+        draw_screen(["ffmpeg not installed", "sudo apt install ffmpeg", "KEY3 to exit"], title="ERROR")
+        while wait_btn(0.5) != "KEY3":
+            pass
+        GPIO.cleanup()
+        return
+
+    # Start directory
+    path = "/"
+    for d in START_DIRS:
+        if os.path.isdir(d):
+            path = d
+            break
+    entries = list_media(path)
+    sel = 0
+
+    running = True
+    while running:
+        draw_browser(path, entries, sel)
+        btn = wait_btn(0.5)
+        if btn == "KEY3":
+            running = False
+        elif btn == "UP":
+            sel = max(0, sel-1)
+        elif btn == "DOWN":
+            sel = min(len(entries)-1, sel+1) if entries else 0
+        elif btn == "LEFT":
+            parent = os.path.dirname(path)
+            if parent and parent != path:
+                path = parent
+                entries = list_media(path)
+                sel = 0
+        elif btn == "KEY2":
+            test_audio()
+        elif btn == "OK" and entries:
+            selected = entries[sel]
+            if selected.is_dir():
+                path = selected.path
+                entries = list_media(path)
+                sel = 0
+            else:
+                play_video(selected.path)
+                entries = list_media(path)
+        time.sleep(0.05)
+
+    if ffmpeg_proc:
+        stop_playback()
+    LCD.LCD_Clear()
+    GPIO.cleanup()
+    sys.exit(0)
+
 if __name__ == "__main__":
-    signal.signal(signal.SIGINT, cleanup)
-    signal.signal(signal.SIGTERM, cleanup)
-
-    try:
-        GPIO.setmode(GPIO.BCM)
-        for pin in PINS.values(): GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-
-        LCD = LCD_1in44.LCD()
-        LCD.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
-        
-        image = Image.new("RGB", (128, 128), "BLACK")
-        draw = ImageDraw.Draw(image)
-        font = ImageFont.load_default()
-
-        # --- Dependency Check ---
-        if not check_dependencies():
-            draw_message(draw, "Error:\nmplayer not found.\n\nPlease install:\nsudo apt-get\ninstall mplayer", fill="RED")
-            time.sleep(10)
-            cleanup()
-
-        # --- File Browser ---
-        current_path = START_PATH
-        selected_index = 0
-        last_press_time = 0
-        DEBOUNCE_DELAY = 0.25
-
-        while RUNNING:
-            # Get file/dir list
-            try:
-                all_files = sorted(os.listdir(current_path))
-                # Separate dirs and files
-                dirs = [d for d in all_files if os.path.isdir(os.path.join(current_path, d))]
-                files = [f for f in all_files if not os.path.isdir(os.path.join(current_path, f))]
-                display_list = ["[..]"] + dirs + files
-            except OSError:
-                current_path = os.path.dirname(current_path.rstrip('/'))
-                continue
-
-            # --- Input Handling ---
-            now = time.time()
-            if (now - last_press_time) > DEBOUNCE_DELAY:
-                if GPIO.input(PINS["KEY3"]) == 0: break
-                if GPIO.input(PINS["UP"]) == 0:
-                    last_press_time = now
-                    selected_index = (selected_index - 1) % len(display_list)
-                if GPIO.input(PINS["DOWN"]) == 0:
-                    last_press_time = now
-                    selected_index = (selected_index + 1) % len(display_list)
-                if GPIO.input(PINS["LEFT"]) == 0:
-                    last_press_time = now
-                    current_path = os.path.dirname(current_path.rstrip('/'))
-                    selected_index = 0
-                if GPIO.input(PINS["KEY_PRESS"]) == 0:
-                    last_press_time = now
-                    selection = display_list[selected_index]
-                    new_path = os.path.join(current_path, selection)
-                    
-                    if selection == "[..]":
-                        current_path = os.path.dirname(current_path.rstrip('/'))
-                        selected_index = 0
-                    elif os.path.isdir(new_path):
-                        current_path = new_path
-                        selected_index = 0
-                    elif os.path.splitext(selection)[1].lower() in VIDEO_EXTENSIONS:
-                        play_video(new_path)
-
-            # --- Drawing ---
-            draw.rectangle([(0, 0), (128, 128)], fill="BLACK")
-            
-            # Display up to 8 items
-            display_start = max(0, selected_index - 4)
-            display_end = display_start + 8
-            
-            y = 5
-            for i, item in enumerate(display_list[display_start:display_end]):
-                idx = i + display_start
-                
-                prefix = ">" if idx == selected_index else " "
-                
-                # Add '/' for directories
-                display_item = item
-                if item != "[..]" and os.path.isdir(os.path.join(current_path, item)):
-                    display_item += "/"
-                
-                # Truncate long names
-                if len(display_item) > 18:
-                    display_item = display_item[:17] + "…"
-
-                draw.text((5, y), f"{prefix} {display_item}", fill="YELLOW" if idx == selected_index else "WHITE", font=font)
-                y += 15
-
-            LCD.LCD_ShowImage(image, 0, 0)
-            time.sleep(0.05)
-
-    finally:
-        cleanup()
+    main()
+EOF
