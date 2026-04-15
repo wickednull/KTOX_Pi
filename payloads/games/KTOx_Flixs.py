@@ -137,7 +137,7 @@ def generate_thumbnails():
                     subprocess.run(["ffmpeg", "-ss", "5", "-i", os.path.join(VIDEO_DIR, rel), 
                                    "-vf", "scale=240:-1", "-vframes", "1", t_p], stderr=subprocess.DEVNULL)
 
-# --- LCD THREAD (TOGGLE FIX) ---
+# --- LCD THREAD (PORT 80 ADDED) ---
 def lcd_thread():
     time.sleep(3)
     GPIO.setmode(GPIO.BCM)
@@ -150,7 +150,6 @@ def lcd_thread():
     while True:
         if GPIO.input(PINS["KEY1"]) == 0:
             show_qr = not show_qr
-            # Flash red on click
             lcd.LCD_ShowImage(Image.new("RGB", (128,128), "red"), 0, 0)
             time.sleep(0.4) 
 
@@ -165,11 +164,17 @@ def lcd_thread():
             d = ImageDraw.Draw(img)
             d.rectangle((0,0,128,16), fill="#2b0000")
             d.text((5,2), "KTOx//CYBER_VOID", fill="red")
-            d.text((5,25), f"IP: {ip}", fill="#00f3ff")
-            d.text((5,45), f"CPU: {t:.1f}C", fill="red" if t > 70 else "green")
-            d.text((5,65), f"UP: {tx}MB", fill="#ccc")
-            d.text((5,80), f"DN: {rx}MB", fill="#ccc")
-            d.text((5,110), "[KEY1] SCAN UPLINK", fill="red")
+            
+            # Port Display
+            d.text((5,22), f"VID_NODE: {ip}:80", fill="#00f3ff")
+            d.text((5,37), f"UP_NODE : {ip}:8888", fill="red")
+            
+            # System Stats
+            d.text((5,55), f"CPU_TEMP: {t:.1f}C", fill="red" if t > 70 else "green")
+            d.text((5,75), f"DATA_OUT: {tx}MB", fill="#ccc")
+            d.text((5,90), f"DATA_IN : {rx}MB", fill="#ccc")
+            
+            d.text((5,110), "[KEY1] QR_UPLINK", fill="red")
             lcd.LCD_ShowImage(img, 0, 0)
         time.sleep(0.2)
 
@@ -191,7 +196,7 @@ def stream(f): return send_from_directory(VIDEO_DIR, f)
 
 @app_ui.route('/play/<path:f>')
 def play(f):
-    return render_template_string("<body style='background:#000;margin:0;display:flex;align-items:center;height:100vh;'><video controls autoplay style='width:100%;'><source src='/stream/{{f}}'></video></body>", f=f)
+    return render_template_string("<body style='background:#000;margin:0;display:flex;align-items:center;justify-content:center;height:100vh;'><video controls autoplay style='max-width:100%;max-height:100%;'><source src='/stream/{{f}}'></video></body>", f=f)
 
 # --- ROUTES PORT 8888 ---
 @app_uplink.route('/')
@@ -216,8 +221,9 @@ if __name__ == "__main__":
     
     threading.Thread(target=generate_thumbnails, daemon=True).start()
     
-    # Run Uplink (Port 8888) in background thread
     threading.Thread(target=lambda: app_uplink.run(host='0.0.0.0', port=8888, debug=False, use_reloader=False), daemon=True).start()
     
-    # Run Library (Port 80) in main thread
+    print(f"VID_NODE ACTIVE: http://{get_ip()}:80")
+    print(f"UP_NODE ACTIVE : http://{get_ip()}:8888")
+    
     app_ui.run(host='0.0.0.0', port=80, debug=False, use_reloader=False)
