@@ -46,26 +46,14 @@ def list_dir(p):
         return items
     except: return []
 
-def get_bt_sink():
-    # Get active Bluetooth sink name
-    res = subprocess.run("pactl list sinks short | grep bluez | awk '{print $1}'", shell=True, capture_output=True, text=True)
-    sink = res.stdout.strip()
-    if not sink:
-        # Try alternative: look for any sink with "bluez" in description
-        res = subprocess.run("pactl list sinks | grep -A1 'bluez' | grep 'Name:' | cut -d: -f2 | tr -d ' '", shell=True, capture_output=True, text=True)
-        sink = res.stdout.strip()
-    return sink
-
 def play_video(path):
-    sink = get_bt_sink()
-    if not sink:
-        draw(["No Bluetooth sink","Connect speaker first"])
-        time.sleep(2)
-        return
-    # Force A2DP profile (if needed)
-    cards = subprocess.run("pactl list cards short | grep bluez | cut -f1", shell=True, capture_output=True, text=True).stdout.strip()
-    if cards:
-        subprocess.run(f"pactl set-card-profile {cards} a2dp-sink", shell=True)
+    # Your working Bluetooth sink name – verify with 'pactl list sinks'
+    sink = "bluez_output.65_EA_C4_2F_05_0B.1"
+    # Force A2DP profile
+    card = subprocess.run("pactl list cards short | grep bluez | cut -f1", shell=True, capture_output=True, text=True).stdout.strip()
+    if card:
+        subprocess.run(f"pactl set-card-profile {card} a2dp-sink", shell=True)
+        time.sleep(1)  # Give time to switch
     cmd = ["ffmpeg","-i",path,"-vf","scale=128:128,fps=10","-pix_fmt","rgb24","-f","rawvideo","-","-f","pulse","-device",sink]
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     frame=128*128*3
@@ -81,7 +69,7 @@ def play_video(path):
     proc.wait()
     LCD.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
 
-path="/root"
+path="/root/Videos"
 entries=list_dir(path)
 sel=0; scroll=0
 while True:
