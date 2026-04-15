@@ -1,279 +1,223 @@
-cat > /root/KTOx/payloads/ktoxflix_server.py << 'EOF'
 #!/usr/bin/env python3
-"""
-KTOx Payload – KTOxFliX Video Server
-=====================================
-- Serves videos from /root/Videos on port 80
-- LCD shows IP, video count, CPU temp, status, QR code on KEY1
-- Use any browser on your phone/laptop to watch videos
-"""
+import os, sys, time, threading, subprocess, socket, re, urllib.parse
+import requests, qrcode
+from bs4 import BeautifulSoup
+from flask import Flask, render_template_string, send_from_directory, request, redirect, url_for, jsonify
+from werkzeug.utils import secure_filename
 
-import os
-import sys
-import time
-import threading
-import subprocess
-import socket
-import qrcode
-from flask import Flask, render_template_string, send_from_directory
-
-# ----------------------------------------------------------------------
-# Hardware & LCD
-# ----------------------------------------------------------------------
+# --- HARDWARE INITIALIZATION ---
+HAS_HW = False
 try:
     import RPi.GPIO as GPIO
     import LCD_1in44
     from PIL import Image, ImageDraw, ImageFont
     HAS_HW = True
-except ImportError:
-    HAS_HW = False
-    print("Hardware not found – exiting")
-    sys.exit(1)
+except Exception:
+    print("HW_STATUS: LCD Hardware not detected. Running in Headless mode.")
 
-PINS = {"UP":6, "DOWN":19, "LEFT":5, "RIGHT":26, "OK":13, "KEY1":21, "KEY2":20, "KEY3":16}
-GPIO.setmode(GPIO.BCM)
-for pin in PINS.values():
-    GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-
-LCD = LCD_1in44.LCD()
-LCD.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
-W, H = 128, 128
-
-try:
-    font_sm = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 9)
-    font_bold = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 10)
-except:
-    font_sm = font_bold = ImageFont.load_default()
-
-# ----------------------------------------------------------------------
-# Flask web server configuration
-# ----------------------------------------------------------------------
+# --- CONFIGURATION ---
 VIDEO_DIR = "/root/Videos"
 THUMB_DIR = "/root/Videos/thumbnails"
 VIDEO_EXTS = ('.mp4', '.mkv', '.avi', '.mov', '.webm')
+PINS = {"UP":6, "DOWN":19, "LEFT":5, "RIGHT":26, "OK":13, "KEY1":21, "KEY2":20, "KEY3":16}
 
-os.makedirs(VIDEO_DIR, exist_ok=True)
 os.makedirs(THUMB_DIR, exist_ok=True)
 
-app = Flask(__name__)
+app_ui = Flask("Library")      # Port 80
+app_uplink = Flask("Uplink")   # Port 8888
 
-# ----------------------------------------------------------------------
-# Generate thumbnails using ffmpeg
-# ----------------------------------------------------------------------
-def generate_thumbnails():
-    for f in os.listdir(VIDEO_DIR):
-        if f.lower().endswith(VIDEO_EXTS):
-            thumb_path = os.path.join(THUMB_DIR, f + ".jpg")
-            if not os.path.exists(thumb_path):
-                video_path = os.path.join(VIDEO_DIR, f)
-                subprocess.run([
-                    "ffmpeg", "-i", video_path, "-ss", "00:00:02",
-                    "-vframes", "1", "-q:v", "2", thumb_path
-                ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+# --- CYBERPUNK STYLES ---
+CYBER_CSS = """
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
+    :root { --red: #ff0000; --dark-red: #2b0000; --cyan: #00f3ff; --bg: #050505; }
+    body { background: var(--bg); color: #ccc; font-family: 'Share Tech Mono', monospace; margin:0; line-height: 1.4; }
+    nav { padding: 15px 5%; background: #000; border-bottom: 2px solid var(--red); display: flex; justify-content: space-between; align-items: center; }
+    .logo { color: var(--red); font-size: 22px; letter-spacing: 4px; text-shadow: 2px 0 var(--cyan); }
+    .container { padding: 20px 5%; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 15px; }
+    .card { background: #000; border: 1px solid var(--dark-red); text-decoration: none; color: inherit; transition: 0.3s; overflow:hidden; position: relative; }
+    .card:hover { border-color: var(--cyan); transform: translateY(-3px); box-shadow: 0 0 15px var(--dark-red); }
+    .card img { width: 100%; aspect-ratio: 2/3; object-fit: cover; filter: grayscale(1) sepia(1) hue-rotate(-50deg) brightness(0.4); transition: 0.3s; }
+    .card:hover img { filter: grayscale(0) brightness(1); }
+    .card-meta { padding: 8px; font-size: 10px; border-top: 1px solid var(--dark-red); }
+    .btn { background: var(--dark-red); color: white; border: 1px solid var(--red); padding: 12px; cursor: pointer; font-family: inherit; width: 100%; font-weight: bold; }
+    input { background: #111; border: 1px solid var(--dark-red); color: var(--cyan); padding: 12px; width: 100%; box-sizing: border-box; margin-bottom: 15px; font-family: inherit; }
+    #prog-wrap { display: none; margin-top: 20px; }
+    #prog-cont { width: 100%; background: #111; border: 1px solid var(--cyan); height: 15px; }
+    #prog-bar { width: 0%; background: var(--cyan); height: 100%; box-shadow: 0 0 10px var(--cyan); transition: width 0.1s; }
+</style>
+"""
 
-# ----------------------------------------------------------------------
-# HTML templates (KTOxFliX style)
-# ----------------------------------------------------------------------
-INDEX_HTML = """
-<!DOCTYPE html>
-<html>
-<head>
-    <title>KTOxFliX</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <style>
-        body { background: #141414; color: white; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; margin: 0; padding: 20px; }
-        h1 { color: #E50914; margin-bottom: 30px; }
-        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px; }
-        .card { background: #222; border-radius: 4px; overflow: hidden; transition: transform 0.3s; cursor: pointer; text-decoration: none; color: white; }
-        .card:hover { transform: scale(1.05); }
-        .card img { width: 100%; height: 120px; object-fit: cover; }
-        .card-title { padding: 10px; font-size: 14px; text-align: center; }
-        footer { margin-top: 40px; text-align: center; color: #666; }
-        .port-info { background: #333; padding: 8px; border-radius: 4px; text-align: center; margin-bottom: 20px; }
-    </style>
-</head>
-<body>
-    <h1>KTOxFliX</h1>
-    <div class="port-info">🌐 Server running on port 80 – http://<span id="ip"></span>:80</div>
+# --- UI TEMPLATES ---
+LIBRARY_HTML = CYBER_CSS + """
+<nav><div class="logo">KTOx//CYBER_VOID</div><div style="color:var(--cyan);font-size:10px;">NODE_ACTIVE</div></nav>
+<div class="container">
     <div class="grid">
-        {% for video in videos %}
-        <a href="/play/{{ video }}" class="card">
-            <img src="/thumb/{{ video }}.jpg" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'200\' height=\'120\' viewBox=\'0 0 200 120\'%3E%3Crect width=\'200\' height=\'120\' fill=\'%23333\'/%3E%3Ctext x=\'50%25\' y=\'50%25\' text-anchor=\'middle\' dy=\'.3em\' fill=\'%23999\'%3ENo thumbnail%3C/text%3E%3C/svg%3E'">
-            <div class="card-title">{{ video }}</div>
+        {% for v in videos %}
+        <a href="/play/{{ v }}" class="card">
+            <img src="/thumb/{{ v | replace('/', '_') }}.jpg">
+            <div class="card-meta"><span style="color:var(--cyan)">DATA_STREAM//</span> {{ v | upper }}</div>
         </a>
         {% endfor %}
     </div>
-    <footer>KTOxFliX – Powered by KTOx on Raspberry Pi</footer>
-    <script>
-        fetch('/ip').then(r=>r.text()).then(ip=>document.getElementById('ip').innerText=ip);
-    </script>
-</body>
-</html>
+</div>
 """
 
-PLAYER_HTML = """
-<!DOCTYPE html>
-<html>
-<head>
-    <title>KTOxFliX – {{ video }}</title>
-    <style>
-        body { background: black; color: white; text-align: center; font-family: sans-serif; }
-        video { width: 80%; max-width: 1000px; margin-top: 50px; outline: none; }
-        .back { display: inline-block; margin-top: 20px; color: #E50914; text-decoration: none; font-size: 18px; }
-    </style>
-</head>
-<body>
-    <video controls autoplay>
-        <source src="/stream/{{ video }}" type="video/mp4">
-        Your browser does not support the video tag.
-    </video>
-    <br>
-    <a href="/" class="back">← Back to KTOxFliX</a>
-</body>
-</html>
+UPLINK_HTML = CYBER_CSS + """
+<nav><div class="logo">KTOx//DATA_INJECTOR</div><div style="color:var(--red);font-size:10px;">PORT_8888</div></nav>
+<div class="container" style="max-width: 500px; margin: auto; padding-top: 30px;">
+    <h3 style="color:var(--cyan)">> SYSTEM_UPLINK_INITIALIZED</h3>
+    <form id="up-form">
+        <input type="text" id="subdir" placeholder="TARGET_SUBDIRECTORY (OPTIONAL)">
+        <label style="font-size:10px; color:#555;">FILE_UPLINK</label>
+        <input type="file" id="f-direct" multiple>
+        <label style="font-size:10px; color:#555;">FOLDER_INJECTION</label>
+        <input type="file" id="f-folder" multiple webkitdirectory>
+        <button type="button" class="btn" onclick="startUplink()">EXECUTE_INJECTION</button>
+    </form>
+    <div id="prog-wrap">
+        <div id="prog-cont"><div id="prog-bar"></div></div>
+        <div id="st-text" style="color:var(--cyan); font-size:11px; text-align:center; margin-top:5px;">UPLINKING: 0%</div>
+    </div>
+</div>
+<script>
+    function startUplink() {
+        const fd = new FormData();
+        fd.append('subdir', document.getElementById('subdir').value);
+        for (let f of document.getElementById('f-direct').files) { fd.append('files', f); }
+        for (let f of document.getElementById('f-folder').files) { fd.append('files', f); }
+        
+        const xhr = new XMLHttpRequest();
+        document.getElementById('prog-wrap').style.display = 'block';
+        xhr.upload.addEventListener('progress', (e) => {
+            if (e.lengthComputable) {
+                const p = Math.round((e.loaded / e.total) * 100);
+                document.getElementById('prog-bar').style.width = p + '%';
+                document.getElementById('st-text').innerText = 'UPLINKING: ' + p + '%';
+            }
+        });
+        xhr.onload = () => { location.reload(); };
+        xhr.open('POST', '/upload', true);
+        xhr.send(fd);
+    }
+</script>
 """
 
-@app.route('/')
-def index():
-    videos = [f for f in os.listdir(VIDEO_DIR) if f.lower().endswith(VIDEO_EXTS)]
-    return render_template_string(INDEX_HTML, videos=videos)
-
-@app.route('/ip')
-def get_ip():
-    return get_local_ip()
-
-@app.route('/play/<filename>')
-def play(filename):
-    return render_template_string(PLAYER_HTML, video=filename)
-
-@app.route('/stream/<filename>')
-def stream(filename):
-    return send_from_directory(VIDEO_DIR, filename)
-
-@app.route('/thumb/<filename>')
-def thumb(filename):
-    return send_from_directory(THUMB_DIR, filename)
-
-# ----------------------------------------------------------------------
-# LCD helpers
-# ----------------------------------------------------------------------
-def get_local_ip():
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    try:
-        s.connect(('8.8.8.8', 1))
-        ip = s.getsockname()[0]
-    except:
-        ip = '127.0.0.1'
-    finally:
-        s.close()
-    return ip
-
-def get_cpu_temp():
+# --- CORE LOGIC ---
+def get_stats():
+    t, rx, tx = 0, 0, 0
     try:
         with open("/sys/class/thermal/thermal_zone0/temp", "r") as f:
-            temp = int(f.read().strip()) / 1000.0
-            return temp
-    except:
-        return 0.0
+            t = float(f.read().strip()) / 1000.0
+        with open("/proc/net/dev", "r") as f:
+            for l in f:
+                if "wlan0" in l:
+                    p = l.split()
+                    rx, tx = round(int(p[1])/1e6, 1), round(int(p[9])/1e6, 1)
+    except: pass
+    return t, rx, tx
 
-def generate_qr(data):
-    qr = qrcode.QRCode(box_size=3, border=1)
-    qr.add_data(data)
-    qr.make(fit=True)
-    return qr.make_image(fill_color="white", back_color="black").get_image()
+def get_ip():
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(('8.8.8.8', 1))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except: return "127.0.0.1"
 
-def draw_lcd(ip, video_count, server_running):
-    img = Image.new("RGB", (W, H), "#0A0000")
-    d = ImageDraw.Draw(img)
-    d.rectangle((0,0,W,17), fill="#8B0000")
-    d.text((4,3), "KTOxFLIX", font=font_bold, fill="#FF3333")
-    y = 20
-    d.text((4,y), f"IP: {ip}:80", font=font_sm, fill="#FFBBBB"); y+=12
-    d.text((4,y), f"Videos: {video_count}", font=font_sm, fill="#FFBBBB"); y+=12
-    temp = get_cpu_temp()
-    if temp < 60:
-        temp_color = "#00FF00"
-    elif temp < 75:
-        temp_color = "#FFFF00"
-    else:
-        temp_color = "#FF0000"
-    d.text((4,y), f"Temp: {temp:.1f}C", font=font_sm, fill=temp_color); y+=12
-    status = "RUNNING" if server_running else "STOPPED"
-    d.text((4,y), f"Status: {status}", font=font_sm, fill="#00FF00" if server_running else "#FF6666"); y+=12
-    d.text((4,y), "KEY1 = QR code", font=font_sm, fill="#FF7777")
-    d.rectangle((0,H-12,W,H), fill="#220000")
-    d.text((4,H-10), "KEY2=Rescan  KEY3=Exit", font=font_sm, fill="#FF7777")
-    LCD.LCD_ShowImage(img, 0, 0)
+def generate_thumbnails():
+    for r, d, f in os.walk(VIDEO_DIR):
+        for file in f:
+            if file.lower().endswith(VIDEO_EXTS):
+                rel = os.path.relpath(os.path.join(r, file), VIDEO_DIR)
+                t_p = os.path.join(THUMB_DIR, rel.replace('/', '_') + ".jpg")
+                if not os.path.exists(t_p):
+                    subprocess.run(["ffmpeg", "-ss", "5", "-i", os.path.join(VIDEO_DIR, rel), 
+                                   "-vf", "scale=240:-1", "-vframes", "1", t_p], stderr=subprocess.DEVNULL)
 
-def draw_qr_fullscreen(ip):
-    img = Image.new("RGB", (W, H), "white")
-    url = f"http://{ip}:80"
-    qr_img = generate_qr(url)
-    qr_img = qr_img.resize((W, H))
-    img.paste(qr_img, (0, 0))
-    LCD.LCD_ShowImage(img, 0, 0)
-
-def wait_btn():
-    for _ in range(50):
-        for n, p in PINS.items():
-            if GPIO.input(p) == 0:
-                time.sleep(0.05)
-                return n
-        time.sleep(0.01)
-    return None
-
-# ----------------------------------------------------------------------
-# Main
-# ----------------------------------------------------------------------
-def main():
-    if os.system("which ffmpeg >/dev/null 2>&1") != 0:
-        img = Image.new("RGB", (W,H), "black")
-        d = ImageDraw.Draw(img)
-        d.text((4,50), "ffmpeg missing", font=font_sm, fill="red")
-        d.text((4,65), "sudo apt install ffmpeg", font=font_sm, fill="white")
-        LCD.LCD_ShowImage(img,0,0)
-        time.sleep(5)
-        GPIO.cleanup()
-        return
-
-    generate_thumbnails()
-    videos = [f for f in os.listdir(VIDEO_DIR) if f.lower().endswith(VIDEO_EXTS)]
-    video_count = len(videos)
-
-    # Start Flask server on port 80
-    server_thread = threading.Thread(target=lambda: app.run(host='0.0.0.0', port=80, debug=False, use_reloader=False), daemon=True)
-    server_thread.start()
-    time.sleep(2)
-
-    ip = get_local_ip()
-    server_running = True
-    qr_showing = False
+# --- LCD THREAD (TOGGLE FIX) ---
+def lcd_thread():
+    time.sleep(3)
+    GPIO.setmode(GPIO.BCM)
+    for p in PINS.values(): GPIO.setup(p, GPIO.IN, GPIO.PUD_UP)
+    lcd = LCD_1in44.LCD()
+    lcd.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
+    ip = get_ip()
+    show_qr = False
 
     while True:
-        if qr_showing:
-            draw_qr_fullscreen(ip)
-            btn = wait_btn()
-            if btn is not None:
-                qr_showing = False
-            time.sleep(0.1)
+        if GPIO.input(PINS["KEY1"]) == 0:
+            show_qr = not show_qr
+            # Flash red on click
+            lcd.LCD_ShowImage(Image.new("RGB", (128,128), "red"), 0, 0)
+            time.sleep(0.4) 
+
+        if show_qr:
+            qr = qrcode.QRCode(box_size=3, border=2)
+            qr.add_data(f"http://{ip}:8888")
+            img = qr.make_image(fill_color="black", back_color="white").convert("RGB").resize((128,128))
+            lcd.LCD_ShowImage(img, 0, 0)
         else:
-            draw_lcd(ip, video_count, server_running)
-            btn = wait_btn()
-            if btn == "KEY3":
-                break
-            elif btn == "KEY1":
-                qr_showing = True
-            elif btn == "KEY2":
-                generate_thumbnails()
-                videos = [f for f in os.listdir(VIDEO_DIR) if f.lower().endswith(VIDEO_EXTS)]
-                video_count = len(videos)
-                draw_lcd(ip, video_count, server_running)
-                time.sleep(1)
+            t, rx, tx = get_stats()
+            img = Image.new("RGB", (128,128), "black")
+            d = ImageDraw.Draw(img)
+            d.rectangle((0,0,128,16), fill="#2b0000")
+            d.text((5,2), "KTOx//CYBER_VOID", fill="red")
+            d.text((5,25), f"IP: {ip}", fill="#00f3ff")
+            d.text((5,45), f"CPU: {t:.1f}C", fill="red" if t > 70 else "green")
+            d.text((5,65), f"UP: {tx}MB", fill="#ccc")
+            d.text((5,80), f"DN: {rx}MB", fill="#ccc")
+            d.text((5,110), "[KEY1] SCAN UPLINK", fill="red")
+            lcd.LCD_ShowImage(img, 0, 0)
+        time.sleep(0.2)
 
-    os._exit(0)
-    GPIO.cleanup()
-    LCD.LCD_Clear()
+# --- ROUTES PORT 80 ---
+@app_ui.route('/')
+def index():
+    v = []
+    for r, d, f in os.walk(VIDEO_DIR):
+        for file in f:
+            if file.lower().endswith(VIDEO_EXTS):
+                v.append(os.path.relpath(os.path.join(r, file), VIDEO_DIR))
+    return render_template_string(LIBRARY_HTML, videos=sorted(v))
 
+@app_ui.route('/thumb/<f>')
+def thumb(f): return send_from_directory(THUMB_DIR, f)
+
+@app_ui.route('/stream/<path:f>')
+def stream(f): return send_from_directory(VIDEO_DIR, f)
+
+@app_ui.route('/play/<path:f>')
+def play(f):
+    return render_template_string("<body style='background:#000;margin:0;display:flex;align-items:center;height:100vh;'><video controls autoplay style='width:100%;'><source src='/stream/{{f}}'></video></body>", f=f)
+
+# --- ROUTES PORT 8888 ---
+@app_uplink.route('/')
+def uplink_pg(): return render_template_string(UPLINK_HTML)
+
+@app_uplink.route('/upload', methods=['POST'])
+def handle_up():
+    target = os.path.join(VIDEO_DIR, request.form.get('subdir', '').strip())
+    os.makedirs(target, exist_ok=True)
+    for f in request.files.getlist('files'):
+        if f.filename:
+            path = os.path.join(target, f.filename)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            f.save(path)
+    threading.Thread(target=generate_thumbnails).start()
+    return jsonify({"status": "ok"})
+
+# --- EXECUTION ---
 if __name__ == "__main__":
-    main()
-EOF
+    if HAS_HW:
+        threading.Thread(target=lcd_thread, daemon=True).start()
+    
+    threading.Thread(target=generate_thumbnails, daemon=True).start()
+    
+    # Run Uplink (Port 8888) in background thread
+    threading.Thread(target=lambda: app_uplink.run(host='0.0.0.0', port=8888, debug=False, use_reloader=False), daemon=True).start()
+    
+    # Run Library (Port 80) in main thread
+    app_ui.run(host='0.0.0.0', port=80, debug=False, use_reloader=False)
