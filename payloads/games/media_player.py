@@ -1,15 +1,27 @@
 #!/usr/bin/env python3
 """
-KTOx Payload – Video Player (Stable)
-=====================================
-Plays videos on the Waveshare LCD using ffmpeg.
-Exits cleanly – no freezing.
+KTOx Payload – Video Player with Bluetooth Audio
+=================================================
+- Play videos on the 128x128 LCD
+- Connect to Bluetooth speakers/headphones
+- Switch audio output on the fly
+- Clean exit (no freezing)
 
 Controls:
-  UP/DOWN   – navigate
-  LEFT      – parent directory
-  OK        – play video
-  KEY1/KEY3 – stop playback / exit
+  File browser:
+    UP/DOWN   – navigate
+    LEFT      – parent directory
+    OK        – play video
+    KEY2      – open Bluetooth menu
+    KEY3      – exit
+
+  Bluetooth menu:
+    UP/DOWN   – select device/action
+    OK        – pair/connect or perform action
+    KEY2      – scan for devices
+    KEY3      – back to file browser
+
+Dependencies: ffmpeg, bluez (bluetoothctl), pulseaudio (pactl)
 """
 
 import os
@@ -17,7 +29,7 @@ import sys
 import time
 import subprocess
 import threading
-import signal
+import re
 
 # ----------------------------------------------------------------------
 # Hardware
@@ -69,7 +81,7 @@ def draw_screen(lines, title="VIDEO PLAYER", title_color="#8B0000"):
         draw.text((4,y), line[:23], font=font_sm, fill="#FFBBBB")
         y += 12
     draw.rectangle((0,128-12,128,128), fill="#220000")
-    draw.text((4,128-10), "UP/DN OK LEFT K3", font=font_sm, fill="#FF7777")
+    draw.text((4,128-10), "UP/DN OK LEFT KEY2 KEY3", font=font_sm, fill="#FF7777")
     LCD.LCD_ShowImage(image, 0, 0)
 
 def wait_btn(timeout=0.1):
@@ -81,6 +93,141 @@ def wait_btn(timeout=0.1):
                 return name
         time.sleep(0.02)
     return None
+
+# ----------------------------------------------------------------------
+# Bluetooth manager
+# ----------------------------------------------------------------------
+def bluetooth_cmd(cmd):
+    """Run a bluetoothctl command and return output."""
+    try:
+        result = subprocess.run(["bluetoothctl", cmd], capture_output=True, text=True, timeout=10)
+        return result.stdout + result.stderr
+    except:
+        return ""
+
+def get_paired_devices():
+    """Return list of paired devices as (mac, name)."""
+    out = bluetooth_cmd("devices")
+    devices = []
+    for line in out.splitlines():
+        if line.startswith("Device "):
+            parts = line.split(" ", 2)
+            if len(parts) >= 3:
+                mac = parts[1]
+                name = parts[2]
+                devices.append((mac, name))
+    return devices
+
+def scan_devices(duration=5):
+    """Start scanning, wait, then return found devices."""
+    bluetooth_cmd("scan on")
+    time.sleep(duration)
+    bluetooth_cmd("scan off")
+    out = bluetooth_cmd("devices")
+    devices = []
+    for line in out.splitlines():
+        if line.startswith("Device "):
+            parts = line.split(" ", 2)
+            if len(parts) >= 3:
+                mac = parts[1]
+                name = parts[2]
+                devices.append((mac, name))
+    # Remove duplicates (by mac)
+    seen = set()
+    unique = []
+    for mac, name in devices:
+        if mac not in seen:
+            seen.add(mac)
+            unique.append((mac, name))
+    return unique
+
+def pair_device(mac):
+    bluetooth_cmd(f"pair {mac}")
+    time.sleep(2)
+    bluetooth_cmd(f"trust {mac}")
+    bluetooth_cmd(f"connect {mac}")
+    return True
+
+def connect_device(mac):
+    bluetooth_cmd(f"connect {mac}")
+    return True
+
+def disconnect_device(mac):
+    bluetooth_cmd(f"disconnect {mac}")
+
+def set_audio_sink(device_mac):
+    """Set PulseAudio default sink to the Bluetooth device."""
+    # Find the sink name for the device
+    sinks = subprocess.run(["pactl", "list", "sinks"], capture_output=True, text=True).stdout
+    # Look for a sink containing the device MAC or name
+    sink_name = None
+    for line in sinks.splitlines():
+        if "bluez" in line and device_mac.replace(":", "_") in line:
+            # Extract the sink name (after "Name: ")
+            if "Name:" in line:
+                sink_name = line.split("Name:")[1].strip()
+                break
+    if sink_name:
+        subprocess.run(["pactl", "set-default-sink", sink_name])
+        return True
+    return False
+
+def bluetooth_menu():
+    """Return to file browser after user exits."""
+    while True:
+        devices = get_paired_devices()
+        lines = ["Bluetooth Menu", "", "Paired devices:"]
+        for i, (mac, name) in enumerate(devices[:4]):
+            lines.append(f"{i+1}. {name[:15]}")
+        lines.append("")
+        lines.append("KEY2=Scan  OK=Connect  K3=Back")
+        draw_screen(lines, title="BLUETOOTH", title_color="#004466")
+        btn = wait_btn(0.5)
+        if btn == "KEY3":
+            return
+        elif btn == "KEY2":
+            # Scan
+            draw_screen(["Scanning for devices...", "Please wait"], title="BLUETOOTH")
+            found = scan_devices(5)
+            if found:
+                # Show found devices and allow selection
+                for idx, (mac, name) in enumerate(found):
+                    draw_screen([f"Found: {name[:18]}", "", "OK to pair, K3 to skip"], title="BLUETOOTH")
+                    btn2 = wait_btn(2)
+                    if btn2 == "OK":
+                        pair_device(mac)
+                        draw_screen([f"Paired {name[:18]}", "Connecting..."], title="BLUETOOTH")
+                        time.sleep(2)
+                        set_audio_sink(mac)
+                        draw_screen([f"Connected to {name[:18]}", "Audio set"], title="BLUETOOTH")
+                        time.sleep(1.5)
+                        break
+                    elif btn2 == "KEY3":
+                        continue
+            else:
+                draw_screen(["No devices found"], title="BLUETOOTH")
+                time.sleep(1.5)
+        elif btn == "OK" and devices:
+            # Show device list for selection
+            idx = 0
+            while True:
+                mac, name = devices[idx]
+                lines = [f"Select device:", f"{name[:18]}", "", "UP/DOWN, OK to connect", "K3 to cancel"]
+                draw_screen(lines, title="BLUETOOTH")
+                btn2 = wait_btn(0.5)
+                if btn2 == "UP":
+                    idx = (idx - 1) % len(devices)
+                elif btn2 == "DOWN":
+                    idx = (idx + 1) % len(devices)
+                elif btn2 == "OK":
+                    connect_device(mac)
+                    set_audio_sink(mac)
+                    draw_screen([f"Connected to {name[:18]}", "Audio set"], title="BLUETOOTH")
+                    time.sleep(1.5)
+                    break
+                elif btn2 == "KEY3":
+                    break
+                time.sleep(0.05)
 
 # ----------------------------------------------------------------------
 # File browser
@@ -128,19 +275,17 @@ def stop_playback():
             ffmpeg_proc.kill()
         ffmpeg_proc = None
     playback_active = False
-    # Reinit LCD after playback (in case framebuffer was messed)
     LCD.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
     LCD.LCD_Clear()
-    # Redraw browser (will happen in main loop)
 
 def play_video(video_path):
     global ffmpeg_proc, playback_active
     playback_active = True
-    # Show loading message
     draw.rectangle((0,0,128,128), fill="black")
     draw.text((4,60), "Loading...", font=font_sm, fill="#00FF00")
     LCD.LCD_ShowImage(image, 0, 0)
 
+    # Ensure audio goes through PulseAudio (which will use the Bluetooth sink if set)
     cmd = [
         "ffmpeg", "-i", video_path,
         "-vf", "scale=128:128,fps=10",
@@ -157,12 +302,10 @@ def play_video(video_path):
         return
 
     frame_size = 128 * 128 * 3
-    # Clear screen
     draw.rectangle((0,0,128,128), fill="black")
     LCD.LCD_ShowImage(image, 0, 0)
 
     while playback_active:
-        # Check for stop button (non-blocking)
         btn = wait_btn(0.01)
         if btn in ("KEY1", "KEY3"):
             stop_playback()
@@ -170,7 +313,7 @@ def play_video(video_path):
 
         raw = ffmpeg_proc.stdout.read(frame_size)
         if len(raw) < frame_size:
-            break  # end of video
+            break
 
         try:
             img = Image.frombytes("RGB", (128, 128), raw)
@@ -178,7 +321,7 @@ def play_video(video_path):
         except:
             pass
 
-    stop_playback()  # ensure cleanup
+    stop_playback()
 
 # ----------------------------------------------------------------------
 # Main
@@ -188,9 +331,16 @@ def main():
         return
     init_lcd()
 
-    # Check ffmpeg
+    # Check dependencies
     if os.system("which ffmpeg > /dev/null 2>&1") != 0:
         draw_screen(["ffmpeg not installed", "sudo apt install ffmpeg", "KEY3 to exit"], title="ERROR")
+        while wait_btn(0.5) != "KEY3":
+            pass
+        GPIO.cleanup()
+        return
+
+    if os.system("which bluetoothctl > /dev/null 2>&1") != 0:
+        draw_screen(["bluetoothctl missing", "sudo apt install bluez", "KEY3 to exit"], title="ERROR")
         while wait_btn(0.5) != "KEY3":
             pass
         GPIO.cleanup()
@@ -221,6 +371,9 @@ def main():
                 path = parent
                 entries = list_media(path)
                 sel = 0
+        elif btn == "KEY2":
+            bluetooth_menu()
+            entries = list_media(path)  # refresh after menu
         elif btn == "OK" and entries:
             selected = entries[sel]
             if selected.is_dir():
@@ -229,11 +382,9 @@ def main():
                 sel = 0
             else:
                 play_video(selected.path)
-                # After playback, refresh entries (in case directory changed)
                 entries = list_media(path)
         time.sleep(0.05)
 
-    # Clean exit
     if ffmpeg_proc:
         stop_playback()
     LCD.LCD_Clear()
