@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
 """
-KTOx Payload – USB File Explorer
-=========================================================
-- Uses pyudev for reliable USB device detection
-- Finds or creates the mount point
-- Auto-mounts the drive if necessary
-- Full cyberpunk web UI to copy files to KTOx
+KTOx Payload – USB File Explorer (Enhanced)
+============================================
+- Full directory navigation on USB drives
+- Select multiple files/folders (checkboxes)
+- Copy selected items to any local KTOx directory
+- Cyberpunk UI, real-time status
+
+Controls (LCD):
+  KEY3  Exit payload
+  KEY1  Toggle server (auto-start)
+
+Access: http://<IP>:8889
 """
 
 import os
@@ -27,15 +33,13 @@ try:
     HAS_HW = True
 except ImportError:
     HAS_HW = False
-    print("Hardware not found – LCD disabled")
 
-# Try to import pyudev - this is the key to reliable detection
 try:
     import pyudev
     HAS_UDEV = True
 except ImportError:
     HAS_UDEV = False
-    print("pyudev not found. Install with: pip install pyudev")
+    print("Install pyudev for better USB detection: pip install pyudev")
 
 PINS = {"UP":6, "DOWN":19, "LEFT":5, "RIGHT":26, "OK":13, "KEY1":21, "KEY2":20, "KEY3":16}
 
@@ -60,88 +64,38 @@ PORT = 8889
 app = Flask(__name__)
 
 # ----------------------------------------------------------------------
-# USB detection using pyudev
+# USB detection (pyudev + fallback)
 # ----------------------------------------------------------------------
-def get_usb_mounts():
-    """Get list of currently mounted USB drives."""
-    mounts = []
-    if not HAS_UDEV:
-        # Fallback to checking common mount points
-        base_dirs = ["/media/pi", "/media", "/mnt", "/run/media"]
-        for base in base_dirs:
-            if os.path.isdir(base):
-                for entry in os.listdir(base):
-                    full = os.path.join(base, entry)
-                    if os.path.ismount(full):
-                        mounts.append(full)
-        return mounts
-
-    context = pyudev.Context()
-    for device in context.list_devices(subsystem='block', DEVTYPE='partition'):
-        # Check if it's a USB device
-        if device.get('ID_BUS') == 'usb':
-            # Get the device node (e.g., /dev/sda1)
-            dev_node = device.device_node
-            if dev_node:
-                # Use findmnt to get the mount point
+def get_usb_drives():
+    """Return list of dicts: {'mount': mount_point, 'device': dev_node}"""
+    drives = []
+    if HAS_UDEV:
+        context = pyudev.Context()
+        for device in context.list_devices(subsystem='block', DEVTYPE='partition'):
+            if device.get('ID_BUS') == 'usb':
+                dev_node = device.device_node
+                if not dev_node:
+                    continue
+                # Find mount point
                 try:
                     result = subprocess.run(
                         ['findmnt', '-no', 'TARGET', dev_node],
                         capture_output=True, text=True, check=False
                     )
                     mount_point = result.stdout.strip()
-                    if mount_point and os.path.exists(mount_point):
-                        mounts.append(mount_point)
                 except:
-                    pass
-    return sorted(set(mounts))
-
-def mount_usb(dev_node):
-    """Attempt to mount a USB device to a standard location."""
-    mount_base = "/media/usb"
-    # Create a unique mount point based on device node
-    mount_point = os.path.join(mount_base, os.path.basename(dev_node))
-    os.makedirs(mount_point, exist_ok=True)
-    try:
-        subprocess.run(['sudo', 'mount', dev_node, mount_point], check=True, capture_output=True)
-        return mount_point
-    except subprocess.CalledProcessError:
-        return None
-
-def find_usb_drives():
-    """Return list of USB drives with device node and mount point."""
-    drives = []
-    if not HAS_UDEV:
-        # Fallback: return mount points from common locations
-        for mp in get_usb_mounts():
-            drives.append({'mount': mp, 'device': 'unknown'})
-        return drives
-
-    context = pyudev.Context()
-    for device in context.list_devices(subsystem='block', DEVTYPE='partition'):
-        if device.get('ID_BUS') == 'usb':
-            dev_node = device.device_node
-            if not dev_node:
-                continue
-
-            # Try to find existing mount point
-            mount_point = None
-            try:
-                result = subprocess.run(
-                    ['findmnt', '-no', 'TARGET', dev_node],
-                    capture_output=True, text=True, check=False
-                )
-                mount_point = result.stdout.strip()
-            except:
-                pass
-
-            # If not mounted, try to mount it
-            if not mount_point or not os.path.exists(mount_point):
-                mount_point = mount_usb(dev_node)
-
-            if mount_point and os.path.exists(mount_point):
-                drives.append({'mount': mount_point, 'device': dev_node})
-
+                    mount_point = None
+                if mount_point and os.path.exists(mount_point):
+                    drives.append({'mount': mount_point, 'device': dev_node})
+    # Fallback: scan common mount points
+    if not drives:
+        base_dirs = ["/media/pi", "/media", "/mnt", "/run/media"]
+        for base in base_dirs:
+            if os.path.isdir(base):
+                for entry in os.listdir(base):
+                    full = os.path.join(base, entry)
+                    if os.path.ismount(full):
+                        drives.append({'mount': full, 'device': 'unknown'})
     return drives
 
 # ----------------------------------------------------------------------
@@ -155,7 +109,8 @@ def list_directory(path):
                 'name': entry.name,
                 'type': 'dir' if entry.is_dir() else 'file',
                 'size': entry.stat().st_size if entry.is_file() else 0,
-                'path': entry.path
+                'path': entry.path,
+                'size_fmt': size_fmt(entry.stat().st_size) if entry.is_file() else ''
             })
     except PermissionError:
         pass
@@ -169,7 +124,7 @@ def size_fmt(size):
     return f"{size:.1f}TB"
 
 # ----------------------------------------------------------------------
-# HTML template (cyberpunk)
+# HTML Template – Cyberpunk with checkboxes
 # ----------------------------------------------------------------------
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -209,7 +164,7 @@ HTML_TEMPLATE = """
             padding-bottom: 5px;
             margin-bottom: 15px;
         }
-        .usb-selector select {
+        .usb-selector select, .path-bar {
             background: #111;
             color: #0ff;
             border: 1px solid #0ff;
@@ -218,6 +173,20 @@ HTML_TEMPLATE = """
             font-family: monospace;
             margin-bottom: 15px;
         }
+        .path-bar {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .path-bar span { flex: 1; word-break: break-all; }
+        .path-bar button {
+            background: #0a2a2a;
+            border: 1px solid #0ff;
+            color: #0ff;
+            padding: 4px 10px;
+            cursor: pointer;
+        }
         .file-list {
             max-height: 400px;
             overflow-y: auto;
@@ -225,38 +194,19 @@ HTML_TEMPLATE = """
         }
         .file-item {
             padding: 5px 8px;
-            cursor: pointer;
             border-bottom: 1px solid #1a2a2a;
             display: flex;
             align-items: center;
             gap: 8px;
         }
-        .file-item:hover { background: #1a2a2a; text-shadow: 0 0 2px #0ff; }
-        .file-item.selected { background: #2a4a4a; border-left: 3px solid #0ff; }
-        .file-icon { width: 20px; text-align: center; }
-        .file-name { flex: 1; word-break: break-word; }
+        .file-item:hover { background: #1a2a2a; }
+        .file-item input { margin-right: 8px; cursor: pointer; }
+        .file-name { flex: 1; cursor: pointer; word-break: break-word; }
+        .file-name:hover { text-shadow: 0 0 2px #0ff; }
         .file-size { color: #8a8; font-size: 0.75rem; }
-        .dir-icon { color: #0ff; }
-        .file-icon-file { color: #f0f; }
-        .dest-path {
-            background: #111;
-            padding: 8px;
-            border: 1px solid #0ff;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            flex-wrap: wrap;
-            margin-bottom: 15px;
-        }
-        .dest-path span { flex: 1; word-break: break-all; }
-        .dest-path button {
-            background: #0a2a2a;
-            border: 1px solid #0ff;
-            color: #0ff;
-            padding: 4px 10px;
-            cursor: pointer;
-        }
-        .dest-path button:hover { background: #0ff; color: #000; }
+        .dir-icon { color: #0ff; margin-right: 4px; }
+        .file-icon { color: #f0f; margin-right: 4px; }
+        .action-bar { margin-top: 20px; text-align: center; }
         .copy-btn {
             background: #0ff;
             color: #000;
@@ -269,9 +219,7 @@ HTML_TEMPLATE = """
             letter-spacing: 2px;
             transition: 0.2s;
             box-shadow: 0 0 10px #0ff;
-            display: block;
             width: 100%;
-            margin-top: 20px;
         }
         .copy-btn:hover { background: #f0f; box-shadow: 0 0 15px #f0f; }
         .status {
@@ -290,21 +238,29 @@ HTML_TEMPLATE = """
 <div class="container">
     <h1>⎯ KTOx USB EXPLORER ⎯</h1>
     <div class="panel-row">
+        <!-- USB Source Panel -->
         <div class="panel">
             <h2>⚡ USB DRIVE</h2>
-            <div class="usb-selector">
-                <select id="usbSelect" onchange="loadUsbRoot()">
-                    <option value="">-- Select USB --</option>
-                    {% for drive in drives %}
-                    <option value="{{ drive.mount }}">{{ drive.mount }}</option>
-                    {% endfor %}
-                </select>
+            <select id="usbSelect" onchange="loadUsbRoot()">
+                <option value="">-- Select USB --</option>
+                {% for drive in drives %}
+                <option value="{{ drive.mount }}">{{ drive.mount }}</option>
+                {% endfor %}
+            </select>
+            <div class="path-bar">
+                <span id="usbPath">/</span>
+                <button onclick="navigateUsb('..')">Up</button>
             </div>
             <div id="usbFileList" class="file-list">Select a USB drive</div>
+            <div class="action-bar">
+                <button class="copy-btn" onclick="copySelected()">▶ COPY SELECTED TO DESTINATION ◀</button>
+            </div>
         </div>
+
+        <!-- Local Destination Panel -->
         <div class="panel">
-            <h2>💾 LOCAL DESTINATION</h2>
-            <div class="dest-path">
+            <h2>💾 KTOx DESTINATION</h2>
+            <div class="path-bar">
                 <span id="destPath">/root</span>
                 <button onclick="browseLocal('/root')">Home</button>
                 <button onclick="browseLocal('..')">Up</button>
@@ -312,7 +268,6 @@ HTML_TEMPLATE = """
             <div id="localFileList" class="file-list">Loading...</div>
         </div>
     </div>
-    <button class="copy-btn" onclick="copySelected()">▶ COPY SELECTED TO DESTINATION ◀</button>
     <div id="status" class="status">Ready.</div>
     <footer>KTOx Cyberdeck – USB File Transfer</footer>
 </div>
@@ -320,7 +275,7 @@ HTML_TEMPLATE = """
 <script>
     let currentUsbPath = "";
     let currentLocalPath = "/root";
-    let selectedUsbFiles = [];
+    let selectedPaths = new Set();
 
     function loadUsbRoot() {
         const usb = document.getElementById('usbSelect').value;
@@ -328,10 +283,72 @@ HTML_TEMPLATE = """
             document.getElementById('usbFileList').innerHTML = '<div class="file-item">Select a USB drive</div>';
             return;
         }
-        fetch('/api/usb/list?path=' + encodeURIComponent(usb))
-            .then(r => r.json())
-            .then(data => renderFileList(data, 'usbFileList', true));
         currentUsbPath = usb;
+        refreshUsbList(usb);
+    }
+
+    function refreshUsbList(path) {
+        fetch('/api/usb/list?path=' + encodeURIComponent(path))
+            .then(r => r.json())
+            .then(data => renderUsbFileList(data));
+        document.getElementById('usbPath').innerText = path;
+    }
+
+    function navigateUsb(target) {
+        if (target === '..') {
+            let parent = currentUsbPath.split('/').slice(0, -1).join('/');
+            if (!parent) parent = '/';
+            currentUsbPath = parent;
+        } else {
+            currentUsbPath = target;
+        }
+        refreshUsbList(currentUsbPath);
+    }
+
+    function renderUsbFileList(items) {
+        const container = document.getElementById('usbFileList');
+        if (!items || items.length === 0) {
+            container.innerHTML = '<div class="file-item">(empty)</div>';
+            return;
+        }
+        let html = '';
+        for (let item of items) {
+            const icon = item.type === 'dir' ? '📁' : '📄';
+            const iconClass = item.type === 'dir' ? 'dir-icon' : 'file-icon';
+            const checked = selectedPaths.has(item.path) ? 'checked' : '';
+            html += `
+                <div class="file-item">
+                    <input type="checkbox" value="${item.path}" ${checked} onchange="toggleSelect('${item.path}', this)">
+                    <div class="${iconClass}">${icon}</div>
+                    <div class="file-name" onclick="navigateInto('${item.path}')">${escapeHtml(item.name)}</div>
+                    <div class="file-size">${item.size_fmt}</div>
+                </div>
+            `;
+        }
+        container.innerHTML = html;
+        // Restore checkbox states
+        document.querySelectorAll('#usbFileList input[type="checkbox"]').forEach(cb => {
+            if (selectedPaths.has(cb.value)) cb.checked = true;
+        });
+    }
+
+    function navigateInto(path) {
+        fetch('/api/usb/isdir?path=' + encodeURIComponent(path))
+            .then(r => r.json())
+            .then(data => {
+                if (data.is_dir) {
+                    currentUsbPath = path;
+                    refreshUsbList(path);
+                }
+            });
+    }
+
+    function toggleSelect(path, checkbox) {
+        if (checkbox.checked) {
+            selectedPaths.add(path);
+        } else {
+            selectedPaths.delete(path);
+        }
     }
 
     function browseLocal(path) {
@@ -343,14 +360,14 @@ HTML_TEMPLATE = """
         fetch('/api/local/list?path=' + encodeURIComponent(path))
             .then(r => r.json())
             .then(data => {
-                renderFileList(data, 'localFileList', false);
+                renderLocalFileList(data);
                 currentLocalPath = path;
                 document.getElementById('destPath').innerText = path;
             });
     }
 
-    function renderFileList(items, containerId, isUsb) {
-        const container = document.getElementById(containerId);
+    function renderLocalFileList(items) {
+        const container = document.getElementById('localFileList');
         if (!items || items.length === 0) {
             container.innerHTML = '<div class="file-item">(empty)</div>';
             return;
@@ -358,48 +375,38 @@ HTML_TEMPLATE = """
         let html = '';
         for (let item of items) {
             const icon = item.type === 'dir' ? '📁' : '📄';
-            const colorClass = item.type === 'dir' ? 'dir-icon' : 'file-icon-file';
-            const sizeText = item.type === 'file' ? ` (${item.size_fmt})` : '';
-            const selectable = isUsb ? `onclick="toggleSelect('${item.path}', this)"` : '';
+            const iconClass = item.type === 'dir' ? 'dir-icon' : 'file-icon';
             html += `
-                <div class="file-item" data-path="${item.path}" ${selectable}>
-                    <div class="file-icon ${colorClass}">${icon}</div>
-                    <div class="file-name">${escapeHtml(item.name)}</div>
-                    <div class="file-size">${sizeText}</div>
+                <div class="file-item">
+                    <div class="${iconClass}">${icon}</div>
+                    <div class="file-name" onclick="browseLocal('${item.path}')">${escapeHtml(item.name)}</div>
+                    <div class="file-size">${item.size_fmt}</div>
                 </div>
             `;
         }
         container.innerHTML = html;
-        if (isUsb) selectedUsbFiles = [];
-    }
-
-    function toggleSelect(path, element) {
-        if (element.classList.contains('selected')) {
-            element.classList.remove('selected');
-            selectedUsbFiles = selectedUsbFiles.filter(p => p !== path);
-        } else {
-            element.classList.add('selected');
-            selectedUsbFiles.push(path);
-        }
     }
 
     function copySelected() {
-        if (selectedUsbFiles.length === 0) {
-            document.getElementById('status').innerText = '❌ No files selected.';
+        const sources = Array.from(selectedPaths);
+        if (sources.length === 0) {
+            document.getElementById('status').innerText = '❌ No items selected.';
             return;
         }
         document.getElementById('status').innerHTML = '⏳ Copying... please wait.';
         fetch('/api/copy', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ sources: selectedUsbFiles, destination: currentLocalPath })
+            body: JSON.stringify({ sources: sources, destination: currentLocalPath })
         })
         .then(r => r.json())
         .then(data => {
             document.getElementById('status').innerHTML = `✅ ${data.message}`;
+            // Refresh local file list to show copied items
             browseLocal(currentLocalPath);
-            selectedUsbFiles = [];
-            document.querySelectorAll('#usbFileList .file-item').forEach(el => el.classList.remove('selected'));
+            // Clear selections
+            selectedPaths.clear();
+            refreshUsbList(currentUsbPath);
         })
         .catch(err => {
             document.getElementById('status').innerHTML = `❌ Error: ${err}`;
@@ -415,6 +422,7 @@ HTML_TEMPLATE = """
         });
     }
 
+    // Initial load
     browseLocal('/root');
 </script>
 </body>
@@ -426,7 +434,7 @@ HTML_TEMPLATE = """
 # ----------------------------------------------------------------------
 @app.route('/')
 def index():
-    drives = find_usb_drives()
+    drives = get_usb_drives()
     return render_template_string(HTML_TEMPLATE, drives=drives)
 
 @app.route('/api/usb/list')
@@ -435,9 +443,13 @@ def api_usb_list():
     if not os.path.exists(path):
         return jsonify([])
     items = list_directory(path)
-    for i in items:
-        i['size_fmt'] = size_fmt(i['size']) if i['type'] == 'file' else ''
     return jsonify(items)
+
+@app.route('/api/usb/isdir')
+def api_usb_isdir():
+    path = request.args.get('path', '')
+    is_dir = os.path.isdir(path) if os.path.exists(path) else False
+    return jsonify({'is_dir': is_dir})
 
 @app.route('/api/local/list')
 def api_local_list():
@@ -445,8 +457,6 @@ def api_local_list():
     if not os.path.exists(path):
         path = '/root'
     items = list_directory(path)
-    for i in items:
-        i['size_fmt'] = size_fmt(i['size']) if i['type'] == 'file' else ''
     return jsonify(items)
 
 @app.route('/api/copy', methods=['POST'])
@@ -469,10 +479,10 @@ def api_copy():
                 shutil.copy2(src, dest)
             copied += 1
         except Exception as e:
-            errors.append(f"{src}: {str(e)}")
+            errors.append(f"{os.path.basename(src)}: {str(e)[:30]}")
     msg = f"Copied {copied} item(s)."
     if errors:
-        msg += f" Errors: {', '.join(errors[:3])}"
+        msg += f" Errors: {', '.join(errors[:2])}"
     return jsonify({'message': msg})
 
 # ----------------------------------------------------------------------
@@ -490,7 +500,7 @@ def lcd_loop():
     except:
         pass
     while True:
-        drives = find_usb_drives()
+        drives = get_usb_drives()
         usb_status = drives[0]['mount'] if drives else "none"
         img = Image.new("RGB", (W, H), "#0A0000")
         d = ImageDraw.Draw(img)
@@ -510,9 +520,8 @@ def lcd_loop():
 # ----------------------------------------------------------------------
 def main():
     if not HAS_UDEV:
-        print("\n⚠️  pyudev is not installed.")
-        print("   Please install it with: pip install pyudev\n")
-        print("   The script will continue with fallback detection, but may be less reliable.\n")
+        print("\n⚠️  pyudev not installed. USB detection may be limited.")
+        print("   Install: pip install pyudev\n")
 
     if HAS_HW:
         threading.Thread(target=lcd_loop, daemon=True).start()
