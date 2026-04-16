@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """
-KTOx Payload – USB File Explorer (Persistent Mounts)
-=====================================================
-- Detects USB drives, mounts them once, keeps them mounted
+KTOx Payload – USB File Explorer (Stable)
+===========================================
+- Persistent USB mounts, stable file listing
+- Auto-refresh dropdown without resetting view
 - Copy files/folders from USB to KTOx
-- Cyberpunk UI, LCD controls, refresh on KEY2
-- Unmounts all on exit (KEY3)
 """
 
 import os, sys, time, socket, threading, shutil, subprocess, json
@@ -38,32 +37,19 @@ if HAS_HW:
 
 app = Flask(__name__)
 
-# ----------------------------------------------------------------------
 # Global mount registry
-# ----------------------------------------------------------------------
-MOUNT_REGISTRY = {}  # device_path -> mount_point
+MOUNT_REGISTRY = {}
 
 def unmount_all():
-    """Unmount all USB drives we mounted."""
-    global MOUNT_REGISTRY
     for dev, mp in list(MOUNT_REGISTRY.items()):
         if mp.startswith('/mnt/ktox_usb_'):
             subprocess.run(['umount', mp], capture_output=True)
-            print(f"Unmounted {mp}")
     MOUNT_REGISTRY.clear()
 
-# ----------------------------------------------------------------------
-# USB detection with persistent mounting
-# ----------------------------------------------------------------------
 def get_usb_drives():
-    """Return list of mounted USB drives (mounts once, stores globally)."""
-    global MOUNT_REGISTRY
     drives = []
     try:
-        result = subprocess.run(
-            ['lsblk', '-o', 'NAME,MOUNTPOINT,MODEL,TRAN,SIZE', '-J'],
-            capture_output=True, text=True, check=True
-        )
+        result = subprocess.run(['lsblk', '-o', 'NAME,MOUNTPOINT,MODEL,TRAN,SIZE', '-J'], capture_output=True, text=True, check=True)
         data = json.loads(result.stdout)
         for device in data.get('blockdevices', []):
             is_usb = device.get('tran') == 'usb' or 'USB' in device.get('model', '')
@@ -75,31 +61,22 @@ def get_usb_drives():
                 dev_path = f"/dev/{name}"
                 mount = cand.get('mountpoint')
                 if mount:
-                    # Already mounted by system
                     MOUNT_REGISTRY[dev_path] = mount
                     drives.append({'mount': mount, 'device': dev_path})
                 else:
-                    # Not mounted – check registry first
                     if dev_path in MOUNT_REGISTRY:
                         drives.append({'mount': MOUNT_REGISTRY[dev_path], 'device': dev_path})
                         continue
-                    # Mount it persistently
                     mount_point = f"/mnt/ktox_usb_{name}"
                     os.makedirs(mount_point, exist_ok=True)
                     ret = subprocess.run(['mount', dev_path, mount_point], capture_output=True)
                     if ret.returncode == 0:
                         MOUNT_REGISTRY[dev_path] = mount_point
                         drives.append({'mount': mount_point, 'device': dev_path})
-                        print(f"Mounted {dev_path} to {mount_point}")
-                    else:
-                        print(f"Failed to mount {dev_path}: {ret.stderr.decode()}")
     except Exception as e:
-        print(f"USB detection error: {e}")
+        print(f"USB error: {e}")
     return drives
 
-# ----------------------------------------------------------------------
-# File listing helpers
-# ----------------------------------------------------------------------
 def list_directory(path):
     items = []
     try:
@@ -122,9 +99,6 @@ def size_fmt(size):
         size /= 1024.0
     return f"{size:.1f}TB"
 
-# ----------------------------------------------------------------------
-# HTML Template (cyberpunk, with refresh)
-# ----------------------------------------------------------------------
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
@@ -133,71 +107,18 @@ HTML_TEMPLATE = """
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body {
-            background: #0a0f0f;
-            font-family: 'Share Tech Mono', 'Courier New', monospace;
-            color: #0ff;
-            padding: 20px;
-        }
+        body { background: #0a0f0f; font-family: 'Share Tech Mono', monospace; color: #0ff; padding: 20px; }
         .container { max-width: 1400px; margin: 0 auto; }
-        h1 {
-            font-size: 2rem;
-            text-shadow: 0 0 5px #0ff;
-            border-left: 4px solid #0ff;
-            padding-left: 20px;
-            margin-bottom: 20px;
-        }
+        h1 { font-size: 2rem; text-shadow: 0 0 5px #0ff; border-left: 4px solid #0ff; padding-left: 20px; margin-bottom: 20px; }
         .panel-row { display: flex; gap: 20px; flex-wrap: wrap; }
-        .panel {
-            flex: 1;
-            background: #0f1212;
-            border: 1px solid #0ff;
-            border-radius: 8px;
-            padding: 15px;
-            box-shadow: 0 0 10px rgba(0,255,255,0.2);
-        }
-        .panel h2 {
-            color: #f0f;
-            text-shadow: 0 0 3px #f0f;
-            border-bottom: 1px solid #0ff;
-            padding-bottom: 5px;
-            margin-bottom: 15px;
-        }
-        .usb-selector select, .path-bar {
-            background: #111;
-            color: #0ff;
-            border: 1px solid #0ff;
-            padding: 8px;
-            width: 100%;
-            font-family: monospace;
-            margin-bottom: 15px;
-        }
-        .path-bar {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            flex-wrap: wrap;
-        }
+        .panel { flex: 1; background: #0f1212; border: 1px solid #0ff; border-radius: 8px; padding: 15px; box-shadow: 0 0 10px rgba(0,255,255,0.2); }
+        .panel h2 { color: #f0f; text-shadow: 0 0 3px #f0f; border-bottom: 1px solid #0ff; padding-bottom: 5px; margin-bottom: 15px; }
+        .usb-selector select, .path-bar { background: #111; color: #0ff; border: 1px solid #0ff; padding: 8px; width: 100%; font-family: monospace; margin-bottom: 15px; }
+        .path-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
         .path-bar span { flex: 1; word-break: break-all; }
-        .path-bar button {
-            background: #0a2a2a;
-            border: 1px solid #0ff;
-            color: #0ff;
-            padding: 4px 10px;
-            cursor: pointer;
-        }
-        .file-list {
-            max-height: 400px;
-            overflow-y: auto;
-            font-size: 0.85rem;
-        }
-        .file-item {
-            padding: 5px 8px;
-            border-bottom: 1px solid #1a2a2a;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
+        .path-bar button { background: #0a2a2a; border: 1px solid #0ff; color: #0ff; padding: 4px 10px; cursor: pointer; }
+        .file-list { max-height: 400px; overflow-y: auto; font-size: 0.85rem; }
+        .file-item { padding: 5px 8px; border-bottom: 1px solid #1a2a2a; display: flex; align-items: center; gap: 8px; }
         .file-item:hover { background: #1a2a2a; }
         .file-item input { margin-right: 8px; cursor: pointer; }
         .file-name { flex: 1; cursor: pointer; word-break: break-word; }
@@ -206,39 +127,13 @@ HTML_TEMPLATE = """
         .dir-icon { color: #0ff; margin-right: 4px; }
         .file-icon { color: #f0f; margin-right: 4px; }
         .action-bar { margin-top: 20px; text-align: center; }
-        .copy-btn {
-            background: #0ff;
-            color: #000;
-            border: none;
-            padding: 12px 24px;
-            font-size: 1.2rem;
-            font-weight: bold;
-            cursor: pointer;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-            transition: 0.2s;
-            box-shadow: 0 0 10px #0ff;
-            width: 100%;
-        }
+        .copy-btn { background: #0ff; color: #000; border: none; padding: 12px 24px; font-size: 1.2rem; font-weight: bold; cursor: pointer; text-transform: uppercase; letter-spacing: 2px; transition: 0.2s; box-shadow: 0 0 10px #0ff; width: 100%; }
         .copy-btn:hover { background: #f0f; box-shadow: 0 0 15px #f0f; }
-        .status {
-            margin-top: 15px;
-            padding: 8px;
-            background: #0a1a1a;
-            border-left: 4px solid #0ff;
-            font-family: monospace;
-        }
+        .status { margin-top: 15px; padding: 8px; background: #0a1a1a; border-left: 4px solid #0ff; font-family: monospace; }
         footer { margin-top: 30px; text-align: center; color: #4a6; font-size: 0.7rem; }
         ::-webkit-scrollbar { width: 6px; background: #0a0f0f; }
         ::-webkit-scrollbar-thumb { background: #0ff; border-radius: 3px; }
-        .refresh-btn {
-            background: #0a2a2a;
-            border: 1px solid #0ff;
-            color: #0ff;
-            padding: 5px 10px;
-            cursor: pointer;
-            margin-left: 10px;
-        }
+        .refresh-btn { background: #0a2a2a; border: 1px solid #0ff; color: #0ff; padding: 5px 10px; cursor: pointer; margin-left: 10px; }
     </style>
 </head>
 <body>
@@ -286,11 +181,18 @@ HTML_TEMPLATE = """
             .then(r => r.json())
             .then(data => {
                 const select = document.getElementById('usbSelect');
+                const currentVal = select.value;
                 select.innerHTML = '<option value="">-- Select USB --</option>';
                 for (let drive of data) {
                     select.innerHTML += `<option value="${drive.mount}">${drive.mount}</option>`;
                 }
-                if (currentUsbPath) loadUsbRoot();
+                if (currentVal && data.some(d => d.mount === currentVal)) {
+                    select.value = currentVal;
+                } else if (currentVal) {
+                    document.getElementById('usbFileList').innerHTML = '<div class="file-item">Select a USB drive</div>';
+                    currentUsbPath = "";
+                    selectedPaths.clear();
+                }
             });
     }
 
@@ -360,11 +262,8 @@ HTML_TEMPLATE = """
     }
 
     function toggleSelect(path, checkbox) {
-        if (checkbox.checked) {
-            selectedPaths.add(path);
-        } else {
-            selectedPaths.delete(path);
-        }
+        if (checkbox.checked) selectedPaths.add(path);
+        else selectedPaths.delete(path);
     }
 
     function browseLocal(path) {
@@ -392,13 +291,7 @@ HTML_TEMPLATE = """
         for (let item of items) {
             const icon = item.type === 'dir' ? '📁' : '📄';
             const iconClass = item.type === 'dir' ? 'dir-icon' : 'file-icon';
-            html += `
-                <div class="file-item">
-                    <div class="${iconClass}">${icon}</div>
-                    <div class="file-name" onclick="browseLocal('${item.path}')">${escapeHtml(item.name)}</div>
-                    <div class="file-size">${item.size_fmt}</div>
-                </div>
-            `;
+            html += `<div class="file-item"><div class="${iconClass}">${icon}</div><div class="file-name" onclick="browseLocal('${item.path}')">${escapeHtml(item.name)}</div><div class="file-size">${item.size_fmt}</div></div>`;
         }
         container.innerHTML = html;
     }
@@ -443,9 +336,7 @@ HTML_TEMPLATE = """
 </html>
 """
 
-# ----------------------------------------------------------------------
-# Flask routes
-# ----------------------------------------------------------------------
+# Flask routes (unchanged)
 @app.route('/')
 def index():
     drives = get_usb_drives()
@@ -465,8 +356,7 @@ def api_usb_list():
 @app.route('/api/usb/isdir')
 def api_usb_isdir():
     path = request.args.get('path', '')
-    is_dir = os.path.isdir(path) if os.path.exists(path) else False
-    return jsonify({'is_dir': is_dir})
+    return jsonify({'is_dir': os.path.isdir(path) if os.path.exists(path) else False})
 
 @app.route('/api/local/list')
 def api_local_list():
@@ -480,7 +370,6 @@ def api_copy():
     data = request.get_json()
     sources = data.get('sources', [])
     dest = data.get('destination', '')
-    print(f"Copy: {sources} -> {dest}")  # debug
     if not sources or not dest:
         return jsonify({'message': 'Invalid request'}), 400
     if not os.path.isdir(dest):
@@ -490,22 +379,18 @@ def api_copy():
     for src in sources:
         try:
             if os.path.isdir(src):
-                dest_path = os.path.join(dest, os.path.basename(src))
-                shutil.copytree(src, dest_path, dirs_exist_ok=True)
+                shutil.copytree(src, os.path.join(dest, os.path.basename(src)), dirs_exist_ok=True)
             else:
                 shutil.copy2(src, dest)
             copied += 1
         except Exception as e:
             errors.append(f"{os.path.basename(src)}: {str(e)[:30]}")
-            print(f"Copy error: {e}")
     msg = f"Copied {copied} item(s)."
     if errors:
         msg += f" Errors: {', '.join(errors[:2])}"
     return jsonify({'message': msg})
 
-# ----------------------------------------------------------------------
-# LCD display with refresh on KEY2
-# ----------------------------------------------------------------------
+# LCD loop and main (same as before, with unmount on exit)
 def lcd_loop():
     if not HAS_HW:
         return
@@ -533,16 +418,10 @@ def lcd_loop():
         LCD.LCD_ShowImage(img, 0, 0)
         time.sleep(2)
 
-# ----------------------------------------------------------------------
-# Main
-# ----------------------------------------------------------------------
 def main():
     if HAS_HW:
         threading.Thread(target=lcd_loop, daemon=True).start()
-        def run_flask():
-            app.run(host='0.0.0.0', port=PORT, debug=False, use_reloader=False)
-        server_thread = threading.Thread(target=run_flask, daemon=True)
-        server_thread.start()
+        threading.Thread(target=lambda: app.run(host='0.0.0.0', port=PORT, debug=False, use_reloader=False), daemon=True).start()
         time.sleep(2)
         held = {}
         while True:
@@ -566,8 +445,6 @@ def main():
 
 if __name__ == "__main__":
     if os.geteuid() != 0:
-        print("⚠️  This payload requires root privileges for mounting USB drives.")
-        print("   Please run with: sudo python3 usb_explorer.py")
+        print("⚠️  Requires root for mounting. Run with: sudo")
         sys.exit(1)
-    print("Starting USB Explorer with persistent mounts...")
     main()
