@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-KTOx Payload – KTOxFliX
-================================
-- Works without metadata (uses filename as title)
-- Placeholder posters
-- Cyberpunk UI, separate categories
+KTOx Payload – KTOxFliX (Tabs)
+===============================
+- Separate tabs for Movies and TV Series
+- No footer text
+- Works without external metadata
 """
 
-import os, sys, time, socket, threading, json, hashlib
+import os, sys, time, socket, threading, json, hashlib, re
 from flask import Flask, render_template_string, send_from_directory, request, redirect, url_for
 from werkzeug.utils import secure_filename
 
@@ -36,40 +36,32 @@ app_lib = Flask("Library")
 app_up = Flask("Uplink")
 
 # ----------------------------------------------------------------------
-# Simple title from filename (no external metadata)
+# Simple title from filename
 # ----------------------------------------------------------------------
 def clean_title(filename):
     name = os.path.splitext(filename)[0]
-    # Replace underscores, dots, dashes with spaces
     name = name.replace('_', ' ').replace('.', ' ').replace('-', ' ')
-    # Remove common tags like 1080p, x264, etc.
-    import re
     name = re.sub(r'\b(1080p|720p|4k|x264|x265|hevc|aac|mp3|web-dl|webrip|bluray|hdtv)\b', '', name, flags=re.IGNORECASE)
-    # Clean up extra spaces
     name = ' '.join(name.split())
     return name.capitalize()
 
 def get_or_create_placeholder(title, media_type):
-    """Return a placeholder poster path (no download)."""
     safe = hashlib.md5(f"{media_type}:{title}".encode()).hexdigest()
     local_path = os.path.join(POSTER_DIR, f"{safe}.jpg")
     web_path = f"/static/posters/{safe}.jpg"
     if not os.path.exists(local_path):
         try:
-            from PIL import Image as PILImage
+            from PIL import Image as PILImage, ImageDraw as PILDraw
             img = PILImage.new('RGB', (200,300), color=(30,30,50))
-            # Add text on placeholder
-            from PIL import ImageDraw
-            draw = ImageDraw.Draw(img)
+            draw = PILDraw.Draw(img)
             draw.text((20, 140), title[:15], fill=(100,100,150))
             img.save(local_path)
         except:
-            # If PIL fails, just create empty file
             open(local_path, 'w').close()
     return web_path
 
 # ----------------------------------------------------------------------
-# Scan library – separate movies and series
+# Scan library
 # ----------------------------------------------------------------------
 def scan_library():
     movies = []
@@ -82,9 +74,7 @@ def scan_library():
                 title = clean_title(entry)
                 poster = get_or_create_placeholder(title, 'series')
                 series.append({
-                    'type': 'series',
                     'name': title,
-                    'plot': 'TV Series',
                     'poster': poster,
                     'path': entry,
                     'episodes': episodes
@@ -93,17 +83,14 @@ def scan_library():
             title = clean_title(entry)
             poster = get_or_create_placeholder(title, 'movie')
             movies.append({
-                'type': 'movie',
                 'name': title,
-                'plot': 'Movie',
                 'poster': poster,
-                'year': '',
                 'path': entry
             })
     return movies, series
 
 # ----------------------------------------------------------------------
-# Web UI Templates (no footer)
+# Web UI Templates (with tabs)
 # ----------------------------------------------------------------------
 LIBRARY_HTML = """
 <!DOCTYPE html>
@@ -155,22 +142,33 @@ LIBRARY_HTML = """
             border-radius: 20px;
             background: rgba(255,0,0,0.1);
         }
-        .section {
-            padding: 20px 30px 0 30px;
+        .tabs {
+            display: flex;
+            border-bottom: 1px solid #330000;
+            margin: 0 30px;
         }
-        .section h2 {
-            color: #ff0000;
-            border-left: 4px solid #ff0000;
-            padding-left: 15px;
-            margin-bottom: 20px;
-            font-size: 1.3rem;
+        .tab {
+            padding: 12px 24px;
+            cursor: pointer;
+            font-size: 1rem;
             text-transform: uppercase;
+            letter-spacing: 2px;
+            transition: 0.2s;
+            border-bottom: 2px solid transparent;
+        }
+        .tab.active {
+            color: #ff0000;
+            border-bottom: 2px solid #ff0000;
+            text-shadow: 0 0 5px rgba(255,0,0,0.5);
+        }
+        .tab:hover {
+            color: #ff8888;
         }
         .grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
             gap: 25px;
-            padding: 0 30px 30px 30px;
+            padding: 30px;
         }
         .card {
             background: #0a0505;
@@ -214,11 +212,18 @@ LIBRARY_HTML = """
             letter-spacing: 1px;
             background: #050000;
         }
+        .section {
+            display: none;
+        }
+        .section.active {
+            display: block;
+        }
         ::-webkit-scrollbar { width: 6px; background: #111; }
         ::-webkit-scrollbar-thumb { background: #ff0000; border-radius: 3px; }
         @media (max-width: 600px) {
-            .grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 15px; padding: 0 15px 15px 15px; }
-            .section { padding: 15px 15px 0 15px; }
+            .grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 15px; padding: 15px; }
+            .tabs { margin: 0 15px; }
+            .tab { padding: 8px 16px; font-size: 0.8rem; }
             .logo { font-size: 1.2rem; }
         }
     </style>
@@ -228,32 +233,47 @@ LIBRARY_HTML = """
         <div class="logo glitch">KTOx<span>FLIX</span></div>
         <div class="port-badge">PORT 80 // ACTIVE</div>
     </nav>
-    {% if movies %}
-    <div class="section">
-        <h2>🎬 MOVIES</h2>
+    <div class="tabs">
+        <div class="tab active" data-tab="movies">🎬 MOVIES</div>
+        <div class="tab" data-tab="series">📺 TV SERIES</div>
     </div>
-    <div class="grid">
-        {% for item in movies %}
-        <a href="/detail/movie/{{ item.path }}" class="card">
-            <img src="{{ item.poster }}" onerror="this.src='/static/placeholder.jpg'">
-            <div class="card-title">{{ item.name[:35] }}</div>
-        </a>
-        {% endfor %}
+    <div id="movies-section" class="section active">
+        <div class="grid">
+            {% for item in movies %}
+            <a href="/detail/movie/{{ item.path }}" class="card">
+                <img src="{{ item.poster }}" onerror="this.src='/static/placeholder.jpg'">
+                <div class="card-title">{{ item.name[:35] }}</div>
+            </a>
+            {% endfor %}
+            {% if not movies %}
+            <div style="color:#666; text-align:center; padding:40px;">No movies found. Upload via port 8888.</div>
+            {% endif %}
+        </div>
     </div>
-    {% endif %}
-    {% if series %}
-    <div class="section">
-        <h2>📺 TV SERIES</h2>
+    <div id="series-section" class="section">
+        <div class="grid">
+            {% for item in series %}
+            <a href="/detail/series/{{ item.path }}" class="card">
+                <img src="{{ item.poster }}" onerror="this.src='/static/placeholder.jpg'">
+                <div class="card-title">{{ item.name[:35] }}</div>
+            </a>
+            {% endfor %}
+            {% if not series %}
+            <div style="color:#666; text-align:center; padding:40px;">No TV series found. Create folders inside /root/Videos.</div>
+            {% endif %}
+        </div>
     </div>
-    <div class="grid">
-        {% for item in series %}
-        <a href="/detail/series/{{ item.path }}" class="card">
-            <img src="{{ item.poster }}" onerror="this.src='/static/placeholder.jpg'">
-            <div class="card-title">{{ item.name[:35] }}</div>
-        </a>
-        {% endfor %}
-    </div>
-    {% endif %}
+    <script>
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                const target = tab.getAttribute('data-tab');
+                document.querySelectorAll('.section').forEach(section => section.classList.remove('active'));
+                document.getElementById(target + '-section').classList.add('active');
+            });
+        });
+    </script>
 </body>
 </html>
 """
@@ -696,5 +716,5 @@ if __name__ == "__main__":
             img.save(placeholder)
         except:
             pass
-    print("Starting KTOxFliX (clean version)...")
+    print("Starting KTOxFliX with separate tabs...")
     main()
