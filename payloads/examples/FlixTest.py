@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """
-KTOx Payload – KTOxFliX (Seasons Working)
-==========================================
+KTOx Payload – KTOxFliX (Library Only + System Stats)
+======================================================
 - Movies, TV Series with season folders
 - Settings: OMDb API key, online metadata, local posters
-- Uplink on port 8888, LCD support
+- LCD shows IP, port, CPU temp, CPU usage, RAM usage
+- KEY1: QR code for library (port 80)
+- KEY3: Exit
 """
 
-import os, sys, time, socket, threading, json, hashlib, re, requests
+import os, sys, time, socket, threading, json, hashlib, re, requests, psutil
 from flask import Flask, render_template_string, send_from_directory, request, redirect, url_for, jsonify
 from werkzeug.utils import secure_filename
 
@@ -29,14 +31,14 @@ SETTINGS_DIR = "/root/KTOx/loot/KTOxFliX"
 SETTINGS_FILE = os.path.join(SETTINGS_DIR, "settings.json")
 VIDEO_EXTS = ('.mp4', '.mkv', '.avi', '.mov', '.webm')
 PINS = {"UP":6,"DOWN":19,"LEFT":5,"RIGHT":26,"OK":13,"KEY1":21,"KEY2":20,"KEY3":16}
+LIB_PORT = 80
 
 os.makedirs(VIDEO_DIR, exist_ok=True)
 os.makedirs(POSTER_DIR, exist_ok=True)
 os.makedirs("/root/KTOx/static", exist_ok=True)
 os.makedirs(SETTINGS_DIR, exist_ok=True)
 
-app_lib = Flask("Library")
-app_up = Flask("Uplink")
+app = Flask("Library")
 
 # ----------------------------------------------------------------------
 # Settings management
@@ -189,11 +191,9 @@ def clear_poster_cache():
 # Scan library with season detection
 # ----------------------------------------------------------------------
 def scan_series_structure(path):
-    """Recursively scan a series folder, return list of seasons."""
     seasons = []
     items = os.listdir(path)
     subdirs = [i for i in items if os.path.isdir(os.path.join(path, i))]
-    # If there are subdirs that look like season names, treat as seasons
     season_folders = [s for s in subdirs if re.search(r'(season|saison|stagione|temporada|第[0-9]+季|[0-9]+[ ]*季)', s, re.IGNORECASE) or s.lower().startswith('season')]
     if season_folders:
         for sf in sorted(season_folders):
@@ -206,7 +206,6 @@ def scan_series_structure(path):
                     'episodes': sorted(episodes)
                 })
     else:
-        # No season folders: treat all videos as one season (named "Season 1")
         episodes = [f for f in items if f.lower().endswith(VIDEO_EXTS)]
         if episodes:
             seasons.append({
@@ -242,7 +241,7 @@ def scan_library():
     return movies, series
 
 # ----------------------------------------------------------------------
-# Web UI Templates (tabs, seasons, episodes)
+# Web UI Templates
 # ----------------------------------------------------------------------
 LIBRARY_HTML = """
 <!DOCTYPE html>
@@ -827,61 +826,10 @@ PLAYER_HTML = """
 </html>
 """
 
-UPLINK_HTML = """
-<!DOCTYPE html>
-<html>
-<head><title>KTOx // DATA UPLINK</title>
-<style>
-    body {
-        background: #000;
-        color: #0f0;
-        font-family: 'Courier New', monospace;
-        padding: 30px;
-    }
-    .container {
-        max-width: 600px;
-        margin: auto;
-        border: 1px solid #0f0;
-        padding: 25px;
-        border-radius: 12px;
-        background: #050505;
-        box-shadow: 0 0 20px #0f0;
-    }
-    h1 { color: #0f0; text-shadow: 0 0 3px #0f0; }
-    input, button {
-        background: #111;
-        border: 1px solid #0f0;
-        color: #0f0;
-        padding: 10px;
-        width: 100%;
-        margin-bottom: 15px;
-        font-family: monospace;
-    }
-    button { cursor: pointer; width: auto; }
-    button:hover { background: #0f0; color: #000; }
-</style>
-</head>
-<body>
-<div class="container">
-    <h1>⤒ KTOx DATA UPLINK ⤓</h1>
-    <form method="POST" action="/upload" enctype="multipart/form-data">
-        <label>Subdirectory (optional):</label>
-        <input type="text" name="subdir">
-        <label>Files:</label>
-        <input type="file" name="files" multiple>
-        <label>Folder:</label>
-        <input type="file" name="files" multiple webkitdirectory>
-        <button type="submit">UPLOAD</button>
-    </form>
-</div>
-</body>
-</html>
-"""
-
 # ----------------------------------------------------------------------
 # Flask routes
 # ----------------------------------------------------------------------
-@app_lib.route('/')
+@app.route('/')
 def library():
     movies, series = scan_library()
     return render_template_string(LIBRARY_HTML,
@@ -891,7 +839,7 @@ def library():
         use_local=settings.get("use_local_posters", True)
     )
 
-@app_lib.route('/detail/series/<path:series_path>')
+@app.route('/detail/series/<path:series_path>')
 def series_detail(series_path):
     full_path = os.path.join(VIDEO_DIR, series_path)
     seasons = scan_series_structure(full_path)
@@ -904,9 +852,8 @@ def series_detail(series_path):
         seasons=seasons
     )
 
-@app_lib.route('/detail/season/<path:season_path>')
+@app.route('/detail/season/<path:season_path>')
 def season_detail(season_path):
-    # season_path is relative to VIDEO_DIR, e.g., "Series Name/Season 1"
     full_season = os.path.join(VIDEO_DIR, season_path)
     if not os.path.isdir(full_season):
         return redirect('/')
@@ -924,7 +871,7 @@ def season_detail(season_path):
         season_path=season_path
     )
 
-@app_lib.route('/detail/movie/<path:movie_path>')
+@app.route('/detail/movie/<path:movie_path>')
 def movie_detail(movie_path):
     full_path = os.path.join(VIDEO_DIR, movie_path)
     meta = get_metadata_for_item(movie_path, full_path, 'movie')
@@ -932,24 +879,22 @@ def movie_detail(movie_path):
         movie={'name': meta['title'], 'path': movie_path, 'poster': meta['poster_url']}
     )
 
-@app_lib.route('/play/<path:season_path>/<path:episode>')
+@app.route('/play/<path:season_path>/<path:episode>')
 def play_episode(season_path, episode):
-    # season_path is relative to VIDEO_DIR (e.g., "Series Name/Season 1")
     return render_template_string(PLAYER_HTML,
         episode=episode,
         season_path=season_path
     )
 
-@app_lib.route('/stream/<path:video_path>')
+@app.route('/stream/<path:video_path>')
 def stream(video_path):
-    # video_path can be a direct file or inside a season folder (e.g., "Series Name/Season 1/Episode.mp4")
     return send_from_directory(VIDEO_DIR, video_path)
 
-@app_lib.route('/static/<path:filename>')
+@app.route('/static/<path:filename>')
 def static_files(filename):
     return send_from_directory("/root/KTOx/static", filename)
 
-@app_lib.route('/api/settings', methods=['POST'])
+@app.route('/api/settings', methods=['POST'])
 def api_settings():
     data = request.json
     settings['omdb_api_key'] = data.get('omdb_api_key', '')
@@ -958,29 +903,31 @@ def api_settings():
     save_settings(settings)
     return jsonify({'message': 'Settings saved. Reloading...'})
 
-@app_lib.route('/api/clear_cache', methods=['POST'])
+@app.route('/api/clear_cache', methods=['POST'])
 def api_clear_cache():
     clear_poster_cache()
     return jsonify({'message': 'Poster cache cleared.'})
 
-@app_up.route('/')
-def uplink():
-    return UPLINK_HTML
+# ----------------------------------------------------------------------
+# System stats helpers
+# ----------------------------------------------------------------------
+def get_cpu_temp():
+    try:
+        with open("/sys/class/thermal/thermal_zone0/temp", "r") as f:
+            temp = int(f.read().strip()) / 1000.0
+            return temp
+    except:
+        return 0.0
 
-@app_up.route('/upload', methods=['POST'])
-def upload():
-    sub = request.form.get('subdir', '').strip()
-    target = os.path.join(VIDEO_DIR, sub)
-    os.makedirs(target, exist_ok=True)
-    for f in request.files.getlist('files'):
-        if f.filename:
-            path = os.path.join(target, secure_filename(f.filename))
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            f.save(path)
-    return redirect(url_for('uplink'))
+def get_cpu_usage():
+    return psutil.cpu_percent(interval=0.5)
+
+def get_ram_usage():
+    mem = psutil.virtual_memory()
+    return mem.percent
 
 # ----------------------------------------------------------------------
-# LCD and main thread (unchanged)
+# LCD display with system stats
 # ----------------------------------------------------------------------
 def get_ip():
     try:
@@ -992,79 +939,78 @@ def get_ip():
     except:
         return '127.0.0.1'
 
-def run_library():
-    app_lib.run(host='0.0.0.0', port=80, debug=False, use_reloader=False)
+def generate_qr(data):
+    import qrcode
+    qr = qrcode.QRCode(box_size=3, border=2)
+    qr.add_data(data)
+    return qr.make_image(fill_color="white", back_color="black").get_image()
 
-def run_uplink():
-    app_up.run(host='0.0.0.0', port=8888, debug=False, use_reloader=False)
-
-def main():
+def lcd_loop():
     if not HAS_HW:
-        threading.Thread(target=run_library, daemon=True).start()
-        threading.Thread(target=run_uplink, daemon=True).start()
-        while True:
-            time.sleep(1)
         return
-
-    GPIO.setmode(GPIO.BCM)
-    for pin in PINS.values():
-        GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-    lcd = LCD_1in44.LCD()
-    lcd.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
-    lcd.LCD_Clear()
-
     ip = get_ip()
     show_qr = False
     held = {}
+    while True:
+        now = time.time()
+        img = Image.new("RGB", (128,128), "#0A0000")
+        d = ImageDraw.Draw(img)
+        if show_qr:
+            qr_img = generate_qr(f"http://{ip}:{LIB_PORT}")
+            qr_img = qr_img.resize((128,128))
+            img.paste(qr_img, (0,0))
+        else:
+            d.rectangle([(0,0),(128,18)], fill=(120,0,0))
+            try:
+                font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",9)
+            except:
+                font = ImageFont.load_default()
+            d.text((4,3), "KTOxFLIX", fill="black", font=font)
+            d.text((4,20), f"IP: {ip}:{LIB_PORT}", fill="#FFBBBB", font=font)
+            temp = get_cpu_temp()
+            temp_color = "#00FF00" if temp < 60 else "#FFFF00" if temp < 75 else "#FF0000"
+            d.text((4,32), f"CPU: {get_cpu_usage():.0f}%  {temp:.0f}C", fill=temp_color, font=font)
+            d.text((4,44), f"RAM: {get_ram_usage():.0f}%", fill="#FFBBBB", font=font)
+            d.text((4,56), "PORT 80: LIBRARY", fill="cyan", font=font)
+            d.text((4,68), "K1:QR  K3:EXIT", fill="#FF7777", font=font)
+            d.rectangle((0,H-12,W,H), fill="#220000")
+        LCD.LCD_ShowImage(img, 0, 0)
 
-    threading.Thread(target=run_library, daemon=True).start()
-    threading.Thread(target=run_uplink, daemon=True).start()
-
-    try:
-        while True:
-            now = time.time()
-            img = Image.new("RGB", (128,128), "black")
-            draw = ImageDraw.Draw(img)
-
-            if show_qr:
-                import qrcode
-                qr = qrcode.QRCode(box_size=3, border=2)
-                qr.add_data(f"http://{ip}:8888")
-                qr_img = qr.make_image().convert("RGB").resize((128,128))
-                img.paste(qr_img, (0,0))
+        pressed = {n: GPIO.input(p)==0 for n,p in PINS.items()}
+        for n, down in pressed.items():
+            if down:
+                if n not in held: held[n] = now
             else:
-                draw.rectangle([(0,0),(128,18)], fill=(120,0,0))
-                try:
-                    font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",9)
-                except:
-                    font = ImageFont.load_default()
-                draw.text((4,3), "KTOxFLIX", fill="black", font=font)
-                draw.text((4,30), f"IP: {ip}", fill="white", font=font)
-                draw.text((4,50), "PORT 80: LIB", fill="cyan", font=font)
-                draw.text((4,65), "PORT 8888: UP", fill="red", font=font)
-                draw.text((4,113), "K1:QR  K3:EXIT", fill=(150,150,150), font=font)
+                held.pop(n, None)
 
-            lcd.LCD_ShowImage(img, 0, 0)
+        if pressed.get("KEY3") and (now - held.get("KEY3", now)) <= 0.05:
+            GPIO.cleanup()
+            LCD.LCD_Clear()
+            os._exit(0)
+        if pressed.get("KEY1") and (now - held.get("KEY1", now)) <= 0.05:
+            show_qr = not show_qr
+            time.sleep(0.3)
+        time.sleep(0.5)
 
-            pressed = {n: GPIO.input(p)==0 for n,p in PINS.items()}
-            for n, down in pressed.items():
-                if down:
-                    if n not in held: held[n] = now
-                else:
-                    held.pop(n, None)
+# ----------------------------------------------------------------------
+# Main
+# ----------------------------------------------------------------------
+def main():
+    if not HAS_HW:
+        app.run(host='0.0.0.0', port=LIB_PORT, debug=False)
+        return
 
-            if pressed.get("KEY3") and (now - held.get("KEY3", now)) <= 0.05:
-                break
-            if pressed.get("KEY1") and (now - held.get("KEY1", now)) <= 0.05:
-                show_qr = not show_qr
-                time.sleep(0.3)
-
-            time.sleep(0.1)
-    finally:
-        lcd.LCD_Clear()
-        GPIO.cleanup()
+    # Start LCD thread
+    threading.Thread(target=lcd_loop, daemon=True).start()
+    # Start Flask server
+    app.run(host='0.0.0.0', port=LIB_PORT, debug=False, use_reloader=False)
 
 if __name__ == "__main__":
+    # Ensure dependencies
+    try:
+        import psutil
+    except ImportError:
+        os.system("pip install psutil")
     try:
         import requests
     except ImportError:
@@ -1077,5 +1023,5 @@ if __name__ == "__main__":
             img.save(placeholder)
         except:
             pass
-    print("Starting KTOxFliX with Season Support...")
+    print("Starting KTOxFliX (Library Only + System Stats)...")
     main()
