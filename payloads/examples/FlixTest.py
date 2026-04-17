@@ -1,23 +1,17 @@
 #!/usr/bin/env python3
 """
-KTOx Payload – KTOxFliX (Seasons + System Stats + QR)
-======================================================
+KTOx Payload – KTOxFliX (Seasons Working + System Stats)
+==========================================================
 - Movies, TV Series with season folders
 - Settings: OMDb API key, online metadata, local posters
-- Uplink on port 8888 (hidden from LCD)
-- LCD: IP, CPU load, CPU temp, RAM usage, QR for library (KEY1)
+- Uplink on port 8888 (runs but not shown on LCD)
+- LCD shows IP, system stats, library port, QR for library (KEY1)
 """
 
 import os, sys, time, socket, threading, json, hashlib, re, requests
+import qrcode  # moved to top for reliability
 from flask import Flask, render_template_string, send_from_directory, request, redirect, url_for, jsonify
 from werkzeug.utils import secure_filename
-
-# Try to import qrcode; if missing, install it
-try:
-    import qrcode
-except ImportError:
-    os.system("pip install qrcode pillow")
-    import qrcode
 
 # Hardware
 try:
@@ -69,7 +63,7 @@ def save_settings(settings):
 settings = load_settings()
 
 # ----------------------------------------------------------------------
-# Metadata helpers
+# Metadata helpers (identical to working version)
 # ----------------------------------------------------------------------
 def clean_title(filename):
     name = os.path.splitext(filename)[0]
@@ -197,9 +191,11 @@ def clear_poster_cache():
 # Scan library with season detection
 # ----------------------------------------------------------------------
 def scan_series_structure(path):
+    """Recursively scan a series folder, return list of seasons."""
     seasons = []
     items = os.listdir(path)
     subdirs = [i for i in items if os.path.isdir(os.path.join(path, i))]
+    # If there are subdirs that look like season names, treat as seasons
     season_folders = [s for s in subdirs if re.search(r'(season|saison|stagione|temporada|第[0-9]+季|[0-9]+[ ]*季)', s, re.IGNORECASE) or s.lower().startswith('season')]
     if season_folders:
         for sf in sorted(season_folders):
@@ -212,6 +208,7 @@ def scan_series_structure(path):
                     'episodes': sorted(episodes)
                 })
     else:
+        # No season folders: treat all videos as one season (named "Season 1")
         episodes = [f for f in items if f.lower().endswith(VIDEO_EXTS)]
         if episodes:
             seasons.append({
@@ -247,7 +244,7 @@ def scan_library():
     return movies, series
 
 # ----------------------------------------------------------------------
-# Web UI Templates (full, included)
+# Web UI Templates (identical to working version – included for completeness)
 # ----------------------------------------------------------------------
 LIBRARY_HTML = """
 <!DOCTYPE html>
@@ -884,7 +881,7 @@ UPLINK_HTML = """
 """
 
 # ----------------------------------------------------------------------
-# Flask routes
+# Flask routes (identical to working version)
 # ----------------------------------------------------------------------
 @app_lib.route('/')
 def library():
@@ -982,7 +979,7 @@ def upload():
     return redirect(url_for('uplink'))
 
 # ----------------------------------------------------------------------
-# System stats helpers
+# System stats helpers (new)
 # ----------------------------------------------------------------------
 def get_cpu_temp():
     try:
@@ -1020,7 +1017,7 @@ def get_ram_usage():
         return 0.0
 
 # ----------------------------------------------------------------------
-# LCD and main thread (with QR pre‑generation)
+# LCD and main thread (modified to include stats, remove uplink port, change QR)
 # ----------------------------------------------------------------------
 def get_ip():
     try:
@@ -1056,7 +1053,6 @@ def main():
     ip = get_ip()
     show_qr = False
     held = {}
-    qr_image = None  # will be generated when needed
 
     threading.Thread(target=run_library, daemon=True).start()
     threading.Thread(target=run_uplink, daemon=True).start()
@@ -1068,13 +1064,11 @@ def main():
             draw = ImageDraw.Draw(img)
 
             if show_qr:
-                if qr_image is None:
-                    # Generate QR code only once
-                    qr = qrcode.QRCode(box_size=3, border=2)
-                    qr.add_data(f"http://{ip}")  # port 80
-                    qr.make(fit=True)
-                    qr_image = qr.make_image(fill_color="white", back_color="black").get_image().resize((128,128))
-                img.paste(qr_image, (0,0))
+                # QR for library (port 80)
+                qr = qrcode.QRCode(box_size=3, border=2)
+                qr.add_data(f"http://{ip}")
+                qr_img = qr.make_image(fill_color="white", back_color="black").get_image().resize((128,128))
+                img.paste(qr_img, (0,0))
             else:
                 draw.rectangle([(0,0),(128,18)], fill=(120,0,0))
                 try:
@@ -1084,6 +1078,7 @@ def main():
                 draw.text((4,3), "KTOxFLIX", fill="black", font=font)
                 draw.text((4,20), f"IP: {ip}", fill="white", font=font)
                 draw.text((4,32), "PORT 80: LIBRARY", fill="cyan", font=font)
+                # System stats
                 temp = get_cpu_temp()
                 temp_color = "#00FF00" if temp < 60 else "#FFFF00" if temp < 75 else "#FF0000"
                 draw.text((4,44), f"CPU: {get_cpu_load():.0f}%  {temp:.0f}C", fill=temp_color, font=font)
@@ -1104,17 +1099,14 @@ def main():
                 break
             if pressed.get("KEY1") and (now - held.get("KEY1", now)) <= 0.05:
                 show_qr = not show_qr
-                if show_qr and qr_image is None:
-                    qr_image = None  # force regeneration on next frame
                 time.sleep(0.3)
 
-            time.sleep(0.5)
+            time.sleep(0.5)  # update stats every 0.5 seconds
     finally:
         lcd.LCD_Clear()
         GPIO.cleanup()
 
 if __name__ == "__main__":
-    # Install dependencies if missing
     try:
         import requests
     except ImportError:
@@ -1127,5 +1119,5 @@ if __name__ == "__main__":
             img.save(placeholder)
         except:
             pass
-    print("Starting KTOxFliX (with fixed QR)...")
+    print("Starting KTOxFliX with Season Support and System Stats...")
     main()
