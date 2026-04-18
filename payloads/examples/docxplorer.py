@@ -7,6 +7,7 @@ KTOx Payload – Document Explorer (Full File Browser)
 - Upload files to the current directory
 - LCD: IP, system stats, QR code for library (KEY1)
 - Web UI with cyberpunk theme
+- Clean exit with KEY3 – returns to KTOx menu
 """
 
 import os, sys, time, socket, threading, mimetypes
@@ -48,14 +49,9 @@ def safe_path(path):
     """Prevent directory traversal."""
     if not path:
         return START_DIR
-    # Resolve to absolute path, ensure it doesn't go above root
     full = os.path.normpath(os.path.join(START_DIR, path))
-    # Also allow going to other directories? We'll allow full system access but start at /root
-    # For safety, we don't restrict beyond START_DIR? Actually user might want to browse anywhere.
-    # We'll allow any path, but ensure it exists.
     if os.path.exists(full):
         return full
-    # If the path is absolute, try that
     if os.path.exists(path):
         return path
     return START_DIR
@@ -92,7 +88,7 @@ def is_allowed_file(filename):
     return os.path.splitext(filename)[1].lower() in ALLOWED_EXTENSIONS
 
 # ----------------------------------------------------------------------
-# Web UI Templates
+# Web UI Templates (same as before)
 # ----------------------------------------------------------------------
 BROWSER_HTML = """
 <!DOCTYPE html>
@@ -248,7 +244,6 @@ BROWSER_HTML = """
 
         document.getElementById('uploadLink').onclick = function(e) {
             e.preventDefault();
-            // Redirect to uplink with current path as subdirectory
             window.location.href = 'http://' + window.location.hostname + ':8888?dir=' + encodeURIComponent(currentPath);
         };
     </script>
@@ -313,7 +308,6 @@ UPLINK_HTML = """
     <p style="margin-top: 20px;"><a href="/" style="color:#0f0;">← Back to Explorer</a></p>
 </div>
 <script>
-    // If URL contains ?dir= parameter, pre-fill the target directory
     const urlParams = new URLSearchParams(window.location.search);
     const dir = urlParams.get('dir');
     if (dir) {
@@ -382,7 +376,7 @@ def upload():
     return redirect(url_for('uplink', dir=target_dir))
 
 # ----------------------------------------------------------------------
-# System stats helpers (same as before)
+# System stats helpers
 # ----------------------------------------------------------------------
 def get_cpu_temp():
     try:
@@ -420,7 +414,7 @@ def get_ram_usage():
         return 0.0
 
 # ----------------------------------------------------------------------
-# LCD and main thread (unchanged)
+# LCD and main thread (clean exit)
 # ----------------------------------------------------------------------
 def get_ip():
     try:
@@ -440,10 +434,15 @@ def run_uplink():
 
 def main():
     if not HAS_HW:
+        # No hardware – just run Flask servers (no LCD)
         threading.Thread(target=run_library, daemon=True).start()
         threading.Thread(target=run_uplink, daemon=True).start()
-        while True:
-            time.sleep(1)
+        print("Web servers running. Press Ctrl+C to stop.")
+        try:
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            sys.exit(0)
         return
 
     GPIO.setmode(GPIO.BCM)
@@ -453,9 +452,11 @@ def main():
     lcd.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
     lcd.LCD_Clear()
 
+    # Start Flask servers as daemon threads
     threading.Thread(target=run_library, daemon=True).start()
     threading.Thread(target=run_uplink, daemon=True).start()
 
+    # Get IP (non‑blocking)
     ip = None
     for _ in range(10):
         ip = get_ip()
@@ -465,6 +466,7 @@ def main():
     if not ip or ip == '127.0.0.1':
         ip = "0.0.0.0"
 
+    # Pre‑generate QR code
     try:
         import qrcode
         qr_factory = qrcode.QRCode(box_size=3, border=2)
@@ -502,6 +504,7 @@ def main():
 
             lcd.LCD_ShowImage(img, 0, 0)
 
+            # Button handling
             pressed = {n: GPIO.input(p)==0 for n,p in PINS.items()}
             for n, down in pressed.items():
                 if down:
@@ -515,10 +518,13 @@ def main():
                 show_qr = not show_qr
                 time.sleep(0.3)
 
-            time.sleep(0.5)
+            time.sleep(0.1)  # faster response to button
+
     finally:
         lcd.LCD_Clear()
         GPIO.cleanup()
+        # Force exit to ensure Flask daemon threads are terminated
+        os._exit(0)
 
 if __name__ == "__main__":
     print("Starting KTOx Document Explorer...")
