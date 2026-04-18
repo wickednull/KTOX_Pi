@@ -56,6 +56,7 @@ apt-get install -y --no-install-recommends \
     python3-scapy python3-netifaces python3-pyudev python3-serial \
     python3-smbus python3-rpi.gpio python3-spidev python3-pil python3-numpy \
     python3-setuptools python3-cryptography python3-requests python3-websockets \
+    python3-flask-socketio python3-eventlet \
     fonts-dejavu-core \
     nmap ncat tcpdump arp-scan dsniff ettercap-text-only php procps \
     aircrack-ng wireless-tools wpasupplicant iw \
@@ -81,8 +82,8 @@ fi
 
 # ── Pip packages ──────────────────────────────────────────────────────────────
 step "Installing Python packages..."
-pip3 install --break-system-packages rich flask websockets pillow spidev RPi.GPIO requests 2>/dev/null \
-    || pip3 install rich flask websockets pillow spidev RPi.GPIO requests
+pip3 install --break-system-packages rich flask flask-socketio eventlet qrcode websockets pillow spidev RPi.GPIO requests 2>/dev/null \
+    || pip3 install rich flask flask-socketio eventlet qrcode websockets pillow spidev RPi.GPIO requests
 pip3 install --break-system-packages customtkinter 2>/dev/null || true
 
 # ── Font Awesome ──────────────────────────────────────────────────────────────
