@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-KTOx Payload – Metasploit Web UI (Mega Edition + Interactive Terminal)
+KTOx Payload – Metasploit Web UI (Mega Edition with Full Parameter Control)
 ============================================================================
 - 70+ pre‑built .rc scripts with automatic parameter detection
 - Dynamic form fields: LHOST, RHOSTS, WORDLIST, USERNAME, PASSWORD, LPORT
-- Full interactive xterm.js terminal built-in
+- Walkthrough modal for each script
 - LCD: IP, QR, script cycle (K2), OK reminder, K3 exit
 """
 
@@ -15,17 +15,10 @@ import socket
 import threading
 import subprocess
 import re
-import pty
-import fcntl
-import termios
-import struct
-import signal
-import json
 from flask import Flask, render_template_string, request, jsonify
-from flask_socketio import SocketIO
 
 # ----------------------------------------------------------------------
-# Hardware & LCD
+# Hardware & LCD (same as before)
 # ----------------------------------------------------------------------
 try:
     import RPi.GPIO as GPIO
@@ -54,15 +47,9 @@ if HAS_HW:
         font_sm = font_bold = ImageFont.load_default()
 
 # ----------------------------------------------------------------------
-# Flask & SocketIO setup
+# Flask app
 # ----------------------------------------------------------------------
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.urandom(24)
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
-
-# Global PTY master
-msf_fd = None
-msf_child_pid = None
 
 # ----------------------------------------------------------------------
 # Script Database with full parameter metadata
@@ -207,8 +194,6 @@ def generate_scripts():
             continue  # skip unknown
         filepath = os.path.join(SCRIPT_DIR, script['file'])
         with open(filepath, 'w') as f:
-            if "exploit -j -z" not in content:
-                content += "\nexit\n"
             f.write(content)
     print(f"Generated {len(SCRIPTS_DB)} scripts in {SCRIPT_DIR}")
 
@@ -242,7 +227,6 @@ def run_script(script_path, params):
     with open(tmp_rc, 'w') as f:
         f.write(rc_content)
     try:
-        # Use PTY for script execution to capture color and formatting
         proc = subprocess.run(
             ["msfconsole", "-q", "-r", tmp_rc],
             capture_output=True, text=True, timeout=60
@@ -251,50 +235,22 @@ def run_script(script_path, params):
         if not output.strip():
             output = "[No output]"
         return output
-    except subprocess.TimeoutExpired as e:
-        out = e.stdout if e.stdout else ""
-        err = e.stderr if e.stderr else ""
-        return f"Script timed out after 60 seconds.\nOutput:\n{out}\n{err}"
+    except subprocess.TimeoutExpired:
+        return "Script timed out after 60 seconds"
     except Exception as e:
         return f"Error: {str(e)}"
 
-# ----------------------------------------------------------------------
-# Terminal PTY helpers
-# ----------------------------------------------------------------------
-def set_winsize(fd, row, col, xpix=0, ypix=0):
-    winsize = struct.pack("HHHH", row, col, xpix, ypix)
-    fcntl.ioctl(fd, termios.TIOCSWINSZ, winsize)
-
-def read_and_forward_output():
-    global msf_fd
-    while True:
-        if msf_fd:
-            try:
-                data = os.read(msf_fd, 8192)
-                if data:
-                    socketio.emit('output', data.decode(errors='replace'))
-            except Exception:
-                break
-        socketio.sleep(0.01)
-
-def start_shell():
-    global msf_fd, msf_child_pid
-    msf_child_pid, msf_fd = pty.fork()
-    if msf_child_pid == 0:
-        os.environ["TERM"] = "xterm-256color"
-        os.execv("/bin/bash", ["bash", "--login"])
-    else:
-        socketio.start_background_task(read_and_forward_output)
-
-@socketio.on('input')
-def handle_input(data):
-    if msf_fd:
-        os.write(msf_fd, data.encode())
-
-@socketio.on('resize')
-def handle_resize(data):
-    if msf_fd:
-        set_winsize(msf_fd, data['rows'], data['cols'])
+def run_command(cmd):
+    try:
+        proc = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=30)
+        output = proc.stdout + proc.stderr
+        if not output.strip():
+            output = "[No output]"
+        return output
+    except subprocess.TimeoutExpired:
+        return "Command timed out"
+    except Exception as e:
+        return f"Error: {str(e)}"
 
 # ----------------------------------------------------------------------
 # Web UI with dynamic parameter form
@@ -305,10 +261,6 @@ HTML_TEMPLATE = """
 <head>
     <title>KTOx // MSF MEGA</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
-    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
-    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
@@ -331,18 +283,18 @@ HTML_TEMPLATE = """
             flex-wrap: wrap;
         }
         .left {
-            flex: 1.2;
+            flex: 2;
             min-width: 400px;
         }
         .right {
-            flex: 1.8;
-            min-width: 500px;
+            flex: 1;
+            min-width: 350px;
         }
         .grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
             gap: 15px;
-            max-height: 400px;
+            max-height: 500px;
             overflow-y: auto;
             margin-bottom: 20px;
             padding: 5px;
@@ -414,19 +366,27 @@ HTML_TEMPLATE = """
             font-family: monospace;
             font-size: 0.8rem;
             white-space: pre-wrap;
-            max-height: 300px;
+            max-height: 400px;
             overflow-y: auto;
         }
-        .terminal-area {
-            background: #000;
-            border: 1px solid #0f0;
-            border-radius: 8px;
-            padding: 5px;
-            height: 600px;
+        .cmd-area {
+            margin-top: 20px;
         }
-        #terminal {
-            height: 100%;
-            width: 100%;
+        .cmd-line {
+            display: flex;
+            margin-bottom: 10px;
+        }
+        .cmd-line input {
+            flex: 1;
+            background: #222;
+            border: 1px solid #0f0;
+            color: #0f0;
+            padding: 6px;
+            font-family: monospace;
+        }
+        .cmd-line button {
+            margin-left: 10px;
+            padding: 6px 12px;
         }
         .info-btn {
             background: #0a2a2a;
@@ -454,7 +414,7 @@ HTML_TEMPLATE = """
         <div class="left">
             <div class="grid" id="scriptGrid">
                 {% for script in scripts %}
-                <div class="script-card" data-path="{{ script.path }}" data-params='{{ script.params|tojson }}'>
+                <div class="script-card" data-path="{{ script.path }}" data-params="{{ script.params|tojson }}">
                     <h3>▶ {{ script.name }} <span class="info-btn" data-walkthrough="{{ script.walkthrough }}">ⓘ</span></h3>
                     <p>{{ script.desc }}</p>
                 </div>
@@ -467,13 +427,17 @@ HTML_TEMPLATE = """
                 <button id="runBtn">🚀 RUN SCRIPT</button>
             </div>
             <div class="output">
-                <pre id="output">Ready. Script output will appear here.</pre>
+                <pre id="output">Ready.</pre>
             </div>
         </div>
         <div class="right">
-            <h3 style="color:#0f0; margin-bottom: 10px;">⬢ INTERACTIVE TERMINAL</h3>
-            <div class="terminal-area">
-                <div id="terminal"></div>
+            <div class="cmd-area">
+                <h3 style="color:#0f0;">⬢ COMMAND RUNNER</h3>
+                <div class="cmd-line">
+                    <input type="text" id="cmdInput" placeholder="e.g., msfconsole -q -x 'help'">
+                    <button id="runCmd">Run</button>
+                </div>
+                <div class="output" id="cmdOutput" style="max-height:300px;">Ready.</div>
             </div>
         </div>
     </div>
@@ -491,41 +455,6 @@ HTML_TEMPLATE = """
 <script>
     let selectedPath = null;
     let selectedParams = [];
-
-    // Terminal logic
-    const term = new Terminal({
-        cursorBlink: true,
-        theme: {
-            background: '#000000',
-            foreground: '#00ff00',
-            cursor: '#ff0000'
-        },
-        fontFamily: 'monospace',
-        fontSize: 13
-    });
-    const fitAddon = new FitAddon.FitAddon();
-    term.loadAddon(fitAddon);
-    term.open(document.getElementById('terminal'));
-    fitAddon.fit();
-
-    const socket = io();
-
-    socket.on('connect', () => {
-        socket.emit('resize', {'cols': term.cols, 'rows': term.rows});
-    });
-
-    socket.on('output', (data) => {
-        term.write(data);
-    });
-
-    term.onData((data) => {
-        socket.emit('input', data);
-    });
-
-    window.onresize = () => {
-        fitAddon.fit();
-        socket.emit('resize', {'cols': term.cols, 'rows': term.rows});
-    };
 
     // Modal handling
     const modal = document.getElementById('modal');
@@ -612,6 +541,26 @@ HTML_TEMPLATE = """
             outputDiv.innerText = 'Error: ' + err;
         });
     });
+
+    // Run custom command
+    document.getElementById('runCmd').addEventListener('click', () => {
+        const cmd = document.getElementById('cmdInput').value;
+        if (!cmd) return;
+        const outputDiv = document.getElementById('cmdOutput');
+        outputDiv.innerText = 'Running...';
+        fetch('/cmd', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ command: cmd })
+        })
+        .then(r => r.json())
+        .then(data => {
+            outputDiv.innerText = data.output;
+        })
+        .catch(err => {
+            outputDiv.innerText = 'Error: ' + err;
+        });
+    });
 </script>
 </body>
 </html>
@@ -634,6 +583,15 @@ def run():
     if not script_path:
         return jsonify({'output': 'No script selected'})
     output = run_script(script_path, params)
+    return jsonify({'output': output})
+
+@app.route('/cmd', methods=['POST'])
+def cmd():
+    data = request.json
+    command = data.get('command', '')
+    if not command:
+        return jsonify({'output': 'No command'})
+    output = run_command(command)
     return jsonify({'output': output})
 
 # ----------------------------------------------------------------------
@@ -693,7 +651,6 @@ def lcd_loop():
         def just_pressed(name, delay=0.2):
             return pressed.get(name) and (now - held.get(name, now)) <= delay
         if just_pressed("KEY3"):
-            os.kill(os.getpid(), signal.SIGINT)
             break
         if just_pressed("KEY1"):
             show_qr = not show_qr
@@ -728,26 +685,11 @@ def main():
             time.sleep(5)
         return
 
-    start_shell()
-
     if HAS_HW:
         threading.Thread(target=lcd_loop, daemon=True).start()
-        try:
-            socketio.run(app, host='0.0.0.0', port=PORT, debug=False, use_reloader=False)
-        except KeyboardInterrupt:
-            pass
+        app.run(host='0.0.0.0', port=PORT, debug=False, use_reloader=False)
     else:
-        socketio.run(app, host='0.0.0.0', port=PORT, debug=False)
-
-    # Cleanup
-    if msf_child_pid:
-        try: os.kill(msf_child_pid, signal.SIGTERM)
-        except: pass
-    if HAS_HW:
-        try:
-            LCD.LCD_Clear()
-            GPIO.cleanup()
-        except: pass
+        app.run(host='0.0.0.0', port=PORT, debug=False)
 
 if __name__ == "__main__":
     try:

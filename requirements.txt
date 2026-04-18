@@ -20,5 +20,3 @@ customtkinter>=5.2.0
 
 # Live web dashboard
 flask>=3.0.0
-flask-socketio
-eventlet
