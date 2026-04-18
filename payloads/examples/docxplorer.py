@@ -2,9 +2,9 @@
 """
 KTOx Payload – Document Browser
 ================================
-Browse and view PDF, text, image files from any directory.
-Starts web server on port 5000.
-Press KEY3 to exit.
+Browse and view PDF, text, and image files from any directory.
+Web server on port 5000.
+Controls: KEY3 to exit.
 """
 
 import os
@@ -15,7 +15,9 @@ import threading
 from flask import Flask, render_template_string, send_from_directory, request, abort
 from werkzeug.utils import secure_filename
 
-# Hardware
+# ----------------------------------------------------------------------
+# Hardware & LCD
+# ----------------------------------------------------------------------
 try:
     import RPi.GPIO as GPIO
     import LCD_1in44
@@ -23,13 +25,35 @@ try:
     HAS_HW = True
 except ImportError:
     HAS_HW = False
+    print("KTOx hardware not found")
+    sys.exit(1)
 
-# Configuration
+PINS = {
+    "UP": 6, "DOWN": 19, "LEFT": 5, "RIGHT": 26,
+    "OK": 13, "KEY1": 21, "KEY2": 20, "KEY3": 16,
+}
+GPIO.setmode(GPIO.BCM)
+for pin in PINS.values():
+    GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+
+LCD = LCD_1in44.LCD()
+LCD.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
+W, H = 128, 128
+
+def font(size=9):
+    try:
+        return ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", size)
+    except:
+        return ImageFont.load_default()
+
+f9 = font(9)
+
+# ----------------------------------------------------------------------
+# Flask web server (runs in background)
+# ----------------------------------------------------------------------
 START_DIR = "/root"
 ALLOWED_EXTS = {'.pdf', '.txt', '.md', '.jpg', '.jpeg', '.png', '.gif'}
-PINS = {"UP":6,"DOWN":19,"LEFT":5,"RIGHT":26,"OK":13,"KEY1":21,"KEY2":20,"KEY3":16}
 PORT = 5000
-
 app = Flask(__name__)
 
 def size_fmt(size):
@@ -53,7 +77,6 @@ def list_dir(path):
         pass
     return items
 
-# HTML templates
 BROWSER_HTML = """
 <!DOCTYPE html>
 <html>
@@ -161,6 +184,35 @@ def send_file():
         abort(404)
     return send_from_directory(os.path.dirname(path), os.path.basename(path))
 
+def run_flask():
+    app.run(host='0.0.0.0', port=PORT, debug=False, use_reloader=False)
+
+# ----------------------------------------------------------------------
+# LCD drawing (exactly like working example)
+# ----------------------------------------------------------------------
+def draw(lines, title="DOC BROWSER", title_color="#8B0000", text_color="#FFBBBB"):
+    img = Image.new("RGB", (W, H), "#0A0000")
+    d = ImageDraw.Draw(img)
+    d.rectangle((0, 0, W, 17), fill=title_color)
+    d.text((4, 3), title[:20], font=f9, fill="#FF3333")
+    y = 20
+    for line in lines[:7]:
+        d.text((4, y), line[:23], font=f9, fill=text_color)
+        y += 12
+    d.rectangle((0, H-12, W, H), fill="#220000")
+    d.text((4, H-10), "K3=EXIT", font=f9, fill="#FF7777")
+    LCD.LCD_ShowImage(img, 0, 0)
+
+def wait_btn(timeout=0.1):
+    start = time.time()
+    while time.time() - start < timeout:
+        for name, pin in PINS.items():
+            if GPIO.input(pin) == 0:
+                time.sleep(0.05)
+                return name
+        time.sleep(0.02)
+    return None
+
 def get_ip():
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -171,57 +223,36 @@ def get_ip():
     except:
         return '127.0.0.1'
 
-def lcd_loop():
-    if not HAS_HW:
-        return
+# ----------------------------------------------------------------------
+# Main
+# ----------------------------------------------------------------------
+def main():
+    # Start Flask in a background thread
+    threading.Thread(target=run_flask, daemon=True).start()
+    time.sleep(1)  # give Flask time to start
+
     ip = get_ip()
+    draw([f"Server running", f"IP: {ip}", f"Port: {PORT}", "", "Press KEY3 to exit"], title="DOC BROWSER")
+
     held = {}
-    try:
-        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 9)
-    except:
-        font = ImageFont.load_default()
     while True:
         now = time.time()
-        img = Image.new("RGB", (128,128), "#0A0000")
-        draw = ImageDraw.Draw(img)
-        draw.rectangle([(0,0),(128,18)], fill=(120,0,0))
-        draw.text((4,3), "DOC BROWSER", fill="black", font=font)
-        draw.text((4,20), f"IP: {ip}:{PORT}", fill="white", font=font)
-        draw.text((4,32), "PORT 5000", fill="cyan", font=font)
-        draw.text((4,44), "K3:EXIT", fill="#FF7777", font=font)
-        draw.rectangle((0,112),(128,128), fill="#220000")
-        LCD.LCD_ShowImage(img, 0, 0)
-
         pressed = {n: GPIO.input(p)==0 for n,p in PINS.items()}
         for n, down in pressed.items():
-            if down:
-                if n not in held: held[n] = now
-            else:
+            if down and n not in held:
+                held[n] = now
+            elif not down:
                 held.pop(n, None)
+
         if pressed.get("KEY3") and (now - held.get("KEY3", now)) <= 0.05:
             break
-        time.sleep(0.1)
 
-def main():
-    if HAS_HW:
-        GPIO.setmode(GPIO.BCM)
-        for pin in PINS.values():
-            GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-        global LCD
-        LCD = LCD_1in44.LCD()
-        LCD.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
-        LCD.LCD_Clear()
-        threading.Thread(target=lcd_loop, daemon=True).start()
-    # Run Flask in main thread
-    try:
-        app.run(host='0.0.0.0', port=PORT, debug=False, use_reloader=False)
-    except KeyboardInterrupt:
-        pass
-    finally:
-        if HAS_HW:
-            LCD.LCD_Clear()
-            GPIO.cleanup()
-        sys.exit(0)
+        time.sleep(0.05)
+
+    # Clean exit
+    LCD.LCD_Clear()
+    GPIO.cleanup()
+    os._exit(0)
 
 if __name__ == "__main__":
     main()
