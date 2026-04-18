@@ -6,7 +6,7 @@ KTOx Payload – File Explorer & Editor
 - Rename, delete, edit text files
 - Create new files/folders
 - Cyberpunk web UI on port 8890
-- LCD: IP, QR, KEY3 exit
+- LCD: IP, QR (KEY1), exit (KEY3)
 """
 
 import os
@@ -15,7 +15,7 @@ import time
 import socket
 import threading
 import shutil
-from flask import Flask, render_template_string, request, send_from_directory, jsonify, redirect, url_for
+from flask import Flask, render_template_string, request, send_from_directory, jsonify
 from werkzeug.utils import secure_filename
 
 # ----------------------------------------------------------------------
@@ -28,37 +28,42 @@ try:
     HAS_HW = True
 except ImportError:
     HAS_HW = False
+    print("KTOx hardware not found")
+    sys.exit(1)
 
-PINS = {"UP":6,"DOWN":19,"LEFT":5,"RIGHT":26,"OK":13,"KEY1":21,"KEY2":20,"KEY3":16}
-PORT = 8890
+PINS = {
+    "UP": 6, "DOWN": 19, "LEFT": 5, "RIGHT": 26,
+    "OK": 13, "KEY1": 21, "KEY2": 20, "KEY3": 16,
+}
+GPIO.setmode(GPIO.BCM)
+for pin in PINS.values():
+    GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
-if HAS_HW:
-    GPIO.setmode(GPIO.BCM)
-    for pin in PINS.values():
-        GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-    LCD = LCD_1in44.LCD()
-    LCD.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
-    W, H = 128, 128
+LCD = LCD_1in44.LCD()
+LCD.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
+W, H = 128, 128
+
+def font(size=9):
     try:
-        font_sm = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 9)
-        font_bold = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 10)
+        return ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", size)
     except:
-        font_sm = font_bold = ImageFont.load_default()
+        return ImageFont.load_default()
+
+f9 = font(9)
+f11 = font(11)
 
 # ----------------------------------------------------------------------
-# Flask app
+# Flask web server (runs in background)
 # ----------------------------------------------------------------------
+PORT = 8890
 app = Flask(__name__)
 
-# ----------------------------------------------------------------------
-# Utility functions
-# ----------------------------------------------------------------------
-def safe_path(base_path="/root", user_path=""):
-    """Prevent directory traversal."""
-    full = os.path.normpath(os.path.join(base_path, user_path))
-    if not full.startswith(base_path):
-        return base_path
-    return full
+def size_fmt(size):
+    for unit in ['B','KB','MB','GB']:
+        if size < 1024.0:
+            return f"{size:.1f}{unit}"
+        size /= 1024.0
+    return f"{size:.1f}TB"
 
 def list_directory(path):
     items = []
@@ -75,20 +80,12 @@ def list_directory(path):
         pass
     return items
 
-def size_fmt(size):
-    for unit in ['B','KB','MB','GB']:
-        if size < 1024.0:
-            return f"{size:.1f}{unit}"
-        size /= 1024.0
-    return f"{size:.1f}TB"
-
 def is_text_file(filepath):
-    """Check if file likely contains text."""
     text_exts = ('.txt', '.cfg', '.conf', '.py', '.sh', '.json', '.yml', '.yaml', '.md', '.html', '.css', '.js', '.csv')
     return filepath.lower().endswith(text_exts)
 
 # ----------------------------------------------------------------------
-# Web UI (cyberpunk file manager with editor)
+# Web UI template (same as original)
 # ----------------------------------------------------------------------
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -250,7 +247,6 @@ HTML_TEMPLATE = """
     <footer>KTOx Cyberpunk File Editor – click filename to edit/rename</footer>
 </div>
 
-<!-- Modal for file editor / rename -->
 <div id="modal" class="modal">
     <div class="modal-content">
         <span class="close" onclick="closeModal()">&times;</span>
@@ -321,7 +317,6 @@ HTML_TEMPLATE = """
                 if (data.is_dir) {
                     navigateTo(path);
                 } else {
-                    // Open file for editing
                     editFile(path);
                 }
             });
@@ -567,9 +562,35 @@ def api_new_folder():
     except Exception as e:
         return jsonify({'message': f'Error: {str(e)}'})
 
+def run_flask():
+    app.run(host='0.0.0.0', port=PORT, debug=False, use_reloader=False)
+
 # ----------------------------------------------------------------------
-# LCD loop
+# LCD drawing (exactly like working example)
 # ----------------------------------------------------------------------
+def draw(lines, title="FILE EDITOR", title_color="#8B0000", text_color="#FFBBBB"):
+    img = Image.new("RGB", (W, H), "#0A0000")
+    d = ImageDraw.Draw(img)
+    d.rectangle((0, 0, W, 17), fill=title_color)
+    d.text((4, 3), title[:20], font=f9, fill="#FF3333")
+    y = 20
+    for line in lines[:7]:
+        d.text((4, y), line[:23], font=f9, fill=text_color)
+        y += 12
+    d.rectangle((0, H-12, W, H), fill="#220000")
+    d.text((4, H-10), "K1=QR  K3=EXIT", font=f9, fill="#FF7777")
+    LCD.LCD_ShowImage(img, 0, 0)
+
+def wait_btn(timeout=0.1):
+    start = time.time()
+    while time.time() - start < timeout:
+        for name, pin in PINS.items():
+            if GPIO.input(pin) == 0:
+                time.sleep(0.05)
+                return name
+        time.sleep(0.02)
+    return None
+
 def get_ip():
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -580,60 +601,64 @@ def get_ip():
     except:
         return '127.0.0.1'
 
-def lcd_loop():
-    if not HAS_HW:
-        return
+# ----------------------------------------------------------------------
+# Main (LCD loop in main thread, Flask in daemon)
+# ----------------------------------------------------------------------
+def main():
+    # Start Flask in a daemon thread
+    threading.Thread(target=run_flask, daemon=True).start()
+    time.sleep(1)  # give Flask time to start
+
     ip = get_ip()
+    draw([f"Server: {ip}:{PORT}", "", "K1=QR  K3=EXIT"], title="FILE EDITOR")
+
     show_qr = False
+    qr_img = None
     held = {}
+
     while True:
         now = time.time()
-        img = Image.new("RGB", (W, H), "#0A0000")
-        d = ImageDraw.Draw(img)
         if show_qr:
-            import qrcode
-            qr = qrcode.QRCode(box_size=3, border=2)
-            qr.add_data(f"http://{ip}:{PORT}")
-            qr_img = qr.make_image().convert("RGB").resize((128,128))
-            img.paste(qr_img, (0,0))
+            if qr_img is None:
+                try:
+                    import qrcode
+                    qr = qrcode.QRCode(box_size=3, border=2)
+                    qr.add_data(f"http://{ip}:{PORT}")
+                    qr_img = qr.make_image(fill_color="white", back_color="black").get_image().resize((128,128))
+                except:
+                    qr_img = False
+            if qr_img and qr_img != False:
+                img = Image.new("RGB", (W, H), "#0A0000")
+                img.paste(qr_img, (0,0))
+                LCD.LCD_ShowImage(img, 0, 0)
+            else:
+                draw(["QR error"], title="FILE EDITOR")
         else:
-            d.rectangle([(0,0),(128,18)], fill=(120,0,0))
-            d.text((4,3), "FILE EDITOR", font=font_bold, fill="#FF3333")
-            y = 20
-            d.text((4,y), f"IP: {ip}:{PORT}", font=font_sm, fill="#FFBBBB"); y+=12
-            d.text((4,y), "Status: RUNNING", font=font_sm, fill="#00FF00"); y+=12
-            d.text((4,y), "K1=QR  K3=Exit", font=font_sm, fill="#FF7777")
-            d.rectangle((0,H-12,W,H), fill="#220000")
-        LCD.LCD_ShowImage(img, 0, 0)
+            draw([f"IP: {ip}:{PORT}", "", "Web editor running", "", "K1=QR  K3=EXIT"], title="FILE EDITOR")
+
         pressed = {n: GPIO.input(p)==0 for n,p in PINS.items()}
         for n, down in pressed.items():
             if down:
                 if n not in held: held[n] = now
             else:
                 held.pop(n, None)
+
         if pressed.get("KEY3") and (now - held.get("KEY3", now)) <= 0.05:
-            GPIO.cleanup()
-            LCD.LCD_Clear()
-            os._exit(0)
+            break
         if pressed.get("KEY1") and (now - held.get("KEY1", now)) <= 0.05:
             show_qr = not show_qr
             time.sleep(0.3)
+
         time.sleep(0.1)
 
-# ----------------------------------------------------------------------
-# Main
-# ----------------------------------------------------------------------
-def main():
-    if HAS_HW:
-        threading.Thread(target=lcd_loop, daemon=True).start()
-        app.run(host='0.0.0.0', port=PORT, debug=False, use_reloader=False)
-    else:
-        app.run(host='0.0.0.0', port=PORT, debug=False)
+    # Clean exit
+    LCD.LCD_Clear()
+    GPIO.cleanup()
+    os._exit(0)
 
 if __name__ == "__main__":
     try:
         import qrcode
     except ImportError:
         os.system("pip install qrcode pillow")
-    print("Starting KTOx File Editor...")
     main()
