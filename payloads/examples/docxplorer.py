@@ -4,7 +4,7 @@ KTOx Payload – Document Browser
 ================================
 Browse and view PDF, text, and image files from any directory.
 Web server on port 5000.
-Controls: KEY3 to exit.
+Controls: KEY1=QR, KEY3=exit.
 """
 
 import os
@@ -12,7 +12,7 @@ import sys
 import time
 import socket
 import threading
-from flask import Flask, render_template_string, send_from_directory, request, abort
+from flask import Flask, render_template_string, send_from_directory, request, abort, redirect
 from werkzeug.utils import secure_filename
 
 # ----------------------------------------------------------------------
@@ -49,7 +49,7 @@ def font(size=9):
 f9 = font(9)
 
 # ----------------------------------------------------------------------
-# Flask web server (runs in background)
+# Flask web server
 # ----------------------------------------------------------------------
 START_DIR = "/root"
 ALLOWED_EXTS = {'.pdf', '.txt', '.md', '.jpg', '.jpeg', '.png', '.gif'}
@@ -200,7 +200,7 @@ def draw(lines, title="DOC BROWSER", title_color="#8B0000", text_color="#FFBBBB"
         d.text((4, y), line[:23], font=f9, fill=text_color)
         y += 12
     d.rectangle((0, H-12, W, H), fill="#220000")
-    d.text((4, H-10), "K3=EXIT", font=f9, fill="#FF7777")
+    d.text((4, H-10), "K1=QR  K3=EXIT", font=f9, fill="#FF7777")
     LCD.LCD_ShowImage(img, 0, 0)
 
 def wait_btn(timeout=0.1):
@@ -227,27 +227,51 @@ def get_ip():
 # Main
 # ----------------------------------------------------------------------
 def main():
-    # Start Flask in a background thread
+    # Start Flask in a daemon thread
     threading.Thread(target=run_flask, daemon=True).start()
     time.sleep(1)  # give Flask time to start
 
     ip = get_ip()
-    draw([f"Server running", f"IP: {ip}", f"Port: {PORT}", "", "Press KEY3 to exit"], title="DOC BROWSER")
+    draw([f"Server: {ip}:{PORT}", "", "K1=QR  K3=EXIT"], title="DOC BROWSER")
 
+    show_qr = False
+    qr_img = None
     held = {}
+
     while True:
         now = time.time()
+        if show_qr:
+            if qr_img is None:
+                try:
+                    import qrcode
+                    qr = qrcode.QRCode(box_size=3, border=2)
+                    qr.add_data(f"http://{ip}:{PORT}")
+                    qr_img = qr.make_image(fill_color="white", back_color="black").get_image().resize((128,128))
+                except:
+                    qr_img = False
+            if qr_img and qr_img != False:
+                img = Image.new("RGB", (W, H), "#0A0000")
+                img.paste(qr_img, (0,0))
+                LCD.LCD_ShowImage(img, 0, 0)
+            else:
+                draw(["QR error"], title="DOC BROWSER")
+        else:
+            draw([f"IP: {ip}:{PORT}", "", "Document browser running", "", "K1=QR  K3=EXIT"], title="DOC BROWSER")
+
         pressed = {n: GPIO.input(p)==0 for n,p in PINS.items()}
         for n, down in pressed.items():
-            if down and n not in held:
-                held[n] = now
-            elif not down:
+            if down:
+                if n not in held: held[n] = now
+            else:
                 held.pop(n, None)
 
         if pressed.get("KEY3") and (now - held.get("KEY3", now)) <= 0.05:
             break
+        if pressed.get("KEY1") and (now - held.get("KEY1", now)) <= 0.05:
+            show_qr = not show_qr
+            time.sleep(0.3)
 
-        time.sleep(0.05)
+        time.sleep(0.1)
 
     # Clean exit
     LCD.LCD_Clear()
@@ -255,4 +279,8 @@ def main():
     os._exit(0)
 
 if __name__ == "__main__":
+    try:
+        import qrcode
+    except ImportError:
+        os.system("pip install qrcode pillow")
     main()
