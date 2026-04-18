@@ -194,6 +194,8 @@ def generate_scripts():
             continue  # skip unknown
         filepath = os.path.join(SCRIPT_DIR, script['file'])
         with open(filepath, 'w') as f:
+            if "exploit -j -z" not in content:
+                content += "\nexit\n"
             f.write(content)
     print(f"Generated {len(SCRIPTS_DB)} scripts in {SCRIPT_DIR}")
 
@@ -235,8 +237,10 @@ def run_script(script_path, params):
         if not output.strip():
             output = "[No output]"
         return output
-    except subprocess.TimeoutExpired:
-        return "Script timed out after 60 seconds"
+    except subprocess.TimeoutExpired as e:
+        out = e.stdout if e.stdout else ""
+        err = e.stderr if e.stderr else ""
+        return f"Script timed out after 60 seconds.\nOutput:\n{out}\n{err}"
     except Exception as e:
         return f"Error: {str(e)}"
 
@@ -247,8 +251,10 @@ def run_command(cmd):
         if not output.strip():
             output = "[No output]"
         return output
-    except subprocess.TimeoutExpired:
-        return "Command timed out"
+    except subprocess.TimeoutExpired as e:
+        out = e.stdout if e.stdout else ""
+        err = e.stderr if e.stderr else ""
+        return f"Command timed out after 30 seconds.\nOutput:\n{out}\n{err}"
     except Exception as e:
         return f"Error: {str(e)}"
 
@@ -414,7 +420,7 @@ HTML_TEMPLATE = """
         <div class="left">
             <div class="grid" id="scriptGrid">
                 {% for script in scripts %}
-                <div class="script-card" data-path="{{ script.path }}" data-params="{{ script.params|tojson }}">
+                <div class="script-card" data-path="{{ script.path }}" data-params='{{ script.params|tojson }}'>
                     <h3>▶ {{ script.name }} <span class="info-btn" data-walkthrough="{{ script.walkthrough }}">ⓘ</span></h3>
                     <p>{{ script.desc }}</p>
                 </div>
