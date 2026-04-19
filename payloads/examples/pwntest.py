@@ -75,6 +75,7 @@ selected_idx = 0
 auto_mode = False
 attack_thread = None
 attack_stop = threading.Event()
+mood_timer = None
 
 LOOT_DIR = "/root/KTOx/loot/Handshakes"
 CRACKED_DIR = "/root/KTOx/loot/CrackedWPA"
@@ -97,12 +98,21 @@ faces = {
 }
 
 def set_mood(new_mood):
-    global mood
+    global mood, mood_timer
     mood = new_mood
+    # Cancel previous timer
+    if mood_timer is not None:
+        mood_timer.cancel()
+    # Set timer to revert to normal
     if new_mood in ("attacking", "assoc", "lost", "missed", "searching"):
-        threading.Timer(2.0, lambda: set_mood("normal") if mood == new_mood else None).start()
+        mood_timer = threading.Timer(2.0, lambda: set_mood("normal"))
+        mood_timer.start()
     elif new_mood == "happy":
-        threading.Timer(4.0, lambda: set_mood("normal") if mood == new_mood else None).start()
+        mood_timer = threading.Timer(4.0, lambda: set_mood("normal"))
+        mood_timer.start()
+    elif new_mood == "excited":
+        mood_timer = threading.Timer(3.0, lambda: set_mood("normal"))
+        mood_timer.start()
 
 # ----------------------------------------------------------------------
 # WiFi helpers (aircrack-ng suite)
@@ -279,7 +289,6 @@ def auto_attack_worker():
     global console_msg
     while auto_mode and not attack_stop.is_set():
         try:
-            # Scan for networks
             console_msg = "Auto: scanning..."
             scan_networks(10)
             if not networks:
@@ -287,7 +296,6 @@ def auto_attack_worker():
                 time.sleep(5)
                 continue
             
-            # Find any AP with clients
             attacked_any = False
             for net in networks:
                 if attack_stop.is_set():
@@ -303,12 +311,10 @@ def auto_attack_worker():
                     attacked_any = True
                     if success:
                         console_msg = "Auto: HS captured!"
-                        # After a successful capture, wait a bit before next attack
                         time.sleep(8)
                     else:
                         console_msg = "Auto: attack failed"
                         time.sleep(5)
-                    # After attacking one AP, break out of the for loop and rescan
                     break
             
             if not attacked_any:
