@@ -653,13 +653,13 @@ def _write_payload_state(running: bool, path=None):
 
 def _check_payload_request():
     try:
-        if not os.path.isfile(PAYLOAD_REQUEST_PATH):
-            return None
         with open(PAYLOAD_REQUEST_PATH) as f:
             data = json.load(f)
         os.remove(PAYLOAD_REQUEST_PATH)
         if data.get("action") == "start" and data.get("path"):
             return str(data["path"])
+    except (FileNotFoundError, OSError):
+        pass
     except Exception:
         pass
     return None
@@ -726,14 +726,16 @@ def exec_payload(filename, *args):
         _load_fonts()
 
         try:
-            rj_input.restart_listener()
+            if HAS_INPUT:
+                rj_input.restart_listener()
         except Exception:
             pass
 
         # Flush any virtual button events that piled up while the payload ran
         # so they don't trigger unintended menu actions after returning.
         try:
-            rj_input.flush()
+            if HAS_INPUT:
+                rj_input.flush()
         except Exception:
             pass
 
