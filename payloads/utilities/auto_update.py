@@ -39,10 +39,10 @@ from payloads._input_helper import get_button
 RASPYJACK_DIR   = "/root/KTOx"
 PAYLOADS_DIR    = "/root/KTOx/payloads"
 BACKUP_DIR      = "/root"
-SERVICE_NAME    = "raspyjack"
+SERVICE_NAMES   = ["ktox", "ktox-device", "ktox-webui"]
 GIT_REMOTE      = "origin"
 GIT_BRANCH      = "main"
-INSTALL_SCRIPT  = "/root/KTOx/install_raspyjack.sh"
+INSTALL_SCRIPT  = "/root/KTOx/install.sh"
 
 PINS = {"KEY1": 21, "KEY3": 16}
 WIDTH, HEIGHT = LCD.width, LCD.height
@@ -212,11 +212,12 @@ def git_update() -> tuple[bool, str]:
         return False, msg
 
 def restart_service() -> tuple[bool, str]:
-    try:
-        subprocess.run(["systemctl", "restart", SERVICE_NAME], check=True)
-        return True, "restarted"
-    except subprocess.CalledProcessError as exc:
-        return False, f"systemctl {exc.returncode}"
+    for svc in SERVICE_NAMES:
+        try:
+            subprocess.run(["systemctl", "restart", svc], check=True)
+        except subprocess.CalledProcessError as exc:
+            return False, f"{svc} {exc.returncode}"
+    return True, "restarted"
 
 def run_install_script() -> tuple[bool, str]:
     """Run /root/KTOx/install_raspyjack.sh before reboot."""
