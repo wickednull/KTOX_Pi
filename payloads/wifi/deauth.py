@@ -303,7 +303,7 @@ def scan_networks():
     
     # Clean up and scan
     subprocess.run("rm -f /tmp/deauth_scan*", shell=True)
-    cmd = f"timeout {SCAN_TIMEOUT} airodump-ng --band abg --output-format csv -w /tmp/deauth_scan {WIFI_INTERFACE}"
+    cmd = f"timeout {SCAN_TIMEOUT} airodump-ng --output-format csv -w /tmp/deauth_scan {WIFI_INTERFACE}"
     result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
     log(f"Scan command completed with return code: {result.returncode}")
     

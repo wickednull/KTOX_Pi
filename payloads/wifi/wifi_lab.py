@@ -298,6 +298,8 @@ def select_client_with_airodump(mon_iface, bssid, channel, scan_secs=8):
 
 
 def run_targeted_deauth_client(mon_iface, base_iface, bssid, essid, client_mac, channel):
+    if shutil.which("aireplay-ng") is None:
+        msg(["aireplay-ng", "not installed"], "Any key..."); time.sleep(3); return
     msg(["Deauth (client)", (client_mac or '')[-8:]], "KEY1/LEFT=Stop")
     if CFG.get("aggressive_kill", True): aggressive_kill_setup(base_iface)
     try:
@@ -350,6 +352,8 @@ def run_pmkid_capture(mon_iface, base_iface, bssid, essid, channel):
 
 
 def run_handshake_capture(mon_iface, base_iface, bssid, essid, channel, deauth=True):
+    if shutil.which("airodump-ng") is None:
+        msg(["airodump-ng", "not installed"], "Any key..."); time.sleep(3); return
     msg(["Handshake capture", (essid or bssid)[-16:]], "KEY1/LEFT=Stop")
     ts = time.strftime('%Y%m%d_%H%M%S')
     cap_prefix = os.path.join(LOOT_DIR, f"hs_{ts}")
@@ -402,6 +406,8 @@ def set_channel(iface, channel):
 
 
 def run_targeted_deauth(mon_iface, base_iface, bssid, essid, channel):
+    if shutil.which("aireplay-ng") is None:
+        msg(["aireplay-ng", "not installed"], "Any key..."); time.sleep(3); return
     msg(["Deauth (broadcast)", (essid or bssid)[-16:]], "KEY1/LEFT=Stop")
     if CFG.get("aggressive_kill", True): aggressive_kill_setup(base_iface)
     try:
@@ -570,6 +576,18 @@ if __name__ == '__main__':
             msg(["Root required"], "Run as sudo"); time.sleep(3); sys.exit(1)
         if not WIFI_OK:
             msg(["WiFi integration missing"], None); time.sleep(3); sys.exit(1)
+
+        # Prerequisite tool check
+        missing = [t for t in ("hcxdumptool", "hcxpcapngtool", "airodump-ng", "aireplay-ng")
+                   if shutil.which(t) is None]
+        if missing:
+            msg(["Missing tools:", ", ".join(missing[:2]),
+                 ", ".join(missing[2:]) if len(missing) > 2 else ""], "Any key to continue")
+            last_any = time.time()
+            while time.time() - last_any < 5:
+                if any(GPIO.input(p) == 0 for p in PINS.values()):
+                    break
+                time.sleep(0.05)
 
         # Interface selection (managed iface)
         ifaces = [i for i in get_available_interfaces() if i.startswith('wlan')]

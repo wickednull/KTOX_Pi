@@ -109,7 +109,8 @@ def enable_monitor(iface="wlan0"):
     run(f"ip link set {iface} down")
     run(f"iw dev {iface} set type monitor")
     run(f"ip link set {iface} up")
-    return iface + "mon" if run(f"iw dev {iface}mon info") else iface
+    result = run(f"iw dev {iface} info")
+    return iface if "monitor" in result.lower() else None
 
 
 def disable_monitor(iface="wlan0"):
@@ -221,7 +222,7 @@ def main():
                 break
 
         bssid, ch, essid = aps[cursor]
-        run(f"iwconfig {mon} channel {ch} 2>/dev/null")
+        run(f"iw dev {mon} set channel {ch} 2>/dev/null")
 
         _stop.clear()
         t = threading.Thread(

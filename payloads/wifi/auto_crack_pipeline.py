@@ -350,7 +350,7 @@ def capture_pmkid(mon, bssid, ch, essid):
     os.makedirs(out, exist_ok=True)
     pcapng = os.path.join(out, "capture.pcapng")
     draw(["PMKID capture", f"ESSID: {essid[:16]}", "Using hcxdumptool..."])
-    run(f"hcxdumptool -i {mon} -o {pcapng} -c {ch} --filterlist={bssid} --filtermode=2", timeout=30)
+    run(f"hcxdumptool -i {mon} -o {pcapng} -c {ch} --filterlist={bssid} --filtermode=2", timeout=120)
     hashfile = os.path.join(out, "pmkid.16800")
     run(f"hcxpcaptool -z {hashfile} {pcapng}")
     if os.path.exists(hashfile) and os.path.getsize(hashfile) > 0:
@@ -369,8 +369,10 @@ def crack_hashcat(hash_file, mode, wordlist, essid):
     cmd = f"hashcat -m {mode} {hash_file} {wordlist} --force --status --status-timer=5 --potfile-disable"
     proc = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     pwd = None
+    deadline = time.time() + 300
     try:
-        for line in iter(proc.stdout.readline, ''):
+        while time.time() < deadline and proc.poll() is None:
+            line = proc.stdout.readline()
             if not line:
                 break
             if "STATUS" in line:
@@ -382,9 +384,11 @@ def crack_hashcat(hash_file, mode, wordlist, essid):
                 if len(parts) >= 2:
                     pwd = parts[-1]
                     break
-        proc.wait(timeout=2)
-    except:
-        proc.terminate()
+    except (OSError, IOError):
+        pass
+    finally:
+        if proc.poll() is None:
+            proc.terminate()
     return pwd
 
 def crack_aircrack(cap, wordlist):

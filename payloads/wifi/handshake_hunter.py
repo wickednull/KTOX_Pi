@@ -93,7 +93,7 @@ _target_ap = None
 def _set_channel(iface, ch):
     """Set monitor interface to a specific channel."""
     try:
-        subprocess.run(["sudo", "iw", "dev", iface, "set", "channel", str(ch)],
+        subprocess.run(["iw", "dev", iface, "set", "channel", str(ch)],
                        capture_output=True, timeout=5)
     except Exception:
         pass

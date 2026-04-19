@@ -267,13 +267,10 @@ def select_interface_menu():
 def set_channel(channel):
     """Sets the Wi-Fi interface to the specified channel."""
     try:
-        # Prefer modern iw command
-        subprocess.run(['sudo', 'iw', 'dev', WIFI_INTERFACE, 'set', 'channel', str(channel)], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    except subprocess.CalledProcessError:
-        try:
-            subprocess.run(['sudo', 'iwconfig', WIFI_INTERFACE, 'channel', str(channel)], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        except subprocess.CalledProcessError as e:
-            print(f"Error setting channel {channel} on {WIFI_INTERFACE}: {e}", file=sys.stderr)
+        subprocess.run(['iw', 'dev', WIFI_INTERFACE, 'set', 'channel', str(channel)],
+                       check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except subprocess.CalledProcessError as e:
+        print(f"Error setting channel {channel} on {WIFI_INTERFACE}: {e}", file=sys.stderr)
 
 def sniffer_worker():
     global channel_data, status_msg
