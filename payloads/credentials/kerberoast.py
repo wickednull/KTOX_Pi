@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-RaspyJack Payload -- Kerberoast & AS-REP Roast
+KTOx Payload -- Kerberoast & AS-REP Roast
 Kerberoasting / AS-REP Roasting via impacket (GetUserSPNs.py, GetNPUsers.py).
 Auto-detects DC, collects TGS/AS-REP hashes in hashcat format.
 Controls: OK=start, KEY1=toggle mode, KEY3=exit

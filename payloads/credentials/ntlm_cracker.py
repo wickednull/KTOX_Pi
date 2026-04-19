@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-RaspyJack Payload -- NTLM Hash Cracker
+KTOx Payload -- NTLM Hash Cracker
 =======================================
 Author: 7h30th3r0n3
 
@@ -27,6 +27,7 @@ import sys
 import re
 import time
 import signal
+import shutil
 import threading
 import subprocess
 from datetime import datetime
@@ -56,7 +57,7 @@ font = scaled_font()
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-JOHN_BIN = "/usr/sbin/john"
+JOHN_BIN = shutil.which("john") or "/usr/sbin/john"
 DEFAULT_WORDLIST = "/usr/share/john/password.lst"
 CUSTOM_WORDLIST = "/root/KTOx/loot/wordlists/custom.txt"
 RESPONDER_LOG_DIR = "/root/KTOx/Responder/logs"
@@ -189,6 +190,12 @@ def _crack_thread(hashfile, fmt, mode_name):
     """Run john in a background thread, parse output in real-time."""
     global _john_proc, cracked_count, last_cracked, elapsed_secs
     global phase, status_msg, _running
+
+    if not os.path.isfile(JOHN_BIN):
+        with lock:
+            status_msg = "john not found: apt install john"
+            phase = "results"
+        return
 
     cmd = _build_john_cmd(hashfile, fmt, mode_name)
     start_time = time.time()

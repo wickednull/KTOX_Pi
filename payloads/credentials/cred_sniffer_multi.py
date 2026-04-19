@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-RaspyJack Payload -- Multi-Protocol Credential Sniffer
+KTOx Payload -- Multi-Protocol Credential Sniffer
 =======================================================
 Author: 7h30th3r0n3
 

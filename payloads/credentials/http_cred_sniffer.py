@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-RaspyJack Payload -- Passive HTTP Credential Extractor
+KTOx Payload -- Passive HTTP Credential Extractor
 ======================================================
 Author: 7h30th3r0n3
 

@@ -183,7 +183,7 @@ def handle_ip_input_logic(initial_ip):
             if len(parts) == 4 and all(p.isdigit() and 0 <= int(p) <= 255 for p in parts):
                 return input_ip
             else:
-                show_message(["Invalid IP!", "Try again."], "red")
+                draw_ui(message_lines=["Invalid IP!", "Try again."])
                 time.sleep(2)
                 input_ip = "" # Reset on invalid
         

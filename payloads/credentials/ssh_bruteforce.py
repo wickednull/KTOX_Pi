@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-RaspyJack Payload -- SSH Credential Spray
+KTOx Payload -- SSH Credential Spray
 ==========================================
 Author: 7h30th3r0n3
 

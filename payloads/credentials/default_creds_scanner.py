@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-RaspyJack Payload -- Default Credentials Scanner
+KTOx Payload -- Default Credentials Scanner
 =================================================
 Author: 7h30th3r0n3
 

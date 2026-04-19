@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-RaspyJack Payload -- Pass the Hash (PtH)
+KTOx Payload -- Pass the Hash (PtH)
 =========================================
 Author: 7h30th3r0n3
 

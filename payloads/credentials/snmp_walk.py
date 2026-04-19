@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-RaspyJack Payload -- SNMP Community Brute-Force + MIB Walk
+KTOx Payload -- SNMP Community Brute-Force + MIB Walk
 ==========================================================
 Author: 7h30th3r0n3
 

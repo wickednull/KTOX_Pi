@@ -23,6 +23,7 @@ import sys
 import re
 import time
 import signal
+import shutil
 import threading
 import subprocess
 from datetime import datetime
@@ -177,8 +178,8 @@ def browse_file(start_path="/", extensions=None, prompt="Select file:"):
 # ----------------------------------------------------------------------
 # Cracker constants & state
 # ----------------------------------------------------------------------
-AIRCRACK_BIN = "/usr/bin/aircrack-ng"
-JOHN_BIN = "/usr/sbin/john"
+AIRCRACK_BIN = shutil.which("aircrack-ng") or "/usr/bin/aircrack-ng"
+JOHN_BIN = shutil.which("john") or "/usr/sbin/john"
 DEFAULT_WORDLIST = "/usr/share/john/password.lst"
 ROCKYOU_WORDLIST = "/root/KTOx/loot/wordlists/rockyou.txt"
 CUSTOM_WORDLIST = "/root/KTOx/loot/wordlists/custom.txt"
@@ -246,6 +247,11 @@ def convert_pmkid_for_john(pmkid_file):
 # ----------------------------------------------------------------------
 def crack_cap_thread(capfile, wordlist_path):
     global _crack_proc, keys_tested, speed_kps, elapsed_secs, found_key, phase, status_msg, _running
+    if not os.path.isfile(AIRCRACK_BIN):
+        with lock:
+            status_msg = "aircrack-ng not found"
+            phase = "results"
+        return
     start = time.time()
     with lock:
         keys_tested = 0; speed_kps = ""; elapsed_secs = 0; found_key = ""
@@ -297,6 +303,11 @@ def crack_cap_thread(capfile, wordlist_path):
 
 def crack_pmkid_thread(pmkid_file, wordlist_path):
     global _crack_proc, keys_tested, speed_kps, elapsed_secs, found_key, phase, status_msg, _running
+    if not os.path.isfile(JOHN_BIN):
+        with lock:
+            status_msg = "john not found"
+            phase = "results"
+        return
     start = time.time()
     with lock:
         keys_tested = 0; speed_kps = ""; elapsed_secs = 0; found_key = ""

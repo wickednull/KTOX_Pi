@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-RaspyJack Payload -- FTP Credential Brute-Force
+KTOx Payload -- FTP Credential Brute-Force
 ================================================
 Author: 7h30th3r0n3
 
