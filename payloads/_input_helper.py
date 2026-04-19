@@ -3,10 +3,19 @@ Shared input helper for KTOx payloads.
 Checks WebUI virtual input first, then falls back to GPIO.
 """
 
+import os, sys
+
 try:
     import ktox_input
 except Exception:
-    ktox_input = None
+    # ktox_input lives in ktox_pi/ — add it to the path and retry
+    try:
+        _ktox_pi = os.path.join(os.environ.get("KTOX_DIR", "/root/KTOx"), "ktox_pi")
+        if _ktox_pi not in sys.path:
+            sys.path.insert(0, _ktox_pi)
+        import ktox_input
+    except Exception:
+        ktox_input = None
 
 _VIRTUAL_TO_BTN = {
     "KEY_UP_PIN": "UP",

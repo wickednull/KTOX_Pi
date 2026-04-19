@@ -306,13 +306,15 @@ def _auto_install():
     try:
         result = subprocess.run(
             ["sudo", "bash", install_script],
-            capture_output=True, text=True, timeout=120,
+            capture_output=True, text=True, timeout=180,
         )
-        # Test if it worked
-        subprocess.run(
+        # Verify the import actually works
+        verify = subprocess.run(
             ["python3", "-c", "from pyboy import PyBoy"],
             capture_output=True, timeout=10,
         )
+        if verify.returncode != 0:
+            raise RuntimeError("PyBoy import failed after install")
         img = Image.new("RGB", (WIDTH, HEIGHT), "black")
         d = ScaledDraw(img)
         d.text((64, 50), "Installed!", font=font, fill=(0, 255, 0), anchor="mm")
