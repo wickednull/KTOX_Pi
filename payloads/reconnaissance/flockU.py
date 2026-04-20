@@ -151,9 +151,9 @@ SCORES = {
 # ----------------------------------------------------------------------
 # Shared state
 # ----------------------------------------------------------------------
-lock = threading.Lock()
+lock = threading.RLock()     # RLock: safe for reentrant calls (e.g. draw_list_view -> compute_flocks)
 running = True
-view_mode = "list"           # "list" or "radar"
+view_mode = "radar"          # start on radar so scanning activity is visible
 detail_view = False
 detail_flock = None
 scroll_pos = 0
@@ -212,15 +212,6 @@ def disable_monitor_mode(iface):
     run_cmd(f"iw dev {iface} set type managed")
     run_cmd(f"ip link set {iface} up")
     run_cmd("systemctl restart NetworkManager")
-
-def show_message(msg, sub=""):
-    img = Image.new("RGB", (W, H), (10, 0, 0))
-    draw = ImageDraw.Draw(img)
-    draw.text((10, 50), msg, font=FONT_MD, fill=(30, 132, 73))
-    if sub:
-        draw.text((4, 65), sub, font=FONT_SM, fill=(113, 125, 126))
-    LCD.LCD_ShowImage(img, 0, 0)
-    time.sleep(2)
 
 # ----------------------------------------------------------------------
 # Helper functions
@@ -295,17 +286,104 @@ def ble_scan_thread():
     proc.terminate()
 
 # ----------------------------------------------------------------------
-# WiFi sniffing thread (monitor mode)
+# Scoring helper
+# ----------------------------------------------------------------------
+def _score_ap(mac, essid=""):
+    """Return (score, method) for a given MAC and optional SSID."""
+    score = 0
+    method = ""
+    for prefix in FLOCK_MAC_PREFIXES:
+        if mac.startswith(prefix.upper()):
+            score += SCORES["mac_prefix"]
+            method = "mac_prefix"
+            break
+    if essid:
+        for pattern in FLOCK_SSID_PATTERNS:
+            if re.search(pattern, essid, re.I):
+                score += SCORES["ssid_pattern"]
+                method = method or "ssid_pattern"
+                if re.match(r"^Flock-[0-9A-F]{4,6}$", essid, re.I):
+                    score += SCORES["ssid_format"]
+                break
+    return score, method
+
+def _update_device(mac, rssi, essid, score, method):
+    if score <= 0:
+        return
+    with lock:
+        existing = detected_devices.get(mac, {})
+        if existing.get("score", 0) <= score:
+            detected_devices[mac] = {
+                "last_seen": time.time(),
+                "rssi": rssi,
+                "score": score,
+                "name": essid,
+                "method": method,
+            }
+
+# ----------------------------------------------------------------------
+# WiFi scanning thread (monitor mode)
+# Uses airodump-ng CSV output; falls back to tcpdump if unavailable.
 # ----------------------------------------------------------------------
 def wifi_sniff_thread(mon_iface):
-    """Use tcpdump to capture probe requests and beacons on the monitor interface."""
-    cmd = ["tcpdump", "-i", mon_iface, "-e", "-l",
-           "type", "mgt", "subtype", "probe-req", "or", "subtype", "beacon"]
+    import tempfile, shutil
+    tmpdir = tempfile.mkdtemp(prefix="/tmp/flockU_")
+    prefix = os.path.join(tmpdir, "scan")
+    csv_path = prefix + "-01.csv"
+    cmd = ["airodump-ng", "--write", prefix, "--output-format", "csv",
+           "--write-interval", "3", mon_iface]
+    try:
+        proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+        _tcpdump_sniff(mon_iface)
+        return
+    try:
+        while running:
+            time.sleep(3)
+            if os.path.exists(csv_path):
+                try:
+                    _parse_airodump_csv(csv_path)
+                except Exception:
+                    pass
+    finally:
+        try:
+            proc.terminate()
+        except Exception:
+            pass
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+def _parse_airodump_csv(csv_path):
+    with open(csv_path, "r", errors="ignore") as f:
+        content = f.read()
+    # APs are in the first block before the blank-line Station header
+    ap_block = re.split(r"\n\s*\n", content)[0]
+    for line in ap_block.splitlines():
+        parts = [p.strip() for p in line.split(",")]
+        if len(parts) < 14:
+            continue
+        mac = parts[0].upper()
+        if not re.match(r"^([0-9A-F]{2}:){5}[0-9A-F]{2}$", mac):
+            continue
+        try:
+            rssi = int(parts[8])
+            if rssi >= 0:
+                rssi = -60
+        except ValueError:
+            rssi = -60
+        essid = parts[13].strip()
+        score, method = _score_ap(mac, essid)
+        _update_device(mac, rssi, essid, score, method)
+
+def _tcpdump_sniff(mon_iface):
+    # tcpdump 802.11 filter: each alternative needs its own type qualifier
+    filt = "type mgt subtype probe-req or type mgt subtype beacon"
+    cmd = ["tcpdump", "-i", mon_iface, "-e", "-l", filt]
     try:
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                                 text=True, bufsize=1)
     except Exception as e:
-        print(f"WiFi sniff failed: {e}")
+        print(f"tcpdump fallback failed: {e}")
         return
     while running:
         line = proc.stdout.readline()
@@ -315,38 +393,15 @@ def wifi_sniff_thread(mon_iface):
         if not mac_match:
             continue
         mac = mac_match.group(0).upper()
-        now = time.time()
-        score = 0
-        method = ""
-        # MAC prefix match
-        for prefix in FLOCK_MAC_PREFIXES:
-            if mac.startswith(prefix):
-                score += SCORES["mac_prefix"]
-                method = "mac_prefix"
-                break
-        # Try to extract SSID from beacon
-        ssid_match = re.search(r'IEEE 802\.11.*Beacon.*"([^"]+)"', line)
-        if ssid_match:
-            ssid = ssid_match.group(1)
-            for pattern in FLOCK_SSID_PATTERNS:
-                if re.search(pattern, ssid, re.I):
-                    score += SCORES["ssid_pattern"]
-                    method = "ssid_pattern"
-                    if re.match(r"^Flock-[0-9A-F]{6}$", ssid, re.I):
-                        score += SCORES["ssid_format"]
-                    break
-        if score > 0:
-            # Approximate RSSI (not available in tcpdump line easily; use -60 as default)
-            with lock:
-                if mac not in detected_devices or detected_devices[mac]["score"] < score:
-                    detected_devices[mac] = {
-                        "last_seen": now,
-                        "rssi": -60,
-                        "score": score,
-                        "name": ssid if ssid_match else "",
-                        "method": method,
-                    }
-    proc.terminate()
+        # tcpdump formats SSID as: Beacon (ESSID) or Probe Request (ESSID)
+        ssid_m = re.search(r"(?:Beacon|Probe (?:Request|Response)) \(([^)]+)\)", line)
+        essid = ssid_m.group(1) if ssid_m else ""
+        score, method = _score_ap(mac, essid)
+        _update_device(mac, -60, essid, score, method)
+    try:
+        proc.terminate()
+    except Exception:
+        pass
 
 # ----------------------------------------------------------------------
 # Flock correlation (group devices that appear together)
@@ -392,11 +447,12 @@ def export_loot():
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     filepath = os.path.join(LOOT_DIR, f"flock_{ts}.json")
     with lock:
-        data = {
-            "timestamp": ts,
-            "devices": detected_devices,
-            "flocks": compute_flocks(),
-        }
+        devices_snapshot = dict(detected_devices)
+    data = {
+        "timestamp": ts,
+        "devices": devices_snapshot,
+        "flocks": compute_flocks(),
+    }
     with open(filepath, "w") as f:
         json.dump(data, f, indent=2, default=str)
     return filepath
