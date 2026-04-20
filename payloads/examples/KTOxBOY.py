@@ -14,7 +14,9 @@ Controls:
   KEY3 tap  (<0.6s)         – Select
   KEY3 hold (>0.6s)         – Exit to menu
 
-Requires: pip3 install pyboy  (use piwheels)
+Requires (Pi OS Bookworm / externally-managed env):
+  pip install pyboy --extra-index-url https://www.piwheels.org/simple --break-system-packages
+  OR: sudo bash scripts/install_pyboy.sh
 """
 
 import os
@@ -288,20 +290,56 @@ def _run_emulator(rom_path):
 # ══════════════════════════════════════════════════════════════════════════════
 def _auto_install():
     import subprocess
-    install_script = "/root/KTOx/scripts/install_pyboy.sh"
-    if not os.path.isfile(install_script):
-        install_script = "/root/Raspyjack/scripts/install_pyboy.sh"
+    # Search for install script: beside the repo root first, then legacy paths
+    _here = os.path.dirname(os.path.abspath(__file__))
+    _repo_root = os.path.normpath(os.path.join(_here, "..", ".."))
+    _script_rel = os.path.join(_repo_root, "scripts", "install_pyboy.sh")
+    _candidates = [
+        _script_rel,
+        "/root/KTOx/scripts/install_pyboy.sh",
+        "/root/Raspyjack/scripts/install_pyboy.sh",
+    ]
+    install_script = next((p for p in _candidates if os.path.isfile(p)), None)
 
     _show_message(["PyBoy not found", "Auto-installing...", "May take 2-5 min", "on Pi Zero 2W"], footer="Please wait")
     try:
-        result = subprocess.run(["sudo", "bash", install_script], capture_output=True, text=True, timeout=360)
-        if result.returncode != 0:
-            raise RuntimeError((result.stderr or result.stdout).strip()[-80:])
+        if install_script:
+            result = subprocess.run(
+                ["sudo", "bash", install_script],
+                capture_output=True, text=True, timeout=360,
+            )
+            if result.returncode != 0:
+                raise RuntimeError((result.stderr or result.stdout).strip()[-80:])
+        else:
+            # Script not found — run the confirmed working pip command directly
+            result = subprocess.run(
+                ["pip", "install", "pyboy",
+                 "--extra-index-url", "https://www.piwheels.org/simple",
+                 "--break-system-packages"],
+                capture_output=True, text=True, timeout=360,
+            )
+            if result.returncode != 0:
+                # Try python3 -m pip as fallback
+                result = subprocess.run(
+                    ["python3", "-m", "pip", "install", "pyboy",
+                     "--extra-index-url", "https://www.piwheels.org/simple",
+                     "--break-system-packages"],
+                    capture_output=True, text=True, timeout=360,
+                )
+                if result.returncode != 0:
+                    raise RuntimeError((result.stderr or result.stdout).strip()[-80:])
         subprocess.run(["python3", "-c", "from pyboy import PyBoy"], capture_output=True, timeout=15)
         _show_message(["Installed OK!", "Loading..."], timeout=1.5)
         return True
     except Exception as e:
-        _show_message(["Install failed", str(e)[:44], "Run manually:", "sudo bash scripts/install_pyboy.sh"], footer="KEY3 = Back")
+        _show_message(
+            ["Install failed", str(e)[:22],
+             "Run manually:",
+             "pip install pyboy",
+             "--extra-index-url piwheels",
+             "--break-system-packages"],
+            footer="KEY3 = Back",
+        )
         while True:
             if get_button(PINS, GPIO) == "KEY3":
                 break
