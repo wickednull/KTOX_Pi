@@ -227,8 +227,12 @@ def _get_webui_bind_addrs() -> list[tuple[str, str]]:
         ip = _get_interface_ip(iface)
         if ip:
             addrs.append((ip, iface))
-    # Always include localhost for local access
-    addrs.append(("127.0.0.1", "lo"))
+    # Only add localhost when at least one real interface is up.
+    # If no interfaces have IPs yet (DHCP still running at boot), leave addrs
+    # empty so the caller's 0.0.0.0 fallback fires — the WebUI stays reachable
+    # on all interfaces once they come up, rather than hiding on localhost only.
+    if addrs:
+        addrs.append(("127.0.0.1", "lo"))
     return addrs
 PREVIEW_MAX_BYTES = int(os.environ.get("RJ_LOOT_PREVIEW_MAX", str(200 * 1024)))
 PAYLOAD_MAX_BYTES = int(os.environ.get("RJ_PAYLOAD_MAX", str(512 * 1024)))

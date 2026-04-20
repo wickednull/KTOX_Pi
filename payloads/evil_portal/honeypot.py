@@ -95,13 +95,13 @@ DEFAULT_PROFILES: Dict[str, List[Tuple[int, str]]] = {
         (22, "ssh"),
         (23, "telnet"),
         (80, "http"),
-        (8080, "http"),
+        (8888, "http"),
     ],
     # Web‑focused
     "web": [
         (80, "http"),
         (443, "https"),
-        (8080, "http"),
+        (8888, "http"),
     ],
     # Larger mix. Many are privileged.
     "all": [
@@ -116,7 +116,7 @@ DEFAULT_PROFILES: Dict[str, List[Tuple[int, str]]] = {
         (3306, "mysql"),
         (3389, "rdp"),
         (5900, "vnc"),
-        (8080, "http"),
+        (8888, "http"),
     ],
 }
 
@@ -797,7 +797,7 @@ def parse_ports_arg(ports_arg: str) -> List[Tuple[int, str]]:
             # Heuristic service guess
             svc_guess = {
                 21: "ftp", 22: "ssh", 23: "telnet", 25: "smtp", 80: "http", 110: "pop3",
-                143: "imap", 443: "https", 8080: "http",
+                143: "imap", 443: "https", 8888: "http",
             }.get(port, "raw")
             result.append((port, svc_guess))
     return result

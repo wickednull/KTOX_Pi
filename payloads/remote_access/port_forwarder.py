@@ -74,7 +74,7 @@ cursor_pos = 0
 def _new_rule():
     """Create a new default forwarding rule."""
     return {
-        "local_port": 8080,
+        "local_port": 8888,  # 8080 is reserved for the KTOX WebUI
         "remote_host": "192.168.1.1",
         "remote_port": 80,
         "active": False,

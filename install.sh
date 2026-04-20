@@ -225,13 +225,15 @@ UNIT
 cat > /etc/systemd/system/ktox-webui.service << UNIT
 [Unit]
 Description=KTOx_Pi WebUI HTTP Server :8080
-After=ktox-device.service
+After=ktox-device.service network-online.target
+Wants=network-online.target
 Requires=ktox-device.service
 [Service]
 Type=simple
 WorkingDirectory=$KTOX_DIR
 ExecStart=/usr/bin/python3 $KTOX_DIR/web_server.py
 Restart=on-failure
+RestartSec=3
 User=root
 Environment=PYTHONUNBUFFERED=1
 Environment=RJ_WS_TOKEN_FILE=$KTOX_DIR/.webui_token

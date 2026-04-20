@@ -65,7 +65,7 @@ FONT_TITLE = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bol
 
 ETH_INTERFACE = "eth0"
 TARGET_IP = ""
-MITMPROXY_PORT = 8080
+MITMPROXY_PORT = 8888  # 8080 is reserved for the KTOX WebUI
 running = True
 attack_processes = {}
 status_message = "Starting..."
