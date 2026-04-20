@@ -1,29 +1,27 @@
 #!/usr/bin/env python3
 """
-RaspyJack Payload -- Game Boy Emulator
----------------------------------------
-Play Game Boy / Game Boy Color ROMs on the LCD using PyBoy.
+KTOx Payload -- Game Boy / Game Boy Color Emulator
+----------------------------------------------------
+Play .gb and .gbc ROMs on the LCD using PyBoy 2.x.
 
-Place .gb or .gbc ROM files in /root/KTOx/roms/
-The emulator renders frames to the LCD at ~20 FPS on Pi Zero 2.
+Place ROM files in /root/KTOx/roms/
 
 Controls:
-  Joystick    : D-pad (Up/Down/Left/Right)
-  OK          : A button
-  KEY1        : B button
-  KEY2        : Start
-  KEY3 (hold) : Exit to RaspyJack menu
-  KEY3 (tap)  : Select
+  UP / DOWN / LEFT / RIGHT  — D-pad
+  OK                        — A button
+  KEY1                      — B button
+  KEY2                      — Start
+  KEY3 tap  (<0.6s)         — Select
+  KEY3 hold (>0.6s)         — Exit to menu
 
-Requires: pip3 install pyboy
-
-Author: 7h30th3r0n3
+Requires: pip3 install pyboy  (piwheels pre-built wheel on Pi OS)
 """
 
 import os
 import sys
 import time
 import signal
+import logging
 
 sys.path.append(os.path.abspath(os.path.join(__file__, "..", "..", "..")))
 
@@ -34,31 +32,51 @@ from PIL import Image, ImageDraw, ImageFont
 from payloads._display_helper import ScaledDraw, scaled_font
 from payloads._input_helper import get_button, flush_input
 
+# Suppress PyBoy's verbose startup output
+logging.getLogger("pyboy").setLevel(logging.ERROR)
+
 try:
     from pyboy import PyBoy
     PYBOY_OK = True
 except ImportError:
     PYBOY_OK = False
 
+# ── Hardware ──────────────────────────────────────────────────────────────────
 PINS = {
     "UP": 6, "DOWN": 19, "LEFT": 5, "RIGHT": 26,
     "OK": 13, "KEY1": 21, "KEY2": 20, "KEY3": 16,
 }
 GPIO.setmode(GPIO.BCM)
-for p in PINS.values():
-    GPIO.setup(p, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+for _p in PINS.values():
+    GPIO.setup(_p, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
 LCD = LCD_1in44.LCD()
 LCD.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
 WIDTH, HEIGHT = LCD.width, LCD.height
 font = scaled_font()
 
-ROMS_DIR = "/root/KTOx/roms"
+# ── Constants ─────────────────────────────────────────────────────────────────
+ROMS_DIR       = "/root/KTOx/roms"
 ROM_EXTENSIONS = (".gb", ".gbc")
-KEY3_HOLD_EXIT = 1.0  # seconds to hold KEY3 for exit
+GB_W, GB_H     = 160, 144          # Game Boy native resolution
+GB_FPS         = 59.73             # Game Boy clock (frames per second)
+FRAME_TIME     = 1.0 / GB_FPS      # ~16.74 ms per frame
+RENDER_EVERY   = 3                  # Push 1 in 3 frames to LCD (~20 FPS)
+KEY3_HOLD_S    = 0.6               # Hold KEY3 longer than this to exit
 
-# Game Boy resolution
-GB_W, GB_H = 160, 144
+# KTOX colour palette
+_BG     = (10,  0,   0)
+_HDR    = (139, 0,   0)
+_BLOOD  = (192, 57,  43)
+_EMBER  = (231, 76,  60)
+_WHITE  = (242, 243, 244)
+_ASH    = (171, 178, 185)
+_STEEL  = (113, 125, 126)
+_DIM    = (86,  101, 115)
+_RUST   = (146, 43,  33)
+_YELLOW = (212, 172, 13)
+_GOOD   = (30,  132, 73)
+_FOOTER = (34,  0,   0)
 
 running = True
 
@@ -72,72 +90,81 @@ signal.signal(signal.SIGTERM, _sig)
 signal.signal(signal.SIGINT, _sig)
 
 
-# ═══════════════════════════════════════════════════════════════
+# ── Shared drawing helpers ────────────────────────────────────────────────────
+
+def _base_img(title="GAME BOY"):
+    """Return a new image with the standard KTOX header already drawn."""
+    img = Image.new("RGB", (WIDTH, HEIGHT), _BG)
+    d   = ScaledDraw(img)
+    d.rectangle((0, 0, 127, 12), fill=_HDR)
+    d.text((64, 6), title, font=font, fill=_BLOOD, anchor="mm")
+    return img, d
+
+
+def _show_error(headline, detail="", hint="KEY3 = Back"):
+    img, d = _base_img()
+    d.text((64, 38), headline, font=font, fill=_EMBER,  anchor="mm")
+    if detail:
+        d.text((4,  58), detail[:22],   font=font, fill=_ASH)
+        d.text((4,  72), detail[22:44], font=font, fill=_STEEL)
+    d.rectangle((0, 117, 127, 127), fill=_FOOTER)
+    d.text((64, 122), hint, font=font, fill=_DIM, anchor="mm")
+    LCD.LCD_ShowImage(img, 0, 0)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # ROM BROWSER
-# ═══════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
+
 def _list_roms():
-    """List .gb/.gbc files in ROMS_DIR."""
     os.makedirs(ROMS_DIR, exist_ok=True)
-    roms = []
-    for name in sorted(os.listdir(ROMS_DIR)):
-        if name.lower().endswith(ROM_EXTENSIONS):
-            roms.append(name)
-    return roms
+    return sorted(
+        n for n in os.listdir(ROMS_DIR)
+        if n.lower().endswith(ROM_EXTENSIONS)
+    )
 
 
 def _draw_browser(roms, cursor, scroll):
-    """Draw ROM selection screen."""
-    img = Image.new("RGB", (WIDTH, HEIGHT), (10, 0, 0))
-    d = ScaledDraw(img)
-
-    # Header
-    d.rectangle((0, 0, 127, 12), fill=(139, 0, 0))
-    d.text((2, 1), "GAME BOY", font=font, fill=(192, 57, 43))
-    d.text((65, 1), f"{len(roms)} ROMs", font=font, fill=(113, 125, 126))
+    img, d = _base_img()
+    d.text((80, 6), f"{len(roms)} ROMs", font=font, fill=_STEEL, anchor="lm")
 
     if not roms:
-        d.text((4, 30), "No ROMs found!", font=font, fill=(231, 76, 60))
-        d.text((4, 45), "Place .gb/.gbc in:", font=font, fill=(113, 125, 126))
-        d.text((4, 58), "/root/KTOx/", font=font, fill=(171, 178, 185))
-        d.text((4, 70), "  roms/", font=font, fill=(171, 178, 185))
-        d.text((4, 95), "KEY3 = Exit", font=font, fill=(86, 101, 115))
+        d.text((4, 32), "No ROMs found!",       font=font, fill=_EMBER)
+        d.text((4, 48), "Place .gb/.gbc files", font=font, fill=_STEEL)
+        d.text((4, 62), "in /root/KTOx/roms/",  font=font, fill=_ASH)
     else:
-        # ROM list (7 visible)
         visible = 7
         for i in range(min(visible, len(roms) - scroll)):
-            idx = scroll + i
-            y = 16 + i * 14
+            idx    = scroll + i
+            y      = 16 + i * 14
             is_sel = idx == cursor
 
             if is_sel:
                 d.rectangle((0, y - 1, 127, y + 11), fill=(60, 0, 0))
-                d.rectangle((0, y - 1, 2, y + 11), fill=(192, 57, 43))
+                d.rectangle((0, y - 1, 2,   y + 11), fill=_BLOOD)
 
-            name = roms[idx]
+            name    = roms[idx]
             display = os.path.splitext(name)[0][:18]
-            col = (242, 243, 244) if is_sel else (171, 178, 185)
-            d.text((5, y), display, font=font, fill=col)
+            d.text((5, y), display, font=font,
+                   fill=_WHITE if is_sel else _ASH)
 
-            # GBC badge
             if name.lower().endswith(".gbc"):
-                d.text((115, y), "C", font=font, fill=(231, 76, 60))
+                d.text((114, y), "C", font=font, fill=_EMBER)
 
         # Scrollbar
         if len(roms) > visible:
             bar_h = max(5, int(100 * visible / len(roms)))
             bar_y = 16 + int((100 - bar_h) * scroll / max(1, len(roms) - visible))
-            d.rectangle((125, bar_y, 127, bar_y + bar_h), fill=(146, 43, 33))
+            d.rectangle((125, bar_y, 127, bar_y + bar_h), fill=_RUST)
 
-    # Footer
-    d.rectangle((0, 117, 127, 127), fill=(34, 0, 0))
-    d.text((2, 118), "OK=Play  K1=Refresh  K3=Exit", font=font, fill=(86, 101, 115))
-
+    d.rectangle((0, 117, 127, 127), fill=_FOOTER)
+    d.text((2, 122), "OK=Play  K1=Refresh  K3=Exit", font=font, fill=_DIM)
     LCD.LCD_ShowImage(img, 0, 0)
 
 
 def _rom_browser():
-    """ROM selection menu. Returns selected ROM path or None."""
-    roms = _list_roms()
+    """ROM picker. Returns full path or None."""
+    roms   = _list_roms()
     cursor = 0
     scroll = 0
 
@@ -152,65 +179,55 @@ def _rom_browser():
             if cursor < scroll:
                 scroll = cursor
         elif btn == "DOWN":
-            cursor = min(len(roms) - 1, cursor + 1)
-            if cursor >= scroll + 7:
-                scroll = cursor - 6
+            if roms:
+                cursor = min(len(roms) - 1, cursor + 1)
+                if cursor >= scroll + 7:
+                    scroll = cursor - 6
         elif btn == "OK" and roms:
             return os.path.join(ROMS_DIR, roms[cursor])
         elif btn == "KEY1":
-            # Refresh ROM list
-            roms = _list_roms()
+            roms   = _list_roms()
             cursor = min(cursor, max(0, len(roms) - 1))
+            scroll = 0
 
     return None
 
 
-# ═══════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
 # EMULATOR
-# ═══════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
+
 def _draw_loading(rom_name):
-    """Show loading screen."""
-    img = Image.new("RGB", (WIDTH, HEIGHT), (10, 0, 0))
-    d = ScaledDraw(img)
-    d.rectangle((0, 0, 127, 12), fill=(139, 0, 0))
-    d.text((64, 6), "GAME BOY", font=font, fill=(192, 57, 43), anchor="mm")
-    d.text((64, 40), "Loading...", font=font, fill=(192, 57, 43), anchor="mm")
+    img, d = _base_img()
+    d.text((64, 40), "Loading...", font=font, fill=_BLOOD,  anchor="mm")
     name = os.path.splitext(os.path.basename(rom_name))[0][:16]
-    d.text((64, 58), name, font=font, fill=(242, 243, 244), anchor="mm")
-    d.text((64, 80), "Please wait", font=font, fill=(86, 101, 115), anchor="mm")
+    d.text((64, 58), name,          font=font, fill=_WHITE,  anchor="mm")
+    d.text((64, 78), "Please wait", font=font, fill=_DIM,    anchor="mm")
     LCD.LCD_ShowImage(img, 0, 0)
 
 
 def _read_buttons_noblock():
-    """Non-blocking button read. Returns dict of pressed buttons (GPIO + WebUI held)."""
-    pressed = {}
+    """Non-blocking: returns set of currently pressed button names."""
+    pressed = set()
     for name, pin in PINS.items():
         if GPIO.input(pin) == 0:
-            pressed[name] = True
-    # WebUI held buttons (continuous input)
-    from payloads._input_helper import get_held_buttons
-    for btn in get_held_buttons():
-        pressed[btn] = True
+            pressed.add(name)
+    try:
+        from payloads._input_helper import get_held_buttons
+        pressed.update(get_held_buttons())
+    except Exception:
+        pass
     return pressed
 
 
 def _run_emulator(rom_path):
-    """Run the Game Boy emulator."""
     global running
 
-    # Import locally so this works whether PyBoy was available at startup
-    # or was just installed by _auto_install() during this session.
+    # Local import so auto-install during this session is visible
     try:
         from pyboy import PyBoy
-    except ImportError as _ie:
-        img = Image.new("RGB", (WIDTH, HEIGHT), (10, 0, 0))
-        d = ScaledDraw(img)
-        d.rectangle((0, 0, 127, 12), fill=(139, 0, 0))
-        d.text((64, 6), "GAME BOY", font=font, fill=(192, 57, 43), anchor="mm")
-        d.text((64, 50), "PyBoy import failed", font=font, fill=(231, 76, 60), anchor="mm")
-        d.text((4, 70), str(_ie)[:22], font=font, fill=(171, 178, 185))
-        d.text((64, 118), "KEY3 = Back", font=font, fill=(86, 101, 115), anchor="mm")
-        LCD.LCD_ShowImage(img, 0, 0)
+    except ImportError as exc:
+        _show_error("PyBoy import failed", str(exc)[:44])
         while running:
             if get_button(PINS, GPIO) == "KEY3":
                 return
@@ -218,118 +235,116 @@ def _run_emulator(rom_path):
 
     _draw_loading(rom_path)
 
+    # PyBoy 2.x constructor — no sound_emulated / log_level kwargs
     try:
-        pyboy = PyBoy(
-            rom_path,
-            window="null",
-            sound_emulated=False,
-            log_level="ERROR",
-        )
-    except Exception as e:
-        img = Image.new("RGB", (WIDTH, HEIGHT), (10, 0, 0))
-        d = ScaledDraw(img)
-        d.rectangle((0, 0, 127, 12), fill=(139, 0, 0))
-        d.text((64, 6), "GAME BOY", font=font, fill=(192, 57, 43), anchor="mm")
-        d.text((64, 38), "Load Error!", font=font, fill=(231, 76, 60), anchor="mm")
-        d.text((4, 58), str(e)[:22], font=font, fill=(171, 178, 185))
-        d.text((4, 72), str(e)[22:44], font=font, fill=(113, 125, 126))
-        d.text((64, 118), "KEY3 = Back", font=font, fill=(86, 101, 115), anchor="mm")
-        LCD.LCD_ShowImage(img, 0, 0)
+        pyboy = PyBoy(rom_path, window="null")
+    except Exception as exc:
+        _show_error("ROM load failed", str(exc)[:44])
         while running:
-            btn = get_button(PINS, GPIO)
-            if btn == "KEY3":
+            if get_button(PINS, GPIO) == "KEY3":
                 return
         return
 
-    frame_count = 0
-    RENDER_EVERY = 4  # render 1 frame out of N to LCD (~15 FPS display, 60 FPS emulation)
+    # Pre-compute scaling geometry once
+    ratio    = min(WIDTH / GB_W, HEIGHT / GB_H)
+    sw, sh   = int(GB_W * ratio), int(GB_H * ratio)
+    ox, oy   = (WIDTH - sw) // 2, (HEIGHT - sh) // 2
+    resample = Image.NEAREST if ratio >= 1.0 else Image.LANCZOS
+    canvas   = Image.new("RGB", (WIDTH, HEIGHT), _BG)
+    draw_bg  = ImageDraw.Draw(canvas)
 
-    # Pre-allocate canvas for LCD output
-    _canvas = Image.new("RGB", (WIDTH, HEIGHT), (0, 0, 0))
-
-    # Display mode depends on screen size
-    _mode = "scale"
-    _ratio = min(WIDTH / GB_W, HEIGHT / GB_H)
-    _sw, _sh = int(GB_W * _ratio), int(GB_H * _ratio)
-    _ox, _oy = (WIDTH - _sw) // 2, (HEIGHT - _sh) // 2
-    # Use LANCZOS for downscale (128), NEAREST for upscale (240)
-    _resample = Image.NEAREST if _ratio >= 1.0 else Image.LANCZOS
-
-    # Button mapping: RaspyJack -> Game Boy
-    # OK=A, KEY1=B, KEY2=Start, KEY3(tap)=Select, KEY3(hold)=Exit
+    # Button map: KTOX button → PyBoy 2.x button string
     GB_MAP = {
-        "UP": "up",
-        "DOWN": "down",
-        "LEFT": "left",
+        "UP":    "up",
+        "DOWN":  "down",
+        "LEFT":  "left",
         "RIGHT": "right",
-        "OK": "a",
-        "KEY1": "b",
-        "KEY2": "start",
+        "OK":    "a",
+        "KEY1":  "b",
+        "KEY2":  "start",
     }
+
+    frame_count   = 0
+    key3_down_at  = None   # timestamp KEY3 was first pressed
+    key3_was_held = False   # True once we've committed to exit
 
     try:
         while running:
             t0 = time.time()
 
-            # Read physical buttons (non-blocking)
             pressed = _read_buttons_noblock()
 
-            # KEY3 = exit, KEY2 = start + select combo
+            # ── KEY3: tap = select, hold = exit ──────────────────────────────
             if "KEY3" in pressed:
-                break
+                if key3_down_at is None:
+                    key3_down_at = t0
+                elif t0 - key3_down_at >= KEY3_HOLD_S and not key3_was_held:
+                    key3_was_held = True
+                    break                     # exit emulator
+            else:
+                if key3_down_at is not None and not key3_was_held:
+                    # Short tap — fire select
+                    pyboy.button("select")
+                key3_down_at  = None
+                key3_was_held = False
 
-            # Send mapped buttons to PyBoy
-            for rj_btn, gb_btn in GB_MAP.items():
-                if rj_btn in pressed:
-                    pyboy.button_press(gb_btn)
+            # ── D-pad + face buttons ──────────────────────────────────────────
+            for rj, gb in GB_MAP.items():
+                if rj in pressed:
+                    pyboy.button_press(gb)
                 else:
-                    pyboy.button_release(gb_btn)
+                    pyboy.button_release(gb)
 
-            # Tick emulator (run 2 frames per loop for speed)
+            # ── Tick emulator (PyBoy 2.x returns True while running) ──────────
             render_this = (frame_count % RENDER_EVERY == 0)
-            pyboy.tick(count=1, render=render_this)
+            still_going = pyboy.tick(1, render_this)
             frame_count += 1
 
-            # Only push to LCD every Nth frame
+            if not still_going:
+                break   # ROM signalled end (e.g. power-off opcode)
+
+            # ── Push frame to LCD ─────────────────────────────────────────────
             if render_this:
-                gb_img = pyboy.screen.image
-                scaled = gb_img.resize((_sw, _sh), _resample)
-                _canvas.paste((0, 0, 0), (0, 0, WIDTH, HEIGHT))
-                _canvas.paste(scaled, (_ox, _oy))
-                LCD.LCD_ShowImage(_canvas, 0, 0)
+                gb_img = pyboy.screen.image.copy()   # copy before next tick overwrites buffer
+                scaled = gb_img.resize((sw, sh), resample)
+                if ox or oy:                         # clear letterbox bars
+                    draw_bg.rectangle((0, 0, WIDTH, HEIGHT), fill=_BG)
+                canvas.paste(scaled, (ox, oy))
+                LCD.LCD_ShowImage(canvas, 0, 0)
+
+            # ── Frame-rate cap (~59.73 fps) ───────────────────────────────────
+            elapsed = time.time() - t0
+            if elapsed < FRAME_TIME:
+                time.sleep(FRAME_TIME - elapsed)
 
     finally:
         try:
-            pyboy.stop(save=True)
+            pyboy.stop()          # PyBoy 2.x: stop() saves by default
         except Exception:
             pass
-        # Flush all input state to prevent KEY3 from propagating to browser
         flush_input()
-        time.sleep(0.5)
+        time.sleep(0.4)
         flush_input()
 
 
-# ═══════════════════════════════════════════════════════════════
-# MAIN
-# ═══════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
+# AUTO-INSTALL
+# ══════════════════════════════════════════════════════════════════════════════
+
 def _auto_install():
-    """Try to install PyBoy automatically via install_pyboy.sh."""
+    """Show install screen and run install_pyboy.sh."""
     import subprocess
 
-    # Derive script path from project root (handles both /root/KTOx and dev paths)
-    _here = os.path.abspath(os.path.join(__file__, "..", "..", ".."))
+    _here          = os.path.abspath(os.path.join(__file__, "..", "..", ".."))
     install_script = os.path.join(_here, "scripts", "install_pyboy.sh")
     if not os.path.isfile(install_script):
         install_script = "/root/KTOx/scripts/install_pyboy.sh"
 
-    img = Image.new("RGB", (WIDTH, HEIGHT), (10, 0, 0))
-    d = ScaledDraw(img)
-    d.rectangle((0, 0, 127, 12), fill=(139, 0, 0))
-    d.text((64, 6), "GAME BOY", font=font, fill=(192, 57, 43), anchor="mm")
-    d.text((64, 30), "PyBoy not found", font=font, fill=(212, 172, 13), anchor="mm")
-    d.text((64, 48), "Auto-installing...", font=font, fill=(192, 57, 43), anchor="mm")
-    d.text((64, 64), "May take 2-5 min", font=font, fill=(86, 101, 115), anchor="mm")
-    d.text((64, 78), "on Pi Zero 2 W", font=font, fill=(86, 101, 115), anchor="mm")
+    img, d = _base_img()
+    d.text((64, 30), "PyBoy not found",   font=font, fill=_YELLOW, anchor="mm")
+    d.text((64, 48), "Auto-installing…",  font=font, fill=_BLOOD,  anchor="mm")
+    d.text((64, 64), "May take 2-5 min",  font=font, fill=_DIM,    anchor="mm")
+    d.text((64, 78), "on Pi Zero 2 W",    font=font, fill=_DIM,    anchor="mm")
     LCD.LCD_ShowImage(img, 0, 0)
 
     try:
@@ -338,7 +353,9 @@ def _auto_install():
             capture_output=True, text=True, timeout=360,
         )
         if result.returncode != 0:
-            raise RuntimeError(result.stderr.strip()[-120:] or "install script failed")
+            raise RuntimeError(
+                (result.stderr or result.stdout).strip()[-80:] or "script failed"
+            )
 
         verify = subprocess.run(
             ["python3", "-c", "from pyboy import PyBoy"],
@@ -347,39 +364,38 @@ def _auto_install():
         if verify.returncode != 0:
             raise RuntimeError("import check failed after install")
 
-        img = Image.new("RGB", (WIDTH, HEIGHT), (10, 0, 0))
-        d = ScaledDraw(img)
-        d.rectangle((0, 0, 127, 12), fill=(139, 0, 0))
-        d.text((64, 6), "GAME BOY", font=font, fill=(192, 57, 43), anchor="mm")
-        d.text((64, 50), "Installed OK!", font=font, fill=(30, 132, 73), anchor="mm")
-        d.text((64, 68), "Loading...", font=font, fill=(86, 101, 115), anchor="mm")
+        img, d = _base_img()
+        d.text((64, 50), "Installed OK!",  font=font, fill=_GOOD,  anchor="mm")
+        d.text((64, 68), "Loading…",       font=font, fill=_DIM,   anchor="mm")
         LCD.LCD_ShowImage(img, 0, 0)
         time.sleep(1.5)
         return True
 
     except subprocess.TimeoutExpired:
-        err_msg = "Timed out (>6min)"
-    except Exception as e:
-        err_msg = str(e)[-44:]
+        err = "Timed out (>6 min)"
+    except Exception as exc:
+        err = str(exc)[-44:]
 
-    img = Image.new("RGB", (WIDTH, HEIGHT), (10, 0, 0))
-    d = ScaledDraw(img)
-    d.rectangle((0, 0, 127, 12), fill=(139, 0, 0))
-    d.text((64, 6), "GAME BOY", font=font, fill=(192, 57, 43), anchor="mm")
-    d.text((64, 26), "Install failed", font=font, fill=(231, 76, 60), anchor="mm")
-    d.text((4, 42), err_msg[:22], font=font, fill=(171, 178, 185))
-    d.text((4, 55), err_msg[22:44], font=font, fill=(113, 125, 126))
-    d.text((4, 74), "Run manually:", font=font, fill=(113, 125, 126))
-    d.text((4, 86), "sudo bash scripts/", font=font, fill=(171, 178, 185))
-    d.text((4, 98), "install_pyboy.sh", font=font, fill=(171, 178, 185))
-    d.text((64, 118), "KEY3 = Back", font=font, fill=(86, 101, 115), anchor="mm")
+    img, d = _base_img()
+    d.text((64, 26), "Install failed",       font=font, fill=_EMBER, anchor="mm")
+    d.text((4,  42), err[:22],               font=font, fill=_ASH)
+    d.text((4,  55), err[22:44],             font=font, fill=_STEEL)
+    d.text((4,  72), "Run manually:",         font=font, fill=_STEEL)
+    d.text((4,  84), "sudo bash scripts/",   font=font, fill=_ASH)
+    d.text((4,  96), "install_pyboy.sh",     font=font, fill=_ASH)
+    d.rectangle((0, 117, 127, 127), fill=_FOOTER)
+    d.text((64, 122), "KEY3 = Back",         font=font, fill=_DIM, anchor="mm")
     LCD.LCD_ShowImage(img, 0, 0)
+
     while True:
-        btn = get_button(PINS, GPIO)
-        if btn == "KEY3":
+        if get_button(PINS, GPIO) == "KEY3":
             break
     return False
 
+
+# ══════════════════════════════════════════════════════════════════════════════
+# MAIN
+# ══════════════════════════════════════════════════════════════════════════════
 
 def main():
     global PYBOY_OK
@@ -388,13 +404,10 @@ def main():
         if not _auto_install():
             GPIO.cleanup()
             return 0
-        # Verify the install actually made PyBoy importable in this process
         try:
-            import importlib
-            import pyboy as _pyboy_mod
-            importlib.reload(_pyboy_mod)
+            from pyboy import PyBoy  # confirm importable in this process
             PYBOY_OK = True
-        except Exception:
+        except ImportError:
             GPIO.cleanup()
             return 0
 
