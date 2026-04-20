@@ -812,6 +812,8 @@ def channel_hopper():
                         send_deauth_burst(bssid, clients, mon_iface)
                         record_deauth(bssid)
                         deauthed += 1
+                        with lock:
+                            session_deauths += 1
                     # PMKID probe for clientless APs
                     if not clients and info.get("essid"):
                         active_pmkid_probe(bssid, info["essid"], mon_iface)
@@ -958,15 +960,33 @@ def draw_face():
     if _blink:
         if now > _next_blink + 0.2:
             _blink = False
-            _next_blink = now + random.uniform(5,10)
+            _next_blink = now + random.uniform(5, 10)
     else:
         if now >= _next_blink:
             _blink = True
+
     img = Image.new("RGB", (W, H), "#0A0000")
     d = ImageDraw.Draw(img)
-    d.rectangle((0, 0, W, 17), fill=(139, 0, 0))
-    d.text((4,3), "KTOxGOTCHI", font=f9, fill=(231, 76, 60))
-    # Face
+
+    # Compact header bar
+    d.rectangle((0, 0, W, 13), fill=(139, 0, 0))
+    d.text((3, 2), "KTOxGOTCHI", font=f9, fill=(231, 76, 60))
+    dot_col = (30, 132, 73) if capture_event.is_set() else (100, 100, 100)
+    d.ellipse((W - 11, 3, W - 4, 10), fill=dot_col)
+
+    # Stats row (compact, just below header)
+    with lock:
+        aps = len(session_aps)
+        cli = len(session_clients)
+        hs = session_handshakes
+        hhs = session_half_hs
+        pm = session_pmkid
+        last = last_capture_ssid
+    total_pwnd = hs + hhs + pm
+    lt_total = lifetime_handshakes + lifetime_half_hs + lifetime_pmkid
+    d.text((2, 14), f"AP:{aps} CLI:{cli}  PWND:{total_pwnd} LT:{lt_total}", font=f9, fill=(171, 178, 185))
+
+    # Large face — dominant visual element
     face_char = faces.get(mood, faces["normal"])
     if _blink and mood == "normal":
         face_char = "(◕‿‿◕)"
@@ -977,36 +997,27 @@ def draw_face():
     if stealth_enabled:
         face_color = "#8800FF"
     try:
-        face_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 16)
+        face_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 20)
     except:
         face_font = f14
-    bbox = d.textbbox((0,0), face_char, font=face_font)
+    bbox = d.textbbox((0, 0), face_char, font=face_font)
     fw = bbox[2] - bbox[0]
-    fx = (W - fw) // 2
-    d.text((fx, 20), face_char, font=face_font, fill=face_color)
-    d.line([(0, 41), (W, 41)], fill=(86, 101, 115))
-    y = 43
-    with lock:
-        aps = len(session_aps)
-        cli = len(session_clients)
-        hs = session_handshakes
-        hhs = session_half_hs
-        pm = session_pmkid
-        deauths = session_deauths
-        last = last_capture_ssid
-    total_pwnd = hs + hhs + pm
-    lt_total = lifetime_handshakes + lifetime_half_hs + lifetime_pmkid
-    d.text((2, y), f"AP:{aps}  CLI:{cli}", font=f9, fill=(171, 178, 185)); y += 12
-    d.text((2, y), f"PWND:{total_pwnd}  LT:{lt_total}", font=f9, fill=(30, 132, 73) if total_pwnd else "#888"); y += 12
-    d.text((2, y), f"CRACKED:{cracked_count}", font=f9, fill=(212, 172, 13)); y += 12
+    fh = bbox[3] - bbox[1]
+    face_area_top = 26
+    face_area_bot = H - 30
+    fx = max(0, (W - fw) // 2)
+    fy = face_area_top + (face_area_bot - face_area_top - fh) // 2
+    d.text((fx, fy), face_char, font=face_font, fill=face_color)
+
+    # Bottom info lines
     if last:
-        d.text((2, y), f">{last[:20]}", font=f9, fill=(30, 132, 73)); y += 12
+        d.text((2, H - 28), f">{last[:22]}", font=f9, fill=(30, 132, 73))
     elapsed = int(time.time() - start_time)
+    mode_ch = f"{'A' if auto_attack else 'M'} ch{current_channel}"
     uptime = f"{elapsed//3600:02d}:{(elapsed%3600)//60:02d}:{elapsed%60:02d}"
-    d.text((2, y), f"UP:{uptime}", font=f9, fill=(113, 125, 126))
-    d.text((4, H-30), f"Mode: {'AUTO' if auto_attack else 'MANUAL'}", font=f9, fill=(171, 178, 185))
-    d.rectangle((0, H-12, W, H), fill=(34, 0, 0))
-    d.text((4, H-10), "K1=View K2=Menu K3=Exit", font=f9, fill=(192, 57, 43))
+    d.text((2, H - 18), f"{mode_ch}  {uptime}", font=f9, fill=(113, 125, 126))
+    d.rectangle((0, H - 12, W, H), fill=(34, 0, 0))
+    d.text((4, H - 10), "K1=View K2=Menu K3=Exit", font=f9, fill=(192, 57, 43))
     LCD.LCD_ShowImage(img, 0, 0)
 
 def draw_stats():
@@ -1141,13 +1152,17 @@ def main():
         time.sleep(3)
         return
 
+    # Start capturing immediately — without this, channel_hopper and
+    # packet_handler both exit/skip immediately since they gate on this event.
+    capture_event.set()
+
     # Start background threads
     threading.Thread(target=sniffer_thread, daemon=True).start()
     threading.Thread(target=half_hs_checker, daemon=True).start()
     threading.Thread(target=channel_hopper, daemon=True).start()
 
-    # Initial scan for manual mode
-    scan_networks_quick(10)
+    # Initial scan in background so the LCD stays responsive during startup
+    threading.Thread(target=lambda: scan_networks_quick(10), daemon=True).start()
 
     view = "face"
     scroll = 0
@@ -1208,17 +1223,11 @@ def main():
             elif btn == "DOWN" and view == "captures":
                 scroll += 1
             elif btn == "OK":
-                if not capture_event.is_set():
-                    # Start capture
-                    capture_event.set()
-                    set_mood("normal")
-                else:
-                    # In manual mode, show target list
-                    if not auto_attack:
-                        state = "target_select"
-                        scan_networks_quick(10)
-                        selected_idx = 0
-                        draw_target_list()
+                if not auto_attack:
+                    state = "target_select"
+                    scan_networks_quick(10)
+                    selected_idx = 0
+                    draw_target_list()
         elif state == "target_select":
             draw_target_list()
             if btn == "KEY3":
