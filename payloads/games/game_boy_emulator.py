@@ -305,7 +305,7 @@ def _run_emulator(rom_path):
 
             # ── Push frame to LCD ─────────────────────────────────────────────
             if render_this:
-                gb_img = pyboy.screen.image          # PIL Image (160×144)
+                gb_img = pyboy.screen.image.copy()   # copy before next tick overwrites buffer
                 scaled = gb_img.resize((sw, sh), resample)
                 if ox or oy:                         # clear letterbox bars
                     draw_bg.rectangle((0, 0, WIDTH, HEIGHT), fill=_BG)
@@ -405,10 +405,9 @@ def main():
             GPIO.cleanup()
             return 0
         try:
-            import importlib, pyboy as _pb
-            importlib.reload(_pb)
+            from pyboy import PyBoy  # confirm importable in this process
             PYBOY_OK = True
-        except Exception:
+        except ImportError:
             GPIO.cleanup()
             return 0
 
