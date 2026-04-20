@@ -25,6 +25,7 @@ import json
 import time
 import math
 import hashlib
+import signal
 import threading
 import subprocess
 import re
@@ -245,8 +246,25 @@ def confidence_color(score: int):
 # ----------------------------------------------------------------------
 # BLE scanning thread
 # ----------------------------------------------------------------------
+def _kill_proc(proc):
+    """Terminate a subprocess and wait; escalate to SIGKILL if needed."""
+    if proc is None:
+        return
+    try:
+        proc.terminate()
+        proc.wait(timeout=3)
+    except subprocess.TimeoutExpired:
+        try:
+            proc.kill()
+            proc.wait(timeout=2)
+        except Exception:
+            pass
+    except Exception:
+        pass
+
 def ble_scan_thread():
     """Run hcitool lescan to capture BLE advertisements."""
+    proc = None
     try:
         proc = subprocess.Popen(
             ["sudo", "hcitool", "lescan", "--duplicates"],
@@ -256,34 +274,35 @@ def ble_scan_thread():
     except Exception as e:
         print(f"BLE scan failed: {e}")
         return
-    while running:
-        line = proc.stdout.readline()
-        if not line:
-            break
-        parts = line.strip().split()
-        if len(parts) >= 2:
-            mac = parts[0].upper()
-            name = " ".join(parts[1:])
-            now = time.time()
-            score = 0
-            method = ""
-            for pattern in FLOCK_BLE_NAME_PATTERNS:
-                if pattern.lower() in name.lower():
-                    score += SCORES["ble_name"]
-                    method = "ble_name"
-                    break
-            # Note: manufacturer data would require hcidump parsing – omitted for brevity
-            if score > 0:
-                with lock:
-                    if mac not in detected_devices or detected_devices[mac]["score"] < score:
-                        detected_devices[mac] = {
-                            "last_seen": now,
-                            "rssi": -50,   # approximate
-                            "score": score,
-                            "name": name,
-                            "method": method,
-                        }
-    proc.terminate()
+    try:
+        while running:
+            line = proc.stdout.readline()
+            if not line:
+                break
+            parts = line.strip().split()
+            if len(parts) >= 2:
+                mac = parts[0].upper()
+                name = " ".join(parts[1:])
+                now = time.time()
+                score = 0
+                method = ""
+                for pattern in FLOCK_BLE_NAME_PATTERNS:
+                    if pattern.lower() in name.lower():
+                        score += SCORES["ble_name"]
+                        method = "ble_name"
+                        break
+                if score > 0:
+                    with lock:
+                        if mac not in detected_devices or detected_devices[mac]["score"] < score:
+                            detected_devices[mac] = {
+                                "last_seen": now,
+                                "rssi": -50,
+                                "score": score,
+                                "name": name,
+                                "method": method,
+                            }
+    finally:
+        _kill_proc(proc)
 
 # ----------------------------------------------------------------------
 # Scoring helper
@@ -347,10 +366,7 @@ def wifi_sniff_thread(mon_iface):
                 except Exception:
                     pass
     finally:
-        try:
-            proc.terminate()
-        except Exception:
-            pass
+        _kill_proc(proc)
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 def _parse_airodump_csv(csv_path):
@@ -379,29 +395,29 @@ def _tcpdump_sniff(mon_iface):
     # tcpdump 802.11 filter: each alternative needs its own type qualifier
     filt = "type mgt subtype probe-req or type mgt subtype beacon"
     cmd = ["tcpdump", "-i", mon_iface, "-e", "-l", filt]
+    proc = None
     try:
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                                 text=True, bufsize=1)
     except Exception as e:
         print(f"tcpdump fallback failed: {e}")
         return
-    while running:
-        line = proc.stdout.readline()
-        if not line:
-            break
-        mac_match = re.search(r"([\da-fA-F]{2}:){5}[\da-fA-F]{2}", line, re.I)
-        if not mac_match:
-            continue
-        mac = mac_match.group(0).upper()
-        # tcpdump formats SSID as: Beacon (ESSID) or Probe Request (ESSID)
-        ssid_m = re.search(r"(?:Beacon|Probe (?:Request|Response)) \(([^)]+)\)", line)
-        essid = ssid_m.group(1) if ssid_m else ""
-        score, method = _score_ap(mac, essid)
-        _update_device(mac, -60, essid, score, method)
     try:
-        proc.terminate()
-    except Exception:
-        pass
+        while running:
+            line = proc.stdout.readline()
+            if not line:
+                break
+            mac_match = re.search(r"([\da-fA-F]{2}:){5}[\da-fA-F]{2}", line, re.I)
+            if not mac_match:
+                continue
+            mac = mac_match.group(0).upper()
+            # tcpdump formats SSID as: Beacon (ESSID) or Probe Request (ESSID)
+            ssid_m = re.search(r"(?:Beacon|Probe (?:Request|Response)) \(([^)]+)\)", line)
+            essid = ssid_m.group(1) if ssid_m else ""
+            score, method = _score_ap(mac, essid)
+            _update_device(mac, -60, essid, score, method)
+    finally:
+        _kill_proc(proc)
 
 # ----------------------------------------------------------------------
 # Flock correlation (group devices that appear together)
@@ -588,6 +604,13 @@ def main():
     global running, view_mode, detail_view, detail_flock
     global scroll_pos, selected_idx, detected_devices, sweep_deg
 
+    # Catch SIGTERM/SIGINT so the finally block always runs
+    def _stop(sig, frame):
+        global running
+        running = False
+    signal.signal(signal.SIGTERM, _stop)
+    signal.signal(signal.SIGINT, _stop)
+
     # Find wireless interface
     iface = get_wlan()
     if not iface:
@@ -679,7 +702,8 @@ def main():
 
     finally:
         running = False
-        # Disable monitor mode and restore interface
+        # Let scan threads see running=False and terminate their processes
+        time.sleep(0.8)
         disable_monitor_mode(iface)
         LCD.LCD_Clear()
         GPIO.cleanup()
