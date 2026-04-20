@@ -197,6 +197,21 @@ def _run_emulator(rom_path):
     """Run the Game Boy emulator."""
     global running
 
+    # Import locally so this works whether PyBoy was available at startup
+    # or was just installed by _auto_install() during this session.
+    try:
+        from pyboy import PyBoy
+    except ImportError as _ie:
+        img = Image.new("RGB", (WIDTH, HEIGHT), "black")
+        d = ScaledDraw(img)
+        d.text((64, 50), "PyBoy import failed", font=font, fill=(255, 0, 0), anchor="mm")
+        d.text((4, 70), str(_ie)[:22], font=font, fill=(200, 200, 200))
+        LCD.LCD_ShowImage(img, 0, 0)
+        while running:
+            if get_button(PINS, GPIO) == "KEY3":
+                return
+        return
+
     _draw_loading(rom_path)
 
     try:
@@ -292,65 +307,82 @@ def _run_emulator(rom_path):
 # MAIN
 # ═══════════════════════════════════════════════════════════════
 def _auto_install():
-    """Try to install PyBoy automatically."""
+    """Try to install PyBoy automatically via install_pyboy.sh."""
     import subprocess
-    install_script = "/root/KTOx/scripts/install_pyboy.sh"
+
+    # Derive script path from project root (handles both /root/KTOx and dev paths)
+    _here = os.path.abspath(os.path.join(__file__, "..", "..", ".."))
+    install_script = os.path.join(_here, "scripts", "install_pyboy.sh")
+    if not os.path.isfile(install_script):
+        install_script = "/root/KTOx/scripts/install_pyboy.sh"
 
     img = Image.new("RGB", (WIDTH, HEIGHT), "black")
     d = ScaledDraw(img)
-    d.text((64, 30), "PyBoy not found", font=font, fill=(255, 200, 0), anchor="mm")
-    d.text((64, 50), "Installing...", font=font, fill=(0, 200, 0), anchor="mm")
-    d.text((64, 70), "Please wait", font=font, fill=(100, 100, 100), anchor="mm")
+    d.text((64, 25), "PyBoy not found", font=font, fill=(255, 200, 0), anchor="mm")
+    d.text((64, 45), "Auto-installing...", font=font, fill=(0, 200, 0), anchor="mm")
+    d.text((64, 62), "May take 2-5 min", font=font, fill=(100, 100, 100), anchor="mm")
+    d.text((64, 78), "on Pi Zero 2 W", font=font, fill=(80, 80, 80), anchor="mm")
     LCD.LCD_ShowImage(img, 0, 0)
 
     try:
         result = subprocess.run(
             ["sudo", "bash", install_script],
-            capture_output=True, text=True, timeout=180,
+            capture_output=True, text=True, timeout=360,
         )
-        # Verify the import actually works
+        if result.returncode != 0:
+            raise RuntimeError(result.stderr.strip()[-120:] or "install script failed")
+
         verify = subprocess.run(
             ["python3", "-c", "from pyboy import PyBoy"],
-            capture_output=True, timeout=10,
+            capture_output=True, timeout=15,
         )
         if verify.returncode != 0:
-            raise RuntimeError("PyBoy import failed after install")
+            raise RuntimeError("import check failed after install")
+
         img = Image.new("RGB", (WIDTH, HEIGHT), "black")
         d = ScaledDraw(img)
-        d.text((64, 50), "Installed!", font=font, fill=(0, 255, 0), anchor="mm")
-        d.text((64, 70), "Restarting...", font=font, fill=(100, 100, 100), anchor="mm")
+        d.text((64, 50), "Installed OK!", font=font, fill=(0, 255, 0), anchor="mm")
+        d.text((64, 68), "Loading...", font=font, fill=(100, 100, 100), anchor="mm")
         LCD.LCD_ShowImage(img, 0, 0)
-        time.sleep(2)
+        time.sleep(1.5)
         return True
+
+    except subprocess.TimeoutExpired:
+        err_msg = "Timed out (>6min)"
     except Exception as e:
-        img = Image.new("RGB", (WIDTH, HEIGHT), "black")
-        d = ScaledDraw(img)
-        d.text((64, 30), "Install failed", font=font, fill=(255, 0, 0), anchor="mm")
-        d.text((4, 50), str(e)[:22], font=font, fill=(200, 200, 200))
-        d.text((64, 80), "Run manually:", font=font, fill=(150, 150, 150), anchor="mm")
-        d.text((64, 95), "sudo bash scripts/", font=font, fill=(0, 200, 0), anchor="mm")
-        d.text((64, 107), "install_pyboy.sh", font=font, fill=(0, 200, 0), anchor="mm")
-        LCD.LCD_ShowImage(img, 0, 0)
-        while True:
-            btn = get_button(PINS, GPIO)
-            if btn == "KEY3":
-                break
-        return False
+        err_msg = str(e)[-44:]
+
+    img = Image.new("RGB", (WIDTH, HEIGHT), "black")
+    d = ScaledDraw(img)
+    d.text((64, 22), "Install failed", font=font, fill=(255, 0, 0), anchor="mm")
+    d.text((4, 40), err_msg[:22], font=font, fill=(200, 200, 200))
+    d.text((4, 54), err_msg[22:44], font=font, fill=(160, 160, 160))
+    d.text((4, 75), "Run manually:", font=font, fill=(150, 150, 150))
+    d.text((4, 88), "sudo bash scripts/", font=font, fill=(0, 200, 0))
+    d.text((4, 100), "install_pyboy.sh", font=font, fill=(0, 200, 0))
+    d.text((64, 118), "KEY3 = Back", font=font, fill=(80, 80, 80), anchor="mm")
+    LCD.LCD_ShowImage(img, 0, 0)
+    while True:
+        btn = get_button(PINS, GPIO)
+        if btn == "KEY3":
+            break
+    return False
 
 
 def main():
     global PYBOY_OK
 
     if not PYBOY_OK:
-        if _auto_install():
-            # Re-import after install
-            try:
-                from pyboy import PyBoy as _PB
-                PYBOY_OK = True
-            except ImportError:
-                GPIO.cleanup()
-                return 0
-        else:
+        if not _auto_install():
+            GPIO.cleanup()
+            return 0
+        # Verify the install actually made PyBoy importable in this process
+        try:
+            import importlib
+            import pyboy as _pyboy_mod
+            importlib.reload(_pyboy_mod)
+            PYBOY_OK = True
+        except Exception:
             GPIO.cleanup()
             return 0
 
