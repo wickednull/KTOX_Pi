@@ -247,7 +247,7 @@ def _hw_init():
     _load_fonts()
     _init_wifi_iface()   # auto-select wlan1 if present
     color.load_from_file()
-    # Show KTOx/KTOx logo BMP if available
+    # Show KTOx logo BMP if available
     logo = Path(INSTALL_PATH + "img/logo.bmp")
     if HAS_HW and logo.exists():
         try:
@@ -599,8 +599,8 @@ def GetMenuString(inlist, duplicates=False):
                 draw.rectangle([125, pip_y, 127, pip_y + pip_h], fill=color.border)
 
         time.sleep(0.08)
-        btn = getButton(timeout=120)
-        if   btn is None:                              continue   # timeout — keep waiting
+        btn = getButton(timeout=0.5)   # short timeout prevents deadlock
+        if   btn is None:                              continue
         elif btn == "KEY_DOWN_PIN":                    index = (index+1) % total
         elif btn == "KEY_UP_PIN":                      index = (index-1) % total
         elif btn in ("KEY_PRESS_PIN","KEY_RIGHT_PIN"):
@@ -640,7 +640,7 @@ def RenderMenuWindowOnce(inlist, selected=0):
                 draw.text((5,  row_y + 1), t,    font=text_font, fill=fill)
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# ── Payload engine ─────────────────────────────────────════════════════════════
+# ── Payload engine ─────────────────────────────────────────────────────────────
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def _write_payload_state(running: bool, path=None):
@@ -1998,7 +1998,7 @@ def _pick_host():
             _centered("CTR=select  LEFT=back", 114, font=small_font, fill="#4a2020")
 
         time.sleep(0.08)
-        btn = getButton(timeout=120)
+        btn = getButton(timeout=0.5)
         if   btn is None:                               continue
         elif btn == "KEY_DOWN_PIN":                     sel = (sel+1) % total
         elif btn == "KEY_UP_PIN":                       sel = (sel-1) % total
@@ -2032,12 +2032,31 @@ def do_network_scan():
 # ── ARP helpers ────────────────────────────────────────────────────────────────
 
 def _ask_pps():
-    """LCD menu to pick packets-per-second rate. Returns int or None if cancelled."""
-    options = [" 5 pkt/s", " 10 pkt/s", " 25 pkt/s", " 50 pkt/s", "100 pkt/s"]
-    sel = GetMenuString(options)
-    if sel is None:
-        return None
-    return int(sel.strip().split()[0])
+    """Select packets per second using a spinner (no list scrolling)."""
+    rates = [5, 10, 25, 50, 100]
+    idx = 2  # start at 25 pkt/s
+    while True:
+        with draw_lock:
+            _draw_toolbar()
+            draw.rectangle([0, 12, 128, 128], fill=color.background)
+            color.DrawBorder()
+            draw.rectangle([3, 13, 125, 24], fill="#1a0000")
+            _centered("PACKETS/SEC", 13, font=small_font, fill=color.border)
+            draw.line([3, 24, 125, 24], fill=color.border, width=1)
+            _centered(str(rates[idx]), 48, font=text_font, fill=color.selected_text)
+            draw.text((4, 80), "UP/DOWN  change", font=small_font, fill=color.text)
+            draw.text((4, 95), "OK  select",      font=small_font, fill=color.text)
+            draw.text((4, 110), "K3  cancel",     font=small_font, fill=color.text)
+        btn = getButton(timeout=0.5)
+        if btn == "KEY_UP_PIN":
+            idx = (idx + 1) % len(rates)
+        elif btn == "KEY_DOWN_PIN":
+            idx = (idx - 1) % len(rates)
+        elif btn in ("KEY_PRESS_PIN", "KEY_RIGHT_PIN"):
+            return rates[idx]
+        elif btn in ("KEY_LEFT_PIN", "KEY1_PIN", "KEY3_PIN"):
+            return None
+        # else continue
 
 
 def _scapy_resolve(ip, iface):
@@ -2171,8 +2190,6 @@ def do_mitm(target_ip):
     Dialog_info("MITM stopped.\nFwd OFF.\nARP restored.", wait=False, timeout=2)
 
 
-
-
 def do_wifi_monitor_on():
     import re as _re
     iface = ktox_state["wifi_iface"]
@@ -2271,6 +2288,7 @@ def do_arp_watch():
         "            print(f'+ NEW {ip} {mac}')\n"
         "    base=cur\n"
     ])
+
 def do_arp_diff():
     _run_attack("ARP DIFF",[
         "python3","-c",
@@ -2887,7 +2905,7 @@ class KTOxMenu:
                                    fill=color.border)
 
             time.sleep(0.08)
-            btn = getButton(timeout=120)
+            btn = getButton(timeout=0.5)
 
             if btn is None:                                continue
             elif btn == "KEY_DOWN_PIN":                    sel = (sel + 1) % len(labels)
@@ -2974,7 +2992,7 @@ class KTOxMenu:
                 _centered("LEFT=back  CTR=exit", 114, font=small_font, fill="#4a2020")
 
             time.sleep(0.08)
-            btn = getButton(timeout=120)
+            btn = getButton(timeout=0.5)
             if   btn is None:                                  continue
             elif btn == "KEY_DOWN_PIN":                        sel = (sel+1) % total
             elif btn == "KEY_UP_PIN":                         sel = (sel-1) % total
@@ -3463,7 +3481,7 @@ class KTOxMenu:
                         draw.rectangle([125, pip_y, 127, pip_y + pip_h],
                                        fill=color.border)
                 time.sleep(0.08)
-                btn = getButton(timeout=120)
+                btn = getButton(timeout=0.5)
                 if btn is None:                                  continue
                 elif btn == "KEY_DOWN_PIN":                      sel = (sel + 1) % total
                 elif btn == "KEY_UP_PIN":                        sel = (sel - 1) % total
@@ -3542,7 +3560,7 @@ class KTOxMenu:
                             draw.rectangle([px, 124, px + 4, 127], fill=pc)
 
                 time.sleep(0.08)
-                btn = getButton(timeout=120)
+                btn = getButton(timeout=0.5)
                 if btn is None:
                     continue
                 elif btn == "KEY_DOWN_PIN":
@@ -3629,7 +3647,7 @@ class KTOxMenu:
                     draw.rectangle([125, pip_y, 127, pip_y + pip_h], fill=color.border)
 
             time.sleep(0.08)
-            btn = getButton(timeout=120)
+            btn = getButton(timeout=0.5)
 
             if btn is None:                                continue
             elif btn == "KEY_DOWN_PIN":                    sel = (sel+1)%len(labels)
