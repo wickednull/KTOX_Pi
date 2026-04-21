@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-KTOx Payload – Cyberpunk 2087: Ultimate Edition (Save/Load + Hub Jump)
+KTOx Payload – CybrPnk2087
+author: wickednull
 =======================================================================
 Massive text adventure with inventory, health, shopping, central hub.
 Press KEY2 anytime to return to Afterlife hub.
