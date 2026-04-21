@@ -1,18 +1,22 @@
 #!/usr/bin/env python3
 """
-KTOx Payload – CybrPnk 2087
-================================================
+KTOx Payload – CybrPnk 2087 (Final)
+====================================
 120+ scenes, full choice-driven cyberpunk epic.
 Set after Edgerunners and Cyberpunk 2077.
 You are Niko. Build your crew, find love, become a legend.
 
-Controls: UP/DOWN = scroll / move cursor, OK = select, KEY3 = exit.
+Controls: 
+  UP/DOWN = scroll text pages / move cursor in choices
+  OK = next page / select choice (single click, no auto-repeat)
+  KEY3 = exit
 """
 
 import os
 import sys
 import time
 import random
+import textwrap
 
 import RPi.GPIO as GPIO
 import LCD_1in44
@@ -50,6 +54,12 @@ def wait_btn(timeout=0.1):
                 return name
         time.sleep(0.02)
     return None
+
+def wait_for_release(btn_name):
+    """Wait until the specified button is released."""
+    pin = PINS[btn_name]
+    while GPIO.input(pin) == 0:
+        time.sleep(0.02)
 
 # ----------------------------------------------------------------------
 # Game Engine
@@ -106,42 +116,61 @@ class Game:
     def set_romance(self, person):
         self.romance = person
 
-    def show_text(self, lines, title="2087"):
-        if not lines:
-            lines = ["(nothing)"]
-        scroll = 0
-        max_scroll = max(0, len(lines) - 5)
+    def _wrap(self, text):
+        """Word-wrap text to fit 23 characters per line."""
+        return textwrap.wrap(text, width=23)
+
+    def show_text(self, raw_lines, title="2087"):
+        """Display text with page-based scrolling. UP/DOWN change page, OK advances one page."""
+        # Flatten and wrap
+        all_lines = []
+        for line in raw_lines:
+            if not line.strip():
+                all_lines.append("")
+            else:
+                all_lines.extend(self._wrap(line))
+        # Split into pages of 5 lines
+        pages = [all_lines[i:i+5] for i in range(0, len(all_lines), 5)]
+        if not pages:
+            pages = [["(nothing)"]]
+        page_idx = 0
         while True:
+            lines = pages[page_idx]
             img = Image.new("RGB", (W, H), (10, 0, 0))
             d = ImageDraw.Draw(img)
             d.rectangle((0, 0, W, 13), fill=(139, 0, 0))
             d.text((4, 2), title[:20], font=FONT_BOLD, fill=(231, 76, 60))
             y = 16
-            visible = lines[scroll:scroll+5]
-            for line in visible:
+            for line in lines:
                 d.text((4, y), line[:23], font=FONT, fill=(171, 178, 185))
                 y += 12
-            if max_scroll > 0:
-                d.text((W-10, H-12), f"{scroll+1}/{len(lines)}", font=FONT, fill=(192,57,43))
+            if len(pages) > 1:
+                d.text((W-15, H-12), f"{page_idx+1}/{len(pages)}", font=FONT, fill=(192,57,43))
             inv_str = " ".join(self.inventory[:2]) if self.inventory else "empty"
             rep_str = f"A:{self.rep_arasaka} M:{self.rep_militech}"
             d.text((4, H-12), f"{inv_str[:12]} {rep_str}", font=FONT, fill=(192,57,43))
             LCD.LCD_ShowImage(img, 0, 0)
             btn = wait_btn(0.2)
             if btn == "UP":
-                scroll = max(0, scroll-1)
+                page_idx = max(0, page_idx-1)
+                wait_for_release("UP")
             elif btn == "DOWN":
-                scroll = min(max_scroll, scroll+1)
+                page_idx = min(len(pages)-1, page_idx+1)
+                wait_for_release("DOWN")
             elif btn == "OK":
-                if scroll < max_scroll:
-                    scroll = min(max_scroll, scroll+1)
+                if page_idx < len(pages)-1:
+                    page_idx += 1
                 else:
+                    wait_for_release("OK")
                     return
+                wait_for_release("OK")
             elif btn == "KEY3":
+                wait_for_release("KEY3")
                 self.running = False
                 return
 
     def choose(self, choices, title="2087"):
+        """Choice menu with highlight and scrolling."""
         if not choices:
             return None
         selected = 0
@@ -171,19 +200,21 @@ class Game:
             btn = wait_btn(0.2)
             if btn == "UP":
                 selected = max(0, selected-1)
+                wait_for_release("UP")
             elif btn == "DOWN":
                 selected = min(len(choices)-1, selected+1)
+                wait_for_release("DOWN")
             elif btn == "OK":
+                wait_for_release("OK")
                 return selected
             elif btn == "KEY3":
+                wait_for_release("KEY3")
                 self.running = False
                 return None
 
-# ----------------------------------------------------------------------
-# 120+ Scene Definitions
-# ----------------------------------------------------------------------
-# (All scenes are fully implemented. The code is long but complete.)
-
+# =============================================================================
+# SCENE DEFINITIONS (120+ scenes – all present, no omissions)
+# =============================================================================
 def scene_start(g):
     g.show_text([
         ">>> 2087 <<<",
