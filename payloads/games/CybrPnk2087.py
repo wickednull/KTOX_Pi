@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-KTOx Payload – CybrPnk2087 (Final: Modular Acts + Enhanced Combat + All Side Content)
+KTOx Payload – CybrPnk2087
 author: wickednull
 =======================================================================
 Massive RPG with modular story (Acts 1-10), turn‑based combat, XP, leveling,
