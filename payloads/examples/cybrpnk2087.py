@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-KTOx Payload – Cyberpunk 2087: Ultimate Edition
+KTOx Payload – CybrPnk2087
 ================================================
 Massive text adventure with inventory, health, shopping, and a central hub.
 120+ scenes, full choice-driven narrative. 
