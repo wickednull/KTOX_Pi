@@ -257,11 +257,14 @@ e.get(“abilities”, []),
 e.get(“boss”, False),
 e.get(“loot”, [])
 )
-# tuple fallback
+# tuple: (name, hp, atk, spd=10, def=0, abilities=[], boss=False, loot=[])
 name, hp, atk = e[0], e[1], e[2]
 spd  = e[3] if len(e) > 3 else 10
 dfn  = e[4] if len(e) > 4 else 0
-return Combatant(name, hp, atk, spd, dfn)
+ab   = e[5] if len(e) > 5 else []
+boss = e[6] if len(e) > 6 else False
+loot = e[7] if len(e) > 7 else []
+return Combatant(name, hp, atk, spd, dfn, ab, boss, loot)
 
 ```
 enemies      = [_make_enemy(e) for e in enemies_data]
@@ -648,8 +651,10 @@ def open_inventory(self):
 # ── Save / Load ───────────────────────────────────────────────────
 def save_game(self):
     try:
+        payload = dict(self.__dict__)
+        payload["_gig_board"] = {k: v["done"] for k, v in GIG_BOARD.items()}
         with open(SAVE_FILE, "w") as f:
-            json.dump(self.__dict__, f, indent=2)
+            json.dump(payload, f, indent=2)
         return True
     except:
         return False
@@ -658,6 +663,10 @@ def load_game(self):
     try:
         with open(SAVE_FILE, "r") as f:
             data = json.load(f)
+        gig_data = data.pop("_gig_board", {})
+        for k, done in gig_data.items():
+            if k in GIG_BOARD:
+                GIG_BOARD[k]["done"] = done
         for k, v in data.items():
             setattr(self, k, v)
         return True
@@ -1898,18 +1907,35 @@ return None
 
 # ─────────────────────────────────────────────────────────────────────
 
+ACT_NAMES = {
+0: “Prologue”,
+1: “Act 2 – Ghost Signal”,
+2: “Act 2 – Ghost Signal”,
+3: “Act 3 – Three Keys”,
+4: “Act 4 – Night City Burns”,
+5: “Act 5 – The Blackwall”,
+6: “Act 6 – Mikoshi”,
+7: “Act 7 – The Core”,
+8: “Act 8 – The Core”,
+9: “Act 10 – Final Choice”,
+10: “Act 10 – Final Choice”,
+}
+
 def scene_afterlife_hub(g):
 rep_str  = f”A:{g.rep_arasaka} M:{g.rep_militech} V:{g.rep_voodoo}”
 crew_str = “, “.join(g.crew) if g.crew else “None”
+done_gigs = sum(1 for v in GIG_BOARD.values() if v[“done”])
+next_act  = ACT_NAMES.get(g.story_act, “Prologue”)
 g.show_text([
 “THE AFTERLIFE”,
 f”HP: {g.health}/{g.max_health()}  Eddies: {g.eddies}”,
-f”Level: {g.level}  XP: {g.xp}/{g.xp_to_level()}”,
-f”Act: {g.story_act}/10”,
+f”Lv: {g.level}  XP: {g.xp}/{g.xp_to_level()}”,
+f”Story: {next_act}”,
+f”Gigs done: {done_gigs}/{len(GIG_BOARD)}”,
 f”Rep: {rep_str}”,
 f”Crew: {crew_str}”,
 ], title=“HUB”)
-act_label = f”Continue Act {g.story_act}” if g.story_act > 0 else “Start Story”
+act_label = f”Story: {next_act}”
 idx = g.choose([
 act_label,
 “Side Jobs (Fixer)”,
@@ -1933,18 +1959,19 @@ elif idx == 6: return “street”
 return “afterlife_hub”
 
 def _story_continue(g):
-“”“Route player to the right act scene.”””
+“”“Route player to the correct act entry point based on story progress.”””
+# Each entry is the FORWARD scene for that act (not a replay of what’s done)
 act_map = {
-0: “prologue”,
-1: “after_heist”,
-2: “act2_hub”,
-3: “act3_key_hunt”,
-4: “act4_night_city_burns”,
-5: “act5_blackwall”,
-6: “mikoshi_approach”,
-7: “mikoshi_core”,
-8: “mikoshi_core”,
-9: “final_choice”,
+0:  “prologue”,
+1:  “act2_hub”,            # heist done → drive into act 2
+2:  “act2_hub”,
+3:  “act3_key_hunt”,
+4:  “act4_night_city_burns”,
+5:  “act5_blackwall”,
+6:  “mikoshi_approach”,
+7:  “mikoshi_core”,
+8:  “mikoshi_core”,
+9:  “final_choice”,
 10: “final_choice”,
 }
 return act_map.get(g.story_act, “prologue”)
@@ -2139,105 +2166,919 @@ g.add_crew(“Jin”)
 g.show_text([“Jin: ‘Fine. But I remember debts.’”])
 return “afterlife_hub”
 
-def scene_fixer_gigs(g):
-g.show_text([
-“Fixer: ‘Work? Always.’,”,
-“1. Data extraction from a gang hideout”,
-“2. Protect a corpo exec overnight”,
-“3. Find a missing ripperdoc”
-], title=“SIDE JOBS”)
-idx = g.choose([“Data Extraction”,“Corpo Guard”,“Find the Ripperdoc”,“Skip”])
-if idx == 0: return “gig_data_extraction”
-elif idx == 1: return “gig_corpo_guard”
-elif idx == 2: return “gig_ripperdoc”
-else: return “afterlife_hub”
+# ─────────────────────────────────────────────────────────────────────
 
-def scene_gig_data_extraction(g):
-g.show_text([“Gang hideout. Three guards. You need the data shard.”, “Stealth or force?”], title=“DATA GIG”)
-idx = g.choose([“Stealth (optical camo needed)”,“Force through”,“Hack the door (cyberdeck)”])
+# SIDE GIGS — full narrative missions with briefing, choice, combat,
+
+# payoff and consequences. Failure = wounded, not dead.
+
+# ─────────────────────────────────────────────────────────────────────
+
+GIG_BOARD = {
+“ghost_data”:   {“done”: False, “label”: “Ghost Data     [Fixer: Rook]”},
+“blood_money”:  {“done”: False, “label”: “Blood Money    [Fixer: Yuki]”},
+“broken_doc”:   {“done”: False, “label”: “Broken Doc     [Fixer: Rook]”},
+“steel_nerves”: {“done”: False, “label”: “Steel Nerves   [Fixer: Yuki]”},
+“dead_drop”:    {“done”: False, “label”: “Dead Drop      [Fixer: Rook]”},
+}
+
+def scene_fixer_gigs(g):
+available = [k for k, v in GIG_BOARD.items() if not v[“done”]]
+if not available:
+g.show_text([
+“Rook: ‘Nothing right now, choom.’”,
+“‘Check back after you make some noise.’”
+], title=“FIXER”)
+return “afterlife_hub”
+g.show_text([
+“Rook slides his agent across the table.”,
+“‘Pick one. All of them pay. Most of them hurt.’”,
+“Yuki’s jobs are on there too.”
+], title=“GIG BOARD”)
+labels = [GIG_BOARD[k][“label”] for k in available] + [“Not now”]
+idx = g.choose(labels, title=“PICK A JOB”)
+if idx == -1 or idx == len(available):
+return “afterlife_hub”
+return f”gig_{available[idx]}”
+
+# ── GIG 1: GHOST DATA ────────────────────────────────────────────────
+
+# Rook needs data from a 6th Street hideout. Three phases: recon,
+
+# entry choice (stealth/hack/force), extraction fight or clean exit.
+
+def scene_gig_ghost_data(g):
+GIG_BOARD[“ghost_data”][“done”] = True
+g.show_text([
+“GIG: GHOST DATA”,
+“Rook: ‘Valentino data broker named Ciro flipped.’”,
+“‘He’s sitting on our client list inside a 6th Street hideout.’”,
+“‘Get the shard. Don’t leave bodies if you can help it.’”,
+“‘Payment: 2500 eddies. Bonus 1000 if nobody sees you.’”
+], title=“GHOST DATA”)
+idx = g.choose([
+“Scout the building first”,
+“Go in hard—clear every room”,
+“Ask Jin to pull a floor map”
+])
 if idx == 0:
-if g.has_item(“optical_camo”) or g.equipped_cyberware == “optical_camo”:
-g.eddies += 2000
-g.change_rep(“street”, 2)
-g.show_text([“Ghost operation. In and out. +2000 eddies.”])
-else:
-g.show_text([“No camo. You have to fight.”])
-return “gig_data_fight”
+g.show_text([
+“You case the building from a rooftop.”,
+“Two guards on the door. One on the fire escape.”,
+“Ciro’s office is second floor, north side.”,
+“There’s a cargo entrance on the east—unguarded.”
+])
+return “gig_ghost_data_entry”
 elif idx == 1:
-return “gig_data_fight”
+g.show_text([
+“No recon. You kick in the front door.”,
+“Six Street thugs snap to attention.”,
+“This is going to get loud.”
+])
+return “gig_ghost_data_loud”
+else:
+if “Jin” in g.crew:
+g.show_text([
+“Jin: ‘Give me thirty seconds.’”,
+“‘East cargo door. Ciro’s terminal is networked.’”,
+“‘I can loop the camera feed. You walk right in.’”
+])
+return “gig_ghost_data_entry”
+else:
+g.show_text([
+“You don’t have Jin. No map.”,
+“You’ll have to feel it out.”
+])
+return “gig_ghost_data_entry”
+
+def scene_gig_ghost_data_entry(g):
+g.show_text([
+“GHOST DATA – ENTRY”,
+“The cargo door is unlocked. Good start.”,
+“Two guards doing a sweep. You wait for the gap.”,
+“Then—Ciro’s voice echoes from upstairs.”,
+“‘Someone’s in the building. Lock it down.’”
+], title=“GHOST DATA”)
+idx = g.choose([
+“Ambush the guards before they organize”,
+“Hide and wait (optical camo needed)”,
+“Bluff—act like you belong here”
+])
+if idx == 0:
+return “gig_ghost_data_ambush”
+elif idx == 1:
+if g.equipped_cyberware == “optical_camo” or g.has_item(“optical_camo”):
+g.show_text([
+“You vanish into the walls.”,
+“Guards sweep past. Breathing. Waiting.”,
+“You slip upstairs. Ciro’s alone at his terminal.”,
+“You grab the shard. He doesn’t even flinch.”,
+“Clean. Quiet.”
+])
+g.eddies += 3500  # base + stealth bonus
+g.change_rep(“street”, 3)
+g.show_text([“GHOST DATA COMPLETE”, “Stealth bonus: +3500 eddies.”])
+return “afterlife_hub”
+else:
+g.show_text([“No optical camo. The guard clocks you immediately.”])
+return “gig_ghost_data_ambush”
+else:
+# Bluff — skill check based on street_cred
+bluff_ok = random.random() < 0.30 + g.street_cred * 0.08
+if bluff_ok:
+g.show_text([
+“You walk past like you own the place.”,
+“Guard: ‘Hey—’”,
+“You: ‘Ciro called me in. Check your messages.’”,
+“He checks. The moment’s enough.”,
+“You’re upstairs and out before he figures it out.”
+])
+g.eddies += 2800
+g.change_rep(“street”, 2)
+g.show_text([“GHOST DATA COMPLETE”, “+2800 eddies. Slick.”])
+return “afterlife_hub”
+else:
+g.show_text([
+“Guard: ‘I don’t think so.’”,
+“He reaches for his radio. You reach first.”
+])
+return “gig_ghost_data_ambush”
+
+def scene_gig_ghost_data_ambush(g):
+g.show_text([
+“GHOST DATA – FIREFIGHT”,
+“The hallway erupts. 6th Street guards pour in.”,
+“You fight through to Ciro’s office.”,
+“He’s barricaded himself inside.”
+], title=“GHOST DATA”)
+result = g.run_combat([
+(“6th St Guard”,   32, 9,  10, 1),
+(“6th St Guard”,   32, 9,  10, 1),
+(“6th St Enforcer”,52, 13, 11, 3, [(“Suppressive”, 1.3)]),
+])
+if result == “hub”:
+return “afterlife_hub”
+if not result:
+g.health = max(5, g.health - 25)
+g.show_text([
+“You’re driven back. No shard.”,
+“You escape with your life. Barely.”,
+“Rook: ‘No pay for no data. Try again.’”
+])
+GIG_BOARD[“ghost_data”][“done”] = False   # allow retry
+return “afterlife_hub”
+return “gig_ghost_data_ciro”
+
+def scene_gig_ghost_data_loud(g):
+g.show_text([
+“GHOST DATA – LOUD ENTRY”,
+“Front door. Badge-check with a boot.”,
+“Guards scramble. You put them down fast.”,
+“Then three more from the stairwell.”
+], title=“GHOST DATA”)
+result = g.run_combat([
+(“6th St Guard”,   32, 9,  10, 1),
+(“6th St Guard”,   32, 9,  10, 1),
+(“6th St Guard”,   32, 9,  10, 1),
+(“6th St Veteran”, 60, 15, 12, 4, [(“Burst Fire”, 1.5)]),
+])
+if result == “hub”:
+return “afterlife_hub”
+if not result:
+g.health = max(5, g.health - 30)
+g.show_text([
+“Too many. You retreat bleeding.”,
+“Rook: ‘That’s why I said no bodies.’”
+])
+GIG_BOARD[“ghost_data”][“done”] = False
+return “afterlife_hub”
+return “gig_ghost_data_ciro”
+
+def scene_gig_ghost_data_ciro(g):
+g.show_text([
+“GHOST DATA – CIRO”,
+“Ciro is cowering behind his desk.”,
+“‘Take it! Take the shard! Just don’t—’”,
+“You grab the shard off the terminal.”,
+“Ciro: ‘That list—there are people on it who will die.’”,
+“‘Your fixer is selling names to Militech.’”,
+“He shoves a second shard into your hand.”,
+“‘This one proves it. Do what you want with it.’”
+], title=“GHOST DATA”)
+idx = g.choose([
+“Take both shards—sell Ciro’s evidence to Militech”,
+“Take the job shard—ignore Ciro’s warning”,
+“Take Ciro’s evidence—expose Rook”
+])
+if idx == 0:
+g.eddies += 2500
+g.change_rep(“militech”, 2)
+g.change_rep(“street”, -2)
+g.set_flag(“sold_ciro_list”)
+g.show_text([
+“Militech pays you extra for the names.”,
+“Rook’s list is theirs now.”,
+“You try not to think about what happens to those people.”,
+“+4500 eddies total. Dirty money.”
+])
+elif idx == 1:
+g.eddies += 2500
+g.show_text([
+“You hand Rook the shard. He pays without looking up.”,
+“Ciro’s second shard sits in your pocket.”,
+“You toss it in a gutter.”,
+“+2500 eddies.”
+])
+else:
+g.eddies += 1000   # Rook’s partial pay before he knows
+g.change_rep(“street”, 4)
+g.set_flag(“exposed_rook”)
+g.show_text([
+“You leak Ciro’s evidence to a fixer network board.”,
+“Rook’s operation collapses within the day.”,
+“He goes quiet. The street remembers.”,
+“+1000 eddies (partial) + Street Cred surge.”
+])
+g.show_text([“GIG COMPLETE: GHOST DATA”])
+return “afterlife_hub”
+
+# ── GIG 2: BLOOD MONEY ───────────────────────────────────────────────
+
+# Yuki wants a Scav boss taken down. Multi-wave combat with a boss.
+
+def scene_gig_blood_money(g):
+GIG_BOARD[“blood_money”][“done”] = True
+g.show_text([
+“GIG: BLOOD MONEY”,
+“Yuki: ‘Scav boss named Razor runs a chop-shop in Arroyo.’”,
+“‘He’s been taking people off the street.’”,
+“‘Dismantle them. Sell the chrome.’”,
+“‘We want him gone. Payment: 3000 eddies.’”,
+“‘If you bring back his databank: extra 1500.’”
+], title=“BLOOD MONEY”)
+idx = g.choose([
+“Case the chop-shop first”,
+“Go in—improvise”,
+“Ask around for info on Razor”
+])
+if idx == 0:
+g.show_text([
+“You watch from an overpass.”,
+“The chop-shop is a converted parking structure.”,
+“Level 1: four Scavs. Level 2: Razor and his crew.”,
+“There’s a side ramp on the west—less traffic.”,
+“You spot a fuse box that could kill the lights.”
+])
+g.set_flag(“blood_cased”)
+elif idx == 2:
+g.show_text([
+“Street vendor: ‘Razor? He’s mean. And paranoid.’”,
+“‘He keeps his databank on him. Never lets it off.’”,
+“‘You’d have to kill him to get it.’”,
+“Useful. But you already knew that part.”
+])
+g.set_flag(“blood_intel”)
+return “gig_blood_money_entry”
+
+def scene_gig_blood_money_entry(g):
+opts = [“Hit the lights—go in dark”, “Walk in the front—make a statement”]
+if g.check_flag(“blood_cased”):
+opts.insert(0, “Use the west ramp (cased route—fewer guards)”)
+idx = g.choose(opts, title=“BLOOD MONEY”)
+if idx == 0 and g.check_flag(“blood_cased”):
+g.show_text([
+“The west ramp is clear. You avoid the first cluster entirely.”,
+“Straight to level two.”
+])
+return “gig_blood_money_boss”
+elif “lights” in opts[idx]:
+g.show_text([
+“You cut the fuse box.”,
+“The structure goes dark.”,
+“Scavs shout. Torchlight swings wildly.”,
+“You move through the chaos.”
+])
+result = g.run_combat([
+(“Scav”,        28, 8, 9,  0),
+(“Scav”,        28, 8, 9,  0),
+])
+if result == “hub”:  return “afterlife_hub”
+if not result:
+g.health = max(5, g.health - 20)
+g.show_text([“Overwhelmed in the dark. You pull back.”])
+GIG_BOARD[“blood_money”][“done”] = False
+return “afterlife_hub”
+return “gig_blood_money_boss”
+else:
+g.show_text([
+“You walk in the front.”,
+“A Scav looks up from a body on the table.”,
+“‘Who the f—’”,
+“You don’t let him finish.”
+])
+result = g.run_combat([
+(“Scav”,          28, 8, 9, 0),
+(“Scav”,          28, 8, 9, 0),
+(“Scav Butcher”,  45, 12, 10, 2, [(“Cleave”, 1.4)]),
+(“Scav”,          28, 8,  9, 0),
+])
+if result == “hub”: return “afterlife_hub”
+if not result:
+g.health = max(5, g.health - 25)
+g.show_text([“Too many. You fall back.”])
+GIG_BOARD[“blood_money”][“done”] = False
+return “afterlife_hub”
+return “gig_blood_money_boss”
+
+def scene_gig_blood_money_boss(g):
+g.show_text([
+“BLOOD MONEY – RAZOR”,
+“Level two. The chop-shop’s inner sanctum.”,
+“Razor: big, augmented, and very annoyed.”,
+“‘You killed my people.’”,
+“‘I’m going to take you apart. See what you’re worth.’”
+], title=“BLOOD MONEY”)
+result = g.run_combat([
+{“name”: “Razor”,
+“hp”: 130, “attack”: 22, “speed”: 12, “defense”: 7,
+“abilities”: [(“Hydraulic Slam”, 2.0), (“Grab and Crush”, 1.6)],
+“boss”: True,
+“loot”: [“razor_databank”, “medkit”]},
+(“Razor’s Guard”, 40, 11, 11, 2),
+(“Razor’s Guard”, 40, 11, 11, 2),
+])
+if result == “hub”: return “afterlife_hub”
+if not result:
+g.health = max(5, g.health - 35)
+g.show_text([
+“Razor nearly takes your head off.”,
+“You escape. Barely. Missing a tooth.”,
+“Yuki: ‘Come back when you’re ready.’”
+])
+GIG_BOARD[“blood_money”][“done”] = False
+return “afterlife_hub”
+# Victory
+has_databank = g.has_item(“razor_databank”)
+pay = 4500 if has_databank else 3000
+g.eddies += pay
+g.change_rep(“street”, 3)
+if has_databank:
+g.remove_item(“razor_databank”)
+g.show_text([
+“Razor’s down. You strip the databank off his wrist.”,
+“Yuki: ‘Nice work. Real nice.’”,
+f”+{pay} eddies. Bonus included.”
+])
+else:
+g.show_text([
+“Razor’s down.”,
+f”Yuki pays: +{pay} eddies.”
+])
+g.show_text([“GIG COMPLETE: BLOOD MONEY”])
+return “afterlife_hub”
+
+# ── GIG 3: BROKEN DOC ────────────────────────────────────────────────
+
+# Find ripperdoc Vik. Turns out Scavs took him to harvest his skills.
+
+# Choice: rescue violently, negotiate a trade, or expose the Scav ring.
+
+def scene_gig_broken_doc(g):
+GIG_BOARD[“broken_doc”][“done”] = True
+g.show_text([
+“GIG: BROKEN DOC”,
+“Rook: ‘Ripperdoc named Vik went missing two nights ago.’”,
+“‘He fixes up mercs who can’t go to corpo-owned clinics.’”,
+“‘Half the street operatives in Watson use him.’”,
+“‘Find him. Bring him back breathing.’”,
+“‘Pay: 2000 eddies. Plus—he’ll owe you a favor.’”
+], title=“BROKEN DOC”)
+idx = g.choose([
+“Check Vik’s clinic for clues”,
+“Ask around the Watson streets”,
+“Pull Scav activity reports (cyberdeck)”
+])
+if idx == 0:
+g.show_text([
+“Vik’s clinic. Broken glass. Overturned table.”,
+“No signs of a struggle at the door—he let them in.”,
+“On the floor: a 6th Street patch. Wrong. Too obvious.”,
+“On his terminal: last client appointment.”,
+“A name: ‘Chrome Kaz’—known Scav fixer.”
+])
+g.set_flag(“vik_trail_chrome_kaz”)
+elif idx == 1:
+g.show_text([
+“Street vendor: ‘Heard shouting from Vik’s block.’”,
+“‘Three guys. One of them had chrome arms to the shoulder.’”,
+“‘They went east. Towards the old parking structure.’”
+])
+g.set_flag(“vik_trail_witness”)
+elif idx == 2:
+if g.has_item(“cyberdeck”):
+g.energy = max(0, g.energy - 20)
+g.show_text([
+“Jin: ‘Scav network is noisy tonight.’”,
+“‘They’re selling something. Medical expertise.’”,
+“‘They’ve got Vik in a warehouse on Industrial Row.’”,
+“‘Three guards outside. Unknown inside.’”
+])
+g.set_flag(“vik_trail_net”)
+else:
+g.show_text([“No cyberdeck. You check the streets instead.”])
+g.set_flag(“vik_trail_witness”)
+return “gig_broken_doc_warehouse”
+
+def scene_gig_broken_doc_warehouse(g):
+g.show_text([
+“BROKEN DOC – WAREHOUSE”,
+“Industrial Row. You find the warehouse.”,
+“Vik’s inside—you can hear him.”,
+“‘I won’t install that. You can’t make me.’”,
+“Scav: ‘We don’t need your permission. Just your hands.’”
+], title=“BROKEN DOC”)
+has_intel = (g.check_flag(“vik_trail_net”) or
+g.check_flag(“vik_trail_chrome_kaz”))
+idx = g.choose([
+“Breach the front—hit hard and fast”,
+“Sneak around back (optical camo needed)” if g.equipped_cyberware == “optical_camo” or g.has_item(“optical_camo”) else “Try the back door (risky without camo)”,
+“Call out to negotiate—offer something”
+])
+if idx == 0:
+g.show_text([
+“You kick the door.”,
+“Three Scavs spin around.”,
+“Inside: Vik strapped to a gurney. Conscious. Angry.”,
+])
+result = g.run_combat([
+(“Scav”,         28, 8,  9, 0),
+(“Scav”,         28, 8,  9, 0),
+(“Scav Surgeon”, 45, 11, 10, 2, [(“Blade Flurry”, 1.3)]),
+])
+if result == “hub”: return “afterlife_hub”
+if not result:
+g.health = max(5, g.health - 20)
+g.show_text([
+“You’re driven out. Vik is still in there.”,
+“You need to try again.”
+])
+GIG_BOARD[“broken_doc”][“done”] = False
+return “afterlife_hub”
+return “gig_broken_doc_rescued”
+elif idx == 1:
+if g.equipped_cyberware == “optical_camo” or g.has_item(“optical_camo”):
+g.show_text([
+“You ghost through the back.”,
+“Two Scavs standing over Vik.”,
+“You take the first one from behind. The second spins—”,
+“too slow.”
+])
+result = g.run_combat([
+(“Scav”, 28, 8, 9, 0),
+])
+if result == “hub”: return “afterlife_hub”
+if not result:
+g.health = max(5, g.health - 15)
+GIG_BOARD[“broken_doc”][“done”] = False
+return “afterlife_hub”
+return “gig_broken_doc_rescued”
+else:
+g.show_text([
+“The back door squeals. A Scav hears it.”,
+“‘Hey!’ Full alert.”
+])
+result = g.run_combat([
+(“Scav”,         28, 8, 9, 0),
+(“Scav”,         28, 8, 9, 0),
+(“Scav Surgeon”, 45, 11, 10, 2),
+])
+if result == “hub”: return “afterlife_hub”
+if not result:
+g.health = max(5, g.health - 20)
+GIG_BOARD[“broken_doc”][“done”] = False
+return “afterlife_hub”
+return “gig_broken_doc_rescued”
+else:  # negotiate
+g.show_text([
+“You bang on the door.”,
+“‘I’ve got chrome worth more than whatever you’re planning.’”,
+“‘Let the doc go. We trade.’”
+])
+# success depends on having something to offer
+has_trade = (g.eddies >= 1000 or
+any(g.has_item(x) for x in [“smart_rifle”,“optical_camo”,“cyberdeck”]))
+if has_trade:
+idx2 = g.choose([
+f”Offer 1000 eddies {’(you have it)’ if g.eddies >= 1000 else ‘(short)’}”,
+“Offer a piece of equipment”,
+“This was a bluff—attack when they open”
+])
+if idx2 == 0 and g.eddies >= 1000:
+g.eddies -= 1000
+g.show_text([
+“The door opens. You slide the chip through.”,
+“Scav: ‘Take your doc.’”,
+“Vik stumbles out. ‘Never doing a house call again.’”
+])
+return “gig_broken_doc_rescued”
+elif idx2 == 1:
+trade_items = [i for i in [“smart_rifle”,“optical_camo”,“cyberdeck”] if g.has_item(i)]
+if trade_items:
+ti = g.choose(trade_items + [“Never mind”], “Trade which?”)
+if ti < len(trade_items):
+g.remove_item(trade_items[ti])
+g.show_text([
+f”You slide the {trade_items[ti]} under the door.”,
+“Scav: ‘Deal.’”,
+“Vik walks out rubbing his wrists.”
+])
+return “gig_broken_doc_rescued”
+g.show_text([“Nothing to trade. You’ll have to fight.”])
+return “gig_broken_doc_warehouse”
+else:  # bluff attack
+g.show_text([“The door cracks. You slam through it.”])
+result = g.run_combat([
+(“Scav”, 28, 8, 9, 0),
+(“Scav Surgeon”, 45, 11, 10, 2),
+])
+if result == “hub”: return “afterlife_hub”
+if not result:
+g.health = max(5, g.health - 20)
+GIG_BOARD[“broken_doc”][“done”] = False
+return “afterlife_hub”
+return “gig_broken_doc_rescued”
+else:
+g.show_text([
+“Scav: ‘You got nothing. Get lost.’”,
+“The bluff failed. You’ll have to fight.”
+])
+return “gig_broken_doc_warehouse”
+
+def scene_gig_broken_doc_rescued(g):
+g.show_text([
+“BROKEN DOC – VIK”,
+“Vik catches his breath outside.”,
+“‘That was… close.’”,
+“‘They wanted me to install military-grade implants.’”,
+“‘Without consent. Into people who can’t say no.’”,
+“He looks at his hands.”,
+“‘I owe you. Come to my clinic anytime.’”
+], title=“BROKEN DOC”)
+idx = g.choose([
+“Collect the 2000 from Rook”,
+“Waive Rook’s fee—Vik’s favor is worth more”,
+“Ask Vik to upgrade you right now”
+])
+if idx == 0:
+g.eddies += 2000
+g.show_text([“Rook pays. 2000 eddies.”, “GIG COMPLETE: BROKEN DOC”])
+elif idx == 1:
+g.set_flag(“vik_owes_favor”)
+g.change_rep(“street”, 3)
+g.show_text([
+“Rook: ‘You sure?’”,
+“You: ‘Pay it forward.’”,
+“Vik: ‘I won’t forget this, Niko.’”,
+“GIG COMPLETE: BROKEN DOC”
+])
+else:
+g.show_text([
+“Vik: ‘Right now? On the sidewalk?’”,
+“He pulls a kit from his coat.”,
+“‘Fine. Hold still.’”
+])
+# Free upgrade
+upgrade = random.choice([
+(“Reflex boost: +2 speed in combat.”, “speed_up”),
+(“Pain dampener: you heal 5 HP/turn in combat.”, “regen”),
+(“Micro-optics: crit chance +5%.”, “crit_up”),
+])
+g.show_text([upgrade[0]])
+g.set_flag(f”vik_upgrade_{upgrade[1]}”)
+g.eddies += 2000
+g.show_text([“Rook pays. 2000 eddies.”, “GIG COMPLETE: BROKEN DOC”])
+return “afterlife_hub”
+
+# ── GIG 4: STEEL NERVES ──────────────────────────────────────────────
+
+# Corpo exec Yama needs protection at a meeting. The meeting is a trap.
+
+def scene_gig_steel_nerves(g):
+GIG_BOARD[“steel_nerves”][“done”] = True
+g.show_text([
+“GIG: STEEL NERVES”,
+“Yuki: ‘Corpo exec named Yama has a meeting tonight.’”,
+“‘He says it’s a simple deal—tech license handoff.’”,
+“‘He says he doesn’t need protection.’”,
+“‘He’s wrong. He just doesn’t know it yet.’”,
+“‘Guard him. Don’t let him die. 3500 eddies.’”
+], title=“STEEL NERVES”)
+idx = g.choose([
+“Meet Yama and escort him”,
+“Recon the meeting location first”,
+“Hack the guest list (cyberdeck)”
+])
+if idx == 0:
+return “gig_steel_nerves_escort”
+elif idx == 1:
+g.show_text([
+“You find the meeting spot—a private booth at the Riot Club.”,
+“Exit routes: two. Main entrance and a kitchen service door.”,
+“You spot a suspicious figure doing a sweep.”,
+“Pro movement. This isn’t a business meeting.”
+])
+g.set_flag(“steel_nerves_cased”)
+return “gig_steel_nerves_escort”
 else:
 if g.has_item(“cyberdeck”):
-g.eddies += 2000
-g.show_text([“Hacked the lock. Clean extraction. +2000 eddies.”])
+g.energy = max(0, g.energy - 20)
+g.show_text([
+“Jin: ‘Guest list is fake.’”,
+“‘There is no tech license.’”,
+“‘The other side of the table is an Arasaka extraction team.’”,
+“‘They want Yama alive. His bodyguards—not so much.’”
+])
+g.set_flag(“steel_nerves_intel”)
+g.set_flag(“steel_nerves_cased”)
 else:
-g.show_text([“No cyberdeck.”])
-return “gig_data_fight”
-return “afterlife_hub”
+g.show_text([“No cyberdeck. You go in blind.”])
+return “gig_steel_nerves_escort”
 
-def scene_gig_data_fight(g):
+def scene_gig_steel_nerves_escort(g):
+g.show_text([
+“STEEL NERVES – THE MEETING”,
+“Yama: ‘You’re my guard? You look underfed.’”,
+“‘This is a business meeting, not a warzone.’”,
+“The Riot Club. Loud music. Neon.”,
+“Yama sits. The other side of the table sits down.”,
+“Too calm. Too ready.”,
+“Then the lights cut out.”
+], title=“STEEL NERVES”)
+if g.check_flag(“steel_nerves_intel”):
+g.show_text([
+“You already knew. You’re already moving.”,
+“‘Yama—kitchen. NOW.’”,
+“He moves. For a corpo, he’s fast.”
+])
+return “gig_steel_nerves_fight”
+else:
+idx = g.choose([
+“Grab Yama—pull him toward the exit”,
+“Draw your weapon—challenge them directly”,
+“Stay calm—see what they want”
+])
+if idx == 0:
+g.show_text([“You yank Yama up. ‘Move!’”, “He protests. You don’t listen.”])
+elif idx == 1:
+g.show_text([
+“You stand. ‘Whatever you’re planning—don’t.’”,
+“Arasaka agent: ‘We’re not planning. We’re executing.’”
+])
+else:
+g.show_text([
+“You sit. Watch.”,
+“Arasaka agent smiles. Reaches under the table.”,
+“Yep. That’s a weapon.”
+])
+return “gig_steel_nerves_fight”
+
+def scene_gig_steel_nerves_fight(g):
+g.show_text([
+“STEEL NERVES – AMBUSH”,
+“Four Arasaka extraction agents.”,
+“Yama is pressed against the wall behind you.”,
+“‘I thought this was a BUSINESS MEETING!’”,
+“You: ‘Keep your head down.’”
+], title=“STEEL NERVES”)
 result = g.run_combat([
-(“Gang Member”, 30, 9, 10, 0),
-(“Gang Member”, 30, 9, 10, 0),
-(“Gang Enforcer”, 50, 13, 11, 2),
+(“Arasaka Agent”,  45, 12, 13, 2),
+(“Arasaka Agent”,  45, 12, 13, 2),
+(“Arasaka Agent”,  45, 12, 13, 2),
+{“name”: “Agent Lead”, “hp”: 80, “attack”: 18, “speed”: 15, “defense”: 5,
+“abilities”: [(“Flashbang”, 0.8), (“Suppressive”, 1.3)],
+“loot”: [“arasaka_keycard”]},
 ])
 if result == “hub”: return “afterlife_hub”
-if result:
-g.eddies += 2000
+if not result:
+g.health = max(5, g.health - 30)
+g.show_text([
+“You’re overwhelmed. Yama is taken.”,
+“Yuki: ‘He’s gone. No pay. Don’t come back for a while.’”
+])
+g.change_rep(“street”, -1)
+GIG_BOARD[“steel_nerves”][“done”] = False
+return “afterlife_hub”
+g.show_text([
+“Last agent down.”,
+“Yama is shaking. ‘You—you saved my life.’”,
+“‘I didn’t even pay you yet.’”,
+“He writes you a number. Bigger than expected.”
+])
+g.eddies += 5000   # combat bonus
+g.change_rep(“street”, 3)
+if g.has_item(“arasaka_keycard”):
+g.show_text([
+“You pocket the keycard off the lead agent.”,
+“Might be useful later.”
+])
+g.show_text([“GIG COMPLETE: STEEL NERVES”, “+5000 eddies”])
+return “afterlife_hub”
+
+# ── GIG 5: DEAD DROP ─────────────────────────────────────────────────
+
+# A simple courier job that turns into a gang war intervention.
+
+def scene_gig_dead_drop(g):
+GIG_BOARD[“dead_drop”][“done”] = True
+g.show_text([
+“GIG: DEAD DROP”,
+“Rook: ‘Simple job. Courier work.’”,
+“‘Pick up a package from Wes in Kabuki.’”,
+“‘Drop it at the Maelstrom garage in Watson.’”,
+“‘Don’t open it. Don’t ask what’s in it.’”,
+“‘1000 eddies. Clean work.’”
+], title=“DEAD DROP”)
+idx = g.choose([
+“Accept—pick up from Wes”,
+“Ask Rook what’s inside”,
+“Scan the package when you get it”
+])
+if idx == 1:
+g.show_text([
+“Rook: ‘You’re not paid to ask questions.’”,
+“He stares at you until you stop asking.”
+])
+return “gig_dead_drop_pickup”
+
+def scene_gig_dead_drop_pickup(g):
+g.show_text([
+“DEAD DROP – PICKUP”,
+“Wes is in a Kabuki noodle shop.”,
+“He hands you a sealed case. Heavy.”,
+“‘Careful with it. Real careful.’”
+], title=“DEAD DROP”)
+idx = g.choose([
+“Take it and go”,
+“Scan it (cyberdeck)”,
+“Break the seal—look inside”
+])
+if idx == 0:
+g.show_text([“Package secured. You head to Watson.”])
+return “gig_dead_drop_delivery”
+elif idx == 1:
+if g.has_item(“cyberdeck”):
+g.show_text([
+“Jin: ‘Scanning…’”,
+“‘It’s a Militech signal jammer.’”,
+“‘Military grade. The Maelstrom would use this’”,
+“‘to black out a whole district.’”
+])
+g.set_flag(“deadrop_know_contents”)
+else:
+g.show_text([“No cyberdeck. You head to Watson.”])
+return “gig_dead_drop_delivery”
+else:
+g.show_text([
+“You crack the seal.”,
+“Inside: a Militech signal jammer.”,
+“And a detonator.”,
+“This isn’t a package. It’s a weapon.”
+])
+g.set_flag(“deadrop_opened”)
+g.set_flag(“deadrop_know_contents”)
+return “gig_dead_drop_choice”
+
+def scene_gig_dead_drop_delivery(g):
+g.show_text([
+“DEAD DROP – WATSON”,
+“Maelstrom territory.”,
+“Three members at the door of the garage.”,
+“One of them opens the case.”,
+“His eyes go wide.”,
+“‘This is it. The jammer.’”,
+“‘Boys—it’s happening. Tonight we black out Militech’s grid.’”,
+“You realize what you’ve just handed them.”
+], title=“DEAD DROP”)
+if g.check_flag(“deadrop_know_contents”):
+idx = g.choose([
+“Leave—you did the job, you got paid”,
+“Destroy the jammer—cost yourself the pay”,
+“Offer to help Maelstrom use it”
+])
+else:
+idx = g.choose([
+“Leave—you did the job”,
+“Ask what they’re planning”,
+“Grab the package back”
+])
+if idx == 0:
+g.eddies += 1000
+g.show_text([
+“You walk away. Rook pays.”,
+“The next morning: district-wide blackout in Watson.”,
+“Eight people die in the chaos.”,
+“+1000 eddies. It sits heavy.”
+])
+g.change_rep(“militech”, -1)
+elif idx == 1 or (idx == 2 and not g.check_flag(“deadrop_know_contents”)):
+g.show_text([
+“You grab the case.”,
+“Maelstrom: ‘Hey!’”,
+“You smash it on the ground. The components scatter.”,
+])
+result = g.run_combat([
+(“Maelstrom”,  35, 10, 10, 1),
+(“Maelstrom”,  35, 10, 10, 1),
+])
+if result == “hub”: return “afterlife_hub”
+if not result:
+g.health = max(5, g.health - 20)
+g.show_text([
+“They beat you back. The jammer’s still intact.”,
+“Rook: ‘You destroyed the package AND you didn’t deliver it?’”,
+“‘No pay. And stay away from me.’”
+])
+g.change_rep(“street”, -1)
+GIG_BOARD[“dead_drop”][“done”] = False
+return “afterlife_hub”
+g.show_text([
+“The jammer is destroyed. Maelstrom is furious.”,
+“Rook is furious. You don’t get paid.”,
+“But Watson has power tonight.”,
+])
+g.change_rep(“street”, 2)
+g.change_rep(“militech”, 1)
+else:
+g.show_text([
+“You offer to help. Maelstrom likes that.”,
+“‘You got nerve, choom.’”,
+“The blackout goes off. Militech scrambles.”,
+“Maelstrom pays you 1500 extra.”,
+“Rook never speaks to you again.”
+])
+g.eddies += 2500
+g.change_rep(“street”, 2)
+g.change_rep(“militech”, -3)
+g.set_flag(“maelstrom_contact”)
+return “gig_dead_drop_done”
+
+def scene_gig_dead_drop_choice(g):
+g.show_text([
+“DEAD DROP – YOU KNOW”,
+“You’re holding a weapon designed for a blackout attack.”,
+“Rook set this up. Maelstrom is the buyer.”,
+“What do you do?”
+], title=“DEAD DROP”)
+idx = g.choose([
+“Deliver it anyway—it’s not your business”,
+“Take it to Militech—they’ll pay”,
+“Destroy it here—take the loss”,
+“Confront Rook directly”
+])
+if idx == 0:
+return “gig_dead_drop_delivery”
+elif idx == 1:
+g.show_text([
+“Militech pays you 2500 for the intel.”,
+“They dismantle the jammer.”,
+“Rook goes underground for a month.”,
+“+2500 eddies.”
+])
+g.eddies += 2500
+g.change_rep(“militech”, 2)
+g.change_rep(“street”, -2)
+elif idx == 2:
+g.show_text([
+“You drop it on the floor and put your boot through it.”,
+“No pay. But no blood on your hands.”
+])
 g.change_rep(“street”, 1)
-g.show_text([“Data secured. +2000 eddies.”])
 else:
-g.show_text([“Mission failed. Game over.”])
-g.running = False
-return None
+g.show_text([
+“You call Rook.”,
+“He doesn’t answer.”,
+“You show up at his table.”,
+“He: ‘You opened it. I told you not to open it.’”,
+“You: ‘What is this, Rook?’”,
+“‘It’s business. Deliver it or walk.’”,
+])
+idx2 = g.choose([“Deliver it (return to normal flow)”,“Walk—destroy it here”])
+if idx2 == 0:
+return “gig_dead_drop_delivery”
+else:
+g.show_text([
+“You smash the case on his table.”,
+“Rook looks at you for a long moment.”,
+“‘Get out of my bar.’”,
+“You do.”
+])
+g.change_rep(“street”, 2)
+g.set_flag(“rook_burned”)
+g.show_text([“GIG COMPLETE: DEAD DROP”])
 return “afterlife_hub”
 
-def scene_gig_corpo_guard(g):
-g.show_text([
-“Protect Exec Yama overnight.”,
-“Three attempts on his life expected.”,
-“You stay alert.”
-], title=“GUARD GIG”)
-result = g.run_combat([
-{“name”:“Assassin”,  “hp”:50,“attack”:14,“speed”:16,“defense”:3, “loot”:[“thermal_katana”]},
-{“name”:“Assassin”,  “hp”:50,“attack”:14,“speed”:16,“defense”:3},
-{“name”:“Hitsquad”,  “hp”:70,“attack”:18,“speed”:13,“defense”:4,
-“abilities”:[(“Coordinated Strike”,1.4)]},
-])
-if result == “hub”: return “afterlife_hub”
-if result:
-g.eddies += 3500
-g.change_rep(“street”, 2)
-g.show_text([“Yama survived. +3500 eddies.”])
-else:
-g.show_text([“Yama is killed. Game over.”])
-g.running = False
-return None
-return “afterlife_hub”
-
-def scene_gig_ripperdoc(g):
-g.show_text([
-“Ripperdoc Vik was taken by Scavs.”,
-“You track him to a building in Arroyo.”
-], title=“RIPPERDOC”)
-result = g.run_combat([
-(“Scav”,         30, 8,  9, 0),
-(“Scav”,         30, 8,  9, 0),
-(“Scav Leader”,  55, 13, 12, 2, [(“Shiv Storm”,1.3)]),
-])
-if result == “hub”: return “afterlife_hub”
-if result:
-g.eddies += 1500
-g.show_text([
-“Vik is alive. ‘Thank you.’”,
-“He upgrades your body for free.”,
-“+1 DEF, +20 max HP.”
-])
-g.health = min(g.max_health() + 20, g.health + 20)
-g.change_rep(“street”, 2)
-else:
-g.show_text([“Vik doesn’t make it. Game over.”])
-g.running = False
-return None
+def scene_gig_dead_drop_done(g):
+g.show_text([“GIG COMPLETE: DEAD DROP”])
 return “afterlife_hub”
 
 def scene_bartender(g):
@@ -2519,10 +3360,30 @@ SCENE_MAP = {
 “kabuki_cyberware”:     scene_kabuki_cyberware,
 “vendor_netrunner”:     scene_vendor_netrunner,
 “fixer_gigs”:           scene_fixer_gigs,
-“gig_data_extraction”:  scene_gig_data_extraction,
-“gig_data_fight”:       scene_gig_data_fight,
-“gig_corpo_guard”:      scene_gig_corpo_guard,
-“gig_ripperdoc”:        scene_gig_ripperdoc,
+# Gig 1: Ghost Data
+“gig_ghost_data”:           scene_gig_ghost_data,
+“gig_ghost_data_entry”:     scene_gig_ghost_data_entry,
+“gig_ghost_data_ambush”:    scene_gig_ghost_data_ambush,
+“gig_ghost_data_loud”:      scene_gig_ghost_data_loud,
+“gig_ghost_data_ciro”:      scene_gig_ghost_data_ciro,
+# Gig 2: Blood Money
+“gig_blood_money”:          scene_gig_blood_money,
+“gig_blood_money_entry”:    scene_gig_blood_money_entry,
+“gig_blood_money_boss”:     scene_gig_blood_money_boss,
+# Gig 3: Broken Doc
+“gig_broken_doc”:           scene_gig_broken_doc,
+“gig_broken_doc_warehouse”: scene_gig_broken_doc_warehouse,
+“gig_broken_doc_rescued”:   scene_gig_broken_doc_rescued,
+# Gig 4: Steel Nerves
+“gig_steel_nerves”:         scene_gig_steel_nerves,
+“gig_steel_nerves_escort”:  scene_gig_steel_nerves_escort,
+“gig_steel_nerves_fight”:   scene_gig_steel_nerves_fight,
+# Gig 5: Dead Drop
+“gig_dead_drop”:            scene_gig_dead_drop,
+“gig_dead_drop_pickup”:     scene_gig_dead_drop_pickup,
+“gig_dead_drop_delivery”:   scene_gig_dead_drop_delivery,
+“gig_dead_drop_choice”:     scene_gig_dead_drop_choice,
+“gig_dead_drop_done”:       scene_gig_dead_drop_done,
 “bartender”:            scene_bartender,
 “shop”:                 scene_shop,
 “shop_heist”:           scene_shop,
