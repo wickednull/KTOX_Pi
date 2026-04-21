@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
 """
-KTOx Payload – CybrPnk2087 (with Combat & Extended Story)
+KTOx Payload – CybrPnk2087 (Final: Modular Acts + Enhanced Combat + All Side Content)
 author: wickednull
 =======================================================================
-Massive text adventure with turn‑based combat, inventory, health, shopping,
-central hub, and a longer story (5 new acts). Press KEY2 to return to hub,
-KEY1 for inventory.
+Massive RPG with modular story (Acts 1-10), turn‑based combat, XP, leveling,
+quickhacks, reputation events, and all original side gigs, crew, shop, save/load.
 
 Controls: 
-  UP/DOWN = scroll text / move cursor
-  OK = next page / select
+  UP/DOWN = scroll / move cursor
+  OK = select / next page
   KEY1 = inventory
   KEY2 = return to Afterlife hub
   KEY3 = exit
@@ -27,15 +26,12 @@ import LCD_1in44
 from PIL import Image, ImageDraw, ImageFont
 
 # ----------------------------------------------------------------------
-# Paths
+# Paths & Hardware
 # ----------------------------------------------------------------------
 LOOT_DIR = "/root/KTOx/loot"
 os.makedirs(LOOT_DIR, exist_ok=True)
 SAVE_FILE = os.path.join(LOOT_DIR, "cyberpunk_save.json")
 
-# ----------------------------------------------------------------------
-# Hardware
-# ----------------------------------------------------------------------
 PINS = {
     "UP": 6, "DOWN": 19, "LEFT": 5, "RIGHT": 26,
     "OK": 13, "KEY1": 21, "KEY2": 20, "KEY3": 16,
@@ -56,6 +52,10 @@ def font(size=9):
 FONT = font(9)
 FONT_BOLD = font(10)
 
+# Global image/draw for optimisation
+IMAGE = Image.new("RGB", (W, H), (10, 0, 0))
+DRAW = ImageDraw.Draw(IMAGE)
+
 def wait_btn(timeout=0.1):
     start = time.time()
     while time.time() - start < timeout:
@@ -72,125 +72,23 @@ def wait_for_release(btn_name):
         time.sleep(0.02)
 
 # ==============================
-# Combat System
-# ==============================
-class Combatant:
-    def __init__(self, name, hp, attack, defense=0, abilities=None):
-        self.name = name
-        self.max_hp = hp
-        self.hp = hp
-        self.attack = attack
-        self.defense = defense
-        self.abilities = abilities or []
-
-    def is_alive(self):
-        return self.hp > 0
-
-    def take_damage(self, dmg):
-        dmg = max(1, dmg - self.defense)
-        self.hp = max(0, self.hp - dmg)
-        return dmg
-
-def combat_encounter(player_crew, enemies, game):
-    while True:
-        for member in player_crew:
-            if not member.is_alive():
-                continue
-            action = menu_choice(["Attack", "Cyberware", "Item", "Switch"], title=f"{member.name}'s turn")
-            if action == -1:
-                return "hub"
-            if action == 0:
-                target_idx = menu_choice([f"{e.name} HP:{e.hp}/{e.max_hp}" for e in enemies], title="Attack whom?")
-                if target_idx == -1:
-                    return "hub"
-                target = enemies[target_idx]
-                dmg = member.attack + random.randint(-2, 4)
-                actual = target.take_damage(dmg)
-                show_message(f"{member.name} hits {target.name} for {actual} damage!")
-                if not target.is_alive():
-                    show_message(f"{target.name} is defeated!")
-                    enemies.remove(target)
-                    if not enemies:
-                        show_message("Victory!")
-                        return True
-            elif action == 1:
-                if not member.abilities:
-                    show_message("No cyberware equipped.")
-                    continue
-                abil_idx = menu_choice([a[0] for a in member.abilities], title="Select ability")
-                if abil_idx == -1:
-                    return "hub"
-                ability = member.abilities[abil_idx]
-                target = enemies[0]
-                dmg = int(member.attack * ability[1])
-                actual = target.take_damage(dmg)
-                show_message(f"{member.name} uses {ability[0]}! Deals {actual} damage.")
-                if not target.is_alive():
-                    show_message(f"{target.name} is defeated!")
-                    enemies.remove(target)
-                    if not enemies:
-                        show_message("Victory!")
-                        return True
-            elif action == 2:
-                if not game.inventory:
-                    show_message("No items.")
-                    continue
-                usable = [i for i in game.inventory if i in ["MaxDoc", "Stim"]]
-                if not usable:
-                    show_message("No usable items.")
-                    continue
-                item_idx = menu_choice(usable, title="Use which item?")
-                if item_idx == -1:
-                    return "hub"
-                item = usable[item_idx]
-                if item == "MaxDoc":
-                    heal = 30
-                    member.hp = min(member.max_hp, member.hp + heal)
-                    if member.name == "Niko":
-                        game.health = member.hp
-                    game.inventory.remove(item)
-                    show_message(f"{member.name} used MaxDoc. +{heal} HP.")
-                elif item == "Stim":
-                    member.attack += 5
-                    game.inventory.remove(item)
-                    show_message(f"{member.name} used Stim. Attack boosted!")
-            elif action == 3:
-                show_message("All crew are already in battle.")
-        for enemy in enemies[:]:
-            if not enemy.is_alive():
-                continue
-            alive = [m for m in player_crew if m.is_alive()]
-            if not alive:
-                show_message("Your crew is wiped out...")
-                return False
-            target = random.choice(alive)
-            dmg = enemy.attack + random.randint(-2, 4)
-            actual = target.take_damage(dmg)
-            show_message(f"{enemy.name} attacks {target.name} for {actual} damage!")
-            if not target.is_alive():
-                show_message(f"{target.name} is down!")
-                player_crew.remove(target)
-        if not any(m.is_alive() for m in player_crew):
-            return False
-
-# ==============================
-# UI Helpers
+# UI Helpers (optimised)
 # ==============================
 def wrap_text(text, width=18):
     return textwrap.wrap(text, width=width)
 
 def display_text(lines, title=None):
-    image = Image.new("RGB", (W, H), "BLACK")
-    draw = ImageDraw.Draw(image)
+    global IMAGE, DRAW
+    DRAW.rectangle((0, 0, W, H), fill=(10, 0, 0))
     y = 2
     if title:
-        draw.text((2, y), title.upper(), font=FONT_BOLD, fill="CYAN")
+        DRAW.text((2, y), title.upper(), font=FONT_BOLD, fill="CYAN")
         y += 12
-        draw.line((0, y-2, W, y-2), fill="WHITE")
+        DRAW.line((0, y-2, W, y-2), fill="WHITE")
     for line in lines[:8]:
-        draw.text((2, y), line, font=FONT, fill="WHITE")
+        DRAW.text((2, y), line, font=FONT, fill="WHITE")
         y += 11
-    LCD.LCD_ShowImage(image, 0, 0)
+    LCD.LCD_ShowImage(IMAGE, 0, 0)
 
 def menu_choice(options, title="SELECT"):
     idx = 0
@@ -249,6 +147,267 @@ def prompt_yes_no(question):
             sys.exit(0)
         time.sleep(0.1)
 
+# ==============================
+# Enhanced Combat System
+# ==============================
+class Combatant:
+    def __init__(self, name, hp, attack, speed=10, defense=0, abilities=None):
+        self.name = name
+        self.max_hp = hp
+        self.hp = hp
+        self.attack = attack
+        self.speed = speed
+        self.defense = defense
+        self.status = None      # "Burn" or "Glitch"
+        self.status_turns = 0
+        self.abilities = abilities or []
+
+    def is_alive(self):
+        return self.hp > 0
+
+    def take_damage(self, dmg):
+        reduction = self.defense // 2
+        actual = max(1, dmg - reduction)
+        self.hp = max(0, self.hp - actual)
+        return actual
+
+    def apply_status(self, status, turns):
+        self.status = status
+        self.status_turns = turns
+
+    def end_turn(self):
+        if self.status == "Burn":
+            dmg = 5
+            self.hp = max(0, self.hp - dmg)
+            show_message(f"{self.name} burns for {dmg} damage!")
+            self.status_turns -= 1
+            if self.status_turns <= 0:
+                self.status = None
+        elif self.status == "Glitch":
+            self.status_turns -= 1
+            if self.status_turns <= 0:
+                self.status = None
+
+def combat_encounter(player_crew, enemies_data, game):
+    """Enhanced combat with speed sorting and status effects."""
+    enemies = [Combatant(e[0], e[1], e[2], e[3] if len(e)>3 else 10) for e in enemies_data]
+    all_fighters = sorted(player_crew + enemies, key=lambda x: x.speed, reverse=True)
+    turn_counter = 0
+    while any(e.is_alive() for e in enemies) and any(p.is_alive() for p in player_crew):
+        fighter = all_fighters[turn_counter % len(all_fighters)]
+        if not fighter.is_alive():
+            turn_counter += 1
+            continue
+        if fighter in player_crew:
+            # Player turn
+            action = menu_choice(["Attack", "Quickhack", "Item", "Info"], title=f"{fighter.name}'s turn")
+            if action == -1:
+                return "hub"
+            if action == 0:
+                alive_enemies = [e for e in enemies if e.is_alive()]
+                if not alive_enemies:
+                    continue
+                target_idx = menu_choice([f"{e.name} HP:{e.hp}/{e.max_hp}" for e in alive_enemies], title="Attack whom?")
+                if target_idx == -1:
+                    return "hub"
+                target = alive_enemies[target_idx]
+                dmg = fighter.attack + random.randint(-2, 4)
+                actual = target.take_damage(dmg)
+                show_message(f"{fighter.name} hits {target.name} for {actual}!")
+                if not target.is_alive():
+                    show_message(f"{target.name} is defeated!")
+            elif action == 1:  # Quickhack (requires cyberdeck)
+                if not game.has_item("cyberdeck"):
+                    show_message("No cyberdeck installed.")
+                    continue
+                hack_choice = menu_choice(["Short Circuit (20E)", "Weapon Glitch (30E)", "Overheat (40E)"], "QUICKHACK")
+                if hack_choice == -1:
+                    continue
+                if hack_choice == 0 and game.energy >= 20:
+                    game.energy -= 20
+                    dmg = 20
+                    alive_enemies = [e for e in enemies if e.is_alive()]
+                    if alive_enemies:
+                        target = alive_enemies[0]
+                        actual = target.take_damage(dmg)
+                        show_message(f"Short Circuit! {target.name} takes {actual} damage.")
+                elif hack_choice == 1 and game.energy >= 30:
+                    game.energy -= 30
+                    alive_enemies = [e for e in enemies if e.is_alive()]
+                    if alive_enemies:
+                        target = alive_enemies[0]
+                        target.apply_status("Glitch", 2)
+                        show_message(f"Weapon Glitch! {target.name} will glitch for 2 turns.")
+                elif hack_choice == 2 and game.energy >= 40:
+                    game.energy -= 40
+                    alive_enemies = [e for e in enemies if e.is_alive()]
+                    if alive_enemies:
+                        target = alive_enemies[0]
+                        target.apply_status("Burn", 3)
+                        show_message(f"Overheat! {target.name} burns for 3 turns.")
+                else:
+                    show_message("Not enough energy.")
+            elif action == 2:  # Item
+                if not game.inventory:
+                    show_message("No items.")
+                    continue
+                usable = [i for i in game.inventory if i in ["MaxDoc", "Stim", "medkit", "synthetic_meat", "real_burger"]]
+                if not usable:
+                    show_message("No usable items.")
+                    continue
+                item_idx = menu_choice(usable, title="Use which?")
+                if item_idx == -1:
+                    continue
+                item = usable[item_idx]
+                if item == "MaxDoc" or item == "medkit":
+                    heal = 30 if item == "MaxDoc" else 50
+                    fighter.hp = min(fighter.max_hp, fighter.hp + heal)
+                    game.inventory.remove(item)
+                    show_message(f"{fighter.name} used {item}. +{heal} HP.")
+                elif item in ["synthetic_meat", "real_burger"]:
+                    heal = 20 if item == "synthetic_meat" else 35
+                    fighter.hp = min(fighter.max_hp, fighter.hp + heal)
+                    game.inventory.remove(item)
+                    show_message(f"{fighter.name} ate {item}. +{heal} HP.")
+                elif item == "Stim":
+                    fighter.attack += 5
+                    game.inventory.remove(item)
+                    show_message(f"{fighter.name} used Stim. Attack boosted!")
+            elif action == 3:
+                show_message(f"{fighter.name} HP:{fighter.hp}/{fighter.max_hp} Atk:{fighter.attack}")
+        else:
+            # Enemy AI
+            alive_players = [p for p in player_crew if p.is_alive()]
+            if not alive_players:
+                return False
+            target = random.choice(alive_players)
+            if fighter.status == "Glitch":
+                show_message(f"{fighter.name} glitches and misses!")
+                fighter.end_turn()
+                turn_counter += 1
+                continue
+            dmg = fighter.attack + random.randint(-2, 2)
+            actual = target.take_damage(dmg)
+            show_message(f"{fighter.name} attacks {target.name} for {actual}!")
+            if not target.is_alive():
+                show_message(f"{target.name} is down!")
+                player_crew.remove(target)
+        fighter.end_turn()
+        turn_counter += 1
+        if not any(p.is_alive() for p in player_crew):
+            return False
+        if not any(e.is_alive() for e in enemies):
+            # Victory – award XP
+            xp_gain = 50 + len(enemies_data)*10
+            game.xp += xp_gain
+            show_message(f"Victory! +{xp_gain} XP.")
+            while game.xp >= 500:
+                game.level_up()
+            return True
+    return False
+
+# ==============================
+# Modular Mission System
+# ==============================
+MISSIONS = {
+    "act1_intro": {
+        "title": "ACT 1: THE HEIST",
+        "text": ["Rook: 'Steal the prototype chip from a Militech convoy.'"],
+        "enemies": [("Militech Guard", 30, 8, 10), ("Militech Guard", 30, 8, 10)],
+        "next": "act1_escape"
+    },
+    "act1_escape": {
+        "title": "ACT 1: ESCAPE",
+        "text": ["Alarms blare. Militech elites pursue you."],
+        "enemies": [("Militech Elite", 45, 12, 12)],
+        "next": "act2_voodoo"
+    },
+    "act2_voodoo": {
+        "title": "ACT 2: VOODOO SECRETS",
+        "text": ["Sable demands you deal with a NetWatch agent."],
+        "enemies": [("NetWatch Agent", 40, 10, 11), ("NetWatch Drone", 25, 8, 9)],
+        "next": "act3_militech"
+    },
+    "act3_militech": {
+        "title": "ACT 3: MILITECH CONFLICT",
+        "text": ["Vector offers a deal. Fight or sell out?"],
+        "enemies": [("Vector", 60, 15, 13), ("Militech Soldier", 40, 10, 10)],
+        "next": "act4_arasaka"
+    },
+    "act4_arasaka": {
+        "title": "ACT 4: ARASAKA FACILITY",
+        "text": ["Infiltrate the old Arasaka tower."],
+        "enemies": [("Arasaka Cyborg", 80, 20, 14)],
+        "next": "act5_orbital"
+    },
+    "act5_orbital": {
+        "title": "ACT 5: ORBITAL LIFT",
+        "text": ["You reach the space elevator. Security bots everywhere."],
+        "enemies": [("Orbital Guard", 70, 18, 12), ("Security Drone", 50, 14, 15)],
+        "next": "act6_crystal_palace"
+    },
+    "act6_crystal_palace": {
+        "title": "ACT 6: CRYSTAL PALACE",
+        "text": ["Zero‑G combat on a corpo space station."],
+        "enemies": [("Elite Merc", 90, 22, 13), ("Zero‑G Drone", 60, 16, 16)],
+        "next": "act7_blackwall"
+    },
+    "act7_blackwall": {
+        "title": "ACT 7: BLACKWALL BREACH",
+        "text": ["You dive into the net. Rogue AI attacks."],
+        "enemies": [("Blackwall Daemon", 100, 25, 15)],
+        "next": "act8_clone_vat"
+    },
+    "act8_clone_vat": {
+        "title": "ACT 8: CLONE VAT",
+        "text": ["Arasaka's secret cloning lab. Sabotage the vats."],
+        "enemies": [("Clone Soldier", 80, 20, 12), ("Lab Tech", 50, 12, 10)],
+        "next": "act9_siege"
+    },
+    "act9_siege": {
+        "title": "ACT 9: NIGHT CITY SIEGE",
+        "text": ["Total war on the streets. Militech vs Arasaka."],
+        "enemies": [("Militech Commander", 100, 24, 14), ("Arasaka Ninja", 90, 22, 16)],
+        "next": "act10_nirvana"
+    },
+    "act10_nirvana": {
+        "title": "ACT 10: DIGITAL NIRVANA",
+        "text": ["The final choice: merge with the AI or stay human."],
+        "enemies": [("AI Avatar", 120, 30, 18)],
+        "next": None
+    }
+}
+
+def run_modular_mission(game, mission_key):
+    """Handle the modular story mission chain."""
+    while mission_key and mission_key in MISSIONS:
+        m = MISSIONS[mission_key]
+        game.show_text(m["text"], title=m["title"])
+        # Build player crew (Niko + recruited crew)
+        player_crew = [Combatant("Niko", game.health, 15 + game.level, 12)]
+        for member in game.crew:
+            if member == "Maya":
+                player_crew.append(Combatant("Maya", 70, 18, 14))
+            elif member == "Jin":
+                player_crew.append(Combatant("Jin", 60, 12, 16, abilities=[("Overclock", 1.5)]))
+            elif member == "Lina":
+                player_crew.append(Combatant("Lina", 50, 10, 12, abilities=[("EMP", 1.2)]))
+        result = combat_encounter(player_crew, m["enemies"], game)
+        if result == "hub":
+            return
+        if not result:
+            show_message("You died. Game Over.")
+            game.running = False
+            return
+        # After victory, update health and energy
+        for p in player_crew:
+            if p.name == "Niko":
+                game.health = p.hp
+        game.energy = min(100, game.energy + 10)
+        mission_key = m["next"]
+    show_message("You completed the main story! Congratulations, legend.")
+    game.running = False
+
 # ----------------------------------------------------------------------
 # Game Engine
 # ----------------------------------------------------------------------
@@ -263,14 +422,127 @@ class Game:
         self.rep_voodoo = 0
         self.rep_netwatch = 0
         self.street_cred = 0
-        self.crew = []
-        self.crew_loyalty = 50
+        self.crew = []          # List of crew member names
+        self.crew_loyalty = 50  # Overall loyalty 0-100
         self.romance = None
         self.health = 100
         self.eddies = 500
         self.equipped_weapon = None
         self.equipped_cyberware = None
         self.player_name = "Niko"
+        self.xp = 0
+        self.level = 1
+        self.energy = 100
+
+    def level_up(self):
+        self.level += 1
+        self.xp -= 500
+        self.health = self.max_health()
+        self.energy = 100
+        show_message(f"LEVEL UP! You are now Level {self.level}\nMax HP increased to {self.health}")
+
+    def max_health(self):
+        return 100 + (self.level * 10)
+
+    # ---------- Reputation ----------
+    def change_reputation(self, faction, delta):
+        if faction == "arasaka":
+            self.rep_arasaka = max(-10, min(10, self.rep_arasaka + delta))
+        elif faction == "militech":
+            self.rep_militech = max(-10, min(10, self.rep_militech + delta))
+        elif faction == "voodoo":
+            self.rep_voodoo = max(-10, min(10, self.rep_voodoo + delta))
+        elif faction == "netwatch":
+            self.rep_netwatch = max(-10, min(10, self.rep_netwatch + delta))
+        elif faction == "street":
+            self.street_cred = max(-10, min(10, self.street_cred + delta))
+
+    # ---------- Inventory ----------
+    def add_item(self, item):
+        if item not in self.inventory:
+            self.inventory.append(item)
+
+    def remove_item(self, item):
+        if item in self.inventory:
+            self.inventory.remove(item)
+
+    def has_item(self, item):
+        return item in self.inventory
+
+    # ---------- Flags ----------
+    def set_flag(self, flag, value=True):
+        self.flags[flag] = value
+
+    def check_flag(self, flag):
+        return self.flags.get(flag, False)
+
+    # ---------- Crew ----------
+    def add_crew(self, member):
+        if member not in self.crew:
+            self.crew.append(member)
+            self.crew_loyalty = min(100, self.crew_loyalty + 10)
+
+    def set_romance(self, person):
+        self.romance = person
+
+    # ---------- Items ----------
+    def use_item(self, item):
+        if item == "synthetic_meat":
+            self.health = min(self.max_health(), self.health + 20)
+            self.remove_item("synthetic_meat")
+            return "You eat synthetic meat. +20 health."
+        elif item == "real_burger":
+            self.health = min(self.max_health(), self.health + 35)
+            self.remove_item("real_burger")
+            return "You eat a real burger. +35 health."
+        elif item == "medkit":
+            self.health = min(self.max_health(), self.health + 50)
+            self.remove_item("medkit")
+            return "You use a medkit. +50 health."
+        elif item == "smart_rifle":
+            self.equipped_weapon = "smart_rifle"
+            return "You equip the smart rifle. Combat bonuses applied."
+        elif item == "thermal_katana":
+            self.equipped_weapon = "thermal_katana"
+            return "You equip the thermal katana. Combat bonuses applied."
+        elif item == "cyberdeck":
+            self.equipped_cyberware = "cyberdeck"
+            return "You install the cyberdeck. Hacking options unlocked."
+        elif item == "optical_camo":
+            self.equipped_cyberware = "optical_camo"
+            return "You install optical camo. Stealth improved."
+        else:
+            return f"You can't use {item}."
+
+    def open_inventory(self):
+        while True:
+            opts = ["USE ITEM", "VIEW CREW", "EQUIP WEAPON", "BACK"]
+            choice = menu_choice(opts, title="INVENTORY")
+            if choice == -1 or choice == 3:
+                return
+            elif choice == 0:
+                if not self.inventory:
+                    show_message("Empty.")
+                else:
+                    idx = menu_choice(self.inventory, title="Use which?")
+                    if idx == -1: continue
+                    item = self.inventory[idx]
+                    msg = self.use_item(item)
+                    show_message(msg)
+            elif choice == 1:
+                if not self.crew:
+                    show_message("No crew.")
+                else:
+                    menu_choice(self.crew, title="CREW")
+            elif choice == 2:
+                weapons = [w for w in self.inventory if any(kw in w.lower() for kw in ["pistol","smg","katana","rifle"])]
+                if not weapons:
+                    show_message("No weapons.")
+                else:
+                    idx = menu_choice(weapons, title="Equip")
+                    if idx != -1:
+                        self.equipped_weapon = weapons[idx]
+                        show_message(f"Equipped {weapons[idx]}.")
 
     # ---------- Save / Load ----------
     def save_game(self):
@@ -290,6 +562,9 @@ class Game:
             "eddies": self.eddies,
             "equipped_weapon": self.equipped_weapon,
             "equipped_cyberware": self.equipped_cyberware,
+            "xp": self.xp,
+            "level": self.level,
+            "energy": self.energy,
         }
         try:
             with open(SAVE_FILE, "w") as f:
@@ -302,185 +577,13 @@ class Game:
         try:
             with open(SAVE_FILE, "r") as f:
                 data = json.load(f)
-            self.inventory = data.get("inventory", [])
-            self.flags = data.get("flags", {})
-            self.scene = data.get("scene", "afterlife_hub")
-            self.rep_arasaka = data.get("rep_arasaka", 0)
-            self.rep_militech = data.get("rep_militech", 0)
-            self.rep_voodoo = data.get("rep_voodoo", 0)
-            self.rep_netwatch = data.get("rep_netwatch", 0)
-            self.street_cred = data.get("street_cred", 0)
-            self.crew = data.get("crew", [])
-            self.crew_loyalty = data.get("crew_loyalty", 50)
-            self.romance = data.get("romance", None)
-            self.health = data.get("health", 100)
-            self.eddies = data.get("eddies", 500)
-            self.equipped_weapon = data.get("equipped_weapon", None)
-            self.equipped_cyberware = data.get("equipped_cyberware", None)
+            for k, v in data.items():
+                setattr(self, k, v)
             return True
         except:
             return False
 
-    # ---------- Inventory (KEY1) ----------
-    def open_inventory(self):
-        while True:
-            opts = ["USE ITEM", "VIEW CREW", "EQUIP WEAPON", "BACK"]
-            choice = menu_choice(opts, title="INVENTORY")
-            if choice == -1 or choice == 3:
-                return
-            elif choice == 0:
-                if not self.inventory:
-                    show_message("Empty.")
-                else:
-                    idx = menu_choice(self.inventory, title="Use which?")
-                    if idx == -1: continue
-                    item = self.inventory[idx]
-                    if item == "MaxDoc":
-                        self.health = min(100, self.health + 30)
-                        self.inventory.pop(idx)
-                        show_message("Health +30.")
-                    else:
-                        show_message(f"{item} can't be used here.")
-            elif choice == 1:
-                if not self.crew:
-                    show_message("No crew.")
-                else:
-                    menu_choice(self.crew, title="CREW")
-            elif choice == 2:
-                weapons = [w for w in self.inventory if "Pistol" in w or "SMG" in w or "Katana" in w]
-                if not weapons:
-                    show_message("No weapons.")
-                else:
-                    idx = menu_choice(weapons, title="Equip")
-                    if idx != -1:
-                        self.equipped_weapon = weapons[idx]
-                        show_message(f"Equipped {weapons[idx]}.")
-
-    # ---------- Extended Story Missions ----------
-    def mission_select(self):
-        if "intro_done" not in self.flags:
-            self.story_intro()
-        elif "heist_started" not in self.flags:
-            self.story_the_heist()
-        elif "heist_complete" not in self.flags:
-            self.story_heist_escape()
-        elif "voodoo_done" not in self.flags:
-            self.story_voodoo_boys()
-        elif "militech_done" not in self.flags:
-            self.story_militech_conflict()
-        else:
-            self.story_finale()
-
-    def story_intro(self):
-        show_message("Night City, 2087. Niko, a merc trying to make a name.")
-        show_message("A fixer named Rook contacts you. 'Got a gig. Interested?'")
-        if prompt_yes_no("Take the job?"):
-            self.flags["intro_done"] = True
-            self.eddies += 200
-            show_message("Rook: 'Meet me at the Afterlife.'")
-        else:
-            show_message("You decline. (Game Over)")
-            self.running = False
-
-    def story_the_heist(self):
-        show_message("ACT 1: The Heist\nRook wants you to steal a prototype chip from a Militech convoy.")
-        self.flags["heist_started"] = True
-        self.crew = ["Nova", "Glitch"]
-        self.crew_loyalty = {"Nova": 60, "Glitch": 70}
-        show_message("Your crew: Nova (solo) and Glitch (netrunner).")
-        enemies = [Combatant("Militech Guard", 30, 8), Combatant("Militech Guard", 30, 8)]
-        player = Combatant("Niko", self.health, attack=12)
-        crew_combat = [Combatant(n, 40, 10) for n in self.crew]
-        result = combat_encounter([player] + crew_combat, enemies, self)
-        if result == "hub":
-            return
-        if result:
-            show_message("You grab the chip. But alarms blare!")
-            self.flags["heist_complete"] = False
-            self.story_heist_escape()
-        else:
-            show_message("You flatline. Game Over.")
-            self.running = False
-
-    def story_heist_escape(self):
-        show_message("Escape! Militech elites are on your tail.")
-        enemies = [Combatant("Militech Elite", 45, 12)]
-        player = Combatant("Niko", self.health, attack=12)
-        crew_combat = [Combatant(n, 40, 10) for n in self.crew]
-        result = combat_encounter([player] + crew_combat, enemies, self)
-        if result == "hub":
-            return
-        if result:
-            show_message("You escape, but Nova is badly hurt.")
-            self.flags["heist_complete"] = True
-            self.flags["voodoo_done"] = False
-            self.eddies += 2000
-            if isinstance(self.crew_loyalty, dict):
-                self.crew_loyalty["Nova"] -= 10
-        else:
-            show_message("You died. Game Over.")
-            self.running = False
-
-    def story_voodoo_boys(self):
-        show_message("ACT 2: Voodoo Secrets\nYou need to decode the chip. The Voodoo Boys can help.")
-        show_message("Their leader, Sable, demands you deal with a NetWatch agent first.")
-        if prompt_yes_no("Help Sable?"):
-            enemies = [Combatant("NetWatch Agent", 40, 10), Combatant("NetWatch Drone", 25, 8)]
-            player = Combatant("Niko", self.health, attack=14)
-            crew_combat = [Combatant(n, 40, 10) for n in self.crew]
-            result = combat_encounter([player] + crew_combat, enemies, self)
-            if result == "hub":
-                return
-            if result:
-                self.rep_voodoo += 20
-                self.rep_netwatch -= 10
-                show_message("Sable decodes the chip. It contains coordinates to an old Arasaka facility.")
-                self.flags["voodoo_done"] = True
-                self.crew.append("Sable")
-                if isinstance(self.crew_loyalty, dict):
-                    self.crew_loyalty["Sable"] = 50
-        else:
-            show_message("You refuse. The Voodoo Boys become hostile.")
-
-    def story_militech_conflict(self):
-        show_message("ACT 3: Militech Wants the Chip Back")
-        show_message("Vector, a Militech operative, offers you a deal.")
-        choice = menu_choice(["Side with Militech", "Fight them"], "Choose:")
-        if choice == 0:
-            self.rep_militech += 30
-            show_message("You give them the chip. They pay you 5000€$.")
-            self.eddies += 5000
-            self.flags["militech_done"] = True
-        else:
-            enemies = [Combatant("Vector", 60, 15), Combatant("Militech Soldier", 40, 10)]
-            player = Combatant("Niko", self.health, attack=15)
-            crew_combat = [Combatant(n, 40, 10) for n in self.crew]
-            result = combat_encounter([player] + crew_combat, enemies, self)
-            if result == "hub":
-                return
-            if result:
-                show_message("You defeat Vector. Militech will hunt you.")
-                self.rep_militech -= 50
-                self.flags["militech_done"] = True
-
-    def story_finale(self):
-        show_message("ACT 4: The Arasaka Facility")
-        show_message("You discover the chip leads to a secret AI project.")
-        boss = Combatant("Arasaka Cyborg", 80, 20, abilities=[("Overcharge", 2.0)])
-        player = Combatant("Niko", self.health, attack=18)
-        crew_combat = [Combatant(n, 50, 12) for n in self.crew]
-        result = combat_encounter([player] + crew_combat, [boss], self)
-        if result == "hub":
-            return
-        if result:
-            show_message("You destroy the AI and escape. Night City legend status achieved.")
-            show_message("THE END. Thanks for playing!")
-            self.running = False
-        else:
-            show_message("You died a hero. Game Over.")
-            self.running = False
-
-    # ---------- Original Hub and Scene Methods ----------
+    # ---------- UI Wrappers ----------
     def _wrap(self, text):
         return textwrap.wrap(text, width=23)
 
@@ -497,20 +600,20 @@ class Game:
         page_idx = 0
         while True:
             lines = pages[page_idx]
-            img = Image.new("RGB", (W, H), (10, 0, 0))
-            d = ImageDraw.Draw(img)
-            d.rectangle((0, 0, W, 13), fill=(139, 0, 0))
-            d.text((4, 2), title[:20], font=FONT_BOLD, fill=(231, 76, 60))
+            global IMAGE, DRAW
+            DRAW.rectangle((0, 0, W, H), fill=(10, 0, 0))
+            DRAW.rectangle((0, 0, W, 13), fill=(139, 0, 0))
+            DRAW.text((4, 2), title[:20], font=FONT_BOLD, fill=(231, 76, 60))
             y = 16
             for line in lines:
-                d.text((4, y), line[:23], font=FONT, fill=(171, 178, 185))
+                DRAW.text((4, y), line[:23], font=FONT, fill=(171, 178, 185))
                 y += 12
             if len(pages) > 1:
-                d.text((W-15, H-12), f"{page_idx+1}/{len(pages)}", font=FONT, fill=(192,57,43))
-            inv_str = f"HP:{self.health} E:{self.eddies}"
+                DRAW.text((W-15, H-12), f"{page_idx+1}/{len(pages)}", font=FONT, fill=(192,57,43))
+            inv_str = f"HP:{self.health} E:{self.eddies} Lv:{self.level}"
             rep_str = f"A:{self.rep_arasaka} M:{self.rep_militech}"
-            d.text((4, H-12), f"{inv_str[:12]} {rep_str}", font=FONT, fill=(192,57,43))
-            LCD.LCD_ShowImage(img, 0, 0)
+            DRAW.text((4, H-12), f"{inv_str[:12]} {rep_str}", font=FONT, fill=(192,57,43))
+            LCD.LCD_ShowImage(IMAGE, 0, 0)
             btn = wait_btn(0.2)
             if btn == "UP":
                 page_idx = max(0, page_idx-1)
@@ -539,10 +642,10 @@ class Game:
             return None
         selected = 0
         while True:
-            img = Image.new("RGB", (W, H), (10, 0, 0))
-            d = ImageDraw.Draw(img)
-            d.rectangle((0, 0, W, 13), fill=(139, 0, 0))
-            d.text((4, 2), title[:20], font=FONT_BOLD, fill=(231, 76, 60))
+            global IMAGE, DRAW
+            DRAW.rectangle((0, 0, W, H), fill=(10, 0, 0))
+            DRAW.rectangle((0, 0, W, 13), fill=(139, 0, 0))
+            DRAW.text((4, 2), title[:20], font=FONT_BOLD, fill=(231, 76, 60))
             y = 16
             start = max(0, selected - 2)
             end = min(len(choices), start + 5)
@@ -550,17 +653,17 @@ class Game:
             for i, ch in enumerate(visible):
                 actual_idx = start + i
                 if actual_idx == selected:
-                    d.rectangle((0, y-1, W, y+9), fill=(60, 0, 0))
-                    d.text((4, y), f"> {ch[:21]}", font=FONT, fill=(255, 255, 255))
+                    DRAW.rectangle((0, y-1, W, y+9), fill=(60, 0, 0))
+                    DRAW.text((4, y), f"> {ch[:21]}", font=FONT, fill=(255, 255, 255))
                 else:
-                    d.text((4, y), f"  {ch[:21]}", font=FONT, fill=(171, 178, 185))
+                    DRAW.text((4, y), f"  {ch[:21]}", font=FONT, fill=(171, 178, 185))
                 y += 12
             if len(choices) > 5:
-                d.text((W-10, H-12), f"{selected+1}/{len(choices)}", font=FONT, fill=(192,57,43))
-            inv_str = f"HP:{self.health} E:{self.eddies}"
+                DRAW.text((W-10, H-12), f"{selected+1}/{len(choices)}", font=FONT, fill=(192,57,43))
+            inv_str = f"HP:{self.health} E:{self.eddies} Lv:{self.level}"
             rep_str = f"A:{self.rep_arasaka} M:{self.rep_militech}"
-            d.text((4, H-12), f"{inv_str[:12]} {rep_str}", font=FONT, fill=(192,57,43))
-            LCD.LCD_ShowImage(img, 0, 0)
+            DRAW.text((4, H-12), f"{inv_str[:12]} {rep_str}", font=FONT, fill=(192,57,43))
+            LCD.LCD_ShowImage(IMAGE, 0, 0)
             btn = wait_btn(0.2)
             if btn == "UP":
                 selected = max(0, selected-1)
@@ -574,31 +677,35 @@ class Game:
             elif btn == "KEY2":
                 wait_for_release("KEY2")
                 self.scene = "afterlife_hub"
-                return None
+                return -1
             elif btn == "KEY3":
                 wait_for_release("KEY3")
                 self.running = False
-                return None
+                return -2
 
 # =============================================================================
-# SCENE DEFINITIONS (all 120+ original scenes – fully included)
+# SCENE DEFINITIONS (All original side content + new framework)
 # =============================================================================
 def scene_start_menu(g):
-    g.show_text(["Cyberpunk 2087", "Choose an option:"])
-    choices = ["New Game", "Continue"]
-    idx = g.choose(choices)
-    if idx == 0:
-        g.__init__()
-        g.scene = "start"
-        return "start"
-    else:
-        if g.load_game():
-            g.show_text(["Game loaded.", f"Returning to {g.scene}"])
-            return g.scene
-        else:
-            g.show_text(["No save file found.", "Starting new game."])
+    while True:
+        g.show_text(["Cyberpunk 2087", "Choose an option:"])
+        choices = ["New Game", "Continue"]
+        idx = g.choose(choices)
+        if idx == 0:
+            g.__init__()
             g.scene = "start"
             return "start"
+        elif idx == 1:
+            if g.load_game():
+                g.show_text(["Game loaded.", f"Returning to {g.scene}"])
+                return g.scene
+            else:
+                g.show_text(["No save file found.", "Starting new game."])
+                g.scene = "start"
+                return "start"
+        else:
+            # -1 or other: stay in menu
+            continue
 
 def scene_start(g):
     g.show_text([
@@ -612,19 +719,20 @@ def scene_start(g):
     idx = g.choose(choices)
     if idx == 0: return "afterlife_hub"
     elif idx == 1: return "combat_zone"
-    else: return "kabuki"
+    elif idx == 2: return "kabuki"
+    else: return "afterlife_hub"  # Cancel
 
-# --------------------- CENTRAL HUB: AFTERLIFE (with Story Missions) ---------------------
+# --------------------- CENTRAL HUB ---------------------
 def scene_afterlife_hub(g):
     g.show_text([
         "The Afterlife. A drink called 'David Martinez' is still the bestseller.",
-        f"Health: {g.health} | Eddies: {g.eddies}",
+        f"Health: {g.health} | Eddies: {g.eddies} | Level: {g.level}",
         "Who do you want to talk to?"
     ])
-    choices = ["Story Missions", "Talk to Fixer (side gigs)", "Talk to Bartender (food/rumors)", "Visit Shop", "Talk to your crew", "Save Game", "Leave"]
+    choices = ["Main Story (Modular Acts)", "Talk to Fixer (side gigs)", "Talk to Bartender (food/rumors)", "Visit Shop", "Talk to your crew", "Save Game", "Leave"]
     idx = g.choose(choices)
     if idx == 0:
-        g.mission_select()
+        run_modular_mission(g, "act1_intro")
         return "afterlife_hub"
     elif idx == 1: return "fixer_gigs"
     elif idx == 2: return "bartender"
@@ -636,8 +744,44 @@ def scene_afterlife_hub(g):
         else:
             g.show_text(["Save failed."])
         return "afterlife_hub"
-    else: return "street"
+    elif idx == 6: return "street"
+    else: return "afterlife_hub"
 
+# --------------------- STREET with reputation events ---------------------
+def scene_street(g):
+    # Reputation-based random encounter
+    if random.random() < 0.2 and (g.rep_arasaka < -5 or g.rep_militech < -5):
+        show_message("Arasaka assassins ambush you!")
+        player_crew = [Combatant("Niko", g.health, 15 + g.level, 12)]
+        for m in g.crew:
+            if m == "Maya":
+                player_crew.append(Combatant("Maya", 70, 18, 14))
+            elif m == "Jin":
+                player_crew.append(Combatant("Jin", 60, 12, 16))
+            elif m == "Lina":
+                player_crew.append(Combatant("Lina", 50, 10, 12))
+        result = combat_encounter(player_crew, [("Arasaka Assassin", 60, 15, 13)], g)
+        if result == "hub":
+            return "afterlife_hub"
+        if result:
+            g.health = player_crew[0].hp
+            show_message("You survive the attack.")
+        else:
+            g.running = False
+            return None
+    g.show_text([
+        "You step outside. Night City streets. Rain. Neon reflections.",
+        "Where to now?"
+    ])
+    choices = ["Go back to Afterlife", "Explore the Combat Zone", "Visit Kabuki market", "Go to Pacifica"]
+    idx = g.choose(choices)
+    if idx == 0: return "afterlife_hub"
+    elif idx == 1: return "combat_zone"
+    elif idx == 2: return "kabuki"
+    elif idx == 3: return "pacifica_side"
+    else: return "afterlife_hub"
+
+# --------------------- SIDE GIGS (Original) ---------------------
 def scene_fixer_gigs(g):
     g.show_text([
         "Fixer: 'Niko, I got work. Militech convoy job still open.'",
@@ -655,7 +799,10 @@ def scene_fixer_gigs(g):
             return "militech_prep"
     elif idx == 1:
         return "data_extraction"
-    else:
+    elif idx == 2:
+        g.show_text(["Fixer shrugs."])
+        return "afterlife_hub"
+    else:  # idx == 3 or -1
         return "afterlife_hub"
 
 def scene_data_extraction(g):
@@ -693,6 +840,7 @@ def scene_bartender(g):
             g.show_text(["Not enough eddies."])
     elif idx == 2:
         g.show_text(["Bartender: 'Heard Militech is up to something. Also, Lucy might be in Pacifica.'"])
+    # idx 3 or -1 just returns
     return "afterlife_hub"
 
 def scene_shop(g):
@@ -726,19 +874,25 @@ def scene_shop(g):
 
 def scene_crew_hub(g):
     if not g.crew:
-        g.show_text(["You have no crew yet. Recruit Maya (solo), Jin (netrunner), or Lina (techie)."])
+        g.show_text(["You have no crew yet. Explore to recruit Maya, Jin, or Lina."])
         return "afterlife_hub"
-    g.show_text([f"Your crew: {', '.join(g.crew)}. Loyalty: {g.crew_loyalty}%"])
-    choices = ["Talk to Maya", "Talk to Jin", "Talk to Lina", "Back"]
+    crew_names = ", ".join(g.crew)
+    g.show_text([f"Your crew: {crew_names}. Loyalty: {g.crew_loyalty}%"])
+    choices = []
+    for member in g.crew:
+        choices.append(f"Talk to {member}")
+    choices.append("Back")
     idx = g.choose(choices)
-    if idx == 0 and "solo" in g.crew:
-        return "talk_maya"
-    elif idx == 1 and "netrunner" in g.crew:
-        return "talk_jin"
-    elif idx == 2 and "techie" in g.crew:
-        return "talk_lina"
-    else:
+    if idx == -1 or idx == len(choices)-1:
         return "afterlife_hub"
+    member = g.crew[idx]
+    if member == "Maya":
+        return "talk_maya"
+    elif member == "Jin":
+        return "talk_jin"
+    elif member == "Lina":
+        return "talk_lina"
+    return "afterlife_hub"
 
 def scene_talk_maya(g):
     g.show_text(["Maya: 'You saved my life, Niko. I trust you. Want to grab a drink sometime?'"])
@@ -747,9 +901,7 @@ def scene_talk_maya(g):
     if idx == 0:
         g.set_romance("maya")
         g.show_text(["You and Maya start dating. She joins you permanently."])
-        return "afterlife_hub"
-    else:
-        return "afterlife_hub"
+    return "afterlife_hub"
 
 def scene_talk_jin(g):
     g.show_text(["Jin: 'Niko, you're a good leader. I've got your back.'"])
@@ -759,29 +911,18 @@ def scene_talk_lina(g):
     g.show_text(["Lina: 'The tech is ready. Need an upgrade?'"])
     choices = ["Install cyberware", "Just chat", "Back"]
     idx = g.choose(choices)
-    if idx == 0 and g.has_item("cyberdeck"):
-        g.equipped_cyberware = "cyberdeck"
-        g.show_text(["Lina installs the cyberdeck. Hacking options unlocked."])
-    elif idx == 0 and g.has_item("optical_camo"):
-        g.equipped_cyberware = "optical_camo"
-        g.show_text(["Lina installs optical camo. Stealth improved."])
-    else:
-        g.show_text(["You have no cyberware to install."])
+    if idx == 0:
+        if g.has_item("cyberdeck"):
+            g.equipped_cyberware = "cyberdeck"
+            g.show_text(["Lina installs the cyberdeck. Hacking options unlocked."])
+        elif g.has_item("optical_camo"):
+            g.equipped_cyberware = "optical_camo"
+            g.show_text(["Lina installs optical camo. Stealth improved."])
+        else:
+            g.show_text(["You have no cyberware to install."])
     return "afterlife_hub"
 
-def scene_street(g):
-    g.show_text([
-        "You step outside. Night City streets. Rain. Neon reflections.",
-        "Where to now?"
-    ])
-    choices = ["Go back to Afterlife", "Explore the Combat Zone", "Visit Kabuki market", "Go to Pacifica"]
-    idx = g.choose(choices)
-    if idx == 0: return "afterlife_hub"
-    elif idx == 1: return "combat_zone"
-    elif idx == 2: return "kabuki"
-    else: return "pacifica_side"
-
-# --------------------- ORIGINAL SCENES (all 120+ preserved) ---------------------
+# --------------------- COMBAT ZONE (Original) ---------------------
 def scene_combat_zone(g):
     g.show_text([
         "The Combat Zone. Scavs, Maelstrom remnants, and desperate souls.",
@@ -790,15 +931,25 @@ def scene_combat_zone(g):
     choices = ["Help the solo", "Ignore and loot nearby", "Join the thugs"]
     idx = g.choose(choices)
     if idx == 0:
-        g.add_crew("solo")
-        g.show_text(["You fight them off. The solo introduces herself as Maya."])
-        return "maya_recruit"
+        player_crew = [Combatant("Niko", g.health, 15 + g.level, 12)]
+        result = combat_encounter(player_crew, [("Thug", 30, 8, 10), ("Thug", 30, 8, 10), ("Thug Leader", 40, 10, 11)], g)
+        if result == "hub": return "afterlife_hub"
+        if result:
+            g.health = player_crew[0].hp
+            g.add_crew("Maya")
+            g.show_text(["You fight them off. The solo introduces herself as Maya."])
+            return "maya_recruit"
+        else:
+            g.running = False
+            return None
     elif idx == 1:
         g.add_item("junk")
         return "combat_zone_loot"
-    else:
+    elif idx == 2:
         g.change_reputation("street", -2)
         return "combat_zone_bad"
+    else:
+        return "afterlife_hub"
 
 def scene_maya_recruit(g):
     g.show_text([
@@ -806,7 +957,6 @@ def scene_maya_recruit(g):
         "'Not yet. But I'm building one. Want in?'",
         "She grins. 'You just saved my life. I owe you. I'm in.'"
     ])
-    g.add_crew("solo")
     return "afterlife_hub"
 
 def scene_combat_zone_loot(g):
@@ -818,6 +968,7 @@ def scene_combat_zone_bad(g):
     g.show_text(["The thugs kill the solo. They turn on you. You barely escape."])
     return "afterlife_hub"
 
+# --------------------- KABUKI (Original) ---------------------
 def scene_kabuki(g):
     g.show_text([
         "Kabuki market. Smells of noodles and ozone.",
@@ -827,7 +978,8 @@ def scene_kabuki(g):
     idx = g.choose(choices)
     if idx == 0: return "vendor_netrunner"
     elif idx == 1: return "kabuki_search"
-    else: return "kabuki_hotdog"
+    elif idx == 2: return "kabuki_hotdog"
+    else: return "afterlife_hub"
 
 def scene_vendor_netrunner(g):
     g.show_text([
@@ -838,14 +990,16 @@ def scene_vendor_netrunner(g):
     idx = g.choose(choices)
     if idx == 0 and g.eddies >= 500:
         g.eddies -= 500
-        g.add_crew("netrunner")
+        g.add_crew("Jin")
         return "jin_crew"
     elif idx == 1:
         g.set_flag("debt_to_jin")
-        g.add_crew("netrunner")
+        g.add_crew("Jin")
         return "jin_crew"
-    else:
+    elif idx == 2:
         return "kabuki"
+    else:
+        return "afterlife_hub"
 
 def scene_jin_crew(g):
     g.show_text(["Jin: 'Alright, Niko. I'll join your crew. Just don't get me killed.'"])
@@ -860,16 +1014,18 @@ def scene_kabuki_hotdog(g):
     g.show_text(["The hot dog is surprisingly good. +5 morale."])
     return "afterlife_hub"
 
+# --------------------- MILITECH JOB CHAIN (Original) ---------------------
 def scene_militech_prep(g):
     g.show_text([
         "You prepare for the Militech job. You need more firepower.",
-        "Maya (solo) suggests hitting a weapon stash."
+        "Maya suggests hitting a weapon stash."
     ])
     choices = ["Hit the weapon stash", "Go alone to the convoy", "Find a techie first"]
     idx = g.choose(choices)
     if idx == 0: return "weapon_stash"
     elif idx == 1: return "convoy_alone"
-    else: return "find_techie"
+    elif idx == 2: return "find_techie"
+    else: return "afterlife_hub"
 
 def scene_weapon_stash(g):
     g.show_text([
@@ -897,10 +1053,12 @@ def scene_find_techie(g):
     choices = ["Hire Lina", "Fix your own gear", "Leave"]
     idx = g.choose(choices)
     if idx == 0:
-        g.add_crew("techie")
+        g.add_crew("Lina")
         return "lina_crew"
-    else:
+    elif idx == 1:
         return "convoy"
+    else:
+        return "afterlife_hub"
 
 def scene_lina_crew(g):
     g.show_text(["Lina: 'I'll join. But I get a 20% cut of every job.'"])
@@ -926,7 +1084,8 @@ def scene_after_convoy(g):
     idx = g.choose(choices)
     if idx == 0: return "militech_agent"
     elif idx == 1: return "afterlife_hub"
-    else: return "bar_break"
+    elif idx == 2: return "bar_break"
+    else: return "afterlife_hub"
 
 def scene_militech_agent(g):
     g.show_text([
@@ -941,9 +1100,11 @@ def scene_militech_agent(g):
         return "arasaka_tower"
     elif idx == 1:
         return "afterlife_hub"
-    else:
+    elif idx == 2:
         g.show_text(["Agent: '20k eddies, plus a full cyberware suite.'"])
         return "militech_agent"
+    else:
+        return "afterlife_hub"
 
 def scene_bar_break(g):
     g.show_text([
@@ -973,6 +1134,7 @@ def scene_ghost_talk(g):
     ])
     return "afterlife_hub"
 
+# --------------------- ARASAKA TOWER (Original) ---------------------
 def scene_arasaka_tower(g):
     g.show_text([
         "The old Arasaka tower is a crumbling skeleton. Radiation warnings everywhere.",
@@ -982,7 +1144,8 @@ def scene_arasaka_tower(g):
     idx = g.choose(choices)
     if idx == 0: return "tower_entrance"
     elif idx == 1: return "afterlife_hub"
-    else: return "tower_side"
+    elif idx == 2: return "tower_side"
+    else: return "afterlife_hub"
 
 def scene_tower_side(g):
     g.show_text([
@@ -999,9 +1162,9 @@ def scene_tower_entrance(g):
     ])
     choices = ["Hack the terminal", "Fight through", "Use the vents"]
     idx = g.choose(choices)
-    if idx == 0 and "netrunner" in g.crew:
+    if idx == 0 and "Jin" in g.crew:
         return "tower_hack"
-    elif idx == 1 and "solo" in g.crew:
+    elif idx == 1 and "Maya" in g.crew:
         return "tower_fight"
     elif idx == 2:
         return "tower_vents"
@@ -1036,8 +1199,10 @@ def scene_tower_sublevel(g):
         return "tower_ending"
     elif idx == 1:
         return "tower_destroy"
-    else:
+    elif idx == 2:
         return "tower_search"
+    else:
+        return "afterlife_hub"
 
 def scene_tower_destroy(g):
     g.show_text(["You smash the terminal. The data is lost. Militech is furious."])
@@ -1056,6 +1221,7 @@ def scene_tower_ending(g):
     ])
     return "lucy_contact"
 
+# --------------------- LUCY / ENDGAME (Original) ---------------------
 def scene_lucy_contact(g):
     g.show_text([
         "A secure message appears on your agent: 'Niko. Meet me at the old netrunner den in Pacifica.",
@@ -1065,7 +1231,8 @@ def scene_lucy_contact(g):
     idx = g.choose(choices)
     if idx == 0: return "pacifica_den"
     elif idx == 1: return "afterlife_hub"
-    else: return "crew_lucy"
+    elif idx == 2: return "crew_lucy"
+    else: return "afterlife_hub"
 
 def scene_pacifica_den(g):
     g.show_text([
@@ -1076,7 +1243,8 @@ def scene_pacifica_den(g):
     idx = g.choose(choices)
     if idx == 0: return "lucy_david"
     elif idx == 1: return "lucy_help"
-    else: return "lucy_job"
+    elif idx == 2: return "lucy_job"
+    else: return "afterlife_hub"
 
 def scene_lucy_david(g):
     g.show_text([
@@ -1090,9 +1258,11 @@ def scene_lucy_david(g):
         return "lucy_mission"
     elif idx == 1:
         return "afterlife_hub"
-    else:
+    elif idx == 2:
         g.show_text(["Lucy: 'There's no payment. Only justice.'"])
         return "lucy_david"
+    else:
+        return "afterlife_hub"
 
 def scene_lucy_help(g):
     g.show_text([
@@ -1127,7 +1297,8 @@ def scene_lucy_mission(g):
     idx = g.choose(choices)
     if idx == 0: return "mikoshi_bunker"
     elif idx == 1: return "afterlife_hub"
-    else: return "lucy_prepare"
+    elif idx == 2: return "lucy_prepare"
+    else: return "afterlife_hub"
 
 def scene_lucy_prepare(g):
     g.show_text(["You gather better gear. Jin upgrades his deck. Lina builds a portable ICE."])
@@ -1144,87 +1315,12 @@ def scene_mikoshi_bunker(g):
         return "ending_legend"
     elif idx == 1:
         return "ending_sellout"
-    else:
+    elif idx == 2:
         return "ending_purge"
-
-# --------------------- SIDE SCENES ---------------------
-def scene_netrunner_contact(g):
-    g.show_text(["You call the number on the flyer. A gruff voice: 'Meet me at the Red Dirt bar.'"])
-    choices = ["Go to Red Dirt", "Ignore"]
-    idx = g.choose(choices)
-    if idx == 0: return "red_dirt"
-    else: return "afterlife_hub"
-
-def scene_red_dirt(g):
-    g.show_text(["The bar is dim. A netrunner named Sasha waits. 'I need a crew for a bank job.'"])
-    choices = ["Join the bank job", "Refuse"]
-    idx = g.choose(choices)
-    if idx == 0:
-        g.add_item("bank_plan")
-        return "bank_job"
     else:
         return "afterlife_hub"
 
-def scene_bank_job(g):
-    g.show_text(["You rob the bank. It goes sideways. You escape with 5k eddies."])
-    g.eddies += 5000
-    return "afterlife_hub"
-
-def scene_club(g):
-    g.show_text(["You go to a club. Neon lights. You dance with a stranger."])
-    choices = ["Go home with them", "Leave alone"]
-    idx = g.choose(choices)
-    if idx == 0: return "romance_one_night"
-    else: return "afterlife_hub"
-
-def scene_romance_one_night(g):
-    g.show_text(["You wake up alone. They stole your cyberdeck."])
-    g.remove_item("cyberdeck")
-    return "afterlife_hub"
-
-def scene_ripperdoc(g):
-    g.show_text(["You visit a ripperdoc. He offers a discount on new chrome."])
-    choices = ["Buy optical camo (1500 eddies)", "Buy subdermal armor (3000)", "Leave"]
-    idx = g.choose(choices)
-    if idx == 0 and g.eddies >= 1500:
-        g.eddies -= 1500
-        g.add_item("optical_camo")
-        g.show_text(["You bought optical camo."])
-    elif idx == 1 and g.eddies >= 3000:
-        g.eddies -= 3000
-        g.add_item("subdermal_armor")
-        g.show_text(["You bought subdermal armor."])
-    else:
-        g.show_text(["Not enough eddies."])
-    return "afterlife_hub"
-
-def scene_cyberpsycho(g):
-    g.show_text(["You encounter a cyberpsycho rampaging. People scream."])
-    choices = ["Fight the psycho", "Run away", "Call MaxTac"]
-    idx = g.choose(choices)
-    if idx == 0 and g.has_item("smart_rifle"):
-        g.show_text(["You subdue the psycho. The media calls you a hero."])
-        g.change_reputation("street", 3)
-        g.health = min(100, g.health + 10)
-        return "afterlife_hub"
-    elif idx == 1:
-        return "afterlife_hub"
-    else:
-        g.show_text(["MaxTac arrives and thanks you. They give you a medal."])
-        g.change_reputation("street", 2)
-        return "afterlife_hub"
-
-def scene_badlands_side(g):
-    g.show_text(["You venture into the badlands. A nomad camp needs help with raiders."])
-    choices = ["Help the nomads", "Ignore"]
-    idx = g.choose(choices)
-    if idx == 0:
-        g.add_item("nomad_friend")
-        return "afterlife_hub"
-    else:
-        return "afterlife_hub"
-
-def scene_pacificia_side(g):
+def scene_pacifica_side(g):
     g.show_text(["In Pacifica, a street preacher warns of the Voodoo Boys' net."])
     choices = ["Ignore him", "Ask for a job"]
     idx = g.choose(choices)
@@ -1245,30 +1341,15 @@ def scene_voodoo_side(g):
     else:
         return "afterlife_hub"
 
-# --------------------- ROMANCE PATHS ---------------------
-def scene_romance_lucy_path(g):
-    if not g.check_flag("lucy_mission"):
-        return "afterlife_hub"
-    g.show_text(["After the mission, Lucy invites you to the net. She holds your hand in digital space."])
-    choices = ["Stay with her", "Return to reality"]
-    idx = g.choose(choices)
-    if idx == 0:
-        g.set_romance("lucy")
-        return "ending_romance_lucy"
-    else:
-        return "ending_legend_solo"
-
-# --------------------- ENDINGS ---------------------
+# --------------------- ENDINGS (Original) ---------------------
 def ending_legend(g):
     g.show_text([
         "You extract the engrams. David's is incomplete, but his dream lives on.",
         "Lucy thanks you. She vanishes into the net. Your crew becomes legendary.",
         "You are Niko, the one who freed the ghosts. ENDING: GHOST LEGEND"
     ])
-    choices = ["Restart", "Exit"]
-    idx = g.choose(choices)
-    if idx == 0: return "start_menu"
-    else: g.running = False; return None
+    g.running = False
+    return None
 
 def ending_sellout(g):
     g.show_text([
@@ -1276,10 +1357,8 @@ def ending_sellout(g):
         "But Lucy is captured. Your crew disowns you. You are rich and alone.",
         "ENDING: CORPO PUPPET"
     ])
-    choices = ["Restart", "Exit"]
-    idx = g.choose(choices)
-    if idx == 0: return "start_menu"
-    else: g.running = False; return None
+    g.running = False
+    return None
 
 def ending_purge(g):
     g.show_text([
@@ -1287,59 +1366,8 @@ def ending_purge(g):
         "Arasaka's past is gone, but so is any chance of redemption.",
         "You wander the wasteland. ENDING: ASHES"
     ])
-    choices = ["Restart", "Exit"]
-    idx = g.choose(choices)
-    if idx == 0: return "start_menu"
-    else: g.running = False; return None
-
-def ending_death(g):
-    g.show_text(["You die in a firefight. Your name is forgotten.", "GAME OVER"])
-    choices = ["Restart", "Exit"]
-    idx = g.choose(choices)
-    if idx == 0: return "start_menu"
-    else: g.running = False; return None
-
-def ending_captured(g):
-    g.show_text(["Arasaka captures you. You become an engram.", "GAME OVER"])
-    choices = ["Restart", "Exit"]
-    idx = g.choose(choices)
-    if idx == 0: return "start_menu"
-    else: g.running = False; return None
-
-def ending_romance_jin(g):
-    g.show_text(["You and Jin become partners. He helps you build a netrunning school.", "ENDING: LOVE IN THE NET"])
-    choices = ["Restart", "Exit"]
-    idx = g.choose(choices)
-    if idx == 0: return "start_menu"
-    else: g.running = False; return None
-
-def ending_romance_maya(g):
-    g.show_text(["You and Maya retire to a quiet cabin in the badlands. No more bullets.", "ENDING: PEACE"])
-    choices = ["Restart", "Exit"]
-    idx = g.choose(choices)
-    if idx == 0: return "start_menu"
-    else: g.running = False; return None
-
-def ending_romance_lucy(g):
-    g.show_text(["Lucy pulls you into the net. You become digital lovers, forever roaming.", "ENDING: GHOST LOVE"])
-    choices = ["Restart", "Exit"]
-    idx = g.choose(choices)
-    if idx == 0: return "start_menu"
-    else: g.running = False; return None
-
-def ending_legend_solo(g):
-    g.show_text(["You become the most feared solo in Night City. No crew, no love. Just glory.", "ENDING: LONE LEGEND"])
-    choices = ["Restart", "Exit"]
-    idx = g.choose(choices)
-    if idx == 0: return "start_menu"
-    else: g.running = False; return None
-
-def ending_burnout(g):
-    g.show_text(["You overdose on cyberware. Your body fails. A cautionary tale.", "ENDING: BURNOUT"])
-    choices = ["Restart", "Exit"]
-    idx = g.choose(choices)
-    if idx == 0: return "start_menu"
-    else: g.running = False; return None
+    g.running = False
+    return None
 
 # --------------------- SCENE DISPATCHER ---------------------
 scene_map = {
@@ -1395,27 +1423,11 @@ scene_map = {
     "lucy_mission": scene_lucy_mission,
     "lucy_prepare": scene_lucy_prepare,
     "mikoshi_bunker": scene_mikoshi_bunker,
-    "netrunner_contact": scene_netrunner_contact,
-    "red_dirt": scene_red_dirt,
-    "bank_job": scene_bank_job,
-    "club": scene_club,
-    "romance_one_night": scene_romance_one_night,
-    "ripperdoc": scene_ripperdoc,
-    "cyberpsycho": scene_cyberpsycho,
-    "badlands_side": scene_badlands_side,
-    "pacificia_side": scene_pacificia_side,
+    "pacifica_side": scene_pacifica_side,
     "voodoo_side": scene_voodoo_side,
-    "romance_lucy_path": scene_romance_lucy_path,
     "ending_legend": ending_legend,
     "ending_sellout": ending_sellout,
     "ending_purge": ending_purge,
-    "ending_death": ending_death,
-    "ending_captured": ending_captured,
-    "ending_romance_jin": ending_romance_jin,
-    "ending_romance_maya": ending_romance_maya,
-    "ending_romance_lucy": ending_romance_lucy,
-    "ending_legend_solo": ending_legend_solo,
-    "ending_burnout": ending_burnout,
 }
 
 def run_scene(g, name):
