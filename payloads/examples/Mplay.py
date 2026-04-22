@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """
-KTOx Media Player – Smooth 15 fps with Responsive Buttons
-==========================================================
-- Non‑blocking button check (no pauses).
-- ffmpeg controls frame rate (fps=15).
-- USB audio via plughw:1,0.
+KTOx Media Player – Smooth Video with A/V Sync
+================================================
+- Non‑blocking button polling.
+- ffmpeg with -re for real‑time playback, -async 1 for audio sync.
+- USB audio via plughw:1,0 (your Onn headset).
+- 15 fps video, hardware‑accelerated where possible.
 
 Controls: UP/DOWN, OK, LEFT, KEY1=stop, KEY3=exit
 """
@@ -51,7 +52,7 @@ FONT = font(9)
 FONT_BOLD = font(10)
 
 def wait_btn_nonblock():
-    """Return button name if pressed, else None (non‑blocking)."""
+    """Non‑blocking button check. Returns button name or None."""
     for name, pin in PINS.items():
         if GPIO.input(pin) == 0:
             time.sleep(0.05)  # debounce
@@ -146,7 +147,7 @@ def draw_browser(path, entries, cursor, scroll):
     LCD.LCD_ShowImage(img, 0, 0)
 
 # ----------------------------------------------------------------------
-# Playback (smooth, non‑blocking)
+# Playback (smooth, with A/V sync)
 # ----------------------------------------------------------------------
 current_process = None
 
@@ -175,7 +176,6 @@ def play_audio(filepath):
         d.text((4, 40), "Press KEY1 to stop", font=FONT, fill=(113, 125, 126))
         d.text((4, H-12), "KEY1=stop", font=FONT, fill=(192, 57, 43))
         LCD.LCD_ShowImage(img, 0, 0)
-        # Non‑blocking check
         if wait_btn_nonblock() in ("KEY1", "KEY3"):
             stop_playback()
             break
@@ -183,21 +183,23 @@ def play_audio(filepath):
     stop_playback()
 
 def play_video(filepath):
-    """Play video with ffmpeg, non‑blocking button check."""
+    """Play video with ffmpeg using -re for real‑time and -async 1 for sync."""
     global current_process
     stop_playback()
 
     cmd = [
         "ffmpeg",
+        "-re",                     # Read input at native frame rate
         "-i", filepath,
         "-vf", "fps=15,scale=128:128",
         "-pix_fmt", "rgb24",
         "-f", "rawvideo",
-        "-vsync", "2",
+        "-vsync", "cfr",           # Constant frame rate output
         "-",
         "-map", "0:a",
         "-f", "alsa", AUDIO_DEV,
-        "-ac", "2", "-ar", "48000"
+        "-ac", "2", "-ar", "48000",
+        "-async", "1"              # Audio sync resampling
     ]
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     current_process = proc
@@ -214,7 +216,6 @@ def play_video(filepath):
     time.sleep(1)
 
     while True:
-        # Non‑blocking button check
         btn = wait_btn_nonblock()
         if btn == "KEY1" or btn == "KEY3":
             stop_playback()
