@@ -4,7 +4,7 @@ KTOx Media Player – Smooth Video with A/V Sync
 ================================================
 - Non‑blocking button polling.
 - ffmpeg with -re for real‑time playback, -async 1 for audio sync.
-- USB audio via plughw:1,0 (your Onn headset).
+- USB audio via plughw:1,0
 - 15 fps video, hardware‑accelerated where possible.
 
 Controls: UP/DOWN, OK, LEFT, KEY1=stop, KEY3=exit
