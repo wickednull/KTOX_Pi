@@ -1,16 +1,13 @@
 #!/usr/bin/env python3
 # NAME: Loki Autonomous Engine
 
-"""
-Loki Autonomous Engine — KTOx_Pi payload
-Vendors pineapple_pager_loki and runs it headlessly from the Pi.
-"""
-
 import os, sys, time, subprocess, socket, signal, shutil, threading
 from pathlib import Path
 from datetime import datetime
 
-# ── Env / Paths ───────────────────────────────────────────────────────────────
+# ----------------------------------------------------------------------
+# Environment & paths
+# ----------------------------------------------------------------------
 LOOT_DIR   = os.environ.get("KTOX_LOOT_DIR", "/root/KTOx/loot")
 KTOX_ROOT  = str(Path(LOOT_DIR).parent)
 
@@ -22,14 +19,18 @@ LAUNCHER   = LOKI_DIR / "ktox_headless_loki.py"
 LOKI_REPO  = "https://github.com/pineapple-pager-projects/pineapple_pager_loki"
 LOKI_PORT  = 8000
 
-# ── GPIO pin map ──────────────────────────────────────────────────────────────
+# ----------------------------------------------------------------------
+# GPIO pin map (Waveshare 1.44" HAT)
+# ----------------------------------------------------------------------
 PINS = {
     "KEY_UP_PIN":    6, "KEY_DOWN_PIN":  19, "KEY_LEFT_PIN":  5,
     "KEY_RIGHT_PIN": 26, "KEY_PRESS_PIN": 13,
     "KEY1_PIN":      21, "KEY2_PIN":      20, "KEY3_PIN":      16,
 }
 
-# ── Display palette ───────────────────────────────────────────────────────────
+# ----------------------------------------------------------------------
+# Display helpers (same as before, safe)
+# ----------------------------------------------------------------------
 BG     = "#0a0a0a"
 FG     = "#c8c8c8"
 RED    = "#8B0000"
@@ -41,7 +42,6 @@ DIM    = "#444444"
 FONT_BOLD  = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf"
 FONT_MONO  = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"
 
-# ── Hardware state ────────────────────────────────────────────────────────────
 _HW = False
 LCD = None
 image = None
@@ -49,7 +49,6 @@ draw = None
 font = None
 small = None
 
-# ── Import hardware libraries only once ───────────────────────────────────────
 try:
     import RPi.GPIO as GPIO
     from PIL import Image, ImageDraw, ImageFont
@@ -101,21 +100,20 @@ def _wait_key_release(pin_name, timeout=0.5):
 def should_exit():
     return _key("KEY3_PIN")
 
-# ── LCD drawing helpers (safe) ────────────────────────────────────────────────
 def _border():
     if not _HW: return
-    draw.line([(127, 12), (127, 127)], fill=RED, width=5)
-    draw.line([(127, 127), (0, 127)],  fill=RED, width=5)
-    draw.line([(0, 127), (0, 12)],     fill=RED, width=5)
-    draw.line([(0, 12), (128, 12)],    fill=RED, width=5)
+    draw.line([(127,12),(127,127)], fill=RED, width=5)
+    draw.line([(127,127),(0,127)],  fill=RED, width=5)
+    draw.line([(0,127),(0,12)],     fill=RED, width=5)
+    draw.line([(0,12),(128,12)],    fill=RED, width=5)
 
 def _center(y, text, fnt, color=FG):
     if not _HW: return
-    bbox = draw.textbbox((0, 0), text, font=fnt)
+    bbox = draw.textbbox((0,0), text, font=fnt)
     w = bbox[2] - bbox[0]
-    draw.text(((128 - w) // 2, y), text, font=fnt, fill=color)
+    draw.text(((128-w)//2, y), text, font=fnt, fill=color)
 
-def _hbar(y, pct, clr=(100, 180, 255)):
+def _hbar(y, pct, clr=(100,180,255)):
     if not _HW: return
     W = 116
     draw.rectangle([6, y, 6+W, y+4], fill=(18,24,60))
@@ -123,7 +121,7 @@ def _hbar(y, pct, clr=(100, 180, 255)):
 
 def _screen_clear():
     if not _HW: return
-    draw.rectangle((0, 0, 128, 128), fill=BG)
+    draw.rectangle((0,0,128,128), fill=BG)
     _border()
 
 def screen_not_installed():
@@ -206,7 +204,9 @@ def screen_stopped(msg=""):
     _center(112, "KEY2: reinstall", small, DIM)
     _flush()
 
-# ── Network helpers ───────────────────────────────────────────────────────────
+# ----------------------------------------------------------------------
+# Network helpers
+# ----------------------------------------------------------------------
 def _local_ip() -> str:
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -226,7 +226,9 @@ def _port_open(port: int) -> bool:
     except:
         return False
 
-# ── Loki process management ───────────────────────────────────────────────────
+# ----------------------------------------------------------------------
+# Loki process management
+# ----------------------------------------------------------------------
 _loki_proc = None
 
 def _loki_installed() -> bool:
@@ -246,7 +248,6 @@ def _loki_running() -> bool:
     return False
 
 def _run_with_cancel(cmd, timeout=300, step_msg=None):
-    """Run a shell command with periodic KEY3 check."""
     proc = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     start = time.time()
     last_update = 0
@@ -285,7 +286,6 @@ def _start_loki() -> tuple[bool, str]:
         stderr=subprocess.STDOUT,
         cwd=str(LOKI_DIR),
     )
-    # Wait for port with KEY3 check (up to 10 seconds)
     for _ in range(100):
         if should_exit():
             _stop_loki()
@@ -317,49 +317,248 @@ def _stop_loki():
         LOKI_PID.unlink(missing_ok=True)
     subprocess.run(["pkill", "-f", "nmap"], capture_output=True)
 
-# ── Headless launcher writer (with pagerctl/display mocks) ────────────────────
+# ----------------------------------------------------------------------
+# Write the pagerctl.py shim (full emulation)
+# ----------------------------------------------------------------------
+def _write_pagerctl_shim():
+    shim_path = LOKI_DIR / "lib" / "pagerctl.py"
+    shim_path.parent.mkdir(parents=True, exist_ok=True)
+    shim_code = '''\
+# pagerctl.py – KTOx shim for Loki
+import os, time, threading, queue
+from PIL import Image, ImageDraw, ImageFont
+import LCD_1in44
+import LCD_Config
+
+# Button masks (same as original)
+BTN_UP    = 0x01
+BTN_DOWN  = 0x02
+BTN_LEFT  = 0x04
+BTN_RIGHT = 0x08
+BTN_A     = 0x10   # Green / OK
+BTN_B     = 0x20   # Red / Back
+
+# Map KTOx pins to button masks (adjust if your pins differ)
+PIN_MAP = {
+    6:  BTN_UP,
+    19: BTN_DOWN,
+    5:  BTN_LEFT,
+    26: BTN_RIGHT,
+    13: BTN_A,
+    21: BTN_B,
+}
+
+class Pager:
+    BLACK   = 0x0000
+    WHITE   = 0xFFFF
+    RED     = 0xF800
+    GREEN   = 0x07E0
+    BLUE    = 0x001F
+    YELLOW  = 0xFFE0
+    CYAN    = 0x07FF
+    MAGENTA = 0xF81F
+    ORANGE  = 0xFD20
+    PURPLE  = 0x8010
+    GRAY    = 0x8410
+
+    def __init__(self):
+        self.lcd = None
+        self.image = None
+        self.draw = None
+        self.width = 128
+        self.height = 128
+        self.fonts = {}
+        self._initialized = False
+        self._input_thread = None
+        self._input_queue = queue.Queue()
+        self._running = False
+
+    def init(self):
+        if self._initialized:
+            return 0
+        try:
+            self.lcd = LCD_1in44.LCD()
+            self.lcd.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
+            LCD_Config.Driver_Delay_ms(50)
+            self.width = self.lcd.width
+            self.height = self.lcd.height
+            self.image = Image.new("RGB", (self.width, self.height))
+            self.draw = ImageDraw.Draw(self.image)
+            self._initialized = True
+            self._start_input_thread()
+            return 0
+        except Exception as e:
+            print(f"Pager init error: {e}")
+            return -1
+
+    def cleanup(self):
+        self._running = False
+        if self._input_thread and self._input_thread.is_alive():
+            self._input_thread.join(timeout=1)
+        self._initialized = False
+
+    def clear(self, color=0):
+        if not self.draw:
+            return
+        r,g,b = self._rgb565_to_rgb(color)
+        self.draw.rectangle((0,0,self.width,self.height), fill=(r,g,b))
+
+    def flip(self):
+        if self.lcd and self.image:
+            self.lcd.LCD_ShowImage(self.image, 0, 0)
+
+    def set_rotation(self, rotation):
+        pass
+
+    # Primitives
+    def pixel(self, x, y, color):
+        if self.draw:
+            r,g,b = self._rgb565_to_rgb(color)
+            self.draw.point((x,y), fill=(r,g,b))
+
+    def fill_rect(self, x, y, w, h, color):
+        if self.draw:
+            r,g,b = self._rgb565_to_rgb(color)
+            self.draw.rectangle((x,y,x+w-1,y+h-1), fill=(r,g,b))
+
+    def rect(self, x, y, w, h, color):
+        if self.draw:
+            r,g,b = self._rgb565_to_rgb(color)
+            self.draw.rectangle((x,y,x+w-1,y+h-1), outline=(r,g,b))
+
+    def hline(self, x, y, w, color):
+        self.fill_rect(x, y, w, 1, color)
+
+    def vline(self, x, y, h, color):
+        self.fill_rect(x, y, 1, h, color)
+
+    def line(self, x1, y1, x2, y2, color):
+        if self.draw:
+            r,g,b = self._rgb565_to_rgb(color)
+            self.draw.line((x1,y1,x2,y2), fill=(r,g,b))
+
+    def fill_circle(self, x, y, r, color):
+        if self.draw:
+            r,g,b = self._rgb565_to_rgb(color)
+            self.draw.ellipse((x-r, y-r, x+r, y+r), fill=(r,g,b))
+
+    def circle(self, x, y, r, color):
+        if self.draw:
+            r,g,b = self._rgb565_to_rgb(color)
+            self.draw.ellipse((x-r, y-r, x+r, y+r), outline=(r,g,b))
+
+    # Text
+    def draw_text(self, x, y, text, color, size=1):
+        self.draw_ttf(x, y, text, color, "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 9)
+
+    def draw_ttf(self, x, y, text, color, font_path, font_size):
+        if not self.draw:
+            return
+        r,g,b = self._rgb565_to_rgb(color)
+        key = f"{font_path}:{font_size}"
+        if key not in self.fonts:
+            try:
+                self.fonts[key] = ImageFont.truetype(font_path, font_size)
+            except:
+                self.fonts[key] = ImageFont.load_default()
+        self.draw.text((x,y), text, font=self.fonts[key], fill=(r,g,b))
+
+    def draw_text_centered(self, x, y, text, color, size=1):
+        if not self.draw:
+            return
+        r,g,b = self._rgb565_to_rgb(color)
+        try:
+            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", size*8)
+            bbox = self.draw.textbbox((0,0), text, font=font)
+            w = bbox[2]-bbox[0]
+            self.draw.text((x - w//2, y), text, font=font, fill=(r,g,b))
+        except:
+            self.draw_text(x, y, text, color, size)
+
+    def draw_ttf_centered(self, x, y, text, color, font_path, font_size):
+        try:
+            font = ImageFont.truetype(font_path, font_size)
+            bbox = self.draw.textbbox((0,0), text, font=font)
+            w = bbox[2]-bbox[0]
+            self.draw_ttf(x - w//2, y, text, color, font_path, font_size)
+        except:
+            self.draw_text(x, y, text, color)
+
+    # Color conversion
+    @staticmethod
+    def rgb(r, g, b):
+        return ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3)
+
+    def _rgb565_to_rgb(self, color):
+        r = (color >> 11) & 0x1F
+        g = (color >> 5) & 0x3F
+        b = color & 0x1F
+        return (r << 3, g << 2, b << 3)
+
+    # Input handling
+    def _start_input_thread(self):
+        if not self._running:
+            self._running = True
+            self._input_thread = threading.Thread(target=self._input_loop, daemon=True)
+            self._input_thread.start()
+
+    def _input_loop(self):
+        import RPi.GPIO as GPIO
+        for pin in PIN_MAP:
+            GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+        last_state = 0
+        while self._running:
+            current_state = 0
+            for pin, mask in PIN_MAP.items():
+                if GPIO.input(pin) == 0:
+                    current_state |= mask
+            changed = current_state ^ last_state
+            if changed:
+                # Queue press/release events
+                for mask in PIN_MAP.values():
+                    if changed & mask:
+                        event_type = 1 if (current_state & mask) else 0  # 1=pressed, 0=released
+                        self._input_queue.put((event_type, mask))
+            last_state = current_state
+            time.sleep(0.05)
+
+    def get_input_event(self):
+        try:
+            return self._input_queue.get_nowait()
+        except queue.Empty:
+            return None
+
+# Also provide PagerInput and PagerInputEvent for compatibility
+class PagerInputEvent:
+    def __init__(self, event_type, button):
+        self.type = event_type  # 1 = pressed, 0 = released
+        self.button = button
+
+class PagerInput:
+    def __init__(self):
+        self.pager = None
+    def attach(self, pager):
+        self.pager = pager
+    def get_input_event(self):
+        if self.pager:
+            ev = self.pager.get_input_event()
+            if ev:
+                return PagerInputEvent(ev[0], ev[1])
+        return None
+'''
+    shim_path.write_text(shim_code)
+    shim_path.chmod(0o644)
+
+# ----------------------------------------------------------------------
+# Write the headless launcher (uses real pagerctl, no mocks)
+# ----------------------------------------------------------------------
 def _write_launcher():
-    code = f'''\
+    launcher_code = f'''\
 #!/usr/bin/env python3
-# ktox_headless_loki.py - KTOx headless launcher (no Pager LCD, no libpagerctl.so)
+# ktox_headless_loki.py - uses real pagerctl shim
 
 import sys, os, threading, signal, logging, time, subprocess
-from unittest.mock import MagicMock
 
-# ------------------------------------------------------------
-# MOCK pagerctl module – prevents libpagerctl.so load
-# ------------------------------------------------------------
-class MockPager:
-    def __init__(self, *args, **kwargs):
-        pass
-    def __getattr__(self, name):
-        return lambda *a, **kw: None
-
-mock_pagerctl = MagicMock()
-mock_pagerctl.Pager = MockPager
-sys.modules['pagerctl'] = mock_pagerctl
-
-# ------------------------------------------------------------
-# MOCK display module – avoids LCD init
-# ------------------------------------------------------------
-class MockDisplay:
-    def __init__(self, *args, **kwargs):
-        self.running = False
-    def start(self):
-        pass
-    def stop(self):
-        pass
-    def update_display(self, *args, **kwargs):
-        pass
-
-mock_display = MagicMock()
-mock_display.Display = MockDisplay
-mock_display.handle_exit_display = lambda *a: None
-sys.modules['display'] = mock_display
-
-# ------------------------------------------------------------
-# Now safe to import Loki and friends
-# ------------------------------------------------------------
 _dir = os.path.dirname(os.path.abspath(__file__))
 _lib = os.path.join(_dir, 'lib')
 if os.path.exists(_lib) and _lib not in sys.path:
@@ -368,9 +567,9 @@ if _dir not in sys.path:
     sys.path.insert(0, _dir)
 
 os.environ['CRYPTOGRAPHY_OPENSSL_NO_LEGACY'] = '1'
-
 _DATA = os.environ.get('LOKI_DATA_DIR', '{LOKI_DATA}')
 
+# Patch SharedData paths
 from shared import SharedData as _SD
 _orig = _SD.__init__
 def _patch(self, *a, **kw):
@@ -391,7 +590,7 @@ def _patch(self, *a, **kw):
         os.makedirs(d, exist_ok=True)
 _SD.__init__ = _patch
 
-# Patch is_wifi_connected to use standard Linux check
+# Fix WiFi check
 import Loki as _lm
 def _wifi(self):
     try:
@@ -421,7 +620,7 @@ if __name__ == '__main__':
             _f.write(str(os.getpid()))
 
     shared_data.webapp_should_exit  = False
-    shared_data.display_should_exit = True   # no Pager LCD thread
+    shared_data.display_should_exit = True   # we handle display via pagerctl
     web_thread.start()
     logger.info('Loki web interface started on port 8000')
 
@@ -438,19 +637,20 @@ if __name__ == '__main__':
         time.sleep(2)
 '''
     LAUNCHER.parent.mkdir(parents=True, exist_ok=True)
-    LAUNCHER.write_text(code)
+    LAUNCHER.write_text(launcher_code)
     LAUNCHER.chmod(0o755)
 
-# ── Installation (with cancel support) ────────────────────────────────────────
+# ----------------------------------------------------------------------
+# Installation routine
+# ----------------------------------------------------------------------
 def install_loki():
     try:
-        # Step 1: nmap
-        if not shutil.which("nmap"):
-            screen_installing(1, 6, "Installing nmap...")
-            _run_with_cancel("apt-get update -qq && apt-get install -y nmap", timeout=180, step_msg="Installing nmap")
+        # Step 1: system packages
+        screen_installing(1, 7, "Installing system packages...")
+        _run_with_cancel("apt-get update -qq && apt-get install -y nmap python3-pil python3-pil.imagetk git", timeout=300, step_msg="Installing packages")
 
         # Step 2: clone/pull repo
-        screen_installing(2, 6, "Cloning Loki repo...")
+        screen_installing(2, 7, "Cloning Loki repo...")
         VENDOR_DIR.parent.mkdir(parents=True, exist_ok=True)
         if VENDOR_DIR.exists() and (VENDOR_DIR / ".git").exists():
             _run_with_cancel(f"git -C {VENDOR_DIR} pull", timeout=120, step_msg="Updating repo")
@@ -460,28 +660,35 @@ def install_loki():
             _run_with_cancel(f"git clone --depth=1 {LOKI_REPO} {VENDOR_DIR}", timeout=300, step_msg="Cloning repo")
 
         # Step 3: create data dirs
-        screen_installing(3, 6, "Creating data dirs...")
+        screen_installing(3, 7, "Creating data directories...")
         for sub in ["logs", "output/crackedpwd", "output/datastolen",
                     "output/zombies", "output/vulnerabilities", "input"]:
             (LOKI_DATA / sub).mkdir(parents=True, exist_ok=True)
 
-        # Step 4: write launcher
-        screen_installing(4, 6, "Writing launcher...")
+        # Step 4: write pagerctl shim
+        screen_installing(4, 7, "Installing pagerctl shim...")
+        _write_pagerctl_shim()
+
+        # Step 5: write headless launcher
+        screen_installing(5, 7, "Writing launcher...")
         _write_launcher()
 
-        # Step 5: verify
-        screen_installing(5, 6, "Verifying...")
-        if not LAUNCHER.exists():
-            return False, "launcher missing"
+        # Step 6: verify
+        screen_installing(6, 7, "Verifying installation...")
+        if not LAUNCHER.exists() or not (LOKI_DIR / "lib" / "pagerctl.py").exists():
+            return False, "missing files"
 
-        screen_installing(6, 6, "Done!")
+        # Step 7: done
+        screen_installing(7, 7, "Done!")
         time.sleep(1)
         return True, "ok"
 
     except Exception as e:
         return False, str(e)[:30]
 
-# ── Main ──────────────────────────────────────────────────────────────────────
+# ----------------------------------------------------------------------
+# Main
+# ----------------------------------------------------------------------
 def main():
     _init_hw()
     ip = _local_ip()
@@ -551,7 +758,7 @@ def main():
             else:
                 print("\r[loki] STOPPED                                    ", end="", flush=True)
 
-        for _ in range(10):  # ~10 Hz polling
+        for _ in range(10):
             time.sleep(0.1)
             if running:
                 if _key("KEY1_PIN"):
