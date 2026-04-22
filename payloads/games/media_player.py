@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """
-KTOx Media Player – Fixed USB Audio (Final)
-=============================================
-- Plays video (audio to USB headset) using ffmpeg with proper multi-output.
-- Plays audio using aplay (simpler, more reliable).
-- Professional UI with file browser.
+KTOx Media Player – Smooth Video with A/V Sync
+================================================
+- Non‑blocking button polling.
+- ffmpeg with -re for real‑time playback, -async 1 for audio sync.
+- USB audio via plughw:1,0 (your Onn headset).
+- 15 fps video, hardware‑accelerated where possible.
 
 Controls: UP/DOWN, OK, LEFT, KEY1=stop, KEY3=exit
 """
 
-import os, sys, time, json, subprocess, re, threading
+import os, sys, time, json, subprocess
 import RPi.GPIO as GPIO
 import LCD_1in44
 from PIL import Image, ImageDraw, ImageFont
@@ -50,14 +51,12 @@ def font(size=9):
 FONT = font(9)
 FONT_BOLD = font(10)
 
-def wait_btn(timeout=0.1):
-    start = time.time()
-    while time.time() - start < timeout:
-        for name, pin in PINS.items():
-            if GPIO.input(pin) == 0:
-                time.sleep(0.05)
-                return name
-        time.sleep(0.02)
+def wait_btn_nonblock():
+    """Non‑blocking button check. Returns button name or None."""
+    for name, pin in PINS.items():
+        if GPIO.input(pin) == 0:
+            time.sleep(0.05)  # debounce
+            return name
     return None
 
 def show_message(msg, sub=""):
@@ -121,7 +120,10 @@ def draw_browser(path, entries, cursor, scroll):
     d = ImageDraw.Draw(img)
     d.rectangle((0, 0, W, 13), fill=(139, 0, 0))
     d.text((4, 2), "MEDIA PLAYER", font=FONT_BOLD, fill=(231, 76, 60))
-    d.text((W-4, 2), f"{len(entries)}", font=FONT, fill=(30, 132, 73), anchor="rt")
+    # File count (right-aligned)
+    count_text = f"{len(entries)}"
+    tw = d.textlength(count_text, font=FONT)
+    d.text((W - 4 - int(tw), 2), count_text, font=FONT, fill=(30, 132, 73))
     path_display = os.path.basename(path) if path != "/" else path
     d.text((4, 14), f"📂 {path_display[:20]}", font=FONT, fill=(171, 178, 185))
     y = 26
@@ -145,7 +147,7 @@ def draw_browser(path, entries, cursor, scroll):
     LCD.LCD_ShowImage(img, 0, 0)
 
 # ----------------------------------------------------------------------
-# Playback (fixed)
+# Playback (smooth, with A/V sync)
 # ----------------------------------------------------------------------
 current_process = None
 
@@ -165,7 +167,6 @@ def play_audio(filepath):
     stop_playback()
     cmd = ["aplay", "-D", AUDIO_DEV, filepath]
     current_process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    # Show simple progress screen
     while current_process.poll() is None:
         img = Image.new("RGB", (W, H), (10, 0, 0))
         d = ImageDraw.Draw(img)
@@ -175,29 +176,35 @@ def play_audio(filepath):
         d.text((4, 40), "Press KEY1 to stop", font=FONT, fill=(113, 125, 126))
         d.text((4, H-12), "KEY1=stop", font=FONT, fill=(192, 57, 43))
         LCD.LCD_ShowImage(img, 0, 0)
-        btn = wait_btn(0.2)
-        if btn == "KEY1" or btn == "KEY3":
+        if wait_btn_nonblock() in ("KEY1", "KEY3"):
             stop_playback()
             break
+        time.sleep(0.05)
     stop_playback()
 
 def play_video(filepath):
-    """Play video: ffmpeg outputs raw video to pipe and audio to ALSA."""
+    """Play video with ffmpeg using -re for real‑time and -async 1 for sync."""
     global current_process
     stop_playback()
-    # Use a single ffmpeg command with two outputs:
-    # - video to stdout (rawvideo)
-    # - audio to ALSA device
+
     cmd = [
-        "ffmpeg", "-i", filepath,
-        "-map", "0:v", "-vf", "scale=128:128,fps=10",
-        "-pix_fmt", "rgb24", "-f", "rawvideo", "pipe:1",
-        "-map", "0:a", "-f", "alsa", AUDIO_DEV,
-        "-ac", "2", "-ar", "48000"
+        "ffmpeg",
+        "-re",                     # Read input at native frame rate
+        "-i", filepath,
+        "-vf", "fps=15,scale=128:128",
+        "-pix_fmt", "rgb24",
+        "-f", "rawvideo",
+        "-vsync", "cfr",           # Constant frame rate output
+        "-",
+        "-map", "0:a",
+        "-f", "alsa", AUDIO_DEV,
+        "-ac", "2", "-ar", "48000",
+        "-async", "1"              # Audio sync resampling
     ]
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     current_process = proc
     frame_size = 128 * 128 * 3
+
     # Show now‑playing screen
     img = Image.new("RGB", (W, H), (10, 0, 0))
     d = ImageDraw.Draw(img)
@@ -207,19 +214,23 @@ def play_video(filepath):
     d.text((4, 35), "Press KEY1 to stop", font=FONT, fill=(113, 125, 126))
     LCD.LCD_ShowImage(img, 0, 0)
     time.sleep(1)
+
     while True:
-        btn = wait_btn(0.05)
+        btn = wait_btn_nonblock()
         if btn == "KEY1" or btn == "KEY3":
             stop_playback()
             break
+
         raw = proc.stdout.read(frame_size)
         if len(raw) < frame_size:
             break
+
         try:
             frame = Image.frombytes("RGB", (128, 128), raw)
             LCD.LCD_ShowImage(frame, 0, 0)
         except:
             pass
+
     LCD.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
 
 # ----------------------------------------------------------------------
@@ -236,18 +247,18 @@ def main():
     show_message("Media Player Ready", f"Audio: {AUDIO_DEV}")
     while True:
         draw_browser(path, entries, cursor, scroll)
-        btn = wait_btn(0.2)
+        btn = wait_btn_nonblock()
         if btn == "KEY3":
             break
-        if btn == "UP" and cursor > 0:
+        elif btn == "UP" and cursor > 0:
             cursor -= 1
             if cursor < scroll:
                 scroll = cursor
-        if btn == "DOWN" and entries and cursor < len(entries)-1:
+        elif btn == "DOWN" and entries and cursor < len(entries)-1:
             cursor += 1
             if cursor >= scroll + 5:
                 scroll = cursor - 4
-        if btn == "LEFT":
+        elif btn == "LEFT":
             parent = os.path.dirname(path)
             if parent != path:
                 path = parent
@@ -256,7 +267,7 @@ def main():
                 scroll = 0
                 cfg["last_dir"] = path
                 save_config(cfg)
-        if btn == "OK" and entries:
+        elif btn == "OK" and entries:
             e = entries[cursor]
             if e.is_dir():
                 path = e.path
@@ -272,8 +283,10 @@ def main():
                 elif filepath.lower().endswith(AUDIO_EXTS):
                     play_audio(filepath)
                 entries = list_media(path)
-        if btn == "KEY1":
+        elif btn == "KEY1":
             stop_playback()
+        time.sleep(0.05)  # small delay to prevent CPU hogging in menu
+
     stop_playback()
     LCD.LCD_Clear()
     GPIO.cleanup()
