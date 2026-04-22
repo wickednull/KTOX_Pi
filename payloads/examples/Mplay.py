@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-KTOx Payload – Media Player (Auto‑Install Dependencies)
-=========================================================
+KTOx Payload – Media Player (MP3/Video/USB Audio)
+===================================================
 - Plays video (MP4, AVI, MKV, MOV, WebM) and audio (MP3, WAV, FLAC, OGG)
-- USB audio via plughw:1,0 
-- Auto‑installs ffmpeg, alsa-utils, and python3-pil if missing
+- USB audio via plughw:1,0 (your Onn headset)
+- Auto‑installs ffmpeg, alsa-utils, python3-pil if missing
 - Non‑blocking buttons, smooth 15 fps video, A/V sync
 
 Controls: UP/DOWN, OK, LEFT, KEY1=stop, KEY3=exit
@@ -22,7 +22,7 @@ import subprocess
 def auto_install():
     """Check and install missing dependencies."""
     missing = []
-    # Check ffmpeg
+    # Check ffmpeg (provides ffplay and ffmpeg)
     if os.system("which ffmpeg >/dev/null 2>&1") != 0:
         missing.append("ffmpeg")
     # Check aplay (alsa-utils)
@@ -38,25 +38,28 @@ def auto_install():
         return True
 
     # Show install message
+    from PIL import Image, ImageDraw, ImageFont
     img = Image.new("RGB", (128, 128), (10, 0, 0))
     d = ImageDraw.Draw(img)
-    d.text((64, 30), "Installing dependencies...", font=FONT_BOLD, fill=(30, 132, 73), anchor="mm")
-    d.text((64, 50), f"Missing: {', '.join(missing)}", font=FONT, fill=(171, 178, 185), anchor="mm")
-    d.text((64, 70), "Please wait", font=FONT, fill=(113, 125, 126), anchor="mm")
+    try:
+        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 9)
+    except:
+        font = ImageFont.load_default()
+    d.text((64, 30), "Installing dependencies...", font=font, fill=(30, 132, 73), anchor="mm")
+    d.text((64, 50), f"Missing: {', '.join(missing)}", font=font, fill=(171, 178, 185), anchor="mm")
+    d.text((64, 70), "Please wait", font=font, fill=(113, 125, 126), anchor="mm")
     LCD.LCD_ShowImage(img, 0, 0)
 
     try:
         subprocess.run(["apt", "update"], check=True, capture_output=True)
         subprocess.run(["apt", "install", "-y"] + missing, check=True, capture_output=True)
-        # Re-import PIL after install
-        from PIL import Image, ImageDraw, ImageFont
         return True
     except Exception as e:
         img = Image.new("RGB", (128, 128), (10, 0, 0))
         d = ImageDraw.Draw(img)
-        d.text((64, 40), "Install failed", font=FONT_BOLD, fill=(231, 76, 60), anchor="mm")
-        d.text((64, 60), "Run: sudo apt install", font=FONT, fill=(171, 178, 185), anchor="mm")
-        d.text((64, 75), f"{' '.join(missing)}", font=FONT, fill=(113, 125, 126), anchor="mm")
+        d.text((64, 40), "Install failed", font=font, fill=(231, 76, 60), anchor="mm")
+        d.text((64, 60), "Run: sudo apt install", font=font, fill=(171, 178, 185), anchor="mm")
+        d.text((64, 75), f"{' '.join(missing)}", font=font, fill=(113, 125, 126), anchor="mm")
         LCD.LCD_ShowImage(img, 0, 0)
         time.sleep(3)
         return False
@@ -207,9 +210,14 @@ def stop_playback():
         current_process = None
 
 def play_audio(filepath):
+    """Play audio using ffplay (supports MP3, WAV, FLAC, OGG)."""
     global current_process
     stop_playback()
-    cmd = ["aplay", "-D", AUDIO_DEV, filepath]
+    cmd = [
+        "ffplay", "-nodisp", "-autoexit",
+        "-f", "alsa", "-i", AUDIO_DEV,
+        "-i", filepath
+    ]
     current_process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     while current_process.poll() is None:
         img = Image.new("RGB", (W, H), (10, 0, 0))
@@ -227,6 +235,7 @@ def play_audio(filepath):
     stop_playback()
 
 def play_video(filepath):
+    """Play video with ffmpeg using -re for real‑time and -async 1 for sync."""
     global current_process
     stop_playback()
     cmd = [
