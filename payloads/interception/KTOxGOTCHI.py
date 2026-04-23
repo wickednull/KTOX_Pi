@@ -37,6 +37,9 @@ import re
 from datetime import datetime
 from collections import deque
 
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+import monitor_mode_helper
+
 # ----------------------------------------------------------------------
 # Hardware & LCD
 # ----------------------------------------------------------------------
@@ -340,26 +343,10 @@ def restore_tx_power(iface):
     subprocess.run(["sudo", "iw", "dev", iface, "set", "txpower", "auto"], capture_output=True)
 
 def monitor_up(iface):
-    subprocess.run(["sudo", "ip", "link", "set", iface, "down"], capture_output=True)
-    subprocess.run(["sudo", "iw", iface, "set", "monitor", "none"], capture_output=True)
-    subprocess.run(["sudo", "ip", "link", "set", iface, "up"], capture_output=True)
-    time.sleep(0.5)
-    r = subprocess.run(["iw", "dev", iface, "info"], capture_output=True, text=True)
-    if "type monitor" in r.stdout:
-        return iface
-    subprocess.run(["sudo", "airmon-ng", "start", iface], capture_output=True)
-    mon = f"{iface}mon"
-    if os.path.exists(f"/sys/class/net/{mon}"):
-        return mon
-    return iface
+    return monitor_mode_helper.activate_monitor_mode(iface)
 
 def monitor_down(iface):
-    if not iface: return
-    base = iface[:-3] if iface.endswith("mon") else iface
-    subprocess.run(["sudo", "airmon-ng", "stop", iface], capture_output=True)
-    subprocess.run(["sudo", "ip", "link", "set", base, "down"], capture_output=True)
-    subprocess.run(["sudo", "iw", base, "set", "type", "managed"], capture_output=True)
-    subprocess.run(["sudo", "ip", "link", "set", base, "up"], capture_output=True)
+    monitor_mode_helper.deactivate_monitor_mode(iface)
 
 def get_available_wifi():
     interfaces = []

@@ -13,7 +13,7 @@ import time
 from payloads._display_helper import ScaledDraw, scaled_font
 
 # Ensure RaspyJack modules are importable when launched directly
-sys.path.append(os.path.abspath(os.path.join(__file__, "..", "..", "..")))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")))
 
 LCD_OK = False
 LCD = None

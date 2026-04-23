@@ -17,6 +17,9 @@ import re
 import threading
 from datetime import datetime
 
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+import monitor_mode_helper
+
 # KTOx hardware
 import RPi.GPIO as GPIO
 import LCD_1in44
@@ -116,20 +119,10 @@ def get_wlan_iface():
     return None
 
 def enable_monitor(iface):
-    run_cmd("airmon-ng check kill")
-    run_cmd(f"airmon-ng start {iface}")
-    mon = f"{iface}mon"
-    if os.path.exists(f"/sys/class/net/{mon}"):
-        return mon
-    # fallback
-    run_cmd(f"ip link set {iface} down")
-    run_cmd(f"iw dev {iface} set type monitor")
-    run_cmd(f"ip link set {iface} up")
-    return iface
+    return monitor_mode_helper.activate_monitor_mode(iface)
 
 def disable_monitor(iface):
-    run_cmd(f"airmon-ng stop {iface}mon")
-    run_cmd("systemctl restart NetworkManager")
+    monitor_mode_helper.deactivate_monitor_mode(iface)
 
 # ----------------------------------------------------------------------
 # Scanning

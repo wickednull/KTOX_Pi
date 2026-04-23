@@ -1441,7 +1441,7 @@ Press KEY1 to scan, KEY3 to exit.
 """
 
 import os, sys
-sys.path.append(os.path.abspath(os.path.join(__file__, '..', '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
 import time
 import signal
@@ -1552,7 +1552,7 @@ Press KEY1 to scan, KEY3 to exit.
 """
 
 import os, sys
-sys.path.append(os.path.abspath(os.path.join(__file__, '..', '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
 import time
 import signal
@@ -1657,7 +1657,7 @@ KEY1: Run scan now, KEY2: Toggle auto-scan, KEY3: Exit
 """
 
 import os, sys
-sys.path.append(os.path.abspath(os.path.join(__file__, '..', '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
 import time
 import signal
@@ -1775,7 +1775,7 @@ Listens on common ports and logs connection attempts.
 """
 
 import os, sys
-sys.path.append(os.path.abspath(os.path.join(__file__, '..', '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
 import time
 import signal
@@ -1888,7 +1888,7 @@ A basic menu navigation template with multiple screens.
 """
 
 import os, sys
-sys.path.append(os.path.abspath(os.path.join(__file__, '..', '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
 import time
 import signal
@@ -1995,7 +1995,7 @@ Display CPU, memory, disk, and network information.
 """
 
 import os, sys
-sys.path.append(os.path.abspath(os.path.join(__file__, '..', '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
 import time
 import signal
@@ -2319,7 +2319,7 @@ if __name__ == "__main__":
       '',
       '# Allow imports of KTOx helper modules',
       'import os, sys',
-      "sys.path.append(os.path.abspath(os.path.join(__file__, '..', '..')))",
+      "sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))",
       '',
       'import time',
       'import signal',

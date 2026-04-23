@@ -26,7 +26,7 @@ import threading
 import json
 
 # Ensure KTOx root is on sys.path (exec_payload sets cwd=/root/KTOx)
-sys.path.append(os.path.abspath(os.path.join(__file__, '..', '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
 # ----------------------------
 # KTOx PATH and ROOT check
@@ -124,7 +124,7 @@ WIDTH, HEIGHT = 128, 128
 FONT = ImageFont.load_default()
 FONT_TITLE = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 12)
 
-KTOX_DIR = '/root/KTOx' if os.path.isdir('/root/KTOx') else os.path.abspath(os.path.join(__file__, '..', '..'))
+KTOX_DIR = '/root/KTOx' if os.path.isdir('/root/KTOx') else os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 LOOT_DIR = os.path.join(KTOX_DIR, "loot", "ARP_Scan")
 # Dynamically get the best interface
 NETWORK_INTERFACE = get_best_interface()

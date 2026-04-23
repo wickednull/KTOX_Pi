@@ -32,7 +32,7 @@ import json
 import threading
 from collections import deque
 # Ensure KTOx root on sys.path
-sys.path.append(os.path.abspath(os.path.join(__file__, '..', '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 import RPi.GPIO as GPIO
 import LCD_Config
 import LCD_1in44

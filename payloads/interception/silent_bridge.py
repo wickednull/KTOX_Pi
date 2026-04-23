@@ -8,8 +8,8 @@ KTOx Payload – Transparent Ethernet MITM Bridge
 """
 
 import os, sys, signal, subprocess, time
-sys.path.append(os.path.abspath(os.path.join(__file__, '..', '..')))
-sys.path.append(os.path.abspath(os.path.join(__file__, '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import shutil
 from datetime import datetime
 import RPi.GPIO as GPIO

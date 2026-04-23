@@ -17,7 +17,7 @@ import os, sys, time, signal, subprocess, shutil
 from datetime import datetime
 from pathlib import Path
 
-sys.path.append(os.path.abspath(os.path.join(__file__, "..", "..")))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
 try:
     import RPi.GPIO as GPIO

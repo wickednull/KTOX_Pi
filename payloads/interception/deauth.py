@@ -24,7 +24,9 @@ DURING ATTACK:
 """
 
 import os, sys, time, signal, subprocess, threading
-sys.path.append(os.path.abspath(os.path.join(__file__, '..', '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+import monitor_mode_helper
 
 import RPi.GPIO as GPIO
 import LCD_1in44, LCD_Config
@@ -316,61 +318,16 @@ def setup_monitor_mode():
         show_status("Switch to USB dongle")
         return False
     
-    # Tell NetworkManager to stop managing this interface only (keeps wlan0/WebUI alive)
-    show_status("Unmanage iface...")
-    run_command(f"nmcli device set {WIFI_INTERFACE} managed no")
-    # Only kill wpa_supplicant for this specific interface
-    run_command(f"pkill -f 'wpa_supplicant.*{WIFI_INTERFACE}'")
-    time.sleep(1)
-    
-    # Check current mode
-    iwconfig_result = run_command(f"iwconfig {WIFI_INTERFACE}")
-    log(f"Current interface status: {iwconfig_result[:200]}")
-    
-    if "Mode:Monitor" in iwconfig_result:
-        log("Interface already in monitor mode")
-        show_status("Monitor ready!")
-        time.sleep(1)
-        return True
-    
-    # Try to enable monitor mode
     show_status("Enable monitor...")
-    
-    # Method 1: Use airmon-ng
-    log("Trying airmon-ng method")
-    show_status("Try airmon-ng...")
-    result = run_command(f"airmon-ng start {WIFI_INTERFACE}")
-    log(f"airmon-ng result: {result}")
-    
-    # Check if a monitor interface was created
-    for iface in [f"{WIFI_INTERFACE}mon", WIFI_INTERFACE]:
-        check_result = run_command(f"iwconfig {iface}")
-        if "Mode:Monitor" in check_result:
-            log(f"Monitor mode enabled on {iface}")
-            WIFI_INTERFACE = iface
-            show_status("Monitor OK!")
-            time.sleep(1)
-            return True
-    
-    # Method 2: Manual iwconfig method
-    log("Trying manual iwconfig method")
-    show_status("Manual setup...")
-    run_command(f"ifconfig {WIFI_INTERFACE} down")
-    time.sleep(0.5)
-    run_command(f"iwconfig {WIFI_INTERFACE} mode monitor")
-    time.sleep(0.5)
-    run_command(f"ifconfig {WIFI_INTERFACE} up")
-    time.sleep(1)
-    
-    # Verify monitor mode
-    check_result = run_command(f"iwconfig {WIFI_INTERFACE}")
-    if "Mode:Monitor" in check_result:
-        log("Monitor mode enabled via iwconfig")
+    mon = monitor_mode_helper.activate_monitor_mode(WIFI_INTERFACE)
+    if mon:
+        WIFI_INTERFACE = mon
+        log(f"Monitor mode enabled on {WIFI_INTERFACE}")
         show_status("Monitor OK!")
         time.sleep(1)
         return True
-    
-    log("Failed to enable monitor mode")
+
+    log("Failed to enable monitor mode via helper")
     show_status("Monitor FAILED!")
     time.sleep(2)
     return False
@@ -749,8 +706,8 @@ def simple_cleanup():
         run_command("pkill -f aireplay-ng 2>/dev/null || true")
         run_command("pkill -f airodump-ng 2>/dev/null || true")
         
-        # Re-manage the interface in NetworkManager (NM was never stopped)
-        run_command(f"nmcli device set {WIFI_INTERFACE} managed yes 2>/dev/null || true")
+        # Restore managed mode / restart required services if monitor mode was active
+        monitor_mode_helper.deactivate_monitor_mode(WIFI_INTERFACE)
         
         log("Simple cleanup completed")
         

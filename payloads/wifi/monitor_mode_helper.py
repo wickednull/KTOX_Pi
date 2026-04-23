@@ -138,6 +138,24 @@ def _current_monitor_ifaces():
     return out
 
 
+def _stop_interfering_services():
+    """
+    Stop services that frequently interfere with monitor mode.
+    Best-effort only; failures are non-fatal.
+    """
+    for svc in ("NetworkManager", "wpa_supplicant"):
+        _run(["systemctl", "stop", svc], timeout=8)
+
+
+def _start_interfering_services():
+    """
+    Restart services after monitor mode operations.
+    Best-effort only; failures are non-fatal.
+    """
+    for svc in ("NetworkManager", "wpa_supplicant"):
+        _run(["systemctl", "start", svc], timeout=8)
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Public helper functions
 # ──────────────────────────────────────────────────────────────────────────────
@@ -158,6 +176,11 @@ def get_type(iface):
         return ""
     m = re.search(r"type\s+(\S+)", out)
     return m.group(1).lower() if m else ""
+
+
+# Backward-compat names used by older payloads
+def _iface_mode(iface):
+    return get_type(iface)
 
 
 def is_onboard(iface):
@@ -184,6 +207,11 @@ def is_onboard(iface):
     return False
 
 
+# Backward-compat name used by older payloads
+def _is_onboard(iface):
+    return is_onboard(iface)
+
+
 def find_monitor_capable_interface():
     """
     Prefer external USB Wi-Fi interfaces.
@@ -202,6 +230,23 @@ def find_monitor_capable_interface():
 
     _log("No wireless interfaces found", level="WARN", tag=_TAG)
     return None
+
+
+def resolve_monitor_interface(preferred=None):
+    """
+    Resolve an active monitor interface from preferred iface, saved state,
+    or current system interfaces.
+    """
+    if preferred and _iface_exists(preferred) and get_type(preferred) == "monitor":
+        return preferred
+
+    state = _load_state() or {}
+    state_mon = state.get("monitor_iface")
+    if state_mon and _iface_exists(state_mon) and get_type(state_mon) == "monitor":
+        return state_mon
+
+    mons = _current_monitor_ifaces()
+    return mons[0] if mons else None
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -338,7 +383,7 @@ def activate_monitor_mode(interface):
 # Monitor mode deactivation
 # ──────────────────────────────────────────────────────────────────────────────
 
-def deactivate_monitor_mode(interface):
+def deactivate_monitor_mode(interface=None):
     """
     Restore a monitor interface back to managed mode.
 
@@ -347,21 +392,34 @@ def deactivate_monitor_mode(interface):
         False on failure
     """
     if not interface:
-        _log("deactivate_monitor_mode called with empty interface", level="ERROR", tag=_TAG)
-        return False
+        interface = resolve_monitor_interface()
+        if not interface:
+            _log("No active monitor interface found; ensuring services are up", tag=_TAG)
+            _start_interfering_services()
+            _clear_state()
+            return True
 
     state = _load_state() or {}
     base = state.get("base_iface") or interface.replace("mon", "")
     mon_iface = state.get("monitor_iface") or interface
     original_type = state.get("original_type") or "managed"
 
+    if get_type(mon_iface) != "monitor":
+        detected = resolve_monitor_interface(preferred=interface)
+        if detected:
+            mon_iface = detected
+        elif _iface_exists(interface):
+            mon_iface = interface
+
     # If target vanished, treat as cleaned up if base exists
     if not _iface_exists(mon_iface):
         if base and _iface_exists(base):
             _log(f"{mon_iface} no longer exists; base iface {base} remains", tag=_TAG)
+            _start_interfering_services()
             _clear_state()
             return True
         _log(f"{mon_iface} does not exist", level="WARN", tag=_TAG)
+        _start_interfering_services()
         _clear_state()
         return True
 
@@ -380,9 +438,11 @@ def deactivate_monitor_mode(interface):
             if base and _iface_exists(base):
                 _ensure_up(base)
                 _log(f"Restored base interface {base} via airmon-ng", tag=_TAG)
+                _start_interfering_services()
                 _clear_state()
                 return True
             if not _iface_exists(mon_iface):
+                _start_interfering_services()
                 _clear_state()
                 return True
         else:
@@ -412,5 +472,6 @@ def deactivate_monitor_mode(interface):
         return False
 
     _log(f"Restored {restore_iface} to {get_type(restore_iface) or 'managed'}", tag=_TAG)
+    _start_interfering_services()
     _clear_state()
     return True

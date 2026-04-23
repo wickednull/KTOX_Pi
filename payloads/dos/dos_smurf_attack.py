@@ -39,7 +39,7 @@ import subprocess
 import threading
 from ipaddress import IPv4Address, IPv4Network
 
-KTOX_ROOT = '/root/KTOx' if os.path.isdir('/root/KTOx') else os.path.abspath(os.path.join(__file__, '..', '..'))
+KTOX_ROOT = '/root/KTOx' if os.path.isdir('/root/KTOx') else os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 if KTOX_ROOT not in sys.path:
     sys.path.insert(0, KTOX_ROOT)
 wifi_subdir = os.path.join(KTOX_ROOT, 'wifi')

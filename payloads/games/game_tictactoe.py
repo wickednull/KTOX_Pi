@@ -7,7 +7,7 @@ Author: 7h30th3r0n3
 Controls: D-pad=move cursor, OK=place X, KEY1=toggle difficulty, KEY3=exit
 """
 import os, sys, time
-sys.path.append(os.path.abspath(os.path.join(__file__, "..", "..", "..")))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")))
 
 import random
 import signal

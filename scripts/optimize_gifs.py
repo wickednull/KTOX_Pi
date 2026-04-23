@@ -18,12 +18,12 @@ import sys
 import shutil
 import json
 
-sys.path.append(os.path.abspath(os.path.join(__file__, "..", "..")))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
 from PIL import Image, ImageSequence
 
 # Detect target resolution from gui_conf.json
-INSTALL_DIR = os.path.abspath(os.path.join(__file__, "..", ".."))
+INSTALL_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 CONF_PATH = os.path.join(INSTALL_DIR, "gui_conf.json")
 SCREENSAVER_DIR = os.path.join(INSTALL_DIR, "img", "screensaver")
 ORIGINALS_DIR = os.path.join(SCREENSAVER_DIR, "originals")

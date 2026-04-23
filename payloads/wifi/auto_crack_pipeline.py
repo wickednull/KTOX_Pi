@@ -26,6 +26,9 @@ import subprocess
 import requests
 from datetime import datetime
 
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+import monitor_mode_helper
+
 # ----------------------------------------------------------------------
 # Hardware & LCD
 # ----------------------------------------------------------------------
@@ -225,23 +228,10 @@ def get_wlan():
     return None
 
 def enable_monitor_mode(iface):
-    run("airmon-ng check kill")
-    out = run(f"airmon-ng start {iface}")
-    mon = f"{iface}mon"
-    if os.path.exists(f"/sys/class/net/{mon}"):
-        return mon
-    # Fallback: try to set monitor on the interface itself
-    run(f"ip link set {iface} down")
-    run(f"iw dev {iface} set type monitor")
-    run(f"ip link set {iface} up")
-    return iface
+    return monitor_mode_helper.activate_monitor_mode(iface)
 
 def disable_monitor_mode(iface):
-    run(f"airmon-ng stop {iface}mon")
-    run(f"ip link set {iface} down")
-    run(f"iw dev {iface} set type managed")
-    run(f"ip link set {iface} up")
-    run("systemctl restart NetworkManager")
+    monitor_mode_helper.deactivate_monitor_mode(iface)
 
 # ----------------------------------------------------------------------
 # AP scanning with debug output

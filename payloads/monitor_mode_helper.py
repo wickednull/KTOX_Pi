@@ -20,8 +20,13 @@ _ROOT_CANDIDATES = [
 
 def _load():
     for root in _ROOT_CANDIDATES:
-        fpath = os.path.join(root, "wifi", "monitor_mode_helper.py")
-        if os.path.isfile(fpath):
+        for rel in (
+            os.path.join("payloads", "wifi", "monitor_mode_helper.py"),
+            os.path.join("wifi", "monitor_mode_helper.py"),
+        ):
+            fpath = os.path.join(root, rel)
+            if not os.path.isfile(fpath):
+                continue
             spec = importlib.util.spec_from_file_location(
                 "_wifi_monitor_mode_helper", fpath
             )
@@ -29,7 +34,7 @@ def _load():
             spec.loader.exec_module(mod)
             return mod
     raise ImportError(
-        "wifi/monitor_mode_helper.py not found in: " +
+        "monitor_mode_helper.py not found in known payload/wifi locations under: " +
         ", ".join(_ROOT_CANDIDATES)
     )
 
@@ -40,19 +45,22 @@ _mmh = _load()
 activate_monitor_mode          = _mmh.activate_monitor_mode
 deactivate_monitor_mode        = _mmh.deactivate_monitor_mode
 find_monitor_capable_interface = _mmh.find_monitor_capable_interface
+resolve_monitor_interface      = getattr(_mmh, "resolve_monitor_interface", lambda preferred=None: None)
 
 # Re-export helpers used by some payloads directly
 _run                    = _mmh._run
 _has_cmd                = _mmh._has_cmd
 _iface_exists           = _mmh._iface_exists
-_iface_mode             = _mmh._iface_mode
-_is_onboard             = _mmh._is_onboard
+_iface_mode             = getattr(_mmh, "_iface_mode", getattr(_mmh, "get_type"))
+_is_onboard             = getattr(_mmh, "_is_onboard", getattr(_mmh, "is_onboard"))
 _current_monitor_ifaces = _mmh._current_monitor_ifaces
 _get_phy                = _mmh._get_phy
 _ensure_up              = _mmh._ensure_up
+_start_interfering_services = getattr(_mmh, "_start_interfering_services", lambda: None)
 
 __all__ = [
     "activate_monitor_mode",
     "deactivate_monitor_mode",
     "find_monitor_capable_interface",
+    "resolve_monitor_interface",
 ]

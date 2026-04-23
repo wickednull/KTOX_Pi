@@ -102,7 +102,7 @@ FONT_TITLE = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bol
 
 WIFI_INTERFACE = None
 ORIGINAL_WIFI_INTERFACE = None
-KTOX_DIR = os.path.abspath(os.path.join(__file__, '..', '..'))
+KTOX_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 LOOT_DIR = os.path.join(KTOX_DIR, "loot", "WPS_Pixie")
 running = True
 attack_process = None

@@ -32,7 +32,7 @@ import signal
 import subprocess
 import re
 from select import select
-sys.path.append(os.path.abspath(os.path.join(__file__, '..', '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 import RPi.GPIO as GPIO
 import LCD_1in44, LCD_Config
 from PIL import Image, ImageDraw, ImageFont
@@ -52,7 +52,7 @@ WIDTH, HEIGHT = 128, 128
 FONT = ImageFont.load_default() 
 FONT_TITLE = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 12)
 
-KTOX_DIR = os.path.abspath(os.path.join(__file__, '..', '..'))
+KTOX_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 LOOT_DIR = os.path.join(KTOX_DIR, "loot", "BLE_GATT")
 running = True
 

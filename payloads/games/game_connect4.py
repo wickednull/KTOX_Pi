@@ -11,7 +11,7 @@ Controls: LEFT/RIGHT=move cursor, OK=drop disc, KEY1=toggle difficulty,
 """
 
 import os, sys, time
-sys.path.append(os.path.abspath(os.path.join(__file__, "..", "..", "..")))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")))
 
 import signal
 import random

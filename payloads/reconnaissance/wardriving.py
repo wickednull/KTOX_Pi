@@ -32,7 +32,7 @@ from pathlib import Path
 
 # Add KTOx modules to path
 sys.path.append('/root/KTOx/wifi/')
-sys.path.append(os.path.abspath(os.path.join(__file__, '..', '..')))  # Add root directory like working examples
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))  # Add root directory like working examples
 
 try:
     import LCD_1in44, LCD_Config

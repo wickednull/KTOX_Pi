@@ -22,7 +22,7 @@ then reboots (after LCD/GPIO cleanup).
 import os, sys, time, signal, subprocess, tarfile, shutil
 from datetime import datetime
 
-sys.path.append(os.path.abspath(os.path.join(__file__, "..", "..", "..")))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")))
 
 # ---------------------------- Third-party libs ----------------------------
 import RPi.GPIO as GPIO

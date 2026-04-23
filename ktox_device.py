@@ -2240,71 +2240,103 @@ def do_mitm(target_ip):
     Dialog_info("MITM stopped.\nFwd OFF.\nARP restored.", wait=False, timeout=2)
 
 
-def do_wifi_monitor_on():
+def _wifi_list_ifaces():
     import re as _re
+    rc, out = _run(["iw", "dev"], timeout=6)
+    if rc != 0:
+        return []
+    return _re.findall(r"Interface\s+(\w+)", out)
+
+
+def _wifi_iface_mode(iface):
+    import re as _re
+    rc, out = _run(["iw", "dev", iface, "info"], timeout=6)
+    if rc != 0:
+        return ""
+    m = _re.search(r"\btype\s+(\w+)", out)
+    return m.group(1).lower() if m else ""
+
+
+def _detect_monitor_iface(preferred=None):
+    candidates = []
+    if preferred:
+        candidates.append(preferred)
+    state_mon = ktox_state.get("mon_iface")
+    if state_mon and state_mon not in candidates:
+        candidates.append(state_mon)
+    for iface in _wifi_list_ifaces():
+        if iface not in candidates:
+            candidates.append(iface)
+    for iface in candidates:
+        if _wifi_iface_mode(iface) == "monitor":
+            return iface
+    return None
+
+
+def _require_monitor_iface():
+    mon = _detect_monitor_iface(preferred=ktox_state.get("mon_iface"))
+    if not mon:
+        Dialog_info("Enable monitor\nmode first.", wait=True)
+        return None
+    ktox_state["mon_iface"] = mon
+    return mon
+
+
+def do_wifi_monitor_on():
     iface = ktox_state["wifi_iface"]
     Dialog_info(f"Enabling mon\n{iface}…", wait=False, timeout=1)
 
-    # Kill interfering processes then try airmon-ng
+    existing = set(_wifi_list_ifaces())
     _run(["airmon-ng", "check", "kill"], timeout=10)
     _run(["ip", "link", "set", iface, "up"], timeout=5)
-    rc, out = _run(["airmon-ng", "start", iface], timeout=20)
+    _run(["airmon-ng", "start", iface], timeout=20)
 
-    # Detect newly created monitor interface
-    mon = None
-    mo = _re.search(r"((?:wlan|mon)\w*mon\w*|mon\d+)", out)
-    if mo:
-        mon = mo.group(1)
-    if not mon:
-        _, out2 = _run(["iw", "dev"])
-        for candidate in _re.findall(r"Interface\s+(\w+)", out2):
-            if "mon" in candidate:
-                mon = candidate
-                break
-
+    now_ifaces = _wifi_list_ifaces()
+    created = [i for i in now_ifaces if i not in existing]
+    mon = _detect_monitor_iface(preferred=created[0] if created else None)
     if mon:
         ktox_state["mon_iface"] = mon
         Dialog_info(f"Monitor on:\n{mon}", wait=True)
         return
 
-    # airmon-ng failed — try iw fallback
     Dialog_info("Trying iw\nfallback…", wait=False, timeout=1)
     _run(["systemctl", "stop", "NetworkManager"], timeout=5)
     _run(["ip", "link", "set", iface, "down"], timeout=5)
     _run(["iw", "dev", iface, "set", "type", "monitor"], timeout=5)
     _run(["ip", "link", "set", iface, "up"], timeout=5)
-    _, out3 = _run(["iw", "dev", iface, "info"])
-    if "monitor" in out3.lower():
-        ktox_state["mon_iface"] = iface
-        Dialog_info(f"Monitor on:\n{iface} (iw)", wait=True)
+
+    mon = _detect_monitor_iface(preferred=iface)
+    if mon:
+        ktox_state["mon_iface"] = mon
+        Dialog_info(f"Monitor on:\n{mon} (iw)", wait=True)
     else:
         Dialog_info("Monitor FAILED\nCheck adapter.", wait=True)
 
 
 def do_wifi_monitor_off():
-    mon = ktox_state.get("mon_iface")
     iface = ktox_state["wifi_iface"]
+    mon = ktox_state.get("mon_iface") or _detect_monitor_iface(preferred=iface)
     if not mon:
         Dialog_info("Not in monitor\nmode.", wait=True)
         return
 
-    # Try airmon-ng first, then iw fallback
     rc, _ = _run(["airmon-ng", "stop", mon], timeout=10)
-    if rc != 0 or mon == iface:
-        # iw fallback: restore managed mode
+    if rc != 0 and _wifi_iface_mode(mon) == "monitor":
         _run(["ip", "link", "set", mon, "down"], timeout=5)
         _run(["iw", "dev", mon, "set", "type", "managed"], timeout=5)
         _run(["ip", "link", "set", mon, "up"], timeout=5)
 
     _run(["systemctl", "start", "NetworkManager"], timeout=8)
-    ktox_state["mon_iface"] = None
-    Dialog_info("Monitor off.\nNM restarted.", wait=True)
+    if _wifi_iface_mode(mon) == "monitor":
+        Dialog_info("Monitor still on.\nCheck adapter.", wait=True)
+    else:
+        ktox_state["mon_iface"] = None
+        Dialog_info("Monitor off.\nNM restarted.", wait=True)
 
 
 def do_wifi_scan():
-    mon = ktox_state.get("mon_iface")
+    mon = _require_monitor_iface()
     if not mon:
-        Dialog_info("Enable monitor\nmode first.", wait=True)
         return
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     outpath = f"{LOOT_DIR}/wifi_scan_{ts}"
@@ -2404,7 +2436,7 @@ def do_llmnr_detect():
 
 
 def do_responder_on():
-    iface = ktox_state["iface"]
+    iface = _get_interface_for_ip(ktox_state.get("gateway") or "1.1.1.1")
     rpy   = f"{INSTALL_PATH}Responder/Responder.py"
     if not os.path.exists(rpy):
         Dialog_info("Responder not\nfound.", wait=True)
@@ -2529,9 +2561,8 @@ def do_start_mitm_suite():
 
 def do_deauth_targeted():
     """Scan APs, pick one, run continuous deauth until KEY3."""
-    mon = ktox_state.get("mon_iface")
+    mon = _require_monitor_iface()
     if not mon:
-        Dialog_info("Enable monitor\nmode first.", wait=True)
         return
     Dialog_info("Scanning APs\n10 seconds...", wait=False, timeout=1)
     import glob, csv
@@ -2578,9 +2609,8 @@ def do_deauth_targeted():
 
 def do_handshake_targeted():
     """Scan APs, pick one, capture WPA handshake via forced deauth."""
-    mon = ktox_state.get("mon_iface")
+    mon = _require_monitor_iface()
     if not mon:
-        Dialog_info("Enable monitor\nmode first.", wait=True)
         return
     Dialog_info("Scanning APs\n10 seconds...", wait=False, timeout=1)
     import glob, csv
@@ -3151,7 +3181,7 @@ class KTOxMenu:
     def _arp_flood(self):
         """Real ARP cache flood: sends randomised ARP replies at high rate."""
         tgt   = _pick_host()
-        iface = ktox_state["iface"]
+        iface = _get_interface_for_ip(tgt) if tgt else ktox_state["iface"]
         if not tgt:
             return
         pps = _ask_pps()
@@ -3194,7 +3224,7 @@ class KTOxMenu:
     def _gw_dos(self):
         """Flood gateway ARP table with random fake entries at configurable PPS."""
         gw    = ktox_state["gateway"]
-        iface = ktox_state["iface"]
+        iface = _get_interface_for_ip(gw) if gw else ktox_state["iface"]
         if not gw:
             Dialog_info("No gateway!", wait=True)
             return
@@ -3239,7 +3269,7 @@ class KTOxMenu:
         """Isolate target from ALL peers: poisons target's view of every host."""
         tgt   = _pick_host()
         gw    = ktox_state["gateway"]
-        iface = ktox_state["iface"]
+        iface = _get_interface_for_ip(tgt) if tgt else ktox_state["iface"]
         if not tgt or not gw:
             return
         peers = [h["ip"] for h in ktox_state.get("hosts", []) if h["ip"] != tgt]
@@ -3295,7 +3325,7 @@ class KTOxMenu:
     def _ntlm(self):
         """MITM + NTLMv2 sniffer: poison target then capture auth hashes."""
         tgt   = _pick_host()
-        iface = ktox_state["iface"]
+        iface = _get_interface_for_ip(tgt) if tgt else ktox_state["iface"]
         gw    = ktox_state["gateway"]
         if not tgt or not gw:
             return
@@ -3384,9 +3414,7 @@ class KTOxMenu:
         do_handshake_targeted()
 
     def _pmkid(self):
-        mon = ktox_state.get("mon_iface")
-        if not mon:
-            Dialog_info("Enable monitor\nmode first.", wait=True)
+        if not _require_monitor_iface():
             return
         exec_payload("wifi/pmkid_capture")
 

@@ -23,12 +23,12 @@ import os
 import time
 import signal
 import subprocess
-sys.path.append(os.path.abspath(os.path.join(__file__, '..', '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 import RPi.GPIO as GPIO
 import LCD_1in44, LCD_Config
 from PIL import Image, ImageDraw, ImageFont
 
-KTOX_DIR = os.path.abspath(os.path.join(__file__, '..', '..'))
+KTOX_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 LOOT_DIR = os.path.join(KTOX_DIR, "loot")
 PAYLOADS_DIR = os.path.join(KTOX_DIR, "payloads")
 SELF_NAME = os.path.basename(__file__)

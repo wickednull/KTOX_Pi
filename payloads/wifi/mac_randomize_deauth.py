@@ -26,6 +26,9 @@ from datetime import datetime
 if os.path.isdir('/root/KTOx') and '/root/KTOx' not in sys.path:
     sys.path.insert(0, '/root/KTOx')
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+import monitor_mode_helper
 
 try:
     import RPi.GPIO as GPIO
@@ -106,18 +109,11 @@ class Display:
 
 
 def enable_monitor(iface="wlan0"):
-    run(f"ip link set {iface} down")
-    run(f"iw dev {iface} set type monitor")
-    run(f"ip link set {iface} up")
-    result = run(f"iw dev {iface} info")
-    return iface if "monitor" in result.lower() else None
+    return monitor_mode_helper.activate_monitor_mode(iface)
 
 
 def disable_monitor(iface="wlan0"):
-    run(f"airmon-ng stop {iface}mon 2>/dev/null")
-    run(f"ip link set {iface} down")
-    run(f"iw dev {iface} set type managed")
-    run(f"ip link set {iface} up")
+    monitor_mode_helper.deactivate_monitor_mode(iface)
 
 
 def scan_aps(mon, disp):
@@ -171,8 +167,12 @@ def main():
 
     try:
         disp.show("MAC DEAUTH", ["Enabling monitor...", "Please wait"])
-        run(f"airmon-ng check kill 2>/dev/null")
         mon = enable_monitor(iface)
+        if not mon:
+            disp.show("MONITOR FAIL", [f"Could not enable", f"on {iface}", "KEY3 to exit"])
+            while disp.btn() != "KEY3":
+                time.sleep(0.1)
+            return
         time.sleep(1)
 
         aps = scan_aps(mon, disp)

@@ -35,7 +35,7 @@ import subprocess
 from datetime import datetime
 from collections import defaultdict
 
-sys.path.append(os.path.abspath(os.path.join(__file__, "..", "..", "..")))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")))
 
 import RPi.GPIO as GPIO
 import LCD_1in44

@@ -42,6 +42,9 @@ import signal
 import subprocess
 import threading
 
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+import monitor_mode_helper
+
 # ----------------------------
 # KTOx PATH and ROOT check
 # ----------------------------
@@ -131,7 +134,7 @@ FONT = ImageFont.load_default()
 FONT_TITLE = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 12)
 FONT_UI = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 10)
 
-KTOX_DIR = '/root/KTOx' if os.path.isdir('/root/KTOx') else os.path.abspath(os.path.join(__file__, '..', '..', '..', 'KTOx'))
+KTOX_DIR = '/root/KTOx' if os.path.isdir('/root/KTOx') else os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'KTOx'))
 CAPTIVE_PORTAL_BASE_PATH = os.path.join(KTOX_DIR, "DNSSpoof", "sites")
 CAPTIVE_PORTAL_PATH = os.path.join(CAPTIVE_PORTAL_BASE_PATH, "wifi")
 LOOT_FILE = os.path.join(CAPTIVE_PORTAL_PATH, "loot.txt") # Changed to loot.txt
@@ -544,9 +547,7 @@ def stop_attack():
 
     if ORIGINAL_WIFI_INTERFACE:
         draw_message(["Restoring NM..."], "yellow")
-        subprocess.run(f"ip link set {WIFI_INTERFACE} down 2>/dev/null || true", shell=True)
-        subprocess.run(f"iw dev {WIFI_INTERFACE} set type managed 2>/dev/null || true", shell=True)
-        subprocess.run(f"ip link set {WIFI_INTERFACE} up 2>/dev/null || true", shell=True)
+        monitor_mode_helper.deactivate_monitor_mode(WIFI_INTERFACE)
         time.sleep(1)
         
         subprocess.run(f"nmcli device set {ORIGINAL_WIFI_INTERFACE} managed yes 2>/dev/null || true", shell=True)

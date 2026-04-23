@@ -40,13 +40,14 @@ import subprocess
 import re
 from datetime import datetime
 
-sys.path.append(os.path.abspath(os.path.join(__file__, "..", "..", "..")))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")))
 
 import RPi.GPIO as GPIO
 import LCD_1in44, LCD_Config
 from PIL import Image, ImageDraw, ImageFont
 from payloads._display_helper import ScaledDraw, scaled_font
 from payloads._input_helper import get_button
+from payloads import monitor_mode_helper
 
 PINS = {
     "UP": 6, "DOWN": 19, "LEFT": 5, "RIGHT": 26,
@@ -108,22 +109,15 @@ def _find_usb_wifi():
 
 def _set_monitor_mode(iface):
     """Put interface into monitor mode."""
-    for cmd in (
-        ["sudo", "ip", "link", "set", iface, "down"],
-        ["sudo", "iw", "dev", iface, "set", "type", "monitor"],
-        ["sudo", "ip", "link", "set", iface, "up"],
-    ):
-        subprocess.run(cmd, capture_output=True, timeout=5)
+    mon = monitor_mode_helper.activate_monitor_mode(iface)
+    global _mon_iface
+    _mon_iface = mon or iface
+    return _mon_iface
 
 
 def _set_managed_mode(iface):
     """Restore managed mode."""
-    for cmd in (
-        ["sudo", "ip", "link", "set", iface, "down"],
-        ["sudo", "iw", "dev", iface, "set", "type", "managed"],
-        ["sudo", "ip", "link", "set", iface, "up"],
-    ):
-        subprocess.run(cmd, capture_output=True, timeout=5)
+    monitor_mode_helper.deactivate_monitor_mode(iface)
 
 
 # ---------------------------------------------------------------------------
@@ -168,23 +162,10 @@ _reaver_proc = None
 
 def _scan_wps_aps(iface):
     """Scan for WPS-enabled APs using wash."""
-    _set_monitor_mode(iface)
+    mon_iface = _set_monitor_mode(iface)
+    if not mon_iface:
+        return []
     time.sleep(1)
-
-    # Determine monitor interface name
-    mon_iface = iface
-    # Check if monitor interface got renamed
-    try:
-        result = subprocess.run(
-            ["iw", "dev"], capture_output=True, text=True, timeout=5,
-        )
-        for line in result.stdout.splitlines():
-            line = line.strip()
-            if line.startswith("Interface ") and "mon" in line:
-                mon_iface = line.split()[1]
-                break
-    except Exception:
-        pass
 
     global _mon_iface
     _mon_iface = mon_iface

@@ -26,7 +26,7 @@ from pathlib import Path
 
 # ── KTOx path setup ───────────────────────────────────────────────────────────
 KTOX_ROOT = "/root/KTOx" if os.path.isdir("/root/KTOx") else os.path.abspath(
-    os.path.join(__file__, "..", "..", ".."))
+    os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 if KTOX_ROOT not in sys.path:
     sys.path.insert(0, KTOX_ROOT)
 

@@ -25,7 +25,7 @@ import threading
 from bottle import route, run, template
 
 # Prefer /root/KTOx for imports; fallback to repo-relative
-KTOX_ROOT = '/root/KTOx' if os.path.isdir('/root/KTOx') else os.path.abspath(os.path.join(__file__, '..', '..'))
+KTOX_ROOT = '/root/KTOx' if os.path.isdir('/root/KTOx') else os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 if KTOX_ROOT not in sys.path:
     sys.path.insert(0, KTOX_ROOT)
 

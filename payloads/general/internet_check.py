@@ -32,7 +32,7 @@ import json
 # Ensure KTOx root on path for local LCD modules (prefer installed path)
 if os.path.isdir('/root/KTOx') and '/root/KTOx' not in sys.path:
     sys.path.insert(0, '/root/KTOx')
-sys.path.append(os.path.abspath(os.path.join(__file__, '..', '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 import RPi.GPIO as GPIO
 import LCD_Config
 import LCD_1in44

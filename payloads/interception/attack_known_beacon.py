@@ -29,9 +29,11 @@ import subprocess
 import threading
 
 # Prefer /root/KTOx for imports; fallback to repo-relative
-KTOX_ROOT = '/root/KTOx' if os.path.isdir('/root/KTOx') else os.path.abspath(os.path.join(__file__, '..', '..'))
+KTOX_ROOT = '/root/KTOx' if os.path.isdir('/root/KTOx') else os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 if KTOX_ROOT not in sys.path:
     sys.path.insert(0, KTOX_ROOT)
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+import monitor_mode_helper
 
 import RPi.GPIO as GPIO
 import LCD_1in44, LCD_Config
@@ -40,18 +42,7 @@ from scapy.all import *
 
 
 def _detect_monitor_iface():
-    """Find active monitor-mode interface, prefer wlan1mon over wlan0mon."""
-    for iface in ['wlan1mon', 'wlan0mon']:
-        if os.path.exists(f'/sys/class/net/{iface}'):
-            return iface
-    try:
-        import subprocess as _sp, re as _re
-        out = _sp.run(['iwconfig'], capture_output=True, text=True).stdout
-        m = _re.findall(r'^(\w+).*Mode:Monitor', out, _re.MULTILINE)
-        if m: return m[0]
-    except Exception:
-        pass
-    return 'wlan0mon'
+    return monitor_mode_helper.resolve_monitor_interface("wlan1") or "wlan0"
 
 INTERFACE = _detect_monitor_iface()
 CHANNEL = "1"
@@ -75,9 +66,7 @@ def cleanup(*_):
     subprocess.run("killall mdk4", shell=True)
     
     # Restore the interface
-    subprocess.run(f"ifconfig {INTERFACE} down", shell=True)
-    subprocess.run(f"iwconfig {INTERFACE} mode managed", shell=True)
-    subprocess.run(f"ifconfig {INTERFACE} up", shell=True)
+    monitor_mode_helper.deactivate_monitor_mode(INTERFACE)
 
 signal.signal(signal.SIGINT, cleanup)
 signal.signal(signal.SIGTERM, cleanup)
@@ -191,10 +180,7 @@ def handle_text_input_logic(initial_text, text_type):
 
 if __name__ == "__main__":
     try:
-        # Set interface to monitor mode
-        subprocess.run(f"ifconfig {INTERFACE} down", shell=True)
-        subprocess.run(f"iwconfig {INTERFACE} mode monitor", shell=True)
-        subprocess.run(f"ifconfig {INTERFACE} up", shell=True)
+        INTERFACE = monitor_mode_helper.activate_monitor_mode(INTERFACE) or INTERFACE
         
         while running:
             draw_ui("main")

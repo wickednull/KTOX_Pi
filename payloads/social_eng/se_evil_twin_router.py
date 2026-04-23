@@ -78,7 +78,7 @@ except ImportError:
 WIFI_INTERFACE = get_best_interface() # Hardcoded to wlan1 as per user request for evil twin attacks
 FAKE_AP_SSID = "NETGEAR55"
 FAKE_AP_CHANNEL = "6"
-KTOX_DIR = '/root/KTOx' if os.path.isdir('/root/KTOx') else os.path.abspath(os.path.join(__file__, '..', '..', '..', 'KTOx'))
+KTOX_DIR = '/root/KTOx' if os.path.isdir('/root/KTOx') else os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'KTOx'))
 CAPTIVE_PORTAL_BASE_PATH = os.path.join(KTOX_DIR, "DNSSpoof", "sites")
 CAPTIVE_PORTAL_PATH = os.path.join(CAPTIVE_PORTAL_BASE_PATH, "router")
 LOOT_FILE = os.path.join(CAPTIVE_PORTAL_PATH, "loot.txt")

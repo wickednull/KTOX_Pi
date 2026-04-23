@@ -11,7 +11,7 @@ Controls: D-pad=move, OK=undo, KEY1=restart level, KEY2=skip level, KEY3=exit.
 """
 
 import os, sys, time
-sys.path.append(os.path.abspath(os.path.join(__file__, "..", "..", "..")))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")))
 
 import signal
 import copy

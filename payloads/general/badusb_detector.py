@@ -13,7 +13,7 @@ import time
 import threading
 
 # Ensure KTOx modules are importable when launched directly
-sys.path.append(os.path.abspath(os.path.join(__file__, "..", "..")))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
 import LCD_1in44, LCD_Config  # type: ignore
 from PIL import Image, ImageDraw, ImageFont  # type: ignore

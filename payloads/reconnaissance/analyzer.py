@@ -32,7 +32,9 @@ import threading
 import subprocess
 from collections import deque
 
-sys.path.append(os.path.abspath(os.path.join(__file__, "..", "..")))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+import monitor_mode_helper
 
 import RPi.GPIO as GPIO                          # type: ignore
 import LCD_1in44, LCD_Config                      # type: ignore
@@ -180,62 +182,7 @@ def monitor_up(iface):
 
     Only stops services for this specific interface — wlan0/WebUI is never touched.
     """
-    for cmd in [
-        ["nmcli", "device", "set", iface, "managed", "no"],
-        ["sudo", "pkill", "-f", f"wpa_supplicant.*{iface}"],
-        ["sudo", "pkill", "-f", f"dhcpcd.*{iface}"],
-    ]:
-        try:
-            subprocess.run(cmd, capture_output=True, timeout=5)
-        except Exception:
-            pass
-    time.sleep(0.5)
-
-    # Method 1 – airmon-ng
-    try:
-        subprocess.run(["sudo", "airmon-ng", "start", iface],
-                       capture_output=True, timeout=30)
-        for name in (f"{iface}mon", iface):
-            r = subprocess.run(["iwconfig", name],
-                               capture_output=True, text=True)
-            if "Mode:Monitor" in r.stdout:
-                return name
-    except Exception:
-        pass
-
-    # Method 2 – iwconfig
-    try:
-        subprocess.run(["sudo", "ifconfig", iface, "down"],
-                       check=True, timeout=10)
-        subprocess.run(["sudo", "iwconfig", iface, "mode", "monitor"],
-                       check=True, timeout=10)
-        subprocess.run(["sudo", "ifconfig", iface, "up"],
-                       check=True, timeout=10)
-        time.sleep(1)
-        r = subprocess.run(["iwconfig", iface],
-                           capture_output=True, text=True, timeout=5)
-        if "Mode:Monitor" in r.stdout:
-            return iface
-    except Exception:
-        pass
-
-    # Method 3 – iw
-    try:
-        subprocess.run(["sudo", "ip", "link", "set", iface, "down"],
-                       check=True, timeout=10)
-        subprocess.run(["sudo", "iw", iface, "set", "monitor", "none"],
-                       check=True, timeout=10)
-        subprocess.run(["sudo", "ip", "link", "set", iface, "up"],
-                       check=True, timeout=10)
-        time.sleep(1)
-        r = subprocess.run(["iwconfig", iface],
-                           capture_output=True, text=True, timeout=5)
-        if "Mode:Monitor" in r.stdout:
-            return iface
-    except Exception:
-        pass
-
-    return None
+    return monitor_mode_helper.activate_monitor_mode(iface)
 
 
 def monitor_down(iface):
@@ -244,24 +191,7 @@ def monitor_down(iface):
     Re-manages the interface in NetworkManager instead of restarting the service
     (which would disrupt wlan0/WebUI).
     """
-    if not iface:
-        return
-    base = iface.replace("mon", "")
-    try:
-        subprocess.run(["sudo", "airmon-ng", "stop", iface],
-                       capture_output=True, timeout=10)
-    except Exception:
-        pass
-    for cmd in [
-        ["sudo", "ip", "link", "set", base, "down"],
-        ["sudo", "iw", base, "set", "type", "managed"],
-        ["sudo", "ip", "link", "set", base, "up"],
-        ["nmcli", "device", "set", base, "managed", "yes"],
-    ]:
-        try:
-            subprocess.run(cmd, capture_output=True, timeout=5)
-        except Exception:
-            pass
+    monitor_mode_helper.deactivate_monitor_mode(iface)
 
 # ===================================================================
 # WiFi threads

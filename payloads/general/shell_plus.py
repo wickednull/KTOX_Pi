@@ -4,7 +4,7 @@
 import os, sys, time, signal, select, fcntl, pty, re, struct, termios
 from pathlib import Path
 
-sys.path.append(os.path.abspath(os.path.join(__file__, '..', '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
 import RPi.GPIO as GPIO
 from PIL import Image, ImageDraw, ImageFont

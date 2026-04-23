@@ -15,7 +15,7 @@ Controls
 """
 
 import os, sys, time, signal, select, fcntl, pty, re, struct, termios
-sys.path.append(os.path.abspath(os.path.join(__file__, '..', '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
 import LCD_1in44, LCD_Config
 from PIL import Image, ImageDraw, ImageFont

@@ -56,6 +56,9 @@ import tempfile
 import shutil
 from datetime import datetime
 
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+import monitor_mode_helper
+
 # ── KTOx hardware ─────────────────────────────────────────────────────
 
 import RPi.GPIO as GPIO
@@ -313,56 +316,11 @@ def enable_monitor_mode(iface: str) -> str | None:
     Handles: wlan0, wlan1, and pre-existing wlan0mon / wlan1mon.
     Returns the active monitor interface name or None on failure.
     """
-    base = iface.replace("mon", "")
-    mon  = f"{base}mon"
-
-    # Already in monitor mode?
-    if _iface_exists(mon) and _is_monitor(mon):
-        return mon
-    if _iface_exists(base) and _is_monitor(base):
-        return base
-
-    # Kill interfering processes, start monitor mode
-    _run("airmon-ng check kill")
-    time.sleep(0.6)
-    _run(f"airmon-ng start {base}")
-    time.sleep(0.5)
-
-    if _iface_exists(mon) and _is_monitor(mon):
-        return mon
-    if _iface_exists(base) and _is_monitor(base):
-        return base
-
-    # Manual fallback
-    _run(f"ip link set {base} down")
-    _run(f"iw dev {base} set type monitor")
-    _run(f"ip link set {base} up")
-    time.sleep(0.4)
-
-    if _iface_exists(base) and _is_monitor(base):
-        return base
-    if _iface_exists(mon) and _is_monitor(mon):
-        return mon
-
-    return None
+    return monitor_mode_helper.activate_monitor_mode(iface.replace("mon", ""))
 
 def disable_monitor_mode(iface: str, mon_iface: str):
     """Restore managed mode. Called from finally – must never raise."""
-    base = iface.replace("mon", "")
-    try:
-        _run(f"airmon-ng stop {mon_iface}", timeout=10)
-    except Exception:
-        pass
-    try:
-        _run(f"ip link set {base} down")
-        _run(f"iw dev {base} set type managed")
-        _run(f"ip link set {base} up")
-    except Exception:
-        pass
-    try:
-        _run("systemctl restart NetworkManager", timeout=15)
-    except Exception:
-        pass
+    monitor_mode_helper.deactivate_monitor_mode(mon_iface or iface)
 
 # ══════════════════════════════════════════════════════════════════════
 

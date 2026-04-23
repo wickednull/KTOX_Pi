@@ -29,7 +29,7 @@ import hashlib
 from datetime import datetime
 
 # Add root directory to path
-sys.path.append(os.path.abspath(os.path.join(__file__, "..", "..", "..")))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")))
 sys.path.append('/root/KTOx/wifi/')
 
 # Import wardriving engine (not cam_finder)
