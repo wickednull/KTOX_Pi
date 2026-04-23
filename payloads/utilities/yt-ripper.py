@@ -1,69 +1,236 @@
 #!/usr/bin/env python3
+# NAME: YouTube MP3 Ripper
+
 """
-KTOx Payload – YouTube MP3 Ripper (Multi‑Mode)
-===============================================
-Mode 1: Web UI – Cyberpunk Flask web dashboard on port 5000.
-Mode 2: CLI – Terminal on KTOx LCD (DarkSec‑style shell) with download manager.
+KTOx Payload – YouTube MP3 Ripper
+=================================
+Mode 1: Web UI dashboard on port 5000
+Mode 2: LCD CLI with on-screen keyboard
 
-Controls in mode selection:
-  UP/DOWN – choose mode
-  OK      – confirm
+Mode select:
+  UP/DOWN  Choose mode
+  OK       Confirm
+  KEY3     Exit
 
-Web UI controls:
-  KEY3 – stop server and exit
+Web UI:
+  KEY3     Stop server and exit
 
-CLI controls:
-  Type YouTube URLs directly to download (queued in background)
-  Type /jobs to see status, /help for commands, /exit to quit
-  KEY3 – exit payload
+LCD CLI:
+  UP/DOWN    Scroll log
+  LEFT/RIGHT Move keyboard selection
+  OK         Open/confirm keyboard / select
+  KEY2       Cancel keyboard
+  KEY3       Exit
 
-Loot: /root/KTOx/loot/YouTube/
+Commands in LCD CLI:
+  /help
+  /jobs
+  /mode
+  /mode single
+  /mode playlist
+  /clear
+  /exit
+  <youtube url>
+
+Loot:
+  /root/KTOx/loot/YouTube
 """
 
-import sys
 import os
-import time
-import json
-import subprocess
-import threading
-import signal
-import select
-import fcntl
-import pty
-import struct
-import termios
 import re
+import json
+import time
+import threading
+import subprocess
+from uuid import uuid4
 from datetime import datetime
 
-# ----------------------------------------------------------------------
-# Auto‑install dependencies (shared)
-# ----------------------------------------------------------------------
-def auto_install_deps():
-    missing = []
-    if subprocess.run("which yt-dlp >/dev/null 2>&1", shell=True).returncode != 0:
-        missing.append("yt-dlp")
-    if subprocess.run("which ffmpeg >/dev/null 2>&1", shell=True).returncode != 0:
-        missing.append("ffmpeg")
-    if missing:
-        print(f"Installing: {missing}")
-        subprocess.run(["apt", "update"], capture_output=True)
-        subprocess.run(["apt", "install", "-y"] + missing, capture_output=True)
-        subprocess.run(["pip", "install", "yt-dlp"], capture_output=True)
+import RPi.GPIO as GPIO
+import LCD_1in44
+from PIL import Image, ImageDraw, ImageFont
 
 # ----------------------------------------------------------------------
-# Download Manager Core
+# Paths / constants
 # ----------------------------------------------------------------------
 LOOT_DIR = "/root/KTOx/loot/YouTube"
-os.makedirs(LOOT_DIR, exist_ok=True)
 JOBS_FILE = os.path.join(LOOT_DIR, "jobs.json")
+CONFIG_FILE = os.path.join(LOOT_DIR, "config.json")
+LOG_FILE = os.path.join(LOOT_DIR, "ripper.log")
+PORT = 5000
 
+os.makedirs(LOOT_DIR, exist_ok=True)
+
+WIDTH, HEIGHT = 128, 128
+BG = (10, 0, 0)
+PANEL = (34, 0, 0)
+HEADER = (139, 0, 0)
+FG = (171, 178, 185)
+ACCENT = (231, 76, 60)
+WHITE = (255, 255, 255)
+GOOD = (30, 132, 73)
+WARN = (212, 172, 13)
+DIM = (113, 125, 126)
+
+PINS = {
+    "UP": 6,
+    "DOWN": 19,
+    "LEFT": 5,
+    "RIGHT": 26,
+    "OK": 13,
+    "KEY1": 21,
+    "KEY2": 20,
+    "KEY3": 16,
+}
+
+DEBOUNCE = 0.18
+
+# ----------------------------------------------------------------------
+# Hardware
+# ----------------------------------------------------------------------
+GPIO.setmode(GPIO.BCM)
+GPIO.setwarnings(False)
+for pin in PINS.values():
+    GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+
+LCD = LCD_1in44.LCD()
+LCD.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
+
+def load_font(size):
+    for path in (
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
+    ):
+        if os.path.exists(path):
+            try:
+                return ImageFont.truetype(path, size)
+            except Exception:
+                pass
+    return ImageFont.load_default()
+
+FONT = load_font(9)
+FONT_BOLD = load_font(10)
+FONT_SMALL = load_font(8)
+
+_last_press = {k: 0.0 for k in PINS}
+_last_state = {k: False for k in PINS}
+
+def wait_btn(timeout=0.12):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        now = time.time()
+        for name, pin in PINS.items():
+            pressed = GPIO.input(pin) == 0
+            if pressed and not _last_state[name]:
+                _last_state[name] = True
+                if now - _last_press[name] >= DEBOUNCE:
+                    _last_press[name] = now
+                    return name
+            elif not pressed and _last_state[name]:
+                _last_state[name] = False
+        time.sleep(0.01)
+    return None
+
+def clear_screen():
+    img = Image.new("RGB", (WIDTH, HEIGHT), BG)
+    return img, ImageDraw.Draw(img)
+
+def show_image(img):
+    LCD.LCD_ShowImage(img, 0, 0)
+
+def wrapped_lines(text, width=22):
+    out = []
+    text = str(text or "")
+    while text:
+        out.append(text[:width])
+        text = text[width:]
+    return out or [""]
+
+def show_message(title, lines=None, footer=""):
+    img, d = clear_screen()
+    d.rectangle((0, 0, WIDTH, 13), fill=HEADER)
+    d.text((4, 2), title[:18], font=FONT_BOLD, fill=ACCENT)
+
+    y = 20
+    for line in (lines or []):
+        for part in wrapped_lines(line, 22):
+            if y > HEIGHT - 16:
+                break
+            d.text((4, y), part, font=FONT, fill=FG)
+            y += 11
+
+    if footer:
+        d.rectangle((0, HEIGHT - 12, WIDTH, HEIGHT), fill=PANEL)
+        d.text((4, HEIGHT - 10), footer[:22], font=FONT_SMALL, fill=ACCENT)
+
+    show_image(img)
+
+def log(msg):
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    line = f"{ts} {msg}"
+    try:
+        with open(LOG_FILE, "a") as f:
+            f.write(line + "\n")
+    except Exception:
+        pass
+
+# ----------------------------------------------------------------------
+# Settings
+# ----------------------------------------------------------------------
+SETTINGS = {
+    "playlist_mode": "single",   # "single" or "playlist"
+}
+
+def load_settings():
+    global SETTINGS
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, "r") as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                SETTINGS.update(data)
+        except Exception as e:
+            log(f"[ERR] load settings: {e}")
+
+def save_settings():
+    try:
+        tmp = CONFIG_FILE + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(SETTINGS, f, indent=2)
+        os.replace(tmp, CONFIG_FILE)
+    except Exception as e:
+        log(f"[ERR] save settings: {e}")
+
+def playlist_enabled():
+    return SETTINGS.get("playlist_mode", "single") == "playlist"
+
+def set_playlist_mode(mode):
+    SETTINGS["playlist_mode"] = "playlist" if mode == "playlist" else "single"
+    save_settings()
+
+def toggle_playlist_mode():
+    SETTINGS["playlist_mode"] = "single" if playlist_enabled() else "playlist"
+    save_settings()
+
+# ----------------------------------------------------------------------
+# Dependency checks
+# ----------------------------------------------------------------------
+def check_dependencies():
+    missing = []
+    for cmd in ("yt-dlp", "ffmpeg"):
+        if subprocess.run(["sh", "-c", f"command -v {cmd} >/dev/null 2>&1"]).returncode != 0:
+            missing.append(cmd)
+    return missing
+
+# ----------------------------------------------------------------------
+# Download manager
+# ----------------------------------------------------------------------
 class DownloadJob:
     def __init__(self, url, title=None, job_id=None):
+        self.job_id = job_id or f"{int(time.time()*1000)}_{uuid4().hex[:6]}"
         self.url = url
         self.title = title or url
-        self.job_id = job_id or str(int(time.time()))
         self.status = "queued"
-        self.progress = 0
+        self.progress = 0.0
         self.message = ""
         self.output_path = None
         self.start_time = None
@@ -82,173 +249,213 @@ class DownloadJob:
             "end_time": self.end_time,
         }
 
+    @classmethod
+    def from_dict(cls, data):
+        j = cls(data["url"], data.get("title"), data.get("job_id"))
+        j.status = data.get("status", "queued")
+        j.progress = data.get("progress", 0.0)
+        j.message = data.get("message", "")
+        j.output_path = data.get("output_path")
+        j.start_time = data.get("start_time")
+        j.end_time = data.get("end_time")
+        return j
+
 class DownloadManager:
     def __init__(self):
         self.jobs = {}
-        self.current_job = None
+        self.lock = threading.Lock()
+        self.stop_event = threading.Event()
+        self.worker = None
         self._load_jobs()
         self._start_worker()
 
     def _load_jobs(self):
-        if os.path.exists(JOBS_FILE):
-            try:
-                with open(JOBS_FILE, "r") as f:
-                    data = json.load(f)
-                for jid, j in data.items():
-                    job = DownloadJob(j["url"], j["title"], jid)
-                    job.status = j["status"]
-                    job.progress = j["progress"]
-                    job.message = j["message"]
-                    job.output_path = j["output_path"]
-                    self.jobs[jid] = job
-            except:
-                pass
+        if not os.path.exists(JOBS_FILE):
+            return
+        try:
+            with open(JOBS_FILE, "r") as f:
+                data = json.load(f)
+            for jid, item in data.items():
+                job = DownloadJob.from_dict(item)
+                if job.status == "downloading":
+                    job.status = "queued"
+                    job.message = "Recovered after restart"
+                self.jobs[jid] = job
+        except Exception as e:
+            log(f"[ERR] loading jobs: {e}")
 
     def _save_jobs(self):
-        with open(JOBS_FILE, "w") as f:
-            json.dump({jid: job.to_dict() for jid, job in self.jobs.items()}, f, indent=2)
+        with self.lock:
+            data = {jid: job.to_dict() for jid, job in self.jobs.items()}
+        tmp = JOBS_FILE + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(data, f, indent=2)
+        os.replace(tmp, JOBS_FILE)
 
     def add_job(self, url, title=None):
         job = DownloadJob(url, title)
-        self.jobs[job.job_id] = job
+        with self.lock:
+            self.jobs[job.job_id] = job
         self._save_jobs()
+        log(f"[QUEUE] {job.url} mode={SETTINGS.get('playlist_mode')}")
         return job.job_id
 
-    def _worker(self):
-        while True:
-            job = None
-            for j in self.jobs.values():
-                if j.status == "queued":
-                    job = j
-                    break
-            if job:
-                self.current_job = job
-                job.status = "downloading"
-                job.start_time = datetime.now().isoformat()
-                self._save_jobs()
-                self._download(job)
-                job.end_time = datetime.now().isoformat()
-                self._save_jobs()
-                self.current_job = None
-                self._save_jobs()
-            time.sleep(2)
+    def get_jobs_snapshot(self):
+        with self.lock:
+            return {jid: job.to_dict() for jid, job in self.jobs.items()}
+
+    def get_sorted_jobs(self):
+        with self.lock:
+            vals = list(self.jobs.values())
+        vals.sort(key=lambda j: j.start_time or j.job_id, reverse=True)
+        return vals
+
+    def _next_queued_job(self):
+        with self.lock:
+            for job in self.jobs.values():
+                if job.status == "queued":
+                    return job
+        return None
+
+    def _set_job(self, job, **updates):
+        with self.lock:
+            for k, v in updates.items():
+                setattr(job, k, v)
+        self._save_jobs()
 
     def _download(self, job):
+        out_template = os.path.join(LOOT_DIR, "%(title).180s.%(ext)s")
+        cmd = [
+            "yt-dlp",
+            "--extract-audio",
+            "--audio-format", "mp3",
+            "--audio-quality", "0",
+            "--newline",
+            "--progress",
+            "--output", out_template,
+            "--print", "after_move:FILE=%(filepath)s",
+        ]
+
+        if not playlist_enabled():
+            cmd.append("--no-playlist")
+
+        cmd.append(job.url)
+
         try:
-            out_template = os.path.join(LOOT_DIR, "%(title)s.%(ext)s")
-            cmd = [
-                "yt-dlp",
-                "--extract-audio",
-                "--audio-format", "mp3",
-                "--audio-quality", "0",
-                "--output", out_template,
-                "--progress",
-                "--newline",
-                job.url
-            ]
-            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+            self._set_job(
+                job,
+                status="downloading",
+                start_time=datetime.now().isoformat(),
+                progress=0.0,
+                message=f"Starting ({SETTINGS.get('playlist_mode')})",
+            )
+
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+            )
+
+            percent_re = re.compile(r"(\d+(?:\.\d+)?)%")
+            file_re = re.compile(r"FILE=(.+)$")
+
             for line in iter(proc.stdout.readline, ""):
-                if "[download]" in line and "%" in line:
+                line = line.rstrip()
+                if not line:
+                    continue
+
+                m = percent_re.search(line)
+                if m:
                     try:
-                        percent = float(line.split("%")[0].split()[-1])
-                        job.progress = percent
-                        self._save_jobs()
-                    except:
+                        pct = float(m.group(1))
+                        self._set_job(job, progress=min(max(pct, 0.0), 100.0))
+                    except Exception:
                         pass
-                job.message = line.strip()[-80:]
-                self._save_jobs()
-            proc.wait()
-            if proc.returncode == 0:
-                job.status = "completed"
-                job.progress = 100
-                for f in os.listdir(LOOT_DIR):
-                    if f.endswith(".mp3") and job.title in f:
-                        job.output_path = os.path.join(LOOT_DIR, f)
-                        break
+
+                fm = file_re.search(line)
+                if fm:
+                    self._set_job(job, output_path=fm.group(1).strip())
+
+                if "[download]" in line or "[ExtractAudio]" in line or "Destination" in line:
+                    self._set_job(job, message=line[-100:])
+
+            rc = proc.wait()
+            if rc == 0:
+                self._set_job(
+                    job,
+                    status="completed",
+                    progress=100.0,
+                    end_time=datetime.now().isoformat(),
+                    message=f"Completed ({SETTINGS.get('playlist_mode')})",
+                )
+                log(f"[DONE] {job.url}")
             else:
-                job.status = "failed"
-                job.message = "Download failed"
+                self._set_job(
+                    job,
+                    status="failed",
+                    end_time=datetime.now().isoformat(),
+                    message=f"yt-dlp exited {rc}",
+                )
+                log(f"[FAIL] {job.url} rc={rc}")
+
         except Exception as e:
-            job.status = "failed"
-            job.message = str(e)
-        finally:
-            self._save_jobs()
+            self._set_job(
+                job,
+                status="failed",
+                end_time=datetime.now().isoformat(),
+                message=str(e)[-100:],
+            )
+            log(f"[ERR] download {job.url}: {e}")
+
+    def _worker_loop(self):
+        while not self.stop_event.is_set():
+            job = self._next_queued_job()
+            if job:
+                self._download(job)
+            else:
+                self.stop_event.wait(0.5)
 
     def _start_worker(self):
-        t = threading.Thread(target=self._worker, daemon=True)
-        t.start()
+        self.worker = threading.Thread(target=self._worker_loop, daemon=True)
+        self.worker.start()
+
+    def stop(self):
+        self.stop_event.set()
+        if self.worker and self.worker.is_alive():
+            self.worker.join(timeout=2.0)
 
 manager = DownloadManager()
 
 # ----------------------------------------------------------------------
-# KTOx hardware init (for mode selection and CLI)
-# ----------------------------------------------------------------------
-import RPi.GPIO as GPIO
-import LCD_1in44
-from PIL import Image, ImageDraw, ImageFont
-
-PINS = {
-    "UP": 6, "DOWN": 19, "LEFT": 5, "RIGHT": 26,
-    "OK": 13, "KEY1": 21, "KEY2": 20, "KEY3": 16,
-}
-GPIO.setmode(GPIO.BCM)
-for pin in PINS.values():
-    GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-
-LCD = LCD_1in44.LCD()
-LCD.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
-W, H = 128, 128
-
-def font(size=9):
-    try:
-        return ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", size)
-    except:
-        return ImageFont.load_default()
-FONT = font(9)
-FONT_BOLD = font(10)
-
-def wait_btn(timeout=0.1):
-    start = time.time()
-    while time.time() - start < timeout:
-        for name, pin in PINS.items():
-            if GPIO.input(pin) == 0:
-                time.sleep(0.05)
-                return name
-        time.sleep(0.02)
-    return None
-
-def show_message(msg, sub=""):
-    img = Image.new("RGB", (W, H), (10, 0, 0))
-    d = ImageDraw.Draw(img)
-    d.text((64, 50), msg, font=FONT_BOLD, fill=(30, 132, 73), anchor="mm")
-    if sub:
-        d.text((64, 65), sub[:22], font=FONT, fill=(113, 125, 126), anchor="mm")
-    LCD.LCD_ShowImage(img, 0, 0)
-    time.sleep(1.5)
-
-# ----------------------------------------------------------------------
-# Mode selection menu
+# Mode selection
 # ----------------------------------------------------------------------
 def mode_selection():
-    options = ["Web UI (Cyberpunk)", "CLI (LCD Terminal)"]
+    options = ["Web UI", "LCD CLI"]
     idx = 0
+
     while True:
-        img = Image.new("RGB", (W, H), (10, 0, 0))
-        d = ImageDraw.Draw(img)
-        d.rectangle((0, 0, W, 13), fill=(139, 0, 0))
-        d.text((4, 2), "SELECT MODE", font=FONT_BOLD, fill=(231, 76, 60))
-        y = 20
+        img, d = clear_screen()
+        d.rectangle((0, 0, WIDTH, 13), fill=HEADER)
+        d.text((4, 2), "SELECT MODE", font=FONT_BOLD, fill=ACCENT)
+
+        y = 24
         for i, opt in enumerate(options):
             if i == idx:
-                d.rectangle((0, y-1, W, y+9), fill=(60, 0, 0))
-                d.text((4, y), f"> {opt}", font=FONT, fill=(255, 255, 255))
+                d.rectangle((2, y - 1, WIDTH - 2, y + 10), fill=(60, 0, 0))
+                d.text((6, y), f"> {opt}", font=FONT, fill=WHITE)
             else:
-                d.text((4, y), f"  {opt}", font=FONT, fill=(171, 178, 185))
-            y += 14
-        d.rectangle((0, H-12, W, H), fill=(34, 0, 0))
-        d.text((4, H-10), "UP/DOWN OK  K3=Exit", font=FONT, fill=(192, 57, 43))
-        LCD.LCD_ShowImage(img, 0, 0)
-        btn = wait_btn(0.2)
+                d.text((6, y), f"  {opt}", font=FONT, fill=FG)
+            y += 16
+
+        d.text((4, 62), f"Mode: {SETTINGS['playlist_mode']}", font=FONT_SMALL, fill=WARN)
+
+        d.rectangle((0, HEIGHT - 12, WIDTH, HEIGHT), fill=PANEL)
+        d.text((4, HEIGHT - 10), "UP/DN OK K3 exit", font=FONT_SMALL, fill=ACCENT)
+        show_image(img)
+
+        btn = wait_btn(0.15)
         if btn == "UP":
             idx = (idx - 1) % len(options)
         elif btn == "DOWN":
@@ -259,265 +466,406 @@ def mode_selection():
             return None
 
 # ----------------------------------------------------------------------
-# MODE 1: Web UI (Flask)
+# Web UI
 # ----------------------------------------------------------------------
 def run_webui():
+    missing = check_dependencies()
+    if missing:
+        show_message("Missing deps", missing, "Install and retry")
+        time.sleep(2)
+        return
+
     from flask import Flask, render_template_string, request, jsonify
+    from werkzeug.serving import make_server
+    import socket
+
     app = Flask(__name__)
 
     HTML = """
-    <!DOCTYPE html>
+    <!doctype html>
     <html>
-    <head><title>KTOx Audio Ripper</title>
-    <style>
-        *{margin:0;padding:0;box-sizing:border-box}
-        body{background:#0a0000;color:#c0c0c0;font-family:'Courier New',monospace;padding:20px}
-        .container{max-width:800px;margin:0 auto;background:#1a0505;border:2px solid #8b0000;border-radius:8px;padding:20px}
-        h1{color:#e74c3c;text-shadow:0 0 5px #e74c3c;border-bottom:1px solid #8b0000;margin-bottom:20px}
-        input,button{background:#2a0a0a;border:1px solid #8b0000;color:#e0e0e0;padding:8px;font-family:monospace}
-        input{width:70%}
-        button{cursor:pointer;transition:0.2s}
-        button:hover{background:#8b0000;color:#fff;box-shadow:0 0 8px #e74c3c}
-        .job{border:1px solid #8b0000;margin:10px 0;padding:10px;border-radius:4px;background:#120000}
-        .title{font-weight:bold;color:#e74c3c}
-        .progress-bar{background:#2a0a0a;height:20px;border-radius:10px;overflow:hidden;margin:8px 0}
-        .progress-fill{background:#e74c3c;height:100%;width:0%}
-        .status{font-size:12px;color:#aaa}
-    </style>
+    <head>
+      <title>KTOx Audio Ripper</title>
+      <style>
+        *{box-sizing:border-box}
+        body{background:#0a0000;color:#c0c0c0;font-family:monospace;padding:20px}
+        .box{max-width:820px;margin:auto;background:#140404;border:2px solid #8b0000;border-radius:10px;padding:20px}
+        h1{color:#e74c3c;margin-bottom:16px}
+        input,button{
+          font-family:monospace;padding:10px;background:#240808;color:#eee;border:1px solid #8b0000
+        }
+        input{width:72%}
+        button{cursor:pointer}
+        .job{margin-top:12px;padding:10px;border:1px solid #8b0000;background:#100000}
+        .bar{height:16px;background:#220000;border-radius:8px;overflow:hidden;margin:8px 0}
+        .fill{height:100%;background:#e74c3c}
+        .muted{color:#aaa;font-size:12px}
+        .toolbar{margin:10px 0 16px 0}
+      </style>
     </head>
     <body>
-    <div class="container">
-        <h1>▐ KTOx AUDIO RIPPER ▐</h1>
-        <form id="downloadForm">
-            <input type="text" id="url" placeholder="YouTube URL, playlist or channel" required>
-            <button type="submit">▶ RIP</button>
+      <div class="box">
+        <h1>KTOx AUDIO RIPPER</h1>
+        <form id="f">
+          <input id="url" placeholder="YouTube URL / playlist URL" required>
+          <button type="submit">QUEUE</button>
         </form>
+
+        <div class="toolbar">
+          <button type="button" onclick="toggleMode()">
+            Mode: <span id="pmode">...</span>
+          </button>
+        </div>
+
         <div id="jobs"></div>
-        <footer>dark red & black // yt-dlp + ffmpeg</footer>
-    </div>
-    <script>
-        function loadJobs(){
-            fetch('/api/jobs').then(r=>r.json()).then(jobs=>{
-                const container=document.getElementById('jobs');
-                container.innerHTML='';
-                for(const[id,job] of Object.entries(jobs).reverse()){
-                    const div=document.createElement('div');div.className='job';
-                    div.innerHTML=`
-                        <div class="title">${escapeHtml(job.title||job.url)}</div>
-                        <div class="progress-bar"><div class="progress-fill" style="width:${job.progress}%"></div></div>
-                        <div class="status">${job.status} - ${job.message.substring(0,80)}</div>
-                        ${job.output_path?`<div class="status">📁 ${job.output_path}</div>`:''}
-                    `;
-                    container.appendChild(div);
-                }
-            });
+      </div>
+
+      <script>
+        function esc(s){
+          return (s||"").replace(/[&<>]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[m]));
         }
-        function escapeHtml(s){return s.replace(/[&<>]/g,function(m){if(m==='&')return'&amp;';if(m==='<')return'&lt;';if(m==='>')return'&gt;';return m;});}
-        document.getElementById('downloadForm').addEventListener('submit',function(e){
-            e.preventDefault();
-            const url=document.getElementById('url').value;
-            fetch('/api/download',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:url})})
-                .then(()=>{document.getElementById('url').value='';loadJobs();});
+
+        async function loadSettings(){
+          const r = await fetch('/api/settings');
+          const s = await r.json();
+          document.getElementById('pmode').textContent = s.playlist_mode || 'single';
+        }
+
+        async function toggleMode(){
+          await fetch('/api/settings/toggle_playlist', {method:'POST'});
+          await loadSettings();
+        }
+
+        async function loadJobs(){
+          const r = await fetch('/api/jobs');
+          const jobs = await r.json();
+          const c = document.getElementById('jobs');
+          c.innerHTML = '';
+          Object.values(jobs).reverse().forEach(job => {
+            const div = document.createElement('div');
+            div.className = 'job';
+            div.innerHTML = `
+              <div><b>${esc(job.title || job.url)}</b></div>
+              <div class="bar"><div class="fill" style="width:${job.progress||0}%"></div></div>
+              <div class="muted">${esc(job.status)} | ${esc(job.message||"")}</div>
+              ${job.output_path ? `<div class="muted">${esc(job.output_path)}</div>` : ``}
+            `;
+            c.appendChild(div);
+          });
+        }
+
+        document.getElementById('f').addEventListener('submit', async (e)=>{
+          e.preventDefault();
+          const url = document.getElementById('url').value.trim();
+          if(!url) return;
+          await fetch('/api/download', {
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({url})
+          });
+          document.getElementById('url').value = '';
+          loadJobs();
         });
-        setInterval(loadJobs,2000);
+
+        setInterval(loadJobs, 2000);
+        setInterval(loadSettings, 3000);
         loadJobs();
-    </script>
+        loadSettings();
+      </script>
     </body>
     </html>
     """
 
-    @app.route('/')
+    @app.route("/")
     def index():
         return render_template_string(HTML)
 
-    @app.route('/api/download', methods=['POST'])
+    @app.route("/api/download", methods=["POST"])
     def api_download():
-        url = request.json.get('url')
+        data = request.get_json(silent=True) or {}
+        url = (data.get("url") or "").strip()
         if not url:
-            return jsonify({"error": "no url"}), 400
-        job_id = manager.add_job(url)
-        return jsonify({"job_id": job_id})
+            return jsonify({"error": "missing url"}), 400
+        jid = manager.add_job(url)
+        return jsonify({"job_id": jid, "playlist_mode": SETTINGS["playlist_mode"]})
 
-    @app.route('/api/jobs')
+    @app.route("/api/jobs")
     def api_jobs():
-        return jsonify({jid: job.to_dict() for jid, job in manager.jobs.items()})
+        return jsonify(manager.get_jobs_snapshot())
 
-    def start_server():
-        app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)
+    @app.route("/api/settings")
+    def api_settings():
+        return jsonify(SETTINGS)
 
-    # Show IP on LCD
+    @app.route("/api/settings/toggle_playlist", methods=["POST"])
+    def api_toggle_playlist():
+        toggle_playlist_mode()
+        return jsonify(SETTINGS)
+
+    class ServerThread(threading.Thread):
+        def __init__(self, app):
+            super().__init__(daemon=True)
+            self.server = make_server("0.0.0.0", PORT, app)
+            self.ctx = app.app_context()
+            self.ctx.push()
+
+        def run(self):
+            self.server.serve_forever()
+
+        def shutdown(self):
+            self.server.shutdown()
+
     try:
-        import socket
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8", 80))
         ip = s.getsockname()[0]
         s.close()
-    except:
+    except Exception:
         ip = "127.0.0.1"
-    show_message(f"WebUI at {ip}:5000", "Press KEY3 to stop")
 
-    threading.Thread(target=start_server, daemon=True).start()
+    server = ServerThread(app)
+    server.start()
+
+    show_message(
+        "Web UI running",
+        [f"http://{ip}:{PORT}", f"mode={SETTINGS['playlist_mode']}"],
+        "KEY3 to stop"
+    )
+
     while True:
-        if GPIO.input(PINS["KEY3"]) == 0:
+        btn = wait_btn(0.2)
+        if btn == "KEY3":
             break
-        time.sleep(0.2)
+
+    server.shutdown()
+    time.sleep(0.5)
 
 # ----------------------------------------------------------------------
-# MODE 2: CLI Terminal (DarkSec style with job commands)
+# LCD virtual keyboard
 # ----------------------------------------------------------------------
+VKB = [
+    ["q","w","e","r","t","y","u","i","o","p"],
+    ["a","s","d","f","g","h","j","k","l","BS"],
+    ["z","x","c","v","b","n","m",".","/","-"],
+    ["http","https","www",".com","SPC"],
+    ["CLR","ENT","ESC"],
+]
+
+def draw_vkb(buf, row, col):
+    img, d = clear_screen()
+    d.rectangle((0, 0, WIDTH, 13), fill=HEADER)
+    d.text((4, 2), "ENTER URL/CMD", font=FONT_BOLD, fill=ACCENT)
+
+    d.rectangle((2, 16, WIDTH - 2, 31), outline=ACCENT, fill=(25, 0, 0))
+    preview = buf[-20:] if buf else "_"
+    d.text((4, 20), preview, font=FONT_SMALL, fill=WHITE)
+
+    y = 36
+    for r, keys in enumerate(VKB):
+        x = 2
+        for c, key in enumerate(keys):
+            w = 11 if len(key) <= 2 else 20
+            if r == row and c == col:
+                d.rectangle((x, y, x + w, y + 12), fill=HEADER)
+                d.text((x + 1, y + 2), key[:4], font=FONT_SMALL, fill=WHITE)
+            else:
+                d.rectangle((x, y, x + w, y + 12), outline=ACCENT, fill=PANEL)
+                d.text((x + 1, y + 2), key[:4], font=FONT_SMALL, fill=FG)
+            x += w + 2
+        y += 15
+
+    d.rectangle((0, HEIGHT - 12, WIDTH, HEIGHT), fill=PANEL)
+    d.text((4, HEIGHT - 10), "K2/K3 cancel", font=FONT_SMALL, fill=ACCENT)
+    show_image(img)
+
+def vkb_input(initial=""):
+    buf = initial
+    row, col = 0, 0
+    while True:
+        col = min(col, len(VKB[row]) - 1)
+        draw_vkb(buf, row, col)
+        btn = wait_btn(0.15)
+        if btn == "UP":
+            row = max(0, row - 1)
+        elif btn == "DOWN":
+            row = min(len(VKB) - 1, row + 1)
+        elif btn == "LEFT":
+            col = max(0, col - 1)
+        elif btn == "RIGHT":
+            col = min(len(VKB[row]) - 1, col + 1)
+        elif btn == "OK":
+            key = VKB[row][col]
+            if key == "BS":
+                buf = buf[:-1]
+            elif key == "SPC":
+                buf += " "
+            elif key == "CLR":
+                buf = ""
+            elif key == "ENT":
+                return buf
+            elif key == "ESC":
+                return None
+            elif key in ("http", "https", "www", ".com"):
+                buf += key
+            else:
+                buf += key
+        elif btn in ("KEY2", "KEY3"):
+            return None
+
+# ----------------------------------------------------------------------
+# LCD CLI
+# ----------------------------------------------------------------------
+def handle_cli_command(cmd):
+    cmd = (cmd or "").strip()
+    if not cmd:
+        return ["Empty input"], None
+
+    if cmd == "/help":
+        return [
+            "/help",
+            "/jobs",
+            "/mode",
+            "/mode single",
+            "/mode playlist",
+            "/clear",
+            "/exit",
+        ], None
+
+    if cmd == "/jobs":
+        jobs = manager.get_sorted_jobs()[:8]
+        if not jobs:
+            return ["No jobs queued"], None
+        lines = []
+        for j in jobs:
+            pct = f"{int(j.progress)}%" if j.progress else "--"
+            title = (j.title or j.url)[:12]
+            lines.append(f"{j.status[:4]} {pct} {title}")
+        return lines, None
+
+    if cmd == "/mode":
+        return [f"mode={SETTINGS['playlist_mode']}"], None
+
+    if cmd == "/mode single":
+        set_playlist_mode("single")
+        return ["Mode set: single"], None
+
+    if cmd == "/mode playlist":
+        set_playlist_mode("playlist")
+        return ["Mode set: playlist"], None
+
+    if cmd == "/clear":
+        return ["Screen cleared"], "clear"
+
+    if cmd == "/exit":
+        return ["Exiting"], "exit"
+
+    jid = manager.add_job(cmd)
+    return [f"Queued {jid[-6:]}", f"mode={SETTINGS['playlist_mode']}"], None
+
 def run_cli():
-    # PTY setup
-    pid, master_fd = pty.fork()
-    if pid == 0:
-        os.execv("/bin/bash", ["bash", "--login"])
-    fcntl.fcntl(master_fd, fcntl.F_SETFL,
-                fcntl.fcntl(master_fd, fcntl.F_GETFL) | os.O_NONBLOCK)
+    missing = check_dependencies()
+    if missing:
+        show_message("Missing deps", missing, "Install and retry")
+        time.sleep(2)
+        return
 
-    def set_size():
-        try:
-            winsize = struct.pack("HHHH", 10, 30, W, H)
-            fcntl.ioctl(master_fd, termios.TIOCSWINSZ, winsize)
-        except:
-            pass
-    set_size()
-
-    ansi_escape = re.compile(r'\x1b(?:\[[0-9;?]*[A-Za-z@`~]|\][^\x07\x1b]*(?:\x07|\x1b\\)|[PX^_][^\x1b]*\x1b\\|[@-Z\\-_])')
-    scrollback = []
-    current_line = ""
-    running = True
+    lines = [
+        "KTOx YouTube CLI",
+        "OK: enter URL/cmd",
+        "/help for commands",
+    ]
+    scroll = 0
 
     def redraw():
-        img = Image.new("RGB", (W, H), (10, 0, 0))
-        d = ImageDraw.Draw(img)
-        d.rectangle((0, 0, W, 12), fill=(139, 0, 0))
-        d.text((4, 2), "YT RIPPER | /help", font=FONT_BOLD, fill=(231, 76, 60))
-        visible = scrollback[-6:] + [current_line]
-        y = 16
-        for line in visible[-6:]:
-            d.text((4, y), line[:22], font=FONT, fill=(171, 178, 185))
+        img, d = clear_screen()
+        d.rectangle((0, 0, WIDTH, 13), fill=HEADER)
+        d.text((4, 2), f"YT {SETTINGS['playlist_mode'][:4].upper()}", font=FONT_BOLD, fill=ACCENT)
+
+        start = max(0, len(lines) - 8 - scroll)
+        end = len(lines) - scroll if scroll else len(lines)
+        visible = lines[start:end][-8:]
+
+        y = 18
+        for line in visible:
+            d.text((4, y), line[:22], font=FONT, fill=FG)
             y += 11
-        d.rectangle((0, H-12, W, H), fill=(34, 0, 0))
-        d.text((4, H-10), "K3=exit  /jobs", font=FONT, fill=(192, 57, 43))
-        LCD.LCD_ShowImage(img, 0, 0)
 
-    def write_pty(s):
-        try:
-            os.write(master_fd, s.encode())
-        except:
-            pass
+        jobs = manager.get_sorted_jobs()
+        if jobs:
+            j = jobs[0]
+            d.rectangle((0, HEIGHT - 24, WIDTH, HEIGHT - 12), fill=(25, 0, 0))
+            d.text((4, HEIGHT - 22), f"{j.status[:4]} {int(j.progress)}%", font=FONT_SMALL, fill=WARN)
 
-    def process_output():
-        nonlocal current_line
-        try:
-            data = os.read(master_fd, 4096).decode(errors="replace")
-        except:
-            return
-        if not data:
-            return
-        clean = ansi_escape.sub("", data)
-        for ch in clean:
-            if ch == "\n":
-                scrollback.append(current_line)
-                current_line = ""
-            elif ch == "\r":
-                current_line = ""
-            elif ch in ("\x08", "\x7f"):
-                current_line = current_line[:-1]
-            elif ord(ch) < 32:
-                pass
-            else:
-                current_line += ch
-        if len(scrollback) > 100:
-            scrollback = scrollback[-100:]
-        redraw()
+        d.rectangle((0, HEIGHT - 12, WIDTH, HEIGHT), fill=PANEL)
+        d.text((4, HEIGHT - 10), "OK input  K3 exit", font=FONT_SMALL, fill=ACCENT)
+        show_image(img)
 
-    # Custom command handler
-    def handle_command(cmd):
-        cmd = cmd.strip()
-        if cmd.startswith("/"):
-            parts = cmd[1:].split()
-            if not parts:
-                return
-            if parts[0] == "jobs":
-                status = "\n".join([f"{j.status}: {j.title[:30]} {j.progress:.0f}%" if j.progress else f"{j.status}: {j.title[:30]}" for j in manager.jobs.values()])
-                write_pty(f"\r\n\x1b[33mJobs:\x1b[0m\r\n{status}\r\n")
-            elif parts[0] == "help":
-                write_pty("\r\nCommands:\r\n  /jobs - show download status\r\n  /exit - exit payload\r\n  Type any YouTube URL to download\r\n")
-            elif parts[0] == "exit":
-                return False
-            else:
-                write_pty(f"\r\nUnknown command: {parts[0]}\r\n")
-        else:
-            # Assume it's a URL. Add to manager.
-            manager.add_job(cmd)
-            write_pty(f"\r\nAdded to queue: {cmd[:60]}\r\n")
-        return True
-
-    # Initial shell prompt
-    write_pty("\r\nKTOx YouTube Ripper CLI\r\nType /help for commands.\r\n$ ")
     redraw()
 
-    poller = select.poll()
-    poller.register(master_fd, select.POLLIN)
+    while True:
+        redraw()
+        btn = wait_btn(0.15)
 
-    while running:
-        # Check GPIO
-        btn = wait_btn(0.05)
         if btn == "KEY3":
-            running = False
             break
+        elif btn == "UP":
+            scroll = min(scroll + 1, max(0, len(lines) - 1))
+        elif btn == "DOWN":
+            scroll = max(0, scroll - 1)
+        elif btn == "OK":
+            typed = vkb_input()
+            if typed is None:
+                continue
+            out, action = handle_cli_command(typed)
+            if action == "clear":
+                lines = []
+            else:
+                lines.extend([f"> {typed[:20]}"] + out)
+            if action == "exit":
+                break
+            if len(lines) > 100:
+                lines = lines[-100:]
+            scroll = 0
 
-        # Process PTY output
-        events = poller.poll(0)
-        for fd, _ in events:
-            if fd == master_fd:
-                process_output()
-
-        # Read from PTY (user input) and handle custom commands
-        try:
-            buf = os.read(master_fd, 1024).decode(errors="replace")
-            if buf:
-                # Look for newline (user pressed enter)
-                if "\n" in buf or "\r" in buf:
-                    line = current_line
-                    if line.startswith("/") or ("http" in line and "." in line):
-                        ok = handle_command(line)
-                        if not ok:
-                            running = False
-                            break
-                        write_pty("$ ")
-                    else:
-                        # Pass through to shell normally
-                        pass
-        except:
-            pass
-
-        time.sleep(0.05)
-
-    # Cleanup
+# ----------------------------------------------------------------------
+# Main / cleanup
+# ----------------------------------------------------------------------
+def cleanup():
     try:
-        os.write(master_fd, "exit\n".encode())
-    except:
+        manager.stop()
+    except Exception:
         pass
-    LCD.LCD_Clear()
-    GPIO.cleanup()
+    try:
+        LCD.LCD_Clear()
+    except Exception:
+        pass
+    try:
+        GPIO.cleanup()
+    except Exception:
+        pass
 
-# ----------------------------------------------------------------------
-# Main
-# ----------------------------------------------------------------------
 def main():
-    auto_install_deps()
+    load_settings()
+
+    missing = check_dependencies()
+    if missing:
+        show_message("Dependencies", missing, "Need yt-dlp ffmpeg")
+        time.sleep(2)
+
     mode = mode_selection()
     if mode is None:
-        LCD.LCD_Clear()
-        GPIO.cleanup()
+        cleanup()
         return
+
     if mode == 0:
         run_webui()
     else:
         run_cli()
-    LCD.LCD_Clear()
-    GPIO.cleanup()
+
+    cleanup()
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        cleanup()
