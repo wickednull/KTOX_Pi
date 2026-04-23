@@ -12,6 +12,27 @@ import os, json, re
 from datetime import datetime
 from pathlib import Path
 
+
+# ── Shared platform runtime constants (used by device/web/WS services) ───────
+KTOX_DIR = os.environ.get("KTOX_DIR", "/root/KTOx")
+INSTALL_PATH = f"{KTOX_DIR}/"
+LOOT_DIR = f"{KTOX_DIR}/loot"
+PAYLOAD_DIR = f"{KTOX_DIR}/payloads"
+
+CONTROL_INTERFACE = os.environ.get("KTOX_CONTROL_INTERFACE", "wlan0")
+
+WS_HOST = os.environ.get("RJ_WS_HOST", "0.0.0.0")
+WS_PORT = int(os.environ.get("RJ_WS_PORT", "8765"))
+WEB_HOST = os.environ.get("RJ_WEB_HOST", "0.0.0.0")
+WEB_PORT = int(os.environ.get("RJ_WEB_PORT", "8080"))
+
+ROOT_DIR = Path(__file__).resolve().parent
+TOKEN_FILE = Path(os.environ.get("RJ_WS_TOKEN_FILE", str(ROOT_DIR / ".webui_token")))
+AUTH_FILE = Path(os.environ.get("RJ_WEB_AUTH_FILE", f"{KTOX_DIR}/.webui_auth.json"))
+AUTH_SECRET_FILE = Path(os.environ.get("RJ_WEB_AUTH_SECRET_FILE", f"{KTOX_DIR}/.webui_session_secret"))
+SESSION_COOKIE_NAME = os.environ.get("RJ_WEB_SESSION_COOKIE", "ktox_session")
+
+
 CONFIG_PATH = os.path.expanduser("~/.ktox/config.json")
 NOTES_PATH  = os.path.expanduser("~/.ktox/host_notes.json")
 DEFAULTS = {

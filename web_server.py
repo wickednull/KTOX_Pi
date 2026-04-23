@@ -47,6 +47,16 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse, unquote
 
 from nmap_parser import parse_nmap_xml_file
+from core.interface_manager import InterfaceManager
+from ktox_config import (
+    AUTH_FILE as CFG_AUTH_FILE,
+    AUTH_SECRET_FILE as CFG_AUTH_SECRET_FILE,
+    CONTROL_INTERFACE,
+    SESSION_COOKIE_NAME as CFG_SESSION_COOKIE_NAME,
+    TOKEN_FILE as CFG_TOKEN_FILE,
+    WEB_HOST,
+    WEB_PORT,
+)
 
 ROOT_DIR = Path(__file__).resolve().parent
 WEB_DIR = ROOT_DIR / "web"
@@ -54,10 +64,10 @@ LOOT_DIR = ROOT_DIR / "loot"
 PAYLOADS_DIR = ROOT_DIR / "payloads"
 PAYLOAD_STATE_PATH = Path("/dev/shm/ktox_payload_state.json")
 DISCORD_WEBHOOK_PATH = ROOT_DIR / "discord_webhook.txt"
-TOKEN_FILE = Path(os.environ.get("RJ_WS_TOKEN_FILE", str(ROOT_DIR / ".webui_token")))
-AUTH_FILE = Path(os.environ.get("RJ_WEB_AUTH_FILE", "/root/KTOx/.webui_auth.json"))
-AUTH_SECRET_FILE = Path(os.environ.get("RJ_WEB_AUTH_SECRET_FILE", "/root/KTOx/.webui_session_secret"))
-SESSION_COOKIE_NAME = os.environ.get("RJ_WEB_SESSION_COOKIE", "ktox_session")
+TOKEN_FILE = CFG_TOKEN_FILE
+AUTH_FILE = CFG_AUTH_FILE
+AUTH_SECRET_FILE = CFG_AUTH_SECRET_FILE
+SESSION_COOKIE_NAME = CFG_SESSION_COOKIE_NAME
 SESSION_TTL_SECONDS = int(os.environ.get("RJ_WEB_SESSION_TTL", str(8 * 60 * 60)))
 WS_TICKET_TTL_SECONDS = int(os.environ.get("RJ_WEB_WS_TICKET_TTL", "120"))
 TAILSCALE_KEY_PATH = ROOT_DIR / ".tailscale_auth_key"
@@ -195,13 +205,13 @@ def _load_or_create_auth_secret() -> str:
         print("[WebUI] WARNING: sessions will be lost on restart — check file permissions!")
     return generated
 
-HOST = os.environ.get("RJ_WEB_HOST", "0.0.0.0")
-PORT = int(os.environ.get("RJ_WEB_PORT", "8080"))
+HOST = WEB_HOST
+PORT = WEB_PORT
 TOKEN = _load_shared_token()
 AUTH_SECRET = _load_or_create_auth_secret()
 
 # WebUI only listens on these interfaces — wlan1+ are for attacks/monitor mode
-WEBUI_INTERFACES = ["eth0", "wlan0", "tailscale0"]
+WEBUI_INTERFACES = InterfaceManager(preferred_control=CONTROL_INTERFACE).get_webui_interfaces()
 
 
 def _get_interface_ip(interface: str) -> str | None:

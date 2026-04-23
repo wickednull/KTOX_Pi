@@ -27,12 +27,11 @@ from datetime import datetime
 from functools import partial
 from pathlib import Path
 
+from core.interface_manager import InterfaceManager
+from ktox_config import CONTROL_INTERFACE, INSTALL_PATH, KTOX_DIR, LOOT_DIR, PAYLOAD_DIR
+
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
-KTOX_DIR     = "/root/KTOx"
-INSTALL_PATH = KTOX_DIR + "/"
-LOOT_DIR     = KTOX_DIR + "/loot"
-PAYLOAD_DIR  = KTOX_DIR + "/payloads"
 PAYLOAD_LOG  = LOOT_DIR + "/payload.log"
 VERSION      = "1.0"
 
@@ -130,7 +129,8 @@ def _load_fonts():
 
 ktox_state = {
     "iface":       "eth0",
-    "wifi_iface":  "wlan0",   # updated by _init_wifi_iface() after GPIO setup
+    "wifi_iface":  "wlan0",   # attack interface (external USB adapter preferred)
+    "control_iface": "wlan0", # control/WebUI interface
     "gateway":     "",
     "hosts":       [],
     "running":     None,
@@ -140,18 +140,13 @@ ktox_state = {
 }
 
 def _init_wifi_iface():
-    """Called once after hardware init. Prefer wlan1 (external adapter) over wlan0."""
-    import re as _re
-    try:
-        rc, out = _run(["iw", "dev"])
-        ifaces = _re.findall(r"Interface\s+(\w+)", out) if rc == 0 else []
-    except Exception:
-        ifaces = []
-    for candidate in ("wlan1", "wlan2", "wlan3"):
-        if candidate in ifaces:
-            ktox_state["wifi_iface"] = candidate
-            return
-    # Keep wlan0 if it's the only one available
+    """Assign interface roles using the shared interface manager."""
+    mgr = InterfaceManager(preferred_control=CONTROL_INTERFACE)
+    roles = mgr.get_roles()
+    if roles.control:
+        ktox_state["control_iface"] = roles.control
+    if roles.attack:
+        ktox_state["wifi_iface"] = roles.attack
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # ── Defaults / config class ────────────────────────────────────────────────────
@@ -2241,65 +2236,42 @@ def do_mitm(target_ip):
 
 
 def do_wifi_monitor_on():
-    import re as _re
-    iface = ktox_state["wifi_iface"]
+    mgr = InterfaceManager(preferred_control=ktox_state.get("control_iface", "wlan0"))
+    roles = mgr.get_roles()
+    iface = roles.attack or ktox_state.get("wifi_iface")
+    if not iface:
+        Dialog_info("No attack iface\nfound.", wait=True)
+        return
+
+    ktox_state["control_iface"] = roles.control or ktox_state.get("control_iface", "wlan0")
+    ktox_state["wifi_iface"] = iface
+
     Dialog_info(f"Enabling mon\n{iface}…", wait=False, timeout=1)
-
-    # Kill interfering processes then try airmon-ng
-    _run(["airmon-ng", "check", "kill"], timeout=10)
-    _run(["ip", "link", "set", iface, "up"], timeout=5)
-    rc, out = _run(["airmon-ng", "start", iface], timeout=20)
-
-    # Detect newly created monitor interface
-    mon = None
-    mo = _re.search(r"((?:wlan|mon)\w*mon\w*|mon\d+)", out)
-    if mo:
-        mon = mo.group(1)
-    if not mon:
-        _, out2 = _run(["iw", "dev"])
-        for candidate in _re.findall(r"Interface\s+(\w+)", out2):
-            if "mon" in candidate:
-                mon = candidate
-                break
-
+    mon = mgr.start_monitor_mode(iface)
     if mon:
         ktox_state["mon_iface"] = mon
         Dialog_info(f"Monitor on:\n{mon}", wait=True)
         return
 
-    # airmon-ng failed — try iw fallback
-    Dialog_info("Trying iw\nfallback…", wait=False, timeout=1)
-    _run(["systemctl", "stop", "NetworkManager"], timeout=5)
-    _run(["ip", "link", "set", iface, "down"], timeout=5)
-    _run(["iw", "dev", iface, "set", "type", "monitor"], timeout=5)
-    _run(["ip", "link", "set", iface, "up"], timeout=5)
-    _, out3 = _run(["iw", "dev", iface, "info"])
-    if "monitor" in out3.lower():
-        ktox_state["mon_iface"] = iface
-        Dialog_info(f"Monitor on:\n{iface} (iw)", wait=True)
-    else:
-        Dialog_info("Monitor FAILED\nCheck adapter.", wait=True)
-
+    Dialog_info(
+        f"Monitor FAILED\nAttack:{iface}\nCtrl:{ktox_state.get('control_iface','wlan0')}",
+        wait=True,
+    )
 
 def do_wifi_monitor_off():
     mon = ktox_state.get("mon_iface")
-    iface = ktox_state["wifi_iface"]
     if not mon:
         Dialog_info("Not in monitor\nmode.", wait=True)
         return
 
-    # Try airmon-ng first, then iw fallback
-    rc, _ = _run(["airmon-ng", "stop", mon], timeout=10)
-    if rc != 0 or mon == iface:
-        # iw fallback: restore managed mode
-        _run(["ip", "link", "set", mon, "down"], timeout=5)
-        _run(["iw", "dev", mon, "set", "type", "managed"], timeout=5)
-        _run(["ip", "link", "set", mon, "up"], timeout=5)
-
-    _run(["systemctl", "start", "NetworkManager"], timeout=8)
-    ktox_state["mon_iface"] = None
-    Dialog_info("Monitor off.\nNM restarted.", wait=True)
-
+    mgr = InterfaceManager(preferred_control=ktox_state.get("control_iface", "wlan0"))
+    ok = mgr.stop_monitor_mode(mon)
+    if ok:
+        ktox_state["mon_iface"] = None
+        Dialog_info("Monitor off.\nNetwork restored.", wait=True)
+    else:
+        mgr.recover_network()
+        Dialog_info("Monitor stop\nFAILED.", wait=True)
 
 def do_wifi_scan():
     mon = ktox_state.get("mon_iface")

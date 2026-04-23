@@ -25,17 +25,28 @@ from urllib.parse import urlparse, parse_qs
 
 import websockets
 
+from core.interface_manager import InterfaceManager
+from ktox_config import (
+    AUTH_FILE as CFG_AUTH_FILE,
+    AUTH_SECRET_FILE as CFG_AUTH_SECRET_FILE,
+    CONTROL_INTERFACE,
+    SESSION_COOKIE_NAME as CFG_SESSION_COOKIE_NAME,
+    TOKEN_FILE as CFG_TOKEN_FILE,
+    WS_HOST,
+    WS_PORT,
+)
+
 
 # ------------------------------ Config ---------------------------------------
 FRAME_PATH = Path(os.environ.get("RJ_FRAME_PATH", "/dev/shm/ktox_last.jpg"))
-HOST = os.environ.get("RJ_WS_HOST", "0.0.0.0")
-PORT = int(os.environ.get("RJ_WS_PORT", "8765"))
+HOST = WS_HOST
+PORT = WS_PORT
 FPS = float(os.environ.get("RJ_FPS", "10"))
 ROOT_DIR = Path(__file__).resolve().parent
-TOKEN_FILE = Path(os.environ.get("RJ_WS_TOKEN_FILE", str(ROOT_DIR / ".webui_token")))
-AUTH_FILE = Path(os.environ.get("RJ_WEB_AUTH_FILE", "/root/KTOx/.webui_auth.json"))
-AUTH_SECRET_FILE = Path(os.environ.get("RJ_WEB_AUTH_SECRET_FILE", "/root/KTOx/.webui_session_secret"))
-SESSION_COOKIE_NAME = os.environ.get("RJ_WEB_SESSION_COOKIE", "ktox_session")
+TOKEN_FILE = CFG_TOKEN_FILE
+AUTH_FILE = CFG_AUTH_FILE
+AUTH_SECRET_FILE = CFG_AUTH_SECRET_FILE
+SESSION_COOKIE_NAME = CFG_SESSION_COOKIE_NAME
 INPUT_SOCK = os.environ.get("RJ_INPUT_SOCK", "/dev/shm/ktox_input.sock")
 SHELL_CMD = os.environ.get("RJ_SHELL_CMD", "/bin/bash")
 SHELL_CWD = os.environ.get("RJ_SHELL_CWD", "/")
@@ -44,7 +55,7 @@ SEND_TIMEOUT = 0.5
 PING_INTERVAL = 15
 
 # WebSocket server only listens on these interfaces — wlan1+ are for attacks
-WEBUI_INTERFACES = ["eth0", "wlan0", "tailscale0"]
+WEBUI_INTERFACES = InterfaceManager(preferred_control=CONTROL_INTERFACE).get_webui_interfaces()
 
 
 def _load_shared_token():
