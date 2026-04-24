@@ -1,13 +1,13 @@
 # KTOX Cyberpunk WebUI Theming Guide
 
-This guide explains how to apply the yt-ripper cyberpunk theme and DarkSec Micro Shell keyboard to all web servers in KTOX_Pi.
+This guide explains how to apply the yt-ripper cyberpunk theme to all web servers in KTOX_Pi, and how to standardize LCD payload keyboard UX on the shell_plus keyboard model.
 
 ## Overview
 
 Three reusable components are now available:
 
 1. **_cyberpunk_theme.css** - Shared CSS theme with dark red aesthetic
-2. **_darksec_keyboard.py** - Virtual keyboard module with command history
+2. **_darksec_keyboard.py** - Shared LCD virtual keyboard module aligned with `shell_plus.py`
 3. **Theme color palette** - Consistent colors across all UIs
 
 ## Cyberpunk Color Palette
@@ -191,7 +191,7 @@ Template (templates/index.html):
 </html>
 ```
 
-## Integrate DarkSec Keyboard
+## Standardize LCD Keyboard (shell_plus model)
 
 ### For LCD CLI tools (using GPIO buttons)
 
@@ -238,7 +238,7 @@ else:
 
 ### For web-based tools (using forms)
 
-Use standard HTML forms with the cyberpunk theme - no special integration needed.
+Use standard HTML forms with the cyberpunk theme. Do **not** add the LCD virtual keyboard to web pages.
 
 ## Existing Web Servers to Theme
 
