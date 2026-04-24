@@ -27,6 +27,11 @@ import textwrap
 import json
 from datetime import datetime
 
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
+from payloads._darksec_keyboard import DarkSecKeyboard
+
 # ----------------------------------------------------------------------
 # Hardware & LCD
 # ----------------------------------------------------------------------
@@ -108,76 +113,45 @@ def wait_btn(timeout=0.1):
 # ----------------------------------------------------------------------
 # QWERTY Keyboard (Reused from Gemini payload)
 # ----------------------------------------------------------------------
-KEYBOARD_PAGES = [
-    ["qwertyuiop", "asdfghjkl", "zxcvbnm", ".,!?@#$% "],
-    ["QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM", ";:'\"~`()"],
-    ["1234567890", "[]{}\\|<>", "!@#$%^&*", "-_=+/ "]
+KEYBOARD_ROWS = [
+    "qwertyuiop",
+    "asdfghjkl",
+    "zxcvbnm",
+    "1234567890",
+    ".,!?@#$% "
 ]
-PAGE_NAMES = ["abc", "ABC", "123"]
-ROW_Y = [28, 40, 52, 64]
-CELL_W = 10
-START_X = 4
+ROW_Y = [28, 44, 60, 76, 92]
+CELL_W = 11
+START_X = 6
 
-def draw_keyboard(input_text, page, selected_row, selected_col):
+def draw_keyboard(input_text, selected_row, selected_col):
     img = Image.new("RGB", (W, H), "#0A0000")
     d = ImageDraw.Draw(img)
     d.rectangle((0, 0, W, 17), fill="#8B0000")
-    d.text((4, 3), f"VKB:{PAGE_NAMES[page]}", font=f9, fill=(231, 76, 60))
+    d.text((4, 3), "KEYBOARD", font=f9, fill=(231, 76, 60))
     d.rectangle((2, 19, W-2, 27), fill=(10, 0, 0))
     display_text = input_text[-20:] if len(input_text) > 20 else input_text
     d.text((4, 20), display_text, font=f9, fill=(212, 172, 13))
-    rows = KEYBOARD_PAGES[page]
-    for r, row in enumerate(rows):
+    for r, row in enumerate(KEYBOARD_ROWS):
         y = ROW_Y[r]
         for c, ch in enumerate(row):
             x = START_X + c * CELL_W
             if r == selected_row and c == selected_col:
-                d.rectangle((x-1, y-1, x+CELL_W-1, y+8), fill="#FF8800")
+                d.rectangle((x-1, y-1, x+CELL_W-1, y+7), fill="#FF8800")
                 d.text((x, y), ch, font=f9, fill="#000000")
             else:
                 d.text((x, y), ch, font=f9, fill=(242, 243, 244))
     d.rectangle((0, H-12, W, H), fill="#220000")
-    d.text((4, H-10), "OK=add K1=send K2=del K3=cancel", font=f9, fill="#FF7777")
+    d.text((4, H-10), "OK=add  K1=send  K2=del  K3=cancel", font=f9, fill="#FF7777")
     LCD.LCD_ShowImage(img, 0, 0)
 
 def osk_input(prompt="Enter:", initial=""):
-    input_text = initial
-    page = 0
-    selected_row = 0
-    selected_col = 0
-    while True:
-        draw_keyboard(input_text, page, selected_row, selected_col)
-        btn = wait_btn(0.5)
-        if btn == "KEY3":
-            return None
-        elif btn == "KEY1":
-            if input_text.strip():
-                return input_text.strip()
-        elif btn == "KEY2":
-            input_text = input_text[:-1]
-        elif btn == "UP":
-            selected_row = (selected_row - 1) % len(KEYBOARD_PAGES[page])
-            new_len = len(KEYBOARD_PAGES[page][selected_row])
-            if selected_col >= new_len:
-                selected_col = new_len - 1
-        elif btn == "DOWN":
-            selected_row = (selected_row + 1) % len(KEYBOARD_PAGES[page])
-            new_len = len(KEYBOARD_PAGES[page][selected_row])
-            if selected_col >= new_len:
-                selected_col = new_len - 1
-        elif btn == "LEFT":
-            selected_col = (selected_col - 1) % len(KEYBOARD_PAGES[page][selected_row])
-        elif btn == "RIGHT":
-            selected_col = (selected_col + 1) % len(KEYBOARD_PAGES[page][selected_row])
-        elif btn == "OK":
-            ch = KEYBOARD_PAGES[page][selected_row][selected_col]
-            if ch == " ":
-                input_text += " "
-            else:
-                input_text += ch
-                if page == 2 and selected_col > 5:
-                    page = 0
-        time.sleep(0.05)
+    kb = DarkSecKeyboard(width=W, height=H, lcd=LCD, gpio_pins=PINS, gpio_module=GPIO)
+    result = kb.run()
+    if result is None:
+        return None
+    result = result.strip()
+    return result or initial
 
 # ----------------------------------------------------------------------
 # Chat History Viewer
@@ -210,7 +184,7 @@ class ChatView:
         total = len(self.lines)
         visible = self.lines[self.scroll:self.scroll+6]
         display = visible + [f"Line {self.scroll+1}/{total}"] if total > 6 else visible
-        draw_screen(display, title="CHAT ROOM", title_color="#004466")
+        draw_screen(display, title="CHAT ROOM", title_color="#8B0000")
 
     def scroll_up(self):
         if self.scroll > 0:
