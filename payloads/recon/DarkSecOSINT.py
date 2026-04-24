@@ -12,6 +12,11 @@ import requests
 import urllib.parse
 from urllib.request import urlopen, Request
 
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
+from payloads._darksec_keyboard import DarkSecKeyboard
+
 try:
     import RPi.GPIO as GPIO
     import LCD_1in44
@@ -136,53 +141,9 @@ def draw_result(lines, title="Result"):
 
 # ── On-Screen Keyboard (Dark theme) ──────────────────────────────────────────
 def on_screen_keyboard(prompt="Enter:"):
-    input_text = ""
-    char_idx = 0
-    while RUNNING:
-        _draw.rectangle((0,0,W,H), fill=(10, 0, 0))
-        _draw.rectangle((0,0,W,16), fill=(80,0,0))
-        _draw.text((3,2), prompt[:20], font=_font_sm, fill=(231, 76, 60))
-
-        shown = input_text[-18:] if len(input_text) > 18 else input_text
-        _draw.rectangle((0,18,W,34), fill="#220000")
-        _draw.text((3,20), "> " + shown, font=_font_sm, fill="#FFCCCC")
-
-        cs = CHAR_SET
-        prev = cs[(char_idx-1)%len(cs)]
-        curr = cs[char_idx]
-        nxt = cs[(char_idx+1)%len(cs)]
-        _draw.text((10,45), f"< {prev} ", font=_font_md, fill="#884444")
-        _draw.rectangle((55,42,80,60), fill=(100,0,0))
-        _draw.text((60,44), curr, font=_font_md, fill="#FF6666")
-        _draw.text((85,45), f" {nxt} >", font=_font_md, fill="#884444")
-
-        hints = ["U/D=char OK=add", "L=del R=. K1=/", "K2=GO K3=Cancel"]
-        y = 70
-        for h in hints:
-            _draw.text((3,y), h, font=_font_sm, fill="#FF8888")
-            y += 11
-        push()
-
-        btn = None
-        t0 = time.time()
-        while not btn and RUNNING and time.time()-t0 < 60:
-            for name, pin in PINS.items():
-                if GPIO.input(pin) == 0:
-                    btn = name
-                    break
-            time.sleep(0.04)
-
-        if not btn or not RUNNING: return ""
-        if btn == "KEY3": return ""
-        if btn == "KEY2": return input_text.strip()
-        if btn == "OK": input_text += CHAR_SET[char_idx]
-        elif btn == "LEFT": input_text = input_text[:-1]
-        elif btn == "RIGHT": input_text += "."
-        elif btn == "KEY1": input_text += "/"
-        elif btn == "UP": char_idx = (char_idx - 1 + len(CHAR_SET)) % len(CHAR_SET)
-        elif btn == "DOWN": char_idx = (char_idx + 1) % len(CHAR_SET)
-        time.sleep(0.1)
-    return ""
+    kb = DarkSecKeyboard(width=W, height=H, lcd=LCD, gpio_pins=PINS, gpio_module=GPIO)
+    result = kb.run()
+    return (result or "").strip()
 
 # ── OSINT Tools (Sherlock included) ──────────────────────────────────────────
 def my_ip_info():

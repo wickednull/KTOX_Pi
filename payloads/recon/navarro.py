@@ -32,6 +32,7 @@ import RPi.GPIO as GPIO
 import LCD_1in44
 from PIL import Image, ImageDraw, ImageFont
 from payloads._input_helper import get_button
+from payloads._darksec_keyboard import DarkSecKeyboard
 try:
     import qrcode 
 except Exception:
@@ -102,7 +103,7 @@ def draw_center(lines, *, small: bool = False, footer: str | None = None):
     y = (HEIGHT - total_h) // 2
     for s, h in zip(lines, heights):
         w = d.textbbox((0, 0), s, font=f)[2]
-        d.text(((WIDTH - w) // 2, y), s, font=f, fill=(30, 132, 73))
+        d.text(((WIDTH - w) // 2, y), s, font=f, fill=(231, 76, 60))
         y += h + 2
     if footer:
         d.text((2, HEIGHT - 10), footer[:20], font=font_small, fill="#999999")
@@ -111,7 +112,7 @@ def draw_center(lines, *, small: bool = False, footer: str | None = None):
 
 def draw_home(username: str, cursor: int):
     img, d = new_canvas()
-    d.text((2, 2), "Navarro", font=font_big, fill=(30, 132, 73))
+    d.text((2, 2), "Navarro", font=font_big, fill=(231, 76, 60))
     d.line([(0, 14), (WIDTH, 14)], fill="#202020")
     rows = [
         ("Username", username or "<enter>"),
@@ -121,7 +122,7 @@ def draw_home(username: str, cursor: int):
     for i, (k, v) in enumerate(rows):
         prefix = ">" if i == cursor else " "
         d.text((4, y), f"{prefix} {k}: ", font=font_small, fill=(242, 243, 244))
-        d.text((70, y), v[:14], font=font_small, fill=("#00FF00" if i == cursor else "#CCCCCC"))
+        d.text((70, y), v[:14], font=font_small, fill=("#E74C3C" if i == cursor else "#abb2b9"))
         y += 16
     d.line([(0, HEIGHT - 12), (WIDTH, HEIGHT - 12)], fill="#202020")
     d.text((2, HEIGHT - 10), "OK=Edit  K1 Start  K3 Back", font=font_small, fill="#999999")
@@ -130,7 +131,7 @@ def draw_home(username: str, cursor: int):
 
 def draw_keyboard(buffer: str, grid: list[list[str]], gx: int, gy: int, page_name: str):
     img, d = new_canvas()
-    d.text((2, 2), f"Type ({page_name})", font=font_small, fill=(30, 132, 73))
+    d.text((2, 2), f"Type ({page_name})", font=font_small, fill=(231, 76, 60))
     d.line([(0, 14), (WIDTH, 14)], fill="#202020")
     d.text((2, 18), buffer[-18:], font=font_big, fill=(242, 243, 244))
     top = 36
@@ -144,10 +145,10 @@ def draw_keyboard(buffer: str, grid: list[list[str]], gx: int, gy: int, page_nam
             rx = left + x * cell_w
             ry = top + y * cell_h
             sel = (x == gx and y == gy)
-            d.rectangle((rx, ry, rx + cell_w - 2, ry + cell_h - 2), outline=("#00FF00" if sel else "#404040"))
+            d.rectangle((rx, ry, rx + cell_w - 2, ry + cell_h - 2), outline=("#E74C3C" if sel else "#717d7e"))
             label = key if key != " " else "␣"
             tw = d.textbbox((0, 0), label[:2], font=font_small)[2]
-            d.text((rx + max(1, (cell_w - tw) // 2), ry + 2), label[:2], font=font_small, fill=("#00FF00" if sel else "#CCCCCC"))
+            d.text((rx + max(1, (cell_w - tw) // 2), ry + 2), label[:2], font=font_small, fill=("#E74C3C" if sel else "#abb2b9"))
     d.line([(0, HEIGHT - 12), (WIDTH, HEIGHT - 12)], fill="#202020")
     d.text((2, HEIGHT - 10), "OK=Add  K1=Backsp  K2=Page  Enter  K3=Cancel", font=font_small, fill="#999999")
     LCD.LCD_ShowImage(img, 0, 0)
@@ -155,7 +156,7 @@ def draw_keyboard(buffer: str, grid: list[list[str]], gx: int, gy: int, page_nam
 
 def draw_running(user: str, bounce_pos: int):
     img, d = new_canvas()
-    d.text((2, 2), f"{user}", font=font_small, fill=(30, 132, 73))
+    d.text((2, 2), f"{user}", font=font_small, fill=(231, 76, 60))
     d.line([(0, 14), (WIDTH, 14)], fill="#202020")
 
     # Status line (single): "Checking <user>…"
@@ -163,10 +164,10 @@ def draw_running(user: str, bounce_pos: int):
 
     # Bouncing bar
     bar_y1, bar_y2 = 36, 42
-    d.rectangle((2, bar_y1, WIDTH - 2, bar_y2), outline="#404040")
+    d.rectangle((2, bar_y1, WIDTH - 2, bar_y2), outline="#717d7e")
     seg_w = 24
     pos = max(2, min(WIDTH - 2 - seg_w, 2 + bounce_pos))
-    d.rectangle((pos, bar_y1 + 1, pos + seg_w, bar_y2 - 1), fill="#00AA00")
+    d.rectangle((pos, bar_y1 + 1, pos + seg_w, bar_y2 - 1), fill="#8B0000")
 
     # No duplicate bottom status line
 
@@ -187,7 +188,7 @@ def _shorten_middle(text: str, max_chars: int) -> str:
 
 def draw_results(user: str, items: list[tuple[str, str]], page: int, selected_idx: int, per_page: int = 6):
     img, d = new_canvas()
-    d.text((2, 2), f"Results: {user}", font=font_small, fill=(30, 132, 73))
+    d.text((2, 2), f"Results: {user}", font=font_small, fill=(231, 76, 60))
     d.line([(0, 14), (WIDTH, 14)], fill="#202020")
     total_pages = max(1, (len(items) + per_page - 1) // per_page)
     page = max(1, min(page, total_pages))
@@ -196,7 +197,7 @@ def draw_results(user: str, items: list[tuple[str, str]], page: int, selected_id
         y = 18 + i * 16
         gi = start + i
         render = platform[:20]
-        fill = (30, 132, 73) if gi == selected_idx else "#FFFFFF"
+        fill = (231, 76, 60) if gi == selected_idx else "#FFFFFF"
         d.text((2, y), f"• {render}", font=font_small, fill=fill)
     d.text((WIDTH - 34, HEIGHT - 10), f"{page}/{total_pages}", font=font_small, fill="#999999")
     d.line([(0, HEIGHT - 12), (WIDTH, HEIGHT - 12)], fill="#202020")
@@ -206,7 +207,7 @@ def draw_results(user: str, items: list[tuple[str, str]], page: int, selected_id
 
 def draw_result_detail(user: str, platform: str, url: str, idx: int, total: int):
     img, d = new_canvas()
-    d.text((2, 2), f"{platform}  {idx+1}/{total}", font=font_small, fill=(30, 132, 73))
+    d.text((2, 2), f"{platform}  {idx+1}/{total}", font=font_small, fill=(231, 76, 60))
     d.line([(0, 14), (WIDTH, 14)], fill="#202020")
 
     # Try to render a QR code on the right (64x64). If unavailable, use full width for text
@@ -626,75 +627,12 @@ KB_PAGES = [
 
 
 def keyboard_input(initial: str) -> str:
-    buf = initial
-    page_idx = 0
-    gx = gy = 0
-    repeat_btn: str | None = None
-    first_press_t = 0.0
-    last_rep_t = 0.0
-    REPEAT_DELAY = 0.30
-    REPEAT_RATE = 0.07
-    while APP_RUNNING:
-        page_name, grid = KB_PAGES[page_idx]
-        draw_keyboard(buf, grid, gx, gy, page_name)
-        btn = first_pressed()
-        now = time.time()
-        if repeat_btn in ("UP", "DOWN", "LEFT", "RIGHT") and GPIO.input(PINS[repeat_btn]) == 0:
-            if now - first_press_t >= REPEAT_DELAY and now - last_rep_t >= REPEAT_RATE:
-                if repeat_btn == "UP":
-                    gy = max(0, gy - 1)
-                elif repeat_btn == "DOWN":
-                    gy = min(len(grid) - 1, gy + 1)
-                elif repeat_btn == "LEFT":
-                    gx = max(0, gx - 1)
-                elif repeat_btn == "RIGHT":
-                    gx = min(len(grid[gy]) - 1, gx + 1)
-                last_rep_t = now
-                continue
-        else:
-            repeat_btn = None
-        if not btn:
-            time.sleep(0.02)
-            continue
-        if btn == "KEY3":
-            wait_release(btn)
-            return initial
-        if btn == "KEY2":
-            page_idx = (page_idx + 1) % len(KB_PAGES)
-            wait_release(btn)
-            continue
-        if btn in ("UP", "DOWN", "LEFT", "RIGHT"):
-            if btn == "UP":
-                gy = max(0, gy - 1)
-            elif btn == "DOWN":
-                gy = min(len(grid) - 1, gy + 1)
-            elif btn == "LEFT":
-                gx = max(0, gx - 1)
-            elif btn == "RIGHT":
-                gx = min(len(grid[gy]) - 1, gx + 1)
-            repeat_btn = btn
-            first_press_t = now
-            last_rep_t = now
-            continue
-        elif btn == "KEY1":
-            if buf:
-                buf = buf[:-1]
-            wait_release(btn)
-            continue
-        elif btn == "OK":
-            key = grid[gy][gx]
-            if key == "←":
-                if buf:
-                    buf = buf[:-1]
-            elif key == "Enter":
-                wait_release(btn)
-                return buf
-            else:
-                buf += key
-            wait_release(btn)
-            continue
-        wait_release(btn)
-    return buf
+    kb = DarkSecKeyboard(width=W, height=H, lcd=LCD, gpio_pins=PINS, gpio_module=GPIO)
+    result = kb.run()
+    if result is None:
+        return initial
+    result = result.strip()
+    return result or initial
 
 
 if __name__ == "__main__":

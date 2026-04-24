@@ -27,6 +27,11 @@ import textwrap
 import json
 from datetime import datetime
 
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
+from payloads._darksec_keyboard import DarkSecKeyboard
+
 # ----------------------------------------------------------------------
 # Hardware & LCD
 # ----------------------------------------------------------------------
@@ -122,7 +127,7 @@ START_X = 6
 def draw_keyboard(input_text, selected_row, selected_col):
     img = Image.new("RGB", (W, H), "#0A0000")
     d = ImageDraw.Draw(img)
-    d.rectangle((0, 0, W, 17), fill="#004466")
+    d.rectangle((0, 0, W, 17), fill="#8B0000")
     d.text((4, 3), "KEYBOARD", font=f9, fill=(231, 76, 60))
     d.rectangle((2, 19, W-2, 27), fill=(10, 0, 0))
     display_text = input_text[-20:] if len(input_text) > 20 else input_text
@@ -141,37 +146,12 @@ def draw_keyboard(input_text, selected_row, selected_col):
     LCD.LCD_ShowImage(img, 0, 0)
 
 def osk_input(prompt="Enter:", initial=""):
-    input_text = initial
-    selected_row = 0
-    selected_col = 0
-    while True:
-        draw_keyboard(input_text, selected_row, selected_col)
-        btn = wait_btn(0.5)
-        if btn == "KEY3":
-            return None
-        elif btn == "KEY1":
-            if input_text.strip():
-                return input_text.strip()
-        elif btn == "KEY2":
-            input_text = input_text[:-1]
-        elif btn == "UP":
-            selected_row = (selected_row - 1) % len(KEYBOARD_ROWS)
-            new_len = len(KEYBOARD_ROWS[selected_row])
-            if selected_col >= new_len:
-                selected_col = new_len - 1
-        elif btn == "DOWN":
-            selected_row = (selected_row + 1) % len(KEYBOARD_ROWS)
-            new_len = len(KEYBOARD_ROWS[selected_row])
-            if selected_col >= new_len:
-                selected_col = new_len - 1
-        elif btn == "LEFT":
-            selected_col = (selected_col - 1) % len(KEYBOARD_ROWS[selected_row])
-        elif btn == "RIGHT":
-            selected_col = (selected_col + 1) % len(KEYBOARD_ROWS[selected_row])
-        elif btn == "OK":
-            ch = KEYBOARD_ROWS[selected_row][selected_col]
-            input_text += ch
-        time.sleep(0.05)
+    kb = DarkSecKeyboard(width=W, height=H, lcd=LCD, gpio_pins=PINS, gpio_module=GPIO)
+    result = kb.run()
+    if result is None:
+        return None
+    result = result.strip()
+    return result or initial
 
 # ----------------------------------------------------------------------
 # Chat History Viewer
@@ -204,7 +184,7 @@ class ChatView:
         total = len(self.lines)
         visible = self.lines[self.scroll:self.scroll+6]
         display = visible + [f"Line {self.scroll+1}/{total}"] if total > 6 else visible
-        draw_screen(display, title="CHAT ROOM", title_color="#004466")
+        draw_screen(display, title="CHAT ROOM", title_color="#8B0000")
 
     def scroll_up(self):
         if self.scroll > 0:
