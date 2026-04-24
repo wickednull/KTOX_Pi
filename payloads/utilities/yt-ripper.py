@@ -497,7 +497,7 @@ def run_webui():
 
     app = Flask(__name__)
 
-    HTML = r"""
+    HTML = r'''
     <!doctype html>
     <html>
     <head>
@@ -507,21 +507,21 @@ def run_webui():
       <style>
         /* exact same CSS as original */
         :root{
-          --bg:#050000;
-          --panel:#0d0000cc;
-          --panel2:#140404;
-          --line:#8b0000;
-          --line2:#5a0a0a;
-          --text:#d7d7d7;
-          --muted:#8d6e6e;
-          --red:#e74c3c;
+          --bg:#010101;
+          --panel:#0a0000dd;
+          --panel2:#120202;
+          --line:#7d0000;
+          --line2:#470606;
+          --text:#dbcfcf;
+          --muted:#7f5c5c;
+          --red:#ff2b2b;
           --red2:#ff4d4d;
-          --glow:0 0 8px rgba(231,76,60,.5), 0 0 18px rgba(231,76,60,.2);
+          --glow:0 0 10px rgba(255,43,43,.55), 0 0 22px rgba(231,76,60,.24);
         }
         *{box-sizing:border-box;margin:0;padding:0}
         html,body{height:100%}
         body{
-          background:radial-gradient(circle at top, #130000 0%, #050000 55%, #000 100%);
+          background:radial-gradient(circle at top, #170000 0%, #060000 48%, #010101 100%);
           color:var(--text);
           font:14px/1.4 "JetBrains Mono","Fira Code","Courier New",monospace;
           overflow-x:hidden;
@@ -542,10 +542,10 @@ def run_webui():
         @keyframes scan{from{transform:translateY(-10px)}to{transform:translateY(100vh)}}
         .wrap{position:relative; z-index:2; max-width:1380px; margin:18px auto; padding:18px;}
         .shell{
-          border:1px solid var(--line);
+          border:2px solid var(--line);
           background:linear-gradient(180deg, rgba(16,0,0,.84), rgba(8,0,0,.92));
-          border-radius:14px;
-          box-shadow:0 0 0 1px rgba(255,0,0,.06) inset, 0 0 30px rgba(139,0,0,.35);
+          border-radius:6px;
+          box-shadow:0 0 0 1px rgba(255,0,0,.09) inset, 0 0 36px rgba(139,0,0,.45);
           overflow:hidden;
           backdrop-filter:blur(4px);
         }
@@ -557,7 +557,7 @@ def run_webui():
         }
         .brand{display:flex; align-items:center; gap:12px}
         .brand h1{
-          font-size:21px; letter-spacing:3px; color:var(--red);
+          font-size:22px; letter-spacing:4px; color:var(--red);
           text-shadow:var(--glow);
         }
         .sub{font-size:11px; color:var(--muted)}
@@ -705,6 +705,20 @@ def run_webui():
           background:#1d0606;
           box-shadow:0 0 10px rgba(231,76,60,.12);
         }
+        .search-results{
+          max-height:230px;
+          overflow:auto;
+          margin-bottom:12px;
+          padding-right:2px;
+        }
+        .search-title{
+          color:#fff;
+          margin-bottom:3px;
+        }
+        .search-meta{
+          color:var(--muted);
+          font-size:11px;
+        }
         .inspect-grid{display:grid; grid-template-columns:1fr; gap:8px}
         .inspect-line{font-size:12px; color:#d7d7d7}
         .inspect-line .k{color:#8d6e6e; margin-right:6px}
@@ -745,7 +759,7 @@ def run_webui():
    `~~~'</div>
               <div>
                 <h1>yt-ripper</h1>
-                <div class="sub">red matrix edition // queue-driven downloader</div>
+                <div class="sub">arasaka net node // queue-driven extraction</div>
               </div>
             </div>
             <div class="statusbar">
@@ -786,6 +800,21 @@ def run_webui():
                   <button class="btn-primary" id="inspectBtn">INSPECT</button>
                 </div>
 
+                <div class="controls">
+                  <input id="searchInput" placeholder="Search YouTube..." />
+                  <button class="btn-soft" id="searchBtn">SEARCH</button>
+                  <button class="btn-soft" id="clearSearchBtn">CLEAR</button>
+                </div>
+                <div class="panel" style="margin-bottom:12px;">
+                  <div class="panel-head">
+                    <h2>YOUTUBE SEARCH</h2>
+                    <div class="sub">tap a result to autofill</div>
+                  </div>
+                  <div class="panel-body search-results" id="searchResults">
+                    <div class="empty">Search by title/artist/keywords.</div>
+                  </div>
+                </div>
+
                 <div class="actions">
                   <button class="btn-soft" id="queueBtn">QUEUE</button>
                   <button class="btn-soft" id="modeBtn">TOGGLE MODE</button>
@@ -811,7 +840,7 @@ def run_webui():
                 <div class="panel" style="margin-bottom:12px;">
                   <div class="panel-head">
                     <h2>INSPECTED TARGET</h2>
-                    <div class="sub">metadata preview</div>
+                    <div class="sub">metadata trace</div>
                   </div>
                   <div class="panel-body" id="inspectCard">
                     <div class="empty">Paste a URL and click INSPECT.</div>
@@ -821,7 +850,7 @@ def run_webui():
                 <div class="panel">
                   <div class="panel-head">
                     <h2>RECENT URLS</h2>
-                    <div class="sub">tap to refill input</div>
+                    <div class="sub">tap to seed input</div>
                   </div>
                   <div class="panel-body" id="recentUrls">
                     <div class="empty">No recent URLs yet.</div>
@@ -915,6 +944,17 @@ def run_webui():
           await loadSettings();
         }
 
+        function formatDuration(totalSeconds){
+          const total = Number(totalSeconds || 0);
+          if(!total) return '--:--';
+          const h = Math.floor(total / 3600);
+          const m = Math.floor((total % 3600) / 60);
+          const s = Math.floor(total % 60);
+          return h > 0
+            ? `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`
+            : `${m}:${String(s).padStart(2,'0')}`;
+        }
+
         async function inspectUrl(){
           const input = document.getElementById('urlInput');
           const url = input.value.trim();
@@ -977,6 +1017,54 @@ def run_webui():
 
           await loadJobs();
           await loadRecent();
+        }
+
+        async function searchYouTube(){
+          const input = document.getElementById('searchInput');
+          const query = input.value.trim();
+          if(!query) return;
+
+          const box = document.getElementById('searchResults');
+          box.innerHTML = '<div class="empty">Searching...</div>';
+
+          try{
+            const results = await getJSON('/api/search', {
+              method:'POST',
+              headers:{'Content-Type':'application/json'},
+              body: JSON.stringify({query})
+            });
+
+            if(!results.length){
+              box.innerHTML = '<div class="empty">No results found.</div>';
+              return;
+            }
+
+            box.innerHTML = '';
+            results.forEach(v => {
+              if(!v.url) return;
+              const div = document.createElement('div');
+              div.className = 'recent-item';
+              div.innerHTML = `
+                <div class="search-title">${esc(v.title || 'unknown title')}</div>
+                <div class="search-meta">${esc(v.uploader || 'unknown')} | ${esc(formatDuration(v.duration))}</div>
+              `;
+              div.onclick = async () => {
+                const urlInput = document.getElementById('urlInput');
+                urlInput.value = v.url;
+                lastInspectedUrl = '';
+                await inspectUrl();
+              };
+              box.appendChild(div);
+            });
+          } catch(_e){
+            box.innerHTML = '<div class="empty">Search failed.</div>';
+          }
+        }
+
+        function clearSearchResults(){
+          document.getElementById('searchInput').value = '';
+          document.getElementById('searchResults').innerHTML =
+            '<div class="empty">Search by title/artist/keywords.</div>';
         }
 
         async function loadRecent(){
@@ -1048,12 +1136,17 @@ def run_webui():
           await loadSettings();
         });
         document.getElementById('modeBtn').addEventListener('click', toggleMode);
+        document.getElementById('searchBtn').addEventListener('click', searchYouTube);
+        document.getElementById('clearSearchBtn').addEventListener('click', clearSearchResults);
         document.getElementById('pasteDemo').addEventListener('click', () => {
           document.getElementById('urlInput').value = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
         });
         document.getElementById('playlistMode').addEventListener('change', e => setMode(e.target.value));
         document.getElementById('urlInput').addEventListener('keydown', e => {
           if(e.key === 'Enter') inspectUrl();
+        });
+        document.getElementById('searchInput').addEventListener('keydown', e => {
+          if(e.key === 'Enter') searchYouTube();
         });
 
         setInterval(loadJobs, 1800);
@@ -1219,7 +1312,7 @@ def run_webui():
       </script>
     </body>
     </html>
-    """
+    '''
 
     @app.route("/")
     def index():
@@ -1295,6 +1388,43 @@ def run_webui():
             })
         except Exception as e:
             return jsonify({"error": str(e)[-300:]}), 400
+
+    @app.route("/api/search", methods=["POST"])
+    def api_search():
+        data = request.get_json(silent=True) or {}
+        query = (data.get("query") or "").strip()
+        if not query:
+            return jsonify([])
+
+        cmd = [
+            "yt-dlp",
+            "--dump-single-json",
+            "--skip-download",
+            "--no-warnings",
+            "--flat-playlist",
+            f"ytsearch10:{query}",
+        ]
+        try:
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
+            if proc.returncode != 0:
+                return jsonify([])
+
+            info = json.loads(proc.stdout or "{}")
+            entries = info.get("entries", [])
+            results = []
+            for entry in entries:
+                raw_url = (entry.get("webpage_url") or entry.get("url") or "").strip()
+                if raw_url and not raw_url.startswith("http"):
+                    raw_url = f"https://www.youtube.com/watch?v={raw_url}"
+                results.append({
+                    "title": entry.get("title") or "unknown title",
+                    "url": raw_url,
+                    "duration": entry.get("duration"),
+                    "uploader": entry.get("uploader") or "",
+                })
+            return jsonify(results)
+        except Exception:
+            return jsonify([])
 
     @app.route("/api/recent")
     def api_recent():
