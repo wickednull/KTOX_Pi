@@ -1,20 +1,14 @@
 #!/usr/bin/env python3
 """
-DarkSec Micro Shell - Unified Virtual Keyboard Module
+Shell Plus Standard Virtual Keyboard Module.
 
-Provides a comprehensive on-screen keyboard with:
-- Multiple keyboard pages (lowercase, uppercase, symbols, tools)
-- USB keyboard support with automatic fallback
-- Command history with UP/DOWN navigation
-- Font sizing controls
-- Tool shortcuts for common commands
-- Responsive button mapping
+This module is the shared keyboard implementation for LCD payloads and mirrors
+the keyboard behavior used by `payloads/general/shell_plus.py`.
 
 Usage:
     from payloads._darksec_keyboard import DarkSecKeyboard
-
     kb = DarkSecKeyboard(width=128, height=128, lcd=LCD)
-    result = kb.run()  # Returns typed text or None
+    result = kb.run()  # returns typed text or None
 """
 
 import os
@@ -33,7 +27,7 @@ except ImportError:
 from PIL import Image, ImageDraw, ImageFont
 
 
-# Color palette (yt-ripper cyberpunk style)
+# DarkSec Micro Shell-aligned color palette
 COLORS = {
     "BG": "#120000",
     "FG": (231, 76, 60),
@@ -79,7 +73,15 @@ class DarkSecKeyboard:
     KB_PAGES = [KB_LOWER, KB_UPPER, KB_SYMBOL, KB_TOOLS]
     KB_PAGE_NAMES = ["abc", "ABC", "123", "TOOL"]
 
-    def __init__(self, width=128, height=128, lcd=None, gpio_pins=None, gpio_module=None):
+    def __init__(
+        self,
+        width=128,
+        height=128,
+        lcd=None,
+        gpio_pins=None,
+        gpio_module=None,
+        on_ctrl_c=None,
+    ):
         """
         Initialize keyboard.
 
@@ -89,12 +91,14 @@ class DarkSecKeyboard:
             lcd: LCD display object (if available)
             gpio_pins: Dict of button pins (UP, DOWN, LEFT, RIGHT, OK, KEY1, KEY2, KEY3)
             gpio_module: RPi.GPIO module (if available)
+            on_ctrl_c: optional callback invoked for C-C tool key
         """
         self.width = width
         self.height = height
         self.lcd = lcd
         self.gpio_pins = gpio_pins or {}
         self.GPIO = gpio_module
+        self.on_ctrl_c = on_ctrl_c
 
         # Font setup
         self.font_size = 8
@@ -313,7 +317,9 @@ class DarkSecKeyboard:
         if key == "ESC":
             return None, True
         if key == "C-C":
-            return None, True  # Signal to send Ctrl+C
+            if callable(self.on_ctrl_c):
+                self.on_ctrl_c()
+            return "", False
 
         # Page switches
         if key == "ABC":
