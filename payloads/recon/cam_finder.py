@@ -26,7 +26,7 @@ from datetime import datetime
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
 # Import the working wardriving scanner — we inherit everything from it
-from payloads.reconnaissance.wardriving import (  # type: ignore
+from payloads.recon.wardriving import (  # type: ignore
     WardrivingScanner,
     LCD_AVAILABLE,
     SCAPY_AVAILABLE,

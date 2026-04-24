@@ -34,7 +34,7 @@ sys.path.append('/root/KTOx/wifi/')
 
 # Import wardriving engine (not cam_finder)
 try:
-    from payloads.reconnaissance.wardriving import (
+    from payloads.recon.wardriving import (
         WardrivingScanner,
         LCD_AVAILABLE,
         SCAPY_AVAILABLE,
