@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-KTOx WiFi LCD Interface
+KTOx Network Manager
 ===========================
-Simple LCD-based WiFi management interface
+LCD-based network management interface
 
 Features:
 - Network scanning and connection
@@ -18,8 +18,14 @@ Button Layout:
 - KEY3: Back/Exit
 """
 
+import os
 import sys
 import time
+
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
+
 sys.path.append('/root/KTOx/')
 
 try:
@@ -33,39 +39,47 @@ except Exception as e:
     print(f"LCD not available: {e}")
     LCD_AVAILABLE = False
 
+# Initialize hardware at module level (once)
+if LCD_AVAILABLE:
+    GPIO.setmode(GPIO.BCM)
+    GPIO.setwarnings(False)
 
-class WiFiLCDInterface:
+    PINS = {
+        'UP': 6, 'DOWN': 19, 'LEFT': 5, 'RIGHT': 26,
+        'OK': 13, 'KEY1': 21, 'KEY2': 20, 'KEY3': 16
+    }
+
+    for pin in PINS.values():
+        GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+
+    LCD = LCD_1in44.LCD()
+    LCD.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
+    LCD_Config.Driver_Delay_ms(50)
+
+    W, H = 128, 128
+
+    try:
+        font_sm = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 8)
+        font_md = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 9)
+    except:
+        font_sm = font_md = ImageFont.load_default()
+
+
+class NetworkManager:
     def __init__(self):
         if not LCD_AVAILABLE:
             raise Exception("LCD hardware not available")
 
         self.wifi_manager = WiFiManager()
 
-        # LCD setup
-        self.LCD = LCD_1in44.LCD()
-        self.LCD.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
-        self.W, self.H = 128, 128
-
-        try:
-            self.font_sm = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 8)
-            self.font_md = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 9)
-        except:
-            self.font_sm = self.font_md = ImageFont.load_default()
-
-        # GPIO setup
-        GPIO.setmode(GPIO.BCM)
-        self.setup_buttons()
-
         # Button debounce state tracking
-        self.button_state = {name: False for name in self.buttons}
-        self.last_press_time = {name: 0 for name in self.buttons}
+        self.button_state = {name: False for name in PINS}
+        self.last_press_time = {name: 0 for name in PINS}
 
         # Menu state
         self.current_menu = "main"
         self.menu_index = 0
         self.running = True
-        self.input_text = ""
-        self.input_mode = False
 
         # Settings
         self.settings = {
@@ -79,22 +93,6 @@ class WiFiLCDInterface:
         self.saved_profiles = []
         self.refresh_data()
 
-    def setup_buttons(self):
-        """Setup GPIO buttons."""
-        self.buttons = {
-            'UP': 6,
-            'DOWN': 19,
-            'LEFT': 5,
-            'RIGHT': 26,
-            'OK': 13,
-            'KEY1': 21,
-            'KEY2': 20,
-            'KEY3': 16
-        }
-
-        for pin in self.buttons.values():
-            GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-
     def refresh_data(self):
         """Refresh networks and profiles."""
         self.scanned_networks = self.wifi_manager.scan_networks()
@@ -102,28 +100,28 @@ class WiFiLCDInterface:
 
     def draw_screen(self, title, lines, button_hint=""):
         """Draw a simple screen with title, content, and hints."""
-        img = Image.new("RGB", (self.W, self.H), (10, 0, 0))
+        img = Image.new("RGB", (W, H), (10, 0, 0))
         d = ImageDraw.Draw(img)
 
         # Header
-        d.rectangle([(0, 0), (self.W, 16)], fill=(139, 0, 0))
-        d.text((4, 3), title[:20], fill=(231, 76, 60), font=self.font_md)
+        d.rectangle([(0, 0), (W, 16)], fill=(139, 0, 0))
+        d.text((4, 3), title[:20], fill=(231, 76, 60), font=font_md)
 
         # Content
         y = 20
         for line in lines[:7]:
-            d.text((4, y), line[:20], fill=(171, 178, 185), font=self.font_sm)
+            d.text((4, y), line[:20], fill=(171, 178, 185), font=font_sm)
             y += 12
 
         # Footer with hints
-        d.rectangle([(0, self.H - 12), (self.W, self.H)], fill=(34, 0, 0))
+        d.rectangle([(0, H - 12), (W, H)], fill=(34, 0, 0))
         if button_hint:
-            d.text((4, self.H - 10), button_hint[:26], fill=(113, 125, 126), font=self.font_sm)
+            d.text((4, H - 10), button_hint[:26], fill=(113, 125, 126), font=font_sm)
 
-        self.LCD.LCD_ShowImage(img, 0, 0)
+        LCD.LCD_ShowImage(img, 0, 0)
 
     def draw_main_menu(self):
-        """Draw main WiFi menu."""
+        """Draw main network menu."""
         menu_items = [
             "Scan Networks",
             "Saved Profiles",
@@ -137,7 +135,7 @@ class WiFiLCDInterface:
             marker = ">" if i == self.menu_index else " "
             lines.append(f"{marker} {item}")
 
-        self.draw_screen("WIFI MANAGER", lines, "UP/DN OK KEY3:back")
+        self.draw_screen("NETWORK MGR", lines, "UP/DN OK KEY3:back")
 
     def draw_network_scan(self):
         """Draw scanned networks list."""
@@ -159,7 +157,7 @@ class WiFiLCDInterface:
         self.draw_screen("NETWORKS", lines, "OK:Connect K3:back")
 
     def draw_saved_profiles(self):
-        """Draw saved WiFi profiles."""
+        """Draw saved network profiles."""
         lines = []
 
         if not self.saved_profiles:
@@ -207,6 +205,15 @@ class WiFiLCDInterface:
             lines.append(f"{marker} {item}")
 
         self.draw_screen("SETTINGS", lines, "UP/DN OK K3:back")
+
+    def get_password(self):
+        """Get password using DarkSecKeyboard."""
+        kb = DarkSecKeyboard(
+            width=W, height=H, lcd=LCD,
+            gpio_pins=PINS, gpio_module=GPIO
+        )
+        password = kb.run()
+        return password
 
     def handle_main_menu(self):
         """Handle main menu navigation."""
@@ -311,7 +318,6 @@ class WiFiLCDInterface:
             elif self.menu_index == 1:
                 self.settings['save_passwords'] = not self.settings['save_passwords']
             elif self.menu_index == 2:
-                # Cycle through interface options
                 options = ["auto", "wlan0", "wlan1"]
                 current_idx = options.index(self.settings['preferred_interface'])
                 self.settings['preferred_interface'] = options[(current_idx + 1) % len(options)]
@@ -322,20 +328,11 @@ class WiFiLCDInterface:
             self.current_menu = "main"
             self.menu_index = 0
 
-    def get_password(self):
-        """Get password using DarkSecKeyboard."""
-        kb = DarkSecKeyboard(
-            width=self.W, height=self.H, lcd=self.LCD,
-            gpio_pins=self.buttons, gpio_module=GPIO
-        )
-        password = kb.run()
-        return password
-
     def wait_btn(self, timeout=0.1):
         """Wait for button press with debounce state tracking."""
         start = time.time()
         while time.time() - start < timeout:
-            for name, pin in self.buttons.items():
+            for name, pin in PINS.items():
                 pressed = (GPIO.input(pin) == 0)
 
                 if pressed and not self.button_state[name]:
@@ -372,15 +369,15 @@ class WiFiLCDInterface:
 
                 time.sleep(0.05)
         finally:
-            self.LCD.LCD_Clear()
+            LCD.LCD_Clear()
             GPIO.cleanup()
 
 
 def main():
-    """Launch WiFi LCD interface."""
+    """Launch Network Manager."""
     try:
-        interface = WiFiLCDInterface()
-        interface.run()
+        manager = NetworkManager()
+        manager.run()
         return True
     except Exception as e:
         print(f"Error: {e}")
