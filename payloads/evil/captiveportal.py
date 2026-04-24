@@ -37,6 +37,11 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import parse_qs, unquote_plus
 from socketserver import ThreadingMixIn
 
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
+from payloads._darksec_keyboard import DarkSecKeyboard
+
 # Hardware
 import RPi.GPIO as GPIO
 import LCD_1in44
@@ -633,47 +638,12 @@ def draw_ssid_editor(current_ssid):
 # Simple keyboard helper (popup)
 # ----------------------------------------------------------------------
 def lcd_keyboard(title, default=""):
-    chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 -_."
-    result = list(default)
-    pos = len(result)
-    char_idx = 0
-    while True:
-        img = Image.new("RGB", (W, H), "#0A0000")
-        d = ImageDraw.Draw(img)
-        d.rectangle((0,0,W,17), fill="#8B0000")
-        d.text((4,3), title, font=f9, fill=(231, 76, 60))
-        disp = "".join(result)[:28]
-        d.text((4,22), disp, font=f9, fill=(30, 132, 73))
-        d.text((4,38), f"Char: {chars[char_idx]}", font=f9, fill=(171, 178, 185))
-        d.text((4,54), "L/R:move  U/D:char", font=f9, fill=(171, 178, 185))
-        d.text((4,66), "OK:add  KEY2:del", font=f9, fill=(171, 178, 185))
-        d.text((4,78), "KEY1:save  KEY3:cancel", font=f9, fill=(171, 178, 185))
-        LCD.LCD_ShowImage(img, 0, 0)
-        btn = wait_btn(0.2)
-        if btn == "UP":
-            char_idx = (char_idx + 1) % len(chars)
-        elif btn == "DOWN":
-            char_idx = (char_idx - 1) % len(chars)
-        elif btn == "LEFT":
-            pos = max(0, pos-1)
-        elif btn == "RIGHT":
-            pos = min(len(result), pos+1)
-        elif btn == "OK":
-            if pos == len(result):
-                result.append(chars[char_idx])
-            else:
-                result.insert(pos, chars[char_idx])
-            pos += 1
-        elif btn == "KEY2":
-            if 0 <= pos < len(result):
-                result.pop(pos)
-                if pos > len(result):
-                    pos = len(result)
-        elif btn == "KEY1":
-            return "".join(result)
-        elif btn == "KEY3":
-            return None
-        time.sleep(0.05)
+    kb = DarkSecKeyboard(width=W, height=H, lcd=LCD, gpio_pins=PINS, gpio_module=GPIO)
+    result = kb.run()
+    if result is None:
+        return None
+    result = result.strip()
+    return result if result else default
 
 # ----------------------------------------------------------------------
 # Main loop

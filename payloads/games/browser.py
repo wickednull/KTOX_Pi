@@ -31,6 +31,11 @@ import re
 import json
 from datetime import datetime
 
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
+from payloads._darksec_keyboard import DarkSecKeyboard
+
 # Hardware
 try:
     import RPi.GPIO as GPIO
@@ -278,37 +283,12 @@ def draw_keyboard(input_text, selected_row, selected_col):
     LCD.LCD_ShowImage(img, 0, 0)
 
 def osk_input(prompt="Enter URL:", initial=""):
-    input_text = initial
-    selected_row = 0
-    selected_col = 0
-    while True:
-        draw_keyboard(input_text, selected_row, selected_col)
-        btn = wait_btn(0.5)
-        if btn == "KEY3":
-            return None
-        elif btn == "KEY1":
-            if input_text.strip():
-                return input_text.strip()
-        elif btn == "KEY2":
-            input_text = input_text[:-1]
-        elif btn == "UP":
-            selected_row = (selected_row - 1) % len(KEYBOARD_ROWS)
-            new_len = len(KEYBOARD_ROWS[selected_row])
-            if selected_col >= new_len:
-                selected_col = new_len - 1
-        elif btn == "DOWN":
-            selected_row = (selected_row + 1) % len(KEYBOARD_ROWS)
-            new_len = len(KEYBOARD_ROWS[selected_row])
-            if selected_col >= new_len:
-                selected_col = new_len - 1
-        elif btn == "LEFT":
-            selected_col = (selected_col - 1) % len(KEYBOARD_ROWS[selected_row])
-        elif btn == "RIGHT":
-            selected_col = (selected_col + 1) % len(KEYBOARD_ROWS[selected_row])
-        elif btn == "OK":
-            ch = KEYBOARD_ROWS[selected_row][selected_col]
-            input_text += ch
-        time.sleep(0.05)
+    kb = DarkSecKeyboard(width=W, height=H, lcd=LCD, gpio_pins=PINS, gpio_module=GPIO)
+    result = kb.run()
+    if result is None:
+        return None
+    result = result.strip()
+    return result or initial
 
 # ----------------------------------------------------------------------
 # Browser UI drawing

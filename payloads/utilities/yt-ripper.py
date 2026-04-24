@@ -40,6 +40,7 @@ State:
 """
 
 import os
+import sys
 import re
 import json
 import time
@@ -51,6 +52,11 @@ from datetime import datetime
 import RPi.GPIO as GPIO
 import LCD_1in44
 from PIL import Image, ImageDraw, ImageFont
+
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
+from payloads._darksec_keyboard import DarkSecKeyboard
 
 # ----------------------------------------------------------------------
 # Directories
@@ -1525,36 +1531,12 @@ def draw_vkb(buf, row, col):
     show_image(img)
 
 def vkb_input(initial=""):
-    buf = initial
-    row, col = 0, 0
-    while True:
-        col = min(col, len(VKB[row]) - 1)
-        draw_vkb(buf, row, col)
-        btn = wait_btn(0.15)
-        if btn == "UP":
-            row = max(0, row - 1)
-        elif btn == "DOWN":
-            row = min(len(VKB) - 1, row + 1)
-        elif btn == "LEFT":
-            col = max(0, col - 1)
-        elif btn == "RIGHT":
-            col = min(len(VKB[row]) - 1, col + 1)
-        elif btn == "OK":
-            key = VKB[row][col]
-            if key == "BS":
-                buf = buf[:-1]
-            elif key == "SPC":
-                buf += " "
-            elif key == "CLR":
-                buf = ""
-            elif key == "ENT":
-                return buf
-            elif key == "ESC":
-                return None
-            else:
-                buf += key
-        elif btn in ("KEY2", "KEY3"):
-            return None
+    kb = DarkSecKeyboard(width=WIDTH, height=HEIGHT, lcd=LCD, gpio_pins=PINS, gpio_module=GPIO)
+    result = kb.run()
+    if result is None:
+        return None
+    result = result.strip()
+    return result or initial
 
 # ----------------------------------------------------------------------
 # LCD CLI

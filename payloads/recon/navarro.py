@@ -32,6 +32,7 @@ import RPi.GPIO as GPIO
 import LCD_1in44
 from PIL import Image, ImageDraw, ImageFont
 from payloads._input_helper import get_button
+from payloads._darksec_keyboard import DarkSecKeyboard
 try:
     import qrcode 
 except Exception:
@@ -626,75 +627,12 @@ KB_PAGES = [
 
 
 def keyboard_input(initial: str) -> str:
-    buf = initial
-    page_idx = 0
-    gx = gy = 0
-    repeat_btn: str | None = None
-    first_press_t = 0.0
-    last_rep_t = 0.0
-    REPEAT_DELAY = 0.30
-    REPEAT_RATE = 0.07
-    while APP_RUNNING:
-        page_name, grid = KB_PAGES[page_idx]
-        draw_keyboard(buf, grid, gx, gy, page_name)
-        btn = first_pressed()
-        now = time.time()
-        if repeat_btn in ("UP", "DOWN", "LEFT", "RIGHT") and GPIO.input(PINS[repeat_btn]) == 0:
-            if now - first_press_t >= REPEAT_DELAY and now - last_rep_t >= REPEAT_RATE:
-                if repeat_btn == "UP":
-                    gy = max(0, gy - 1)
-                elif repeat_btn == "DOWN":
-                    gy = min(len(grid) - 1, gy + 1)
-                elif repeat_btn == "LEFT":
-                    gx = max(0, gx - 1)
-                elif repeat_btn == "RIGHT":
-                    gx = min(len(grid[gy]) - 1, gx + 1)
-                last_rep_t = now
-                continue
-        else:
-            repeat_btn = None
-        if not btn:
-            time.sleep(0.02)
-            continue
-        if btn == "KEY3":
-            wait_release(btn)
-            return initial
-        if btn == "KEY2":
-            page_idx = (page_idx + 1) % len(KB_PAGES)
-            wait_release(btn)
-            continue
-        if btn in ("UP", "DOWN", "LEFT", "RIGHT"):
-            if btn == "UP":
-                gy = max(0, gy - 1)
-            elif btn == "DOWN":
-                gy = min(len(grid) - 1, gy + 1)
-            elif btn == "LEFT":
-                gx = max(0, gx - 1)
-            elif btn == "RIGHT":
-                gx = min(len(grid[gy]) - 1, gx + 1)
-            repeat_btn = btn
-            first_press_t = now
-            last_rep_t = now
-            continue
-        elif btn == "KEY1":
-            if buf:
-                buf = buf[:-1]
-            wait_release(btn)
-            continue
-        elif btn == "OK":
-            key = grid[gy][gx]
-            if key == "←":
-                if buf:
-                    buf = buf[:-1]
-            elif key == "Enter":
-                wait_release(btn)
-                return buf
-            else:
-                buf += key
-            wait_release(btn)
-            continue
-        wait_release(btn)
-    return buf
+    kb = DarkSecKeyboard(width=W, height=H, lcd=LCD, gpio_pins=PINS, gpio_module=GPIO)
+    result = kb.run()
+    if result is None:
+        return initial
+    result = result.strip()
+    return result or initial
 
 
 if __name__ == "__main__":

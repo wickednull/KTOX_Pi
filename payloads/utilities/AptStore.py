@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 # NAME: APT Store
 
-import os, subprocess, time
+import os, subprocess, time, sys
 from pathlib import Path
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
+from payloads._darksec_keyboard import DarkSecKeyboard
 
 # ----------------------------------------------------------------------
 # Persistent LCD hardware (no re-init on every draw)
@@ -171,39 +175,9 @@ KEYBOARD = [
 ]
 
 def keyboard_input(title="SEARCH"):
-    query = ""
-    row, col = 0, 0
-    while True:
-        draw.rectangle((0,0,W,H), fill="#0a0a0a")
-        draw.rectangle((0,0,W,12), fill="#8B0000")
-        draw.text((2,2), title[:16], font=bold_font, fill="#fff")
-        draw.text((2, H-12), f"> {query[:18]}", font=font, fill="#2ecc40")
-        y = 16
-        for r_idx, row_keys in enumerate(KEYBOARD):
-            x = 2
-            for c_idx, key in enumerate(row_keys):
-                if r_idx == row and c_idx == col:
-                    draw.rectangle((x-1, y-1, x+9, y+9), fill="#8B0000")
-                    draw.text((x, y), key, font=font, fill="#fff")
-                else:
-                    draw.text((x, y), key, font=font, fill="#c8c8c8")
-                x += 12
-            y += 12
-        flush()
-        btn = wait_button()
-        if btn == "UP": row = max(0, row-1)
-        elif btn == "DOWN": row = min(len(KEYBOARD)-1, row+1)
-        elif btn == "LEFT": col = max(0, col-1)
-        elif btn == "RIGHT": col = min(len(KEYBOARD[row])-1, col+1)
-        elif btn == "OK":
-            key = KEYBOARD[row][col]
-            if key == '←': query = query[:-1]
-            elif key == '⌫': query = ""
-            elif key in ('🔍','OK'): return query
-            elif key == 'EXIT': return None
-            else: query += key
-        elif btn == "KEY2": return None
-        elif btn == "KEY3": return None
+    kb = DarkSecKeyboard(width=W, height=H, lcd=lcd, gpio_pins=PINS, gpio_module=GPIO)
+    result = kb.run()
+    return result.strip() if result else None
 
 # ----------------------------------------------------------------------
 # Main menu
