@@ -5,22 +5,21 @@ KTOx WiFi LCD Interface
 Simple LCD-based WiFi management interface
 
 Features:
-- Network scanning and selection
-- Profile management
+- Network scanning and connection
+- Profile management with settings
 - Connection status display
-- DarkSecKeyboard for password entry
+- Interface selection and priority
 
 Button Layout:
 - UP/DOWN: Navigate menus
 - OK: Select/Confirm
-- KEY1: Quick connect/disconnect
+- KEY1: Quick actions
 - KEY2: Refresh/Scan
 - KEY3: Back/Exit
 """
 
 import sys
 import time
-import threading
 sys.path.append('/root/KTOx/')
 
 try:
@@ -28,7 +27,6 @@ try:
     from PIL import Image, ImageDraw, ImageFont
     import RPi.GPIO as GPIO
     from wifi_manager import WiFiManager
-    from payloads._darksec_keyboard import DarkSecKeyboard
     LCD_AVAILABLE = True
 except Exception as e:
     print(f"LCD not available: {e}")
@@ -57,16 +55,19 @@ class WiFiLCDInterface:
         GPIO.setmode(GPIO.BCM)
         self.setup_buttons()
 
-        # Keyboard for password entry
-        self.keyboard = DarkSecKeyboard(
-            width=self.W, height=self.H, lcd=self.LCD,
-            gpio_pins=self.buttons, gpio_module=GPIO
-        )
-
         # Menu state
         self.current_menu = "main"
         self.menu_index = 0
         self.running = True
+        self.input_text = ""
+        self.input_mode = False
+
+        # Settings
+        self.settings = {
+            "auto_connect": True,
+            "preferred_interface": "auto",
+            "save_passwords": True
+        }
 
         # Data
         self.scanned_networks = []
@@ -116,12 +117,37 @@ class WiFiLCDInterface:
 
         self.LCD.LCD_ShowImage(img, 0, 0)
 
+    def draw_text_input(self, prompt):
+        """Draw text input screen for password."""
+        img = Image.new("RGB", (self.W, self.H), (10, 0, 0))
+        d = ImageDraw.Draw(img)
+
+        # Header
+        d.rectangle([(0, 0), (self.W, 16)], fill=(139, 0, 0))
+        d.text((4, 3), prompt[:18], fill=(231, 76, 60), font=self.font_md)
+
+        # Input line
+        d.rectangle([(2, 25), (self.W - 2, 40)], fill=(34, 0, 0))
+        d.rectangle([(2, 25), (self.W - 2, 40)], outline=(231, 76, 60))
+
+        display_text = self.input_text[-14:] if len(self.input_text) > 14 else self.input_text
+        d.text((4, 28), display_text, fill=(212, 172, 13), font=self.font_sm)
+
+        # Instructions
+        d.text((4, 50), "KEY1:Done KEY3:Cancel", fill=(171, 178, 185), font=self.font_sm)
+        d.text((4, 65), "UP/DN: select char", fill=(113, 125, 126), font=self.font_sm)
+        d.text((4, 75), "LEFT/RIGHT: move", fill=(113, 125, 126), font=self.font_sm)
+        d.text((4, 85), "OK: add char KEY2: del", fill=(113, 125, 126), font=self.font_sm)
+
+        self.LCD.LCD_ShowImage(img, 0, 0)
+
     def draw_main_menu(self):
         """Draw main WiFi menu."""
         menu_items = [
             "Scan Networks",
             "Saved Profiles",
             "Connection Info",
+            "Settings",
             "Exit"
         ]
 
@@ -145,9 +171,9 @@ class WiFiLCDInterface:
             for i, network in enumerate(visible):
                 idx = start_idx + i
                 marker = ">" if idx == self.menu_index else " "
-                ssid = network.get('ssid', 'Unknown')[:16]
+                ssid = network.get('ssid', 'Unknown')[:13]
                 encrypted = "[L]" if network.get('encrypted', False) else "[O]"
-                lines.append(f"{marker} {encrypted} {ssid}")
+                lines.append(f"{marker}{encrypted}{ssid}")
 
         self.draw_screen("NETWORKS", lines, "OK:Connect K3:back")
 
@@ -164,7 +190,7 @@ class WiFiLCDInterface:
             for i, profile in enumerate(visible):
                 idx = start_idx + i
                 marker = ">" if idx == self.menu_index else " "
-                ssid = profile.get('ssid', 'Unknown')[:16]
+                ssid = profile.get('ssid', 'Unknown')[:15]
                 lines.append(f"{marker} {ssid}")
 
         self.draw_screen("PROFILES", lines, "OK:Connect K3:back")
@@ -174,22 +200,41 @@ class WiFiLCDInterface:
         status = self.wifi_manager.get_connection_status()
 
         lines = [
-            f"Status: {status.get('status', 'unknown').upper()[:8]}",
-            f"SSID: {status.get('ssid', 'N/A')[:14]}",
+            f"Status: {status.get('status', 'unknown')[:8]}",
+            f"SSID: {status.get('ssid', 'N/A')[:13]}",
             f"Signal: {status.get('signal', 0)}",
-            f"IP: {status.get('ip', 'N/A')[:14]}",
+            f"IP: {status.get('ip', 'N/A')[:13]}",
         ]
 
         self.draw_screen("INFO", lines, "K2:Refresh K3:back")
+
+    def draw_settings_menu(self):
+        """Draw settings menu."""
+        auto_conn = "ON" if self.settings['auto_connect'] else "OFF"
+        save_pwd = "ON" if self.settings['save_passwords'] else "OFF"
+
+        menu_items = [
+            f"AutoConnect: {auto_conn}",
+            f"SavePwd: {save_pwd}",
+            f"Interface: {self.settings['preferred_interface']}",
+            "Back"
+        ]
+
+        lines = []
+        for i, item in enumerate(menu_items):
+            marker = ">" if i == self.menu_index else " "
+            lines.append(f"{marker} {item}")
+
+        self.draw_screen("SETTINGS", lines, "UP/DN OK K3:back")
 
     def handle_main_menu(self):
         """Handle main menu navigation."""
         btn = self.wait_btn(0.3)
 
         if btn == "UP":
-            self.menu_index = (self.menu_index - 1) % 4
+            self.menu_index = (self.menu_index - 1) % 5
         elif btn == "DOWN":
-            self.menu_index = (self.menu_index + 1) % 4
+            self.menu_index = (self.menu_index + 1) % 5
         elif btn == "OK":
             if self.menu_index == 0:
                 self.current_menu = "scan"
@@ -200,6 +245,9 @@ class WiFiLCDInterface:
             elif self.menu_index == 2:
                 self.current_menu = "info"
             elif self.menu_index == 3:
+                self.current_menu = "settings"
+                self.menu_index = 0
+            elif self.menu_index == 4:
                 self.running = False
         elif btn == "KEY2":
             self.refresh_data()
@@ -222,12 +270,12 @@ class WiFiLCDInterface:
             # Get password if encrypted
             password = ""
             if network.get('encrypted', False):
-                password = self.keyboard.run()
+                password = self.get_password_simple()
                 if password is None:
                     return
 
             # Connect
-            self.wifi_manager.connect_network(ssid, password)
+            self.wifi_manager.connect_to_network(ssid, password)
             time.sleep(2)
             self.refresh_data()
             self.current_menu = "main"
@@ -250,7 +298,7 @@ class WiFiLCDInterface:
                 self.menu_index = min(len(self.saved_profiles) - 1, self.menu_index + 1)
         elif btn == "OK" and self.saved_profiles:
             profile = self.saved_profiles[self.menu_index]
-            self.wifi_manager.connect_network(profile['ssid'], profile.get('password', ''))
+            self.wifi_manager.connect_to_profile(profile)
             time.sleep(2)
             self.refresh_data()
             self.current_menu = "main"
@@ -267,6 +315,54 @@ class WiFiLCDInterface:
             self.refresh_data()
         elif btn == "KEY3":
             self.current_menu = "main"
+
+    def handle_settings_menu(self):
+        """Handle settings menu navigation."""
+        btn = self.wait_btn(0.3)
+
+        if btn == "UP":
+            self.menu_index = max(0, self.menu_index - 1)
+        elif btn == "DOWN":
+            self.menu_index = min(3, self.menu_index + 1)
+        elif btn == "OK":
+            if self.menu_index == 0:
+                self.settings['auto_connect'] = not self.settings['auto_connect']
+            elif self.menu_index == 1:
+                self.settings['save_passwords'] = not self.settings['save_passwords']
+            elif self.menu_index == 2:
+                # Cycle through interface options
+                options = ["auto", "wlan0", "wlan1"]
+                current_idx = options.index(self.settings['preferred_interface'])
+                self.settings['preferred_interface'] = options[(current_idx + 1) % len(options)]
+            elif self.menu_index == 3:
+                self.current_menu = "main"
+                self.menu_index = 0
+        elif btn == "KEY3":
+            self.current_menu = "main"
+            self.menu_index = 0
+
+    def get_password_simple(self):
+        """Simple on-screen password input without DarkSecKeyboard."""
+        self.input_text = ""
+        charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*-_=+"
+        char_idx = 0
+
+        while True:
+            self.draw_text_input("Password")
+            btn = self.wait_btn(0.3)
+
+            if btn == "UP":
+                char_idx = (char_idx - 1) % len(charset)
+            elif btn == "DOWN":
+                char_idx = (char_idx + 1) % len(charset)
+            elif btn == "OK":
+                self.input_text += charset[char_idx]
+            elif btn == "KEY1":
+                return self.input_text if self.input_text else None
+            elif btn == "KEY2":
+                self.input_text = self.input_text[:-1]
+            elif btn == "KEY3":
+                return None
 
     def wait_btn(self, timeout=0.1):
         """Wait for button press with timeout."""
@@ -295,6 +391,9 @@ class WiFiLCDInterface:
                 elif self.current_menu == "info":
                     self.draw_connection_info()
                     self.handle_info_menu()
+                elif self.current_menu == "settings":
+                    self.draw_settings_menu()
+                    self.handle_settings_menu()
 
                 time.sleep(0.05)
         finally:
@@ -310,6 +409,8 @@ def main():
         return True
     except Exception as e:
         print(f"Error: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 
