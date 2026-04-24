@@ -584,18 +584,18 @@ try:
 
 except Exception as e:
     print(f"[!] Loki failed to start: {{e}}")
-    print("[*] Falling back to KTOx wrapper...")
-    # Fallback: start the KTOx wrapper instead
+    print("[*] Falling back to KTOx Professional WebUI...")
+    # Fallback: start the professional webui
     try:
         import sys
-        wrapper_path = "/home/user/KTOX_Pi/payloads/offensive/loki_ktox_wrapper.py"
-        if os.path.exists(wrapper_path):
-            subprocess.run([sys.executable, wrapper_path])
+        webui_path = "/home/user/KTOX_Pi/payloads/offensive/loki_ktox_webui.py"
+        if os.path.exists(webui_path):
+            subprocess.run([sys.executable, webui_path])
         else:
-            print(f"[!] Wrapper not found: {{wrapper_path}}")
+            print(f"[!] WebUI not found: {{webui_path}}")
             sys.exit(1)
     except Exception as e2:
-        print(f"[!] Wrapper also failed: {{e2}}")
+        print(f"[!] WebUI also failed: {{e2}}")
         sys.exit(1)
 '''
     LAUNCHER.parent.mkdir(parents=True, exist_ok=True)
