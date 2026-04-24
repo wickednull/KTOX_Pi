@@ -70,10 +70,11 @@ font = scaled_font()
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-LOOT_DIR = "/root/KTOx/loot/CaptivePortal"
+KTOX_DIR = os.environ.get("KTOX_DIR", "/root/KTOx")
+LOOT_DIR = os.path.join(KTOX_DIR, "loot", "CaptivePortal")
 os.makedirs(LOOT_DIR, exist_ok=True)
 
-SITES_DIR = "/root/KTOx/DNSSpoof/sites"
+SITES_DIR = os.path.join(KTOX_DIR, "DNSSpoof", "sites")
 HOSTAPD_CONF = "/tmp/ktox_captive_hostapd.conf"
 DNSMASQ_CONF = "/tmp/ktox_captive_dnsmasq.conf"
 PORTAL_PORT = 80

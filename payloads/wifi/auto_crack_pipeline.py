@@ -65,9 +65,10 @@ f9 = font(9)
 # ----------------------------------------------------------------------
 # Directories & webhook
 # ----------------------------------------------------------------------
-LOOT_DIR = "/root/KTOx/loot/AutoCrack"
+KTOX_DIR = os.environ.get("KTOX_DIR", "/root/KTOx")
+LOOT_DIR = os.path.join(KTOX_DIR, "loot", "AutoCrack")
 os.makedirs(LOOT_DIR, exist_ok=True)
-WEBHOOK_FILE = "/root/KTOx/discord_webhook.txt"
+WEBHOOK_FILE = os.path.join(KTOX_DIR, "discord_webhook.txt")
 
 def webhook(msg):
     try:
