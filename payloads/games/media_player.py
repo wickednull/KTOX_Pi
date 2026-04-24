@@ -1,36 +1,85 @@
 #!/usr/bin/env python3
 """
-KTOx Media Player – Smooth Video with A/V Sync
-================================================
-- Non‑blocking button polling.
-- ffmpeg with -re for real‑time playback, -async 1 for audio sync.
+KTOx Payload – Media Player with Full Controls (Fixed Exit)
+=============================================================
+- Plays video (MP4, AVI, MKV, MOV, WebM) and audio (MP3, WAV, FLAC, OGG)
 - USB audio via plughw:1,0
-- 15 fps video, hardware‑accelerated where possible.
+- Auto‑installs ffmpeg, alsa-utils, python3-pil
+- Playback controls: pause, next, previous, volume
+- KEY3 anywhere exits cleanly back to KTOx menu
 
-Controls: UP/DOWN, OK, LEFT, KEY1=stop, KEY3=exit
+Controls in file browser: UP/DOWN, OK, LEFT, KEY3=exit
+Controls during playback:
+  KEY1 – stop (return to browser)
+  KEY2 – pause/resume
+  LEFT – previous file
+  RIGHT – next file
+  UP   – volume up (+10%)
+  DOWN – volume down (-10%)
+  KEY3 – exit payload completely
 """
 
-import os, sys, time, json, subprocess
+import os
+import sys
+import time
+import json
+import subprocess
+import signal
+
+# ----------------------------------------------------------------------
+# Auto‑install dependencies (run before hardware init)
+# ----------------------------------------------------------------------
+def auto_install():
+    missing = []
+    if os.system("which ffmpeg >/dev/null 2>&1") != 0:
+        missing.append("ffmpeg")
+    if os.system("which aplay >/dev/null 2>&1") != 0:
+        missing.append("alsa-utils")
+    try:
+        from PIL import Image
+    except ImportError:
+        missing.append("python3-pil")
+
+    if not missing:
+        return True
+
+    # Temporary LCD output to show progress
+    import RPi.GPIO as GPIO
+    import LCD_1in44
+    from PIL import Image, ImageDraw, ImageFont
+    lcd = LCD_1in44.LCD()
+    lcd.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
+    w, h = 128, 128
+    try:
+        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 9)
+    except:
+        font = ImageFont.load_default()
+    img = Image.new("RGB", (w, h), (10, 0, 0))
+    d = ImageDraw.Draw(img)
+    d.text((64, 30), "Installing dependencies...", font=font, fill=(30, 132, 73), anchor="mm")
+    d.text((64, 50), f"Missing: {', '.join(missing)}", font=font, fill=(171, 178, 185), anchor="mm")
+    d.text((64, 70), "Please wait", font=font, fill=(113, 125, 126), anchor="mm")
+    lcd.LCD_ShowImage(img, 0, 0)
+
+    try:
+        subprocess.run(["apt", "update"], check=True, capture_output=True)
+        subprocess.run(["apt", "install", "-y"] + missing, check=True, capture_output=True)
+        return True
+    except:
+        return False
+
+# Run auto-install before any hardware imports that depend on PIL
+if not auto_install():
+    print("Auto-install failed. Please run: sudo apt install ffmpeg alsa-utils python3-pil")
+    sys.exit(1)
+
+# ----------------------------------------------------------------------
+# Hardware (now PIL is available)
+# ----------------------------------------------------------------------
 import RPi.GPIO as GPIO
 import LCD_1in44
 from PIL import Image, ImageDraw, ImageFont
 
-# ----------------------------------------------------------------------
-# Paths & config
-# ----------------------------------------------------------------------
-LOOT_DIR = "/root/KTOx/loot/MediaPlayer"
-os.makedirs(LOOT_DIR, exist_ok=True)
-CONFIG_FILE = os.path.join(LOOT_DIR, "config.json")
-START_DIR = "/root/Videos"
-os.makedirs(START_DIR, exist_ok=True)
-
-VIDEO_EXTS = ('.mp4', '.avi', '.mkv', '.mov', '.webm')
-AUDIO_EXTS = ('.mp3', '.wav', '.flac', '.ogg')
-ALL_MEDIA_EXTS = VIDEO_EXTS + AUDIO_EXTS
-
-# ----------------------------------------------------------------------
-# Hardware
-# ----------------------------------------------------------------------
 PINS = {
     "UP": 6, "DOWN": 19, "LEFT": 5, "RIGHT": 26,
     "OK": 13, "KEY1": 21, "KEY2": 20, "KEY3": 16,
@@ -52,7 +101,6 @@ FONT = font(9)
 FONT_BOLD = font(10)
 
 def wait_btn_nonblock():
-    """Non‑blocking button check. Returns button name or None."""
     for name, pin in PINS.items():
         if GPIO.input(pin) == 0:
             time.sleep(0.05)  # debounce
@@ -69,13 +117,41 @@ def show_message(msg, sub=""):
     time.sleep(1.5)
 
 # ----------------------------------------------------------------------
-# Audio device (hardcoded for your headset)
+# Audio device and volume control
 # ----------------------------------------------------------------------
 AUDIO_DEV = "plughw:1,0"
+
+def set_volume(delta):
+    """Change volume by delta percent (e.g., +10 or -10). Returns new volume."""
+    try:
+        result = subprocess.run(["amixer", "-D", "hw:1", "sget", "Master"], capture_output=True, text=True)
+        for line in result.stdout.splitlines():
+            if "Front Left:" in line or "Playback" in line:
+                parts = line.split()
+                for i, p in enumerate(parts):
+                    if p == "[" and i+1 < len(parts):
+                        vol_str = parts[i+1].replace("%", "")
+                        vol = int(vol_str)
+                        new_vol = max(0, min(100, vol + delta))
+                        subprocess.run(["amixer", "-D", "hw:1", "sset", "Master", f"{new_vol}%"], capture_output=True)
+                        return new_vol
+    except:
+        pass
+    return 50
 
 # ----------------------------------------------------------------------
 # Config persistence
 # ----------------------------------------------------------------------
+LOOT_DIR = "/root/KTOx/loot/MediaPlayer"
+os.makedirs(LOOT_DIR, exist_ok=True)
+CONFIG_FILE = os.path.join(LOOT_DIR, "config.json")
+START_DIR = "/root/Videos"
+os.makedirs(START_DIR, exist_ok=True)
+
+VIDEO_EXTS = ('.mp4', '.avi', '.mkv', '.mov', '.webm')
+AUDIO_EXTS = ('.mp3', '.wav', '.flac', '.ogg')
+ALL_MEDIA_EXTS = VIDEO_EXTS + AUDIO_EXTS
+
 def load_config():
     if os.path.exists(CONFIG_FILE):
         try:
@@ -93,7 +169,7 @@ def save_config(cfg):
         pass
 
 # ----------------------------------------------------------------------
-# File browser helpers
+# File browser
 # ----------------------------------------------------------------------
 def list_media(path):
     try:
@@ -120,7 +196,6 @@ def draw_browser(path, entries, cursor, scroll):
     d = ImageDraw.Draw(img)
     d.rectangle((0, 0, W, 13), fill=(139, 0, 0))
     d.text((4, 2), "MEDIA PLAYER", font=FONT_BOLD, fill=(231, 76, 60))
-    # File count (right-aligned)
     count_text = f"{len(entries)}"
     tw = d.textlength(count_text, font=FONT)
     d.text((W - 4 - int(tw), 2), count_text, font=FONT, fill=(30, 132, 73))
@@ -143,100 +218,192 @@ def draw_browser(path, entries, cursor, scroll):
         bar_y = 26 + int((scroll / max(1, len(entries)-5)) * (70 - bar_h))
         d.rectangle((W-4, bar_y, W-2, bar_y+bar_h), fill=(192, 57, 43))
     d.rectangle((0, H-12, W, H), fill=(34, 0, 0))
-    d.text((4, H-10), "UP/DN OK LEFT K1=Stop K3=Exit", font=FONT, fill=(192, 57, 43))
+    d.text((4, H-10), "UP/DN OK LEFT K3=Exit", font=FONT, fill=(192, 57, 43))
     LCD.LCD_ShowImage(img, 0, 0)
 
 # ----------------------------------------------------------------------
-# Playback (smooth, with A/V sync)
+# Playback with controls and global exit flag
 # ----------------------------------------------------------------------
-current_process = None
+current_proc = None
+paused = False
+current_volume = 50
+running = True
 
 def stop_playback():
-    global current_process
-    if current_process:
-        current_process.terminate()
+    global current_proc, paused
+    if current_proc:
         try:
-            current_process.wait(timeout=2)
+            os.killpg(os.getpgid(current_proc.pid), signal.SIGTERM)
+            current_proc.wait(timeout=2)
         except:
-            current_process.kill()
-        current_process = None
+            try:
+                current_proc.terminate()
+                current_proc.wait(timeout=2)
+            except:
+                current_proc.kill()
+        current_proc = None
+    paused = False
 
-def play_audio(filepath):
-    """Use aplay for reliable audio playback."""
-    global current_process
-    stop_playback()
-    cmd = ["aplay", "-D", AUDIO_DEV, filepath]
-    current_process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    while current_process.poll() is None:
-        img = Image.new("RGB", (W, H), (10, 0, 0))
-        d = ImageDraw.Draw(img)
-        d.rectangle((0, 0, W, 13), fill=(139, 0, 0))
-        d.text((4, 2), "NOW PLAYING", font=FONT_BOLD, fill=(231, 76, 60))
-        d.text((4, 20), f"🎵 {os.path.basename(filepath)[:18]}", font=FONT, fill=(171, 178, 185))
-        d.text((4, 40), "Press KEY1 to stop", font=FONT, fill=(113, 125, 126))
-        d.text((4, H-12), "KEY1=stop", font=FONT, fill=(192, 57, 43))
-        LCD.LCD_ShowImage(img, 0, 0)
-        if wait_btn_nonblock() in ("KEY1", "KEY3"):
-            stop_playback()
-            break
-        time.sleep(0.05)
-    stop_playback()
-
-def play_video(filepath):
-    """Play video with ffmpeg using -re for real‑time and -async 1 for sync."""
-    global current_process
-    stop_playback()
-
-    cmd = [
-        "ffmpeg",
-        "-re",                     # Read input at native frame rate
-        "-i", filepath,
-        "-vf", "fps=15,scale=128:128",
-        "-pix_fmt", "rgb24",
-        "-f", "rawvideo",
-        "-vsync", "cfr",           # Constant frame rate output
-        "-",
-        "-map", "0:a",
-        "-f", "alsa", AUDIO_DEV,
-        "-ac", "2", "-ar", "48000",
-        "-async", "1"              # Audio sync resampling
-    ]
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-    current_process = proc
-    frame_size = 128 * 128 * 3
-
-    # Show now‑playing screen
-    img = Image.new("RGB", (W, H), (10, 0, 0))
-    d = ImageDraw.Draw(img)
-    d.rectangle((0, 0, W, 13), fill=(139, 0, 0))
-    d.text((4, 2), "NOW PLAYING", font=FONT_BOLD, fill=(231, 76, 60))
-    d.text((4, 20), f"🎬 {os.path.basename(filepath)[:18]}", font=FONT, fill=(171, 178, 185))
-    d.text((4, 35), "Press KEY1 to stop", font=FONT, fill=(113, 125, 126))
-    LCD.LCD_ShowImage(img, 0, 0)
-    time.sleep(1)
-
-    while True:
-        btn = wait_btn_nonblock()
-        if btn == "KEY1" or btn == "KEY3":
-            stop_playback()
-            break
-
-        raw = proc.stdout.read(frame_size)
-        if len(raw) < frame_size:
-            break
-
+def pause_playback():
+    global paused, current_proc
+    if not current_proc:
+        return
+    if paused:
         try:
-            frame = Image.frombytes("RGB", (128, 128), raw)
-            LCD.LCD_ShowImage(frame, 0, 0)
+            os.killpg(os.getpgid(current_proc.pid), signal.SIGCONT)
+            paused = False
+        except:
+            pass
+    else:
+        try:
+            os.killpg(os.getpgid(current_proc.pid), signal.SIGSTOP)
+            paused = True
         except:
             pass
 
-    LCD.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
+def play_audio(filepath):
+    global current_proc
+    cmd = f"ffmpeg -i '{filepath}' -f s16le -ac 2 -ar 48000 - | aplay -D {AUDIO_DEV} -f S16_LE -c 2 -r 48000"
+    current_proc = subprocess.Popen(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                    start_new_session=True)
+    return current_proc
+
+def play_video(filepath):
+    global current_proc
+    cmd = [
+        "ffmpeg", "-re", "-i", filepath,
+        "-vf", "fps=15,scale=128:128", "-pix_fmt", "rgb24",
+        "-f", "rawvideo", "-vsync", "cfr", "-",
+        "-map", "0:a", "-f", "alsa", AUDIO_DEV, "-ac", "2", "-ar", "48000", "-async", "1"
+    ]
+    current_proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                    start_new_session=True)
+    return current_proc
+
+def playback_control_loop(playlist, start_idx):
+    global current_proc, paused, current_volume, running
+    idx = start_idx
+    paused = False
+    current_volume = set_volume(0)
+
+    while 0 <= idx < len(playlist) and running:
+        filepath = playlist[idx]
+        is_video = filepath.lower().endswith(VIDEO_EXTS)
+
+        if is_video:
+            proc = play_video(filepath)
+            frame_size = 128 * 128 * 3
+            # Show now‑playing screen
+            img = Image.new("RGB", (W, H), (10, 0, 0))
+            d = ImageDraw.Draw(img)
+            d.rectangle((0, 0, W, 13), fill=(139, 0, 0))
+            d.text((4, 2), "NOW PLAYING", font=FONT_BOLD, fill=(231, 76, 60))
+            d.text((4, 20), f"🎬 {os.path.basename(filepath)[:18]}", font=FONT, fill=(171, 178, 185))
+            d.text((4, 35), "K2=Pause  K1=Stop  K3=Exit", font=FONT, fill=(113, 125, 126))
+            d.text((4, 45), "LEFT/RIGHT=Prev/Next", font=FONT, fill=(113, 125, 126))
+            d.text((4, 55), f"UP/DOWN=Volume {current_volume}%", font=FONT, fill=(113, 125, 126))
+            LCD.LCD_ShowImage(img, 0, 0)
+            time.sleep(1)
+
+            while running:
+                btn = wait_btn_nonblock()
+                if btn == "KEY3":
+                    running = False
+                    stop_playback()
+                    return idx
+                elif btn == "KEY1":
+                    stop_playback()
+                    return idx
+                elif btn == "KEY2":
+                    pause_playback()
+                elif btn == "LEFT":
+                    stop_playback()
+                    idx = (idx - 1) % len(playlist)
+                    break
+                elif btn == "RIGHT":
+                    stop_playback()
+                    idx = (idx + 1) % len(playlist)
+                    break
+                elif btn == "UP":
+                    current_volume = set_volume(+10)
+                    d.rectangle((0, 55, W, 65), fill=(10, 0, 0))
+                    d.text((4, 55), f"UP/DOWN=Volume {current_volume}%", font=FONT, fill=(113, 125, 126))
+                    LCD.LCD_ShowImage(img, 0, 0)
+                elif btn == "DOWN":
+                    current_volume = set_volume(-10)
+                    d.rectangle((0, 55, W, 65), fill=(10, 0, 0))
+                    d.text((4, 55), f"UP/DOWN=Volume {current_volume}%", font=FONT, fill=(113, 125, 126))
+                    LCD.LCD_ShowImage(img, 0, 0)
+
+                if current_proc and not paused:
+                    raw = current_proc.stdout.read(frame_size)
+                    if len(raw) < frame_size:
+                        stop_playback()
+                        idx = (idx + 1) % len(playlist)
+                        break
+                    try:
+                        frame = Image.frombytes("RGB", (128, 128), raw)
+                        LCD.LCD_ShowImage(frame, 0, 0)
+                    except:
+                        pass
+                else:
+                    time.sleep(0.05)
+        else:
+            # Audio playback
+            play_audio(filepath)
+            img = Image.new("RGB", (W, H), (10, 0, 0))
+            d = ImageDraw.Draw(img)
+            d.rectangle((0, 0, W, 13), fill=(139, 0, 0))
+            d.text((4, 2), "NOW PLAYING", font=FONT_BOLD, fill=(231, 76, 60))
+            d.text((4, 20), f"🎵 {os.path.basename(filepath)[:18]}", font=FONT, fill=(171, 178, 185))
+            d.text((4, 35), "K2=Pause  K1=Stop  K3=Exit", font=FONT, fill=(113, 125, 126))
+            d.text((4, 45), "LEFT/RIGHT=Prev/Next", font=FONT, fill=(113, 125, 126))
+            d.text((4, 55), f"UP/DOWN=Volume {current_volume}%", font=FONT, fill=(113, 125, 126))
+            LCD.LCD_ShowImage(img, 0, 0)
+
+            while running:
+                btn = wait_btn_nonblock()
+                if btn == "KEY3":
+                    running = False
+                    stop_playback()
+                    return idx
+                elif btn == "KEY1":
+                    stop_playback()
+                    return idx
+                elif btn == "KEY2":
+                    pause_playback()
+                elif btn == "LEFT":
+                    stop_playback()
+                    idx = (idx - 1) % len(playlist)
+                    break
+                elif btn == "RIGHT":
+                    stop_playback()
+                    idx = (idx + 1) % len(playlist)
+                    break
+                elif btn == "UP":
+                    current_volume = set_volume(+10)
+                    d.rectangle((0, 55, W, 65), fill=(10, 0, 0))
+                    d.text((4, 55), f"UP/DOWN=Volume {current_volume}%", font=FONT, fill=(113, 125, 126))
+                    LCD.LCD_ShowImage(img, 0, 0)
+                elif btn == "DOWN":
+                    current_volume = set_volume(-10)
+                    d.rectangle((0, 55, W, 65), fill=(10, 0, 0))
+                    d.text((4, 55), f"UP/DOWN=Volume {current_volume}%", font=FONT, fill=(113, 125, 126))
+                    LCD.LCD_ShowImage(img, 0, 0)
+
+                if current_proc and current_proc.poll() is not None:
+                    stop_playback()
+                    idx = (idx + 1) % len(playlist)
+                    break
+                time.sleep(0.05)
+
+    return idx
 
 # ----------------------------------------------------------------------
 # Main
 # ----------------------------------------------------------------------
 def main():
+    global running
     cfg = load_config()
     path = cfg.get("last_dir", START_DIR)
     if not os.path.exists(path):
@@ -245,10 +412,12 @@ def main():
     cursor = 0
     scroll = 0
     show_message("Media Player Ready", f"Audio: {AUDIO_DEV}")
-    while True:
+
+    while running:
         draw_browser(path, entries, cursor, scroll)
         btn = wait_btn_nonblock()
         if btn == "KEY3":
+            running = False
             break
         elif btn == "UP" and cursor > 0:
             cursor -= 1
@@ -277,22 +446,15 @@ def main():
                 cfg["last_dir"] = path
                 save_config(cfg)
             else:
-                filepath = e.path
-                if filepath.lower().endswith(VIDEO_EXTS):
-                    play_video(filepath)
-                elif filepath.lower().endswith(AUDIO_EXTS):
-                    play_audio(filepath)
+                playlist = [f.path for f in entries if not f.is_dir()]
+                start_idx = [i for i, f in enumerate(playlist) if f == e.path][0]
+                playback_control_loop(playlist, start_idx)
+                # Refresh after playback (in case directory changed)
                 entries = list_media(path)
-        elif btn == "KEY1":
-            stop_playback()
-        time.sleep(0.05)  # small delay to prevent CPU hogging in menu
+        time.sleep(0.05)
 
-    stop_playback()
     LCD.LCD_Clear()
     GPIO.cleanup()
 
 if __name__ == "__main__":
-    if os.system("which ffmpeg >/dev/null 2>&1") != 0 or os.system("which aplay >/dev/null 2>&1") != 0:
-        show_message("Missing ffmpeg or aplay", "sudo apt install ffmpeg alsa-utils")
-        sys.exit(1)
     main()
