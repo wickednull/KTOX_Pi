@@ -1,318 +1,366 @@
 #!/usr/bin/env python3
-"""
-KTOx Loki Engine Integration
-=============================
-Comprehensive Loki payload launcher for KTOX_Pi
+# NAME: Loki Autonomous Engine
+# PROPER IMPLEMENTATION WITH LCD SUPPORT AND PATH FIXING
 
-Provides:
-- Automatic installation management
-- Process lifecycle control
-- LCD status display
-- WebUI integration
-- Headless operation support
-
-Author: KTOx Development
-"""
-
-import os
-import sys
-import time
-import subprocess
-import socket
-import signal
-import shutil
-import threading
-import logging
+import os, sys, time, subprocess, socket, signal, shutil, threading
 from pathlib import Path
 from datetime import datetime
 
-# Environment & Paths
-KTOX_DIR = os.environ.get("KTOX_DIR", "/root/KTOx")
-LOOT_DIR = os.path.join(KTOX_DIR, "loot")
-VENDOR_DIR = Path(KTOX_DIR) / "vendor" / "loki"
-LOKI_DATA = Path(LOOT_DIR) / "loki"
-LOKI_PID = Path(LOOT_DIR) / "loki.pid"
-LOKI_PORT = 8000
+# Environment & paths
+LOOT_DIR   = os.environ.get("KTOX_LOOT_DIR", "/root/KTOx/loot")
+KTOX_ROOT  = str(Path(LOOT_DIR).parent)
 
-LOKI_REPO = "https://github.com/pineapple-pager-projects/pineapple_pager_loki"
-LAUNCHER = VENDOR_DIR / "ktox_headless_loki.py"
+VENDOR_DIR = Path(KTOX_ROOT) / "vendor" / "loki"
+LOKI_DIR   = VENDOR_DIR / "payloads" / "user" / "reconnaissance" / "loki"
+LOKI_DATA  = Path(LOOT_DIR) / "loki"
+LOKI_PID   = Path(LOOT_DIR) / "loki.pid"
+LAUNCHER   = LOKI_DIR / "ktox_headless_loki.py"
+LOKI_REPO  = "https://github.com/pineapple-pager-projects/pineapple_pager_loki"
+LOKI_PORT  = 8000
 
-# Logging setup
-logging.basicConfig(
-    level=logging.INFO,
-    format='[Loki] %(asctime)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
-
-# GPIO Pins (Waveshare 1.44" HAT)
+# GPIO pin map (Waveshare 1.44" HAT)
 PINS = {
-    "UP": 6, "DOWN": 19, "LEFT": 5, "RIGHT": 26,
-    "OK": 13, "KEY1": 21, "KEY2": 20, "KEY3": 16,
+    "KEY_UP_PIN":    6, "KEY_DOWN_PIN":  19, "KEY_LEFT_PIN":  5,
+    "KEY_RIGHT_PIN": 26, "KEY_PRESS_PIN": 13,
+    "KEY1_PIN":      21, "KEY2_PIN":      20, "KEY3_PIN":      16,
 }
 
-# Colors (RGB hex)
-COLORS = {
-    "BLACK": "#0a0a0a",
-    "WHITE": "#c8c8c8",
-    "RED": "#8B0000",
-    "GREEN": "#2ecc40",
-    "ORANGE": "#ff8800",
-    "BLUE": "#3399ff",
-    "DIM": "#444444",
-}
+# Display colors
+BG     = "#0a0a0a"
+FG     = "#c8c8c8"
+RED    = "#8B0000"
+GREEN  = "#2ecc40"
+ORANGE = "#ff8800"
+BLUE   = "#3399ff"
+DIM    = "#444444"
 
-# Hardware detection
+FONT_BOLD  = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf"
+FONT_MONO  = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"
+
+_HAS_GPIO = False
+_HW = False
+LCD = None
+image = None
+draw = None
+font = None
+small = None
+
 try:
     import RPi.GPIO as GPIO
     from PIL import Image, ImageDraw, ImageFont
     import LCD_1in44
     import LCD_Config
-    HAS_GPIO = True
+    GPIO.setmode(GPIO.BCM)
+    GPIO.setwarnings(False)
+    for pin in PINS.values():
+        GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+    _HAS_GPIO = True
 except ImportError:
-    HAS_GPIO = False
-    GPIO = None
-    LCD_1in44 = None
+    _HAS_GPIO = False
 
-_lcd = None
-_image = None
-_draw = None
+def _init_hw():
+    global _HW, LCD, image, draw, font, small
+    if not _HAS_GPIO:
+        return
+    try:
+        LCD = LCD_1in44.LCD()
+        LCD.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
+        LCD_Config.Driver_Delay_ms(50)
+        image = Image.new("RGB", (LCD.width, LCD.height), BG)
+        draw  = ImageDraw.Draw(image)
+        font  = ImageFont.truetype(FONT_BOLD, 9)
+        small = ImageFont.truetype(FONT_MONO, 8)
+        _HW = True
+    except Exception as e:
+        print(f"[loki] HW init failed: {e}")
 
+def _flush():
+    if _HW and LCD:
+        LCD.LCD_ShowImage(image, 0, 0)
 
-class LokiDisplay:
-    """LCD display handler for Loki status."""
-
-    @staticmethod
-    def init():
-        global _lcd, _image, _draw
-        if not HAS_GPIO:
-            return False
-        try:
-            _lcd = LCD_1in44.LCD()
-            _lcd.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
-            LCD_Config.Driver_Delay_ms(50)
-            _image = Image.new("RGB", (_lcd.width, _lcd.height))
-            _draw = ImageDraw.Draw(_image)
-            return True
-        except Exception as e:
-            logger.error(f"LCD init failed: {e}")
-            return False
-
-    @staticmethod
-    def clear():
-        if _draw:
-            _draw.rectangle((0, 0, 128, 128), fill=(10, 10, 10))
-
-    @staticmethod
-    def show():
-        if _lcd and _image:
-            _lcd.LCD_ShowImage(_image, 0, 0)
-
-    @staticmethod
-    def text(x, y, text, color="#c8c8c8", size=9):
-        if not _draw:
-            return
-        try:
-            font = ImageFont.truetype(
-                "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", size
-            )
-        except:
-            font = ImageFont.load_default()
-
-        # Convert hex color to RGB
-        c = color.lstrip("#")
-        rgb = tuple(int(c[i : i + 2], 16) for i in (0, 2, 4))
-        _draw.text((x, y), text, font=font, fill=rgb)
-
-    @staticmethod
-    def centered(y, text, color="#c8c8c8", size=9):
-        if not _draw:
-            return
-        try:
-            font = ImageFont.truetype(
-                "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf", size
-            )
-        except:
-            font = ImageFont.load_default()
-
-        c = color.lstrip("#")
-        rgb = tuple(int(c[i : i + 2], 16) for i in (0, 2, 4))
-        bbox = _draw.textbbox((0, 0), text, font=font)
-        w = bbox[2] - bbox[0]
-        _draw.text(((128 - w) // 2, y), text, font=font, fill=rgb)
-
-    @staticmethod
-    def hbar(y, percent):
-        if not _draw:
-            return
-        width = 116
-        _draw.rectangle([6, y, 6 + width, y + 4], fill=(18, 24, 60))
-        _draw.rectangle(
-            [6, y, 6 + max(1, int(width * percent / 100)), y + 4],
-            fill=(100, 180, 255),
-        )
-
-    @staticmethod
-    def border():
-        if not _draw:
-            return
-        red = (139, 0, 0)
-        _draw.line([(127, 12), (127, 127)], fill=red, width=5)
-        _draw.line([(127, 127), (0, 127)], fill=red, width=5)
-        _draw.line([(0, 127), (0, 12)], fill=red, width=5)
-        _draw.line([(0, 12), (128, 12)], fill=red, width=5)
-
-
-class LokiEngine:
-    """Main Loki management engine."""
-
-    def __init__(self):
-        self.proc = None
-        self.log_file = None
-        self.port = LOKI_PORT
-
-    def is_installed(self) -> bool:
-        """Check if Loki is installed."""
-        return LAUNCHER.exists()
-
-    def is_running(self) -> bool:
-        """Check if Loki process is running."""
-        if self.proc is not None and self.proc.poll() is None:
-            return True
-
-        if LOKI_PID.exists():
-            try:
-                pid = int(LOKI_PID.read_text().strip())
-                os.kill(pid, 0)  # Check if process exists
-                return True
-            except (ProcessLookupError, ValueError):
-                LOKI_PID.unlink(missing_ok=True)
-
+def _key(pin_name):
+    if not _HAS_GPIO:
+        return False
+    try:
+        return GPIO.input(PINS[pin_name]) == 0
+    except:
         return False
 
-    def get_local_ip(self) -> str:
-        """Get local IP address."""
-        try:
-            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            s.settimeout(2)
-            s.connect(("8.8.8.8", 80))
-            ip = s.getsockname()[0]
-            s.close()
-            return ip
-        except Exception:
-            return "localhost"
+def _wait_key_release(pin_name, timeout=0.5):
+    t = time.time()
+    while time.time() - t < timeout:
+        if not _key(pin_name):
+            break
+        time.sleep(0.02)
 
-    def is_port_open(self, port: int = None) -> bool:
-        """Check if port is open."""
-        if port is None:
-            port = self.port
-        try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.settimeout(1)
-                return s.connect_ex(("127.0.0.1", port)) == 0
-        except Exception:
-            return False
+def should_exit():
+    return _key("KEY3_PIN")
 
-    def install(self, progress_callback=None):
-        """Install Loki from GitHub."""
-        steps = [
-            ("Updating apt cache", self._update_apt),
-            ("Cloning Loki repo", self._clone_repo),
-            ("Creating data dirs", self._create_dirs),
-            ("Writing pagerctl shim", self._write_shim),
-            ("Writing headless launcher", self._write_launcher),
-            ("Verifying installation", self._verify_install),
-        ]
+def _border():
+    if not _HW: return
+    draw.line([(127,12),(127,127)], fill=RED, width=5)
+    draw.line([(127,127),(0,127)],  fill=RED, width=5)
+    draw.line([(0,127),(0,12)],     fill=RED, width=5)
+    draw.line([(0,12),(128,12)],    fill=RED, width=5)
 
-        for i, (label, step_func) in enumerate(steps):
-            if progress_callback:
-                progress_callback(i + 1, len(steps), label)
+def _center(y, text, fnt, color=FG):
+    if not _HW: return
+    bbox = draw.textbbox((0,0), text, font=fnt)
+    w = bbox[2] - bbox[0]
+    draw.text(((128-w)//2, y), text, font=fnt, fill=color)
 
-            try:
-                step_func()
-            except Exception as e:
-                logger.error(f"Installation step failed: {e}")
-                return False
+def _hbar(y, pct, clr=(100,180,255)):
+    if not _HW: return
+    W = 116
+    draw.rectangle([6, y, 6+W, y+4], fill=(18,24,60))
+    draw.rectangle([6, y, 6+max(1,int(W*pct/100)), y+4], fill=clr)
 
-        logger.info("Loki installation complete")
+def _screen_clear():
+    if not _HW: return
+    draw.rectangle((0,0,128,128), fill=BG)
+    _border()
+
+def screen_not_installed():
+    if not _HW: return
+    _screen_clear()
+    _center(15, "LOKI", font, RED)
+    draw.line([(4,27),(124,27)], fill=DIM)
+    _center(33, "Not installed", small, ORANGE)
+    draw.line([(4,58),(124,58)], fill=DIM)
+    _center(64,  "KEY3: install", small, GREEN)
+    _center(76,  "KEY1: exit",    small, DIM)
+    _flush()
+
+def screen_installing(step, total, msg):
+    if not _HW: return
+    _screen_clear()
+    _center(15, "LOKI", font, RED)
+    _center(27, "INSTALLING", small, ORANGE)
+    draw.line([(4,38),(124,38)], fill=DIM)
+    _hbar(43, step/max(total,1)*100)
+    draw.text((6,51), msg[:20], font=small, fill=FG)
+    draw.text((6,62), f"step {step}/{total}", font=small, fill=DIM)
+    _center(112, "KEY3: cancel", small, DIM)
+    _flush()
+
+def screen_error(msg1, msg2=""):
+    if not _HW: return
+    _screen_clear()
+    _center(15, "LOKI", font, RED)
+    draw.line([(4,27),(124,27)], fill=DIM)
+    _center(38, "ERROR", small, RED)
+    draw.text((4,52), msg1[:20], font=small, fill=ORANGE)
+    if msg2:
+        draw.text((4,63), msg2[:20], font=small, fill=DIM)
+    _center(112, "KEY3/KEY1: exit", small, DIM)
+    _flush()
+
+def screen_starting():
+    if not _HW: return
+    _screen_clear()
+    _center(15, "LOKI", font, RED)
+    draw.line([(4,27),(124,27)], fill=DIM)
+    _center(50, "Starting...", small, ORANGE)
+    _center(112, "please wait", small, DIM)
+    _flush()
+
+def screen_running(url: str, web_ready: bool, since: str):
+    if not _HW: return
+    _screen_clear()
+    _center(15, "LOKI", font, RED)
+    draw.line([(4,26),(124,26)], fill=DIM)
+    dot_color = GREEN if web_ready else ORANGE
+    draw.ellipse([5,29,12,36], fill=dot_color)
+    status_label = "WEB READY" if web_ready else "STARTING"
+    draw.text((15,29), status_label, font=small, fill=dot_color)
+    draw.line([(4,40),(124,40)], fill=DIM)
+    host_port = url.replace("http://","")
+    parts = host_port.split(":")
+    draw.text((4,44), "http://", font=small, fill=DIM)
+    draw.text((4,54), parts[0],  font=small, fill=BLUE)
+    draw.text((4,64), f":{parts[1]}" if len(parts)>1 else "", font=small, fill=BLUE)
+    draw.line([(4,76),(124,76)], fill=DIM)
+    draw.text((4,80), since[:20], font=small, fill=DIM)
+    _center(100, "KEY1: stop loki",   small, DIM)
+    _center(112, "KEY3: exit (keep)", small, DIM)
+    _flush()
+
+def screen_stopped(msg=""):
+    if not _HW: return
+    _screen_clear()
+    _center(15, "LOKI", font, RED)
+    draw.line([(4,26),(124,26)], fill=DIM)
+    draw.ellipse([5,29,12,36], fill=DIM)
+    draw.text((15,29), "STOPPED", font=small, fill=DIM)
+    draw.line([(4,40),(124,40)], fill=DIM)
+    if msg:
+        draw.text((4,44), msg[:20], font=small, fill=ORANGE)
+    _center(88,  "KEY3: start",     small, GREEN)
+    _center(100, "KEY1: exit",      small, DIM)
+    _center(112, "KEY2: reinstall", small, DIM)
+    _flush()
+
+# Network helpers
+def _local_ip() -> str:
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.settimeout(2)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except:
+        return "localhost"
+
+def _port_open(port: int) -> bool:
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(1)
+            return s.connect_ex(("127.0.0.1", port)) == 0
+    except:
+        return False
+
+# Loki process management
+_loki_proc = None
+_log_fh    = None
+
+def _loki_installed() -> bool:
+    return LAUNCHER.exists()
+
+def _loki_running() -> bool:
+    global _loki_proc
+    if _loki_proc is not None and _loki_proc.poll() is None:
         return True
+    if LOKI_PID.exists():
+        try:
+            pid = int(LOKI_PID.read_text().strip())
+            os.kill(pid, 0)
+            cmdline = Path(f"/proc/{pid}/cmdline").read_bytes().replace(b'\x00', b' ').decode(errors="replace")
+            if "loki" in cmdline.lower() or "ktox_headless" in cmdline.lower():
+                return True
+            LOKI_PID.unlink(missing_ok=True)
+        except Exception:
+            LOKI_PID.unlink(missing_ok=True)
+    return False
 
-    def _update_apt(self):
-        subprocess.run(
-            ["apt-get", "update", "-qq"],
-            capture_output=True,
-            timeout=120,
-            check=True,
-        )
-        subprocess.run(
-            [
-                "apt-get",
-                "install",
-                "-y",
-                "-qq",
-                "nmap",
-                "python3-pil",
-                "git",
-            ],
-            capture_output=True,
-            timeout=120,
-            check=True,
-        )
+def _run_with_cancel(cmd, timeout=300, step=0, total=1, step_msg=None):
+    proc = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    start = time.time()
+    last_update = 0
+    while proc.poll() is None:
+        if should_exit():
+            proc.terminate()
+            time.sleep(0.5)
+            proc.kill()
+            raise Exception("cancelled by user")
+        if step_msg and _HW and (time.time() - last_update) > 1:
+            screen_installing(step, total, step_msg)
+            last_update = time.time()
+        time.sleep(0.5)
+        if timeout and (time.time() - start) > timeout:
+            proc.terminate()
+            raise Exception("timeout")
+    return proc.returncode
 
-    def _clone_repo(self):
-        VENDOR_DIR.parent.mkdir(parents=True, exist_ok=True)
+def _start_loki() -> tuple[bool, str]:
+    global _loki_proc, _log_fh
+    if _loki_running():
+        return True, "already running"
+    if _port_open(LOKI_PORT):
+        return False, f"port {LOKI_PORT} in use"
+    ip = _local_ip()
+    env = os.environ.copy()
+    env["LOKI_DATA_DIR"] = str(LOKI_DATA)
+    env["BJORN_IP"]      = ip
+    env["LOKI_PID_FILE"] = str(LOKI_PID)
+    log = LOKI_DATA / "logs" / "ktox_loki.log"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    _log_fh = open(log, "a")
+    _loki_proc = subprocess.Popen(
+        [sys.executable, str(LAUNCHER)],
+        env=env,
+        stdout=_log_fh,
+        stderr=subprocess.STDOUT,
+        cwd=str(LOKI_DIR),
+    )
+    for _ in range(300):  # 30 seconds
+        if should_exit():
+            _stop_loki()
+            return False, "cancelled"
+        if _loki_proc.poll() is not None:
+            return False, "crashed - check logs"
+        if _port_open(LOKI_PORT):
+            return True, f"http://{ip}:{LOKI_PORT}"
+        time.sleep(0.1)
+    if not _loki_running():
+        return False, "timed out - check logs"
+    return True, f"http://{ip}:{LOKI_PORT}"
 
-        if VENDOR_DIR.exists() and (VENDOR_DIR / ".git").exists():
-            subprocess.run(
-                ["git", "-C", str(VENDOR_DIR), "pull"],
-                capture_output=True,
-                timeout=120,
-                check=True,
-            )
-        else:
-            if VENDOR_DIR.exists():
-                shutil.rmtree(VENDOR_DIR)
+def _stop_loki():
+    global _loki_proc, _log_fh
+    if _loki_proc is not None:
+        try:
+            _loki_proc.terminate()
+            _loki_proc.wait(timeout=8)
+        except subprocess.TimeoutExpired:
+            _loki_proc.kill()
+        except Exception:
+            pass
+        _loki_proc = None
+    if _log_fh is not None:
+        try:
+            _log_fh.close()
+        except Exception:
+            pass
+        _log_fh = None
+    if LOKI_PID.exists():
+        try:
+            pid = int(LOKI_PID.read_text().strip())
+            os.kill(pid, signal.SIGTERM)
+            time.sleep(2)
+            try:
+                os.kill(pid, 0)
+                os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        except Exception:
+            pass
+        LOKI_PID.unlink(missing_ok=True)
+    subprocess.run(["pkill", "-f", "ktox_headless_loki"], capture_output=True)
 
-            subprocess.run(
-                ["git", "clone", "--depth=1", LOKI_REPO, str(VENDOR_DIR)],
-                capture_output=True,
-                timeout=300,
-                check=True,
-            )
-
-    def _create_dirs(self):
-        for sub in [
-            "logs",
-            "output/crackedpwd",
-            "output/datastolen",
-            "output/zombies",
-            "output/vulnerabilities",
-            "input",
-        ]:
-            (LOKI_DATA / sub).mkdir(parents=True, exist_ok=True)
-
-    def _write_shim(self):
-        """Write pagerctl.py shim for KTOx LCD integration."""
-        shim_path = VENDOR_DIR / "lib" / "pagerctl.py"
-        shim_path.parent.mkdir(parents=True, exist_ok=True)
-
-        # Simplified pagerctl shim
-        shim_code = '''# pagerctl.py - KTOx LCD shim for Loki
+# Write pagerctl.py shim
+def _write_pagerctl_shim():
+    shim_path = LOKI_DIR / "lib" / "pagerctl.py"
+    shim_path.parent.mkdir(parents=True, exist_ok=True)
+    shim_code = '''# pagerctl.py - KTOx native shim for Loki
 import os, time, threading, queue
 from PIL import Image, ImageDraw, ImageFont
 
-HAS_LCD = False
 try:
     import LCD_1in44, LCD_Config
     HAS_LCD = True
 except ImportError:
-    pass
+    HAS_LCD = False
 
-BTN_UP, BTN_DOWN, BTN_LEFT, BTN_RIGHT = 0x01, 0x02, 0x04, 0x08
-BTN_A, BTN_B = 0x10, 0x20
+BTN_UP = 0x01
+BTN_DOWN = 0x02
+BTN_LEFT = 0x04
+BTN_RIGHT = 0x08
+BTN_A = 0x10
+BTN_B = 0x20
 
 class Pager:
-    BLACK, WHITE, RED = 0x0000, 0xFFFF, 0xF800
-    GREEN, BLUE, YELLOW = 0x07E0, 0x001F, 0xFFE0
+    BLACK = 0x0000
+    WHITE = 0xFFFF
+    RED = 0xF800
+    GREEN = 0x07E0
+    BLUE = 0x001F
+    YELLOW = 0xFFE0
+    CYAN = 0x07FF
+    MAGENTA = 0xF81F
+    ORANGE = 0xFD20
+    PURPLE = 0x8010
+    GRAY = 0x8410
 
     def __init__(self):
         self.lcd = None
@@ -320,41 +368,44 @@ class Pager:
         self.draw = None
         self.width = 128
         self.height = 128
+        self.fonts = {}
         self._initialized = False
-        self._input_thread = None
-        self._input_queue = queue.Queue()
-        self._running = False
 
     def init(self):
-        if self._initialized: return 0
-        if not HAS_LCD: return 0
+        if self._initialized:
+            return 0
+        if not HAS_LCD:
+            self._initialized = True
+            return 0
         try:
             self.lcd = LCD_1in44.LCD()
             self.lcd.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
             LCD_Config.Driver_Delay_ms(50)
-            self.width, self.height = self.lcd.width, self.lcd.height
+            self.width = self.lcd.width
+            self.height = self.lcd.height
             self.image = Image.new("RGB", (self.width, self.height))
             self.draw = ImageDraw.Draw(self.image)
             self._initialized = True
             return 0
         except Exception as e:
+            print(f"Pager.init error: {e}")
             return -1
 
     def cleanup(self):
-        self._running = False
-        if self._input_thread and self._input_thread.is_alive():
-            self._input_thread.join(timeout=1)
+        self._initialized = False
 
     def clear(self, color=0):
-        if self.draw:
-            r, g, b = self._rgb565_to_rgb(color)
-            self.draw.rectangle((0, 0, self.width, self.height), fill=(r, g, b))
+        if not self.draw:
+            return
+        r, g, b = self._rgb565_to_rgb(color)
+        self.draw.rectangle((0, 0, self.width, self.height), fill=(r, g, b))
 
     def flip(self):
         if self.lcd and self.image:
             self.lcd.LCD_ShowImage(self.image, 0, 0)
 
-    def set_rotation(self, rotation): pass
+    def set_rotation(self, rotation):
+        pass
 
     def pixel(self, x, y, color):
         if self.draw:
@@ -396,13 +447,16 @@ class Pager:
         self.draw_ttf(x, y, text, color, "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 9)
 
     def draw_ttf(self, x, y, text, color, font_path, font_size):
-        if not self.draw: return
+        if not self.draw:
+            return
         r, g, b = self._rgb565_to_rgb(color)
-        try:
-            font = ImageFont.truetype(font_path, font_size)
-        except:
-            font = ImageFont.load_default()
-        self.draw.text((x, y), text, font=font, fill=(r, g, b))
+        key = f"{font_path}:{font_size}"
+        if key not in self.fonts:
+            try:
+                self.fonts[key] = ImageFont.truetype(font_path, font_size)
+            except:
+                self.fonts[key] = ImageFont.load_default()
+        self.draw.text((x, y), text, font=self.fonts[key], fill=(r, g, b))
 
     def draw_text_centered(self, x, y, text, color, size=1):
         try:
@@ -432,23 +486,25 @@ class Pager:
         b = color & 0x1F
         return (r << 3, g << 2, b << 3)
 
-class PagerInput:
-    def __init__(self): self.pager = None
-    def attach(self, pager): self.pager = pager
-    def get_input_event(self): return None
-
 class PagerInputEvent:
     def __init__(self, event_type, button):
         self.type = event_type
         self.button = button
-'''
-        shim_path.write_text(shim_code)
-        shim_path.chmod(0o644)
 
-    def _write_launcher(self):
-        """Write headless Loki launcher."""
-        launcher_code = f'''#!/usr/bin/env python3
-# ktox_headless_loki.py
+class PagerInput:
+    def __init__(self):
+        self.pager = None
+    def attach(self, pager):
+        self.pager = pager
+    def get_input_event(self):
+        return None
+'''
+    shim_path.write_text(shim_code)
+    shim_path.chmod(0o644)
+
+# Write the headless launcher with fallback to KTOx wrapper
+def _write_launcher():
+    launcher_code = f'''#!/usr/bin/env python3
 import sys, os, threading, signal, logging, time, subprocess
 
 _dir = os.path.dirname(os.path.abspath(__file__))
@@ -460,48 +516,58 @@ if _dir not in sys.path:
 
 os.environ['CRYPTOGRAPHY_OPENSSL_NO_LEGACY'] = '1'
 _DATA = os.environ.get('LOKI_DATA_DIR', '{LOKI_DATA}')
+_PID_FILE = os.environ.get('LOKI_PID_FILE', '')
 
-# Patch SharedData
+# Write PID file early
+if _PID_FILE:
+    with open(_PID_FILE, 'w') as _f:
+        _f.write(str(os.getpid()))
+
+# Try to start Loki engine + original webapp
 try:
+    # Patch SharedData paths
     from shared import SharedData as _SD
     _orig = _SD.__init__
     def _patch(self, *a, **kw):
         _orig(self, *a, **kw)
-        self.datadir = _DATA
-        self.logsdir = os.path.join(_DATA, 'logs')
-        self.output_dir = os.path.join(_DATA, 'output')
-        self.input_dir = os.path.join(_DATA, 'input')
-        self.crackedpwddir = os.path.join(_DATA, 'output', 'crackedpwd')
-        self.datastolendir = os.path.join(_DATA, 'output', 'datastolen')
-        self.zombiesdir = os.path.join(_DATA, 'output', 'zombies')
+        self.datadir             = _DATA
+        self.logsdir             = os.path.join(_DATA, 'logs')
+        self.output_dir          = os.path.join(_DATA, 'output')
+        self.input_dir           = os.path.join(_DATA, 'input')
+        self.crackedpwddir       = os.path.join(_DATA, 'output', 'crackedpwd')
+        self.datastolendir       = os.path.join(_DATA, 'output', 'datastolen')
+        self.zombiesdir          = os.path.join(_DATA, 'output', 'zombies')
         self.vulnerabilities_dir = os.path.join(_DATA, 'output', 'vulnerabilities')
-        self.netkbfile = os.path.join(_DATA, 'netkb.csv')
+        self.scan_results_dir    = os.path.join(_DATA, 'output', 'vulnerabilities')
+        self.netkbfile           = os.path.join(_DATA, 'netkb.csv')
         for d in [self.datadir, self.logsdir, self.output_dir, self.input_dir,
                   self.crackedpwddir, self.datastolendir, self.zombiesdir,
                   self.vulnerabilities_dir]:
             os.makedirs(d, exist_ok=True)
     _SD.__init__ = _patch
-except: pass
 
-try:
+    # Fix WiFi check
+    import Loki as _lm
+    def _wifi(self):
+        try:
+            r = subprocess.run(['ip', 'route', 'show', 'default'],
+                               capture_output=True, text=True, timeout=5)
+            self.wifi_connected = bool(r.stdout.strip())
+        except:
+            self.wifi_connected = True
+        return self.wifi_connected
+    _lm.Loki.is_wifi_connected = _wifi
+
     from init_shared import shared_data
     from Loki import Loki, handle_exit
     from webapp import web_thread, handle_exit_web
-    from logger import Logger
-
-    logger = Logger(name='ktox_headless_loki', level=logging.INFO)
 
     shared_data.load_config()
     bjorn_ip = os.environ.get('BJORN_IP', '')
     if bjorn_ip:
         os.environ['BJORN_IP'] = bjorn_ip
 
-    pid_file = os.environ.get('LOKI_PID_FILE', '')
-    if pid_file:
-        with open(pid_file, 'w') as _f:
-            _f.write(str(os.getpid()))
-
-    shared_data.webapp_should_exit = False
+    shared_data.webapp_should_exit  = False
     shared_data.display_should_exit = True
     web_thread.start()
 
@@ -510,117 +576,175 @@ try:
     lt = threading.Thread(target=loki.run, daemon=True)
     lt.start()
 
-    signal.signal(signal.SIGINT, lambda s, f: handle_exit(s, f, lt, web_thread))
+    signal.signal(signal.SIGINT,  lambda s, f: handle_exit(s, f, lt, web_thread))
     signal.signal(signal.SIGTERM, lambda s, f: handle_exit(s, f, lt, web_thread))
 
     while not shared_data.should_exit:
         time.sleep(2)
+
 except Exception as e:
-    print(f"Error: {{e}}")
-    import traceback
-    traceback.print_exc()
-    sys.exit(1)
+    print(f"[!] Loki failed to start: {{e}}")
+    print("[*] Falling back to CYBERPUNK WebUI...")
+    # Fallback: start the cyberpunk webui
+    try:
+        import sys
+        webui_path = "/home/user/KTOX_Pi/payloads/offensive/loki_cyberpunk_ui.py"
+        if os.path.exists(webui_path):
+            subprocess.run([sys.executable, webui_path])
+        else:
+            print(f"[!] WebUI not found: {{webui_path}}")
+            sys.exit(1)
+    except Exception as e2:
+        print(f"[!] WebUI also failed: {{e2}}")
+        sys.exit(1)
 '''
-        LAUNCHER.parent.mkdir(parents=True, exist_ok=True)
-        LAUNCHER.write_text(launcher_code)
-        LAUNCHER.chmod(0o755)
+    LAUNCHER.parent.mkdir(parents=True, exist_ok=True)
+    LAUNCHER.write_text(launcher_code)
+    LAUNCHER.chmod(0o755)
 
-    def _verify_install(self):
-        if not LAUNCHER.exists():
-            raise Exception("Launcher not found")
-        if not (VENDOR_DIR / "lib" / "pagerctl.py").exists():
-            raise Exception("pagerctl shim not found")
+# Installation routine
+def install_loki():
+    try:
+        screen_installing(1, 7, "Installing system packages...")
+        _run_with_cancel("apt-get update -qq && apt-get install -y nmap python3-pil python3-pil.imagetk git", timeout=300, step=1, total=7, step_msg="Installing packages")
 
-    def start(self) -> tuple[bool, str]:
-        """Start Loki process."""
-        if self.is_running():
-            return True, f"http://{self.get_local_ip()}:{self.port}"
+        screen_installing(2, 7, "Cloning Loki repo...")
+        VENDOR_DIR.parent.mkdir(parents=True, exist_ok=True)
+        if VENDOR_DIR.exists() and (VENDOR_DIR / ".git").exists():
+            _run_with_cancel(f"git -C {VENDOR_DIR} pull", timeout=120, step=2, total=7, step_msg="Updating repo")
+        else:
+            if VENDOR_DIR.exists():
+                shutil.rmtree(VENDOR_DIR)
+            _run_with_cancel(f"git clone --depth=1 {LOKI_REPO} {VENDOR_DIR}", timeout=300, step=2, total=7, step_msg="Cloning repo")
 
-        if self.is_port_open():
-            return False, f"Port {self.port} already in use"
+        screen_installing(3, 7, "Creating data directories...")
+        for sub in ["logs", "output/crackedpwd", "output/datastolen",
+                    "output/zombies", "output/vulnerabilities", "input"]:
+            (LOKI_DATA / sub).mkdir(parents=True, exist_ok=True)
 
-        ip = self.get_local_ip()
-        env = os.environ.copy()
-        env["LOKI_DATA_DIR"] = str(LOKI_DATA)
-        env["BJORN_IP"] = ip
-        env["LOKI_PID_FILE"] = str(LOKI_PID)
+        screen_installing(4, 7, "Installing pagerctl shim...")
+        _write_pagerctl_shim()
 
-        log_path = LOKI_DATA / "logs" / "loki.log"
-        log_path.parent.mkdir(parents=True, exist_ok=True)
+        screen_installing(5, 7, "Writing launcher...")
+        _write_launcher()
 
-        try:
-            self.log_file = open(log_path, "a")
-            self.proc = subprocess.Popen(
-                [sys.executable, str(LAUNCHER)],
-                env=env,
-                stdout=self.log_file,
-                stderr=subprocess.STDOUT,
-                cwd=str(VENDOR_DIR),
-            )
+        screen_installing(6, 7, "Verifying installation...")
+        if not LAUNCHER.exists() or not (LOKI_DIR / "lib" / "pagerctl.py").exists():
+            return False, "missing files"
 
-            # Wait for port to open
-            for _ in range(300):  # 30 seconds
-                if self.proc.poll() is not None:
-                    return False, "Process crashed"
-                if self.is_port_open():
-                    logger.info(f"Loki started at http://{ip}:{self.port}")
-                    return True, f"http://{ip}:{self.port}"
-                time.sleep(0.1)
+        screen_installing(7, 7, "Done!")
+        time.sleep(1)
+        return True, "ok"
 
-            return False, "Startup timeout"
+    except Exception as e:
+        return False, str(e)[:30]
 
-        except Exception as e:
-            logger.error(f"Failed to start Loki: {e}")
-            return False, str(e)
+# Main loop
+def main():
+    _init_hw()
+    ip = _local_ip()
+    url = f"http://{ip}:{LOKI_PORT}"
 
-    def stop(self):
-        """Stop Loki process."""
-        if self.proc:
-            try:
-                self.proc.terminate()
-                self.proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                self.proc.kill()
-            self.proc = None
+    # First run: prompt to install
+    if not _loki_installed():
+        print("[loki] Not installed.")
+        if _HW:
+            screen_not_installed()
+            deadline = time.time() + 15
+            chosen = None
+            while time.time() < deadline and chosen is None:
+                if _key("KEY3_PIN"):
+                    _wait_key_release("KEY3_PIN")
+                    chosen = "install"
+                elif _key("KEY1_PIN"):
+                    _wait_key_release("KEY1_PIN")
+                    chosen = "exit"
+                time.sleep(0.05)
+            if chosen != "install":
+                return
+        else:
+            print("[loki] Press Enter to install, Ctrl+C to cancel.")
+            input()
 
-        if self.log_file:
-            try:
-                self.log_file.close()
-            except:
-                pass
+        print("[loki] Installing...")
+        ok, msg = install_loki()
+        if not ok:
+            print(f"[loki] Install failed: {msg}")
+            if _HW:
+                screen_error("Install failed", msg)
+                time.sleep(4)
+            return
 
-        # Kill via PID file
-        if LOKI_PID.exists():
-            try:
-                pid = int(LOKI_PID.read_text().strip())
-                os.kill(pid, signal.SIGTERM)
-                time.sleep(2)
-                try:
-                    os.kill(pid, signal.SIGKILL)
-                except:
-                    pass
-            except:
-                pass
-            LOKI_PID.unlink(missing_ok=True)
+    # Start Loki if not running
+    if not _loki_running():
+        print(f"[loki] Starting Loki → {url}")
+        if _HW:
+            screen_starting()
+        ok, result = _start_loki()
+        if not ok:
+            print(f"[loki] Start failed: {result}")
+            if _HW:
+                screen_error("Start failed", result)
+                time.sleep(4)
+            return
+        print(f"[loki] Loki running at {result}")
+    else:
+        print(f"[loki] Already running at {url}")
 
-        # Cleanup subprocess
-        subprocess.run(["pkill", "-f", "ktox_headless_loki"], capture_output=True)
-        logger.info("Loki stopped")
+    start_ts = datetime.now().strftime("%H:%M:%S")
+    since_label = f"since {start_ts}"
 
+    # Main control loop
+    while True:
+        running = _loki_running()
+        if running:
+            web_up = _port_open(LOKI_PORT)
+            if _HW:
+                screen_running(url, web_up, since_label)
+            else:
+                print(f"\r[loki] {'WEB READY' if web_up else 'STARTING':10s}  {url}", end="", flush=True)
+        else:
+            if _HW:
+                screen_stopped()
+            else:
+                print("\r[loki] STOPPED                                    ", end="", flush=True)
 
-# Global instance
-_engine = None
-
-
-def get_loki_engine():
-    global _engine
-    if _engine is None:
-        _engine = LokiEngine()
-    return _engine
-
+        for _ in range(10):
+            time.sleep(0.1)
+            if running:
+                if _key("KEY1_PIN"):
+                    _wait_key_release("KEY1_PIN")
+                    print("\n[loki] Stopping Loki...")
+                    _stop_loki()
+                    return
+                if _key("KEY3_PIN"):
+                    _wait_key_release("KEY3_PIN")
+                    print(f"\n[loki] Exiting — Loki continues at {url}")
+                    return
+            else:
+                if _key("KEY3_PIN"):
+                    _wait_key_release("KEY3_PIN")
+                    if _HW:
+                        screen_starting()
+                    ok, result = _start_loki()
+                    if ok:
+                        start_ts = datetime.now().strftime("%H:%M:%S")
+                        since_label = f"since {start_ts}"
+                    else:
+                        if _HW:
+                            screen_error("Start failed", result)
+                            time.sleep(3)
+                    break
+                if _key("KEY1_PIN"):
+                    _wait_key_release("KEY1_PIN")
+                    return
+                if _key("KEY2_PIN"):
+                    _wait_key_release("KEY2_PIN")
+                    ok, msg = install_loki()
+                    if not ok and _HW:
+                        screen_error("Install failed", msg)
+                        time.sleep(3)
+                    break
 
 if __name__ == "__main__":
-    engine = get_loki_engine()
-    print(f"Installed: {engine.is_installed()}")
-    print(f"Running: {engine.is_running()}")
-    print(f"Port open: {engine.is_port_open()}")
+    main()

@@ -106,34 +106,55 @@ HTML_TEMPLATE = """
     <title>KTOx USB Explorer</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
+        :root { --bg-0:#0a0000; --bg-1:#220000; --header:#8b0000; --accent:#e74c3c; --warn:#d4ac0d;
+                --fg:#abb2b9; --fg-muted:#717d7e; --white:#f5f5f5; --glow:0 0 10px rgba(231,76,60,0.3); }
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { background: #0a0f0f; font-family: 'Share Tech Mono', monospace; color: #0ff; padding: 20px; }
+        body { background: linear-gradient(135deg,var(--bg-0),var(--bg-1)); font-family: 'Courier New', monospace;
+               color: var(--fg); padding: 16px; margin: 0; }
         .container { max-width: 1400px; margin: 0 auto; }
-        h1 { font-size: 2rem; text-shadow: 0 0 5px #0ff; border-left: 4px solid #0ff; padding-left: 20px; margin-bottom: 20px; }
-        .panel-row { display: flex; gap: 20px; flex-wrap: wrap; }
-        .panel { flex: 1; background: #0f1212; border: 1px solid #0ff; border-radius: 8px; padding: 15px; box-shadow: 0 0 10px rgba(0,255,255,0.2); }
-        .panel h2 { color: #f0f; text-shadow: 0 0 3px #f0f; border-bottom: 1px solid #0ff; padding-bottom: 5px; margin-bottom: 15px; }
-        .usb-selector select, .path-bar { background: #111; color: #0ff; border: 1px solid #0ff; padding: 8px; width: 100%; font-family: monospace; margin-bottom: 15px; }
-        .path-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-        .path-bar span { flex: 1; word-break: break-all; }
-        .path-bar button { background: #0a2a2a; border: 1px solid #0ff; color: #0ff; padding: 4px 10px; cursor: pointer; }
+        h1 { font-size: 1.8rem; text-shadow: 0 0 6px var(--accent); border-left: 4px solid var(--accent);
+             padding-left: 16px; margin-bottom: 16px; color: var(--white); letter-spacing: 1px; }
+        .panel-row { display: flex; gap: 16px; flex-wrap: wrap; }
+        .panel { flex: 1; background: var(--bg-1); border: 1px solid rgba(231,76,60,0.3); border-radius: 4px;
+                 padding: 12px; box-shadow: var(--glow); }
+        .panel h2 { color: var(--accent); text-shadow: 0 0 4px var(--accent); border-bottom: 1px solid rgba(231,76,60,0.2);
+                    padding-bottom: 6px; margin-bottom: 12px; }
+        .usb-selector select, .path-bar { background: var(--bg-0); color: var(--fg); border: 1px solid rgba(231,76,60,0.3);
+                                           padding: 6px; width: 100%; font-family: monospace; margin-bottom: 12px; border-radius: 3px; }
+        select:focus { outline: none; border-color: var(--accent); box-shadow: var(--glow); }
+        .path-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .path-bar span { flex: 1; word-break: break-all; color: var(--fg-muted); font-size: 0.85rem; }
+        .path-bar button { background: linear-gradient(135deg,var(--header),var(--bg-1)); border: 1px solid var(--accent);
+                          color: var(--white); padding: 4px 10px; cursor: pointer; border-radius: 3px; box-shadow: var(--glow); }
+        .path-bar button:hover { background: linear-gradient(135deg,var(--accent),#c0392b); box-shadow: 0 0 20px rgba(231,76,60,0.5); }
         .file-list { max-height: 400px; overflow-y: auto; font-size: 0.85rem; }
-        .file-item { padding: 5px 8px; border-bottom: 1px solid #1a2a2a; display: flex; align-items: center; gap: 8px; }
-        .file-item:hover { background: #1a2a2a; }
-        .file-item input { margin-right: 8px; cursor: pointer; }
-        .file-name { flex: 1; cursor: pointer; word-break: break-word; }
-        .file-name:hover { text-shadow: 0 0 2px #0ff; }
-        .file-size { color: #8a8; font-size: 0.75rem; }
-        .dir-icon { color: #0ff; margin-right: 4px; }
-        .file-icon { color: #f0f; margin-right: 4px; }
-        .action-bar { margin-top: 20px; text-align: center; }
-        .copy-btn { background: #0ff; color: #000; border: none; padding: 12px 24px; font-size: 1.2rem; font-weight: bold; cursor: pointer; text-transform: uppercase; letter-spacing: 2px; transition: 0.2s; box-shadow: 0 0 10px #0ff; width: 100%; }
-        .copy-btn:hover { background: #f0f; box-shadow: 0 0 15px #f0f; }
-        .status { margin-top: 15px; padding: 8px; background: #0a1a1a; border-left: 4px solid #0ff; font-family: monospace; }
-        footer { margin-top: 30px; text-align: center; color: #4a6; font-size: 0.7rem; }
-        ::-webkit-scrollbar { width: 6px; background: #0a0f0f; }
-        ::-webkit-scrollbar-thumb { background: #0ff; border-radius: 3px; }
-        .refresh-btn { background: #0a2a2a; border: 1px solid #0ff; color: #0ff; padding: 5px 10px; cursor: pointer; margin-left: 10px; }
+        .file-item { padding: 6px 8px; border-bottom: 1px solid rgba(231,76,60,0.15); display: flex; align-items: center; gap: 8px; }
+        .file-item:hover { background: var(--bg-0); box-shadow: inset 0 0 4px var(--accent); }
+        .file-item input { margin-right: 6px; cursor: pointer; accent-color: var(--accent); }
+        .file-name { flex: 1; cursor: pointer; word-break: break-word; color: var(--fg); }
+        .file-name:hover { text-shadow: 0 0 4px var(--accent); }
+        .file-size { color: var(--fg-muted); font-size: 0.75rem; font-family: monospace; }
+        .dir-icon { color: var(--warn); margin-right: 4px; }
+        .file-icon { color: var(--accent); margin-right: 4px; }
+        .action-bar { margin-top: 16px; text-align: center; }
+        .copy-btn { background: linear-gradient(135deg,var(--accent),#c0392b); color: var(--white); border: 1px solid var(--accent);
+                    padding: 10px 20px; font-size: 1rem; font-weight: bold; cursor: pointer; text-transform: uppercase;
+                    letter-spacing: 1px; transition: 0.3s; box-shadow: var(--glow); width: 100%; border-radius: 4px; }
+        .copy-btn:hover { box-shadow: 0 0 20px rgba(231,76,60,0.5); transform: translateY(-1px); }
+        .status { margin-top: 12px; padding: 8px; background: var(--bg-0); border-left: 4px solid var(--accent);
+                  font-family: monospace; color: var(--fg); font-size: 0.85rem; }
+        footer { margin-top: 20px; text-align: center; color: var(--fg-muted); font-size: 0.7rem;
+                 padding-top: 12px; border-top: 1px solid rgba(231,76,60,0.2); }
+        ::-webkit-scrollbar { width: 6px; background: var(--bg-0); }
+        ::-webkit-scrollbar-thumb { background: var(--header); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+        .refresh-btn { background: linear-gradient(135deg,var(--header),var(--bg-1)); border: 1px solid var(--accent);
+                      color: var(--white); padding: 4px 10px; cursor: pointer; margin-left: 8px; border-radius: 3px;
+                      box-shadow: var(--glow); }
+        .refresh-btn:hover { background: linear-gradient(135deg,var(--accent),#c0392b); box-shadow: 0 0 20px rgba(231,76,60,0.5); }
+        .scanlines { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;
+                    background: repeating-linear-gradient(0deg,rgba(0,0,0,0.1),rgba(0,0,0,0.1) 1px,transparent 1px,transparent 2px);
+                    z-index: 9999; }
     </style>
 </head>
 <body>
@@ -332,6 +353,7 @@ HTML_TEMPLATE = """
     browseLocal('/root');
     setInterval(refreshUsbList, 5000);
 </script>
+<div class="scanlines"></div>
 </body>
 </html>
 """

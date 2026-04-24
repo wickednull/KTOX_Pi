@@ -82,24 +82,37 @@ BROWSER_HTML = """
 <html>
 <head><title>KTOx Document Browser</title>
 <style>
-body{background:#0a0a0a;color:#0f0;font-family:monospace;padding:20px}
-.container{max-width:1000px;margin:auto}
-h1{color:#f00;border-left:4px solid #f00;padding-left:20px}
-.path-bar{background:#111;border:1px solid #0f0;padding:10px;margin:20px 0;display:flex;gap:10px}
-.path-bar span{flex:1}
-.path-bar a{color:#0f0;text-decoration:none;border:1px solid #0f0;padding:4px 12px}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:15px}
-.card{background:#111;border:1px solid #300;border-radius:8px;padding:15px;text-align:center;cursor:pointer}
-.card:hover{border-color:#0f0;transform:translateY(-2px)}
-.icon{font-size:2rem}
-.name{font-size:0.8rem;word-break:break-word}
-.size{font-size:0.7rem;color:#888}
-footer{margin-top:30px;text-align:center;color:#444}
+:root{--bg-0:#0a0000;--bg-1:#220000;--header:#8b0000;--accent:#e74c3c;--warn:#d4ac0d;--fg:#abb2b9;--fg-muted:#717d7e}
+body{background:linear-gradient(135deg,var(--bg-0),var(--bg-1));color:var(--fg);font-family:'Courier New',monospace;
+     padding:16px;margin:0;overflow-x:hidden}
+.container{max-width:1200px;margin:auto}
+h1{color:var(--white);border-left:4px solid var(--accent);padding-left:16px;text-shadow:0 0 6px var(--accent);
+   letter-spacing:2px;margin-bottom:16px}
+.path-bar{background:var(--bg-1);border:1px solid rgba(231,76,60,0.3);padding:10px;margin:16px 0;display:flex;
+          gap:10px;border-radius:4px;box-shadow:0 0 10px rgba(231,76,60,0.2)}
+.path-bar span{flex:1;color:var(--fg-muted);font-family:monospace;font-size:0.85rem;word-break:break-all}
+.path-bar a{color:var(--white);text-decoration:none;border:1px solid var(--accent);padding:6px 12px;
+           background:linear-gradient(135deg,var(--header),var(--bg-1));border-radius:3px;
+           box-shadow:0 0 10px rgba(231,76,60,0.3);cursor:pointer}
+.path-bar a:hover{background:linear-gradient(135deg,var(--accent),#c0392b);box-shadow:0 0 20px rgba(231,76,60,0.5)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin:16px 0}
+.card{background:var(--bg-1);border:1px solid rgba(231,76,60,0.3);border-radius:4px;padding:12px;text-align:center;
+      cursor:pointer;transition:all 0.3s ease;box-shadow:0 0 10px rgba(231,76,60,0.2)}
+.card:hover{border-color:var(--accent);transform:translateY(-3px);box-shadow:0 0 20px rgba(231,76,60,0.5);
+           background:var(--bg-0)}
+.icon{font-size:2.5rem;margin-bottom:8px}
+.name{font-size:0.8rem;word-break:break-word;color:var(--fg)}
+.size{font-size:0.7rem;color:var(--fg-muted);margin-top:4px}
+footer{margin-top:24px;text-align:center;color:var(--fg-muted);padding-top:12px;border-top:1px solid rgba(231,76,60,0.2)}
+.white{color:#f5f5f5}
+.scanlines{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;
+          background:repeating-linear-gradient(0deg,rgba(0,0,0,0.1),rgba(0,0,0,0.1) 1px,transparent 1px,transparent 2px);
+          z-index:9999}
 </style>
 </head>
 <body>
 <div class="container">
-<h1>⎯ KTOx DOCUMENT BROWSER ⎯</h1>
+<h1>📄 KTOx DOCUMENT BROWSER</h1>
 <div class="path-bar"><span>{{ path }}</span><a href="/">Home</a><a href="/browse?path={{ parent }}">Up</a></div>
 <div class="grid">
 {% for item in items %}
@@ -112,6 +125,7 @@ footer{margin-top:30px;text-align:center;color:#444}
 </div>
 <footer>Click folder to enter, file to view</footer>
 </div>
+<div class="scanlines"></div>
 </body>
 </html>
 """
@@ -121,13 +135,23 @@ VIEW_HTML = """
 <html>
 <head><title>{{ name }} - KTOx</title>
 <style>
-body{background:#000;color:#0f0;padding:20px}
-.container{max-width:1000px;margin:auto;background:#0a0505;border:1px solid #f00;border-radius:12px;padding:20px}
-h2{color:#f00}
-.back{display:inline-block;margin-top:20px;color:#0f0;border:1px solid #0f0;padding:6px 12px;border-radius:30px;text-decoration:none}
-pre{white-space:pre-wrap;background:#111;padding:10px;border-radius:8px}
-img{max-width:100%}
-embed,iframe{width:100%;height:600px}
+:root{--bg-0:#0a0000;--bg-1:#220000;--header:#8b0000;--accent:#e74c3c;--fg:#abb2b9;--fg-muted:#717d7e;--white:#f5f5f5}
+body{background:linear-gradient(135deg,var(--bg-0),var(--bg-1));color:var(--fg);padding:16px;margin:0;font-family:'Courier New',monospace}
+.container{max-width:1000px;margin:auto;background:var(--bg-1);border:1px solid rgba(231,76,60,0.3);border-radius:6px;
+           padding:20px;box-shadow:inset 0 0 8px rgba(0,0,0,0.8)}
+h2{color:var(--accent);text-shadow:0 0 6px var(--accent);margin-bottom:16px;border-bottom:1px solid rgba(231,76,60,0.2);
+   padding-bottom:8px}
+.back{display:inline-block;margin-top:20px;color:var(--white);border:1px solid var(--accent);padding:8px 16px;
+      border-radius:4px;text-decoration:none;background:linear-gradient(135deg,var(--header),var(--bg-1));
+      box-shadow:0 0 10px rgba(231,76,60,0.3)}
+.back:hover{background:linear-gradient(135deg,var(--accent),#c0392b);box-shadow:0 0 20px rgba(231,76,60,0.5)}
+pre{white-space:pre-wrap;background:var(--bg-0);padding:12px;border-radius:4px;border:1px solid rgba(231,76,60,0.2);
+    color:var(--fg);font-family:monospace;overflow-x:auto;font-size:0.85rem}
+img{max-width:100%;border-radius:4px;border:1px solid rgba(231,76,60,0.2)}
+embed,iframe{width:100%;height:600px;border-radius:4px;border:1px solid rgba(231,76,60,0.2)}
+.scanlines{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;
+          background:repeating-linear-gradient(0deg,rgba(0,0,0,0.1),rgba(0,0,0,0.1) 1px,transparent 1px,transparent 2px);
+          z-index:9999}
 </style>
 </head>
 <body>
@@ -142,6 +166,7 @@ embed,iframe{width:100%;height:600px}
 {% endif %}
 <br><a href="javascript:history.back()" class="back">← Back</a>
 </div>
+<div class="scanlines"></div>
 </body>
 </html>
 """

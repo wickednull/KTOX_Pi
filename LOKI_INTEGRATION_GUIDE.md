@@ -4,6 +4,14 @@
 
 Loki is now fully integrated into KTOX_Pi as a complete autonomous security testing framework. Similar to how RaspyJack integrates Ragnar, Loki runs as a dedicated service with a comprehensive WebUI while being controlled through the main KTOX menu.
 
+### ⚠️ Important: Real WebUI vs Fabricated Interfaces
+
+This integration provides:
+- **loki_engine.py** - Device launcher with LCD display and button controls (status/lifecycle only)
+- **Loki's actual webapp** at `http://<device-ip>:8000` - All reconnaissance, attacks, and loot management
+
+**Do NOT** create fabricated UI tabs or features. The actual Loki webapp provides all real functionality. For complete operations, always access the WebUI in your browser.
+
 ## Architecture
 
 ### Components
@@ -114,31 +122,51 @@ Check running?
 - **Port**: 8000 (configurable in loki_engine.py)
 - **Access**: Any device on same network
 
-### Dashboard Features
+### WebUI Tabs & Features
 
-- **Network Scanning**
-  - Host discovery
-  - Port scanning
-  - Service enumeration
-  - Vulnerability detection
+**Dashboard**
+- Overview of recent scans
+- Network activity summary
+- Quick access to tools
 
-- **Exploitation**
-  - Brute force (FTP, SSH, Telnet, SMB, SQL, RDP)
-  - Vulnerability exploitation
-  - Privilege escalation
-  - Lateral movement
+**Hosts**
+- List of discovered targets
+- Detected services per host
+- Vulnerability details
+- Network topology
 
-- **Exfiltration**
-  - File stealing
-  - Data staging
-  - Protocol selection (FTP, SMB, HTTP)
-  - Scheduled transfers
+**Attacks**  
+- Reconnaissance scans
+- Brute force operations (FTP, SSH, Telnet, SMB, SQL, RDP)
+- Vulnerability scanning
+- Manual attack execution
 
-- **Reporting**
-  - Vulnerability reports
-  - Attack results
-  - Data stolen summaries
-  - Network knowledge base
+**Loot**
+- Captured files organized by type
+- Exfiltrated data archive
+- Credential storage
+- Download captured results
+
+**Credentials**
+- Harvested usernames/passwords
+- Credential type tracking
+- Export for offline processing
+
+**Config**
+- Attack parameter configuration
+- Scan timeout settings
+- Wordlist selection
+- Target customization
+
+**Terminal**
+- Remote command execution
+- Shell access (if compromised)
+- Output logging and capture
+
+**Display**
+- Real-time pager/device output
+- Scan progress visualization
+- Action logging
 
 ## Control Functions
 

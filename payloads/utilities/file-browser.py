@@ -45,53 +45,62 @@ HTML_TPL = """<!DOCTYPE html>
 <title>KTOx File Explorer</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
+:root{--bg-0:#0a0000;--bg-1:#220000;--header:#8b0000;--fg:#abb2b9;--fg-muted:#717d7e;
+      --accent:#e74c3c;--warn:#d4ac0d;--white:#f5f5f5;--glow:0 0 10px rgba(231,76,60,0.3);}
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-     background:#0d1117;color:#c9d1d9;padding:16px}
-h1{color:#00ff41;font-size:1.4rem;margin-bottom:16px}
-.container{max-width:900px;margin:0 auto;background:#161b22;
-           padding:20px;border-radius:8px;border:1px solid #30363d}
-.path{font-family:monospace;color:#8b949e;font-size:.85rem;
-      margin-bottom:12px;word-break:break-all}
-.breadcrumb{margin-bottom:16px;font-size:.9rem}
-.breadcrumb a{color:#58a6ff;text-decoration:none}
-.breadcrumb a:hover{text-decoration:underline}
-.breadcrumb span{color:#8b949e;margin:0 4px}
-table{width:100%;border-collapse:collapse}
-thead{background:#21262d}
-th,td{padding:10px 12px;text-align:left;border-bottom:1px solid #21262d;font-size:.9rem}
-th{color:#8b949e;font-weight:600;font-size:.8rem;text-transform:uppercase}
-tr:hover td{background:#1c2128}
-.name a{color:#58a6ff;text-decoration:none}
+body{font-family:'Courier New',monospace;background:linear-gradient(135deg,var(--bg-0),var(--bg-1));
+     color:var(--fg);padding:8px;overflow-x:hidden}
+header{background:linear-gradient(90deg,var(--header),var(--bg-1));border:2px solid var(--accent);
+       border-radius:4px;padding:12px 16px;margin-bottom:8px;box-shadow:var(--glow)}
+h1{color:var(--white);font-size:1.3rem;text-shadow:0 0 6px var(--accent);letter-spacing:1px}
+.container{max-width:900px;margin:0 auto;background:var(--bg-1);padding:12px;border:1px solid rgba(231,76,60,0.3);
+           border-radius:4px;box-shadow:inset 0 0 8px rgba(0,0,0,0.8)}
+.path{font-family:monospace;color:var(--fg-muted);font-size:.8rem;margin-bottom:8px;word-break:break-all}
+.breadcrumb{margin-bottom:12px;font-size:.85rem}
+.breadcrumb a{color:var(--accent);text-decoration:none}
+.breadcrumb a:hover{text-decoration:underline;box-shadow:var(--glow)}
+.breadcrumb span{color:var(--fg-muted);margin:0 4px}
+table{width:100%;border-collapse:collapse;margin:8px 0}
+thead{background:var(--header)}
+th,td{padding:8px 10px;text-align:left;border-bottom:1px solid rgba(231,76,60,0.2);font-size:.85rem}
+th{color:var(--white);font-weight:600;text-transform:uppercase}
+tr:hover td{background:var(--bg-0);box-shadow:inset 0 0 4px var(--accent)}
+.name a{color:var(--accent);text-decoration:none}
 .name a:hover{text-decoration:underline}
-.dir-icon{color:#e3b341;margin-right:6px}
-.file-icon{color:#8b949e;margin-right:6px}
-.size{color:#8b949e;font-family:monospace;font-size:.85rem}
-.dl-btn{background:#238636;color:#fff;border:none;padding:4px 10px;
-        border-radius:4px;cursor:pointer;font-size:.8rem;text-decoration:none;
-        display:inline-block}
-.dl-btn:hover{background:#2ea043}
-.del-btn{background:#b91c1c;color:#fff;border:none;padding:4px 10px;
-         border-radius:4px;cursor:pointer;font-size:.8rem;margin-left:4px}
-.del-btn:hover{background:#dc2626}
-.upload-section{margin-top:24px;padding-top:20px;border-top:1px solid #30363d}
-.upload-section h3{color:#c9d1d9;margin-bottom:12px;font-size:1rem}
-.upload-form{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
-input[type="file"]{background:#21262d;color:#c9d1d9;padding:8px;
-                   border-radius:4px;border:1px solid #30363d;flex:1;min-width:200px}
-.upload-btn{background:#1f6feb;color:#fff;border:none;padding:8px 16px;
-            border-radius:4px;cursor:pointer;font-weight:600}
-.upload-btn:hover{background:#388bfd}
-.back-btn{display:inline-block;margin-bottom:12px;color:#8b949e;
-          text-decoration:none;font-size:.9rem}
-.back-btn:hover{color:#c9d1d9}
-.empty{color:#8b949e;padding:20px;text-align:center;font-style:italic}
-.stats{color:#8b949e;font-size:.8rem;margin-top:8px}
+.dir-icon{color:var(--warn);margin-right:4px}
+.file-icon{color:var(--fg-muted);margin-right:4px}
+.size{color:var(--fg-muted);font-family:monospace;font-size:.8rem}
+.dl-btn{background:linear-gradient(135deg,var(--header),var(--bg-1));color:var(--white);border:1px solid var(--accent);
+        padding:4px 10px;border-radius:3px;cursor:pointer;font-size:.75rem;text-decoration:none;display:inline-block;
+        box-shadow:var(--glow)}
+.dl-btn:hover{background:linear-gradient(135deg,var(--accent),#c0392b);box-shadow:0 0 20px rgba(231,76,60,0.5)}
+.del-btn{background:linear-gradient(135deg,var(--warn),#b8860b);color:var(--bg-0);border:1px solid var(--warn);
+         padding:4px 10px;border-radius:3px;cursor:pointer;font-size:.75rem;margin-left:4px;box-shadow:var(--glow)}
+.del-btn:hover{background:linear-gradient(135deg,#d4ac0d,#ffd700);box-shadow:0 0 20px rgba(212,172,13,0.5)}
+.upload-section{margin-top:16px;padding-top:12px;border-top:1px solid rgba(231,76,60,0.2)}
+.upload-section h3{color:var(--accent);margin-bottom:8px;font-size:.95rem}
+.upload-form{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+input[type="file"]{background:var(--bg-0);color:var(--fg);padding:6px;border-radius:3px;
+                   border:1px solid rgba(231,76,60,0.3);flex:1;min-width:150px}
+input[type="file"]:focus{outline:none;border-color:var(--accent);box-shadow:var(--glow)}
+.upload-btn{background:linear-gradient(135deg,var(--accent),#c0392b);color:var(--white);border:1px solid var(--accent);
+            padding:6px 14px;border-radius:3px;cursor:pointer;font-weight:600;box-shadow:var(--glow)}
+.upload-btn:hover{box-shadow:0 0 20px rgba(231,76,60,0.5)}
+.back-btn{display:inline-block;margin-bottom:8px;color:var(--accent);text-decoration:none;font-size:.85rem}
+.back-btn:hover{text-decoration:underline}
+.empty{color:var(--fg-muted);padding:16px;text-align:center;font-style:italic}
+.stats{color:var(--fg-muted);font-size:.75rem;margin-top:6px}
+footer{text-align:center;margin-top:16px;padding-top:8px;border-top:1px solid rgba(231,76,60,0.2);
+       color:var(--fg-muted);font-size:.75rem}
+.scanlines{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;
+          background:repeating-linear-gradient(0deg,rgba(0,0,0,0.15),rgba(0,0,0,0.15) 1px,transparent 1px,transparent 2px);
+          z-index:9999}
 </style>
 </head>
 <body>
+<header><h1>📁 KTOx File Explorer</h1></header>
 <div class="container">
-  <h1>&#x1F4C1; KTOx File Explorer</h1>
+  <div class="path">{{ current_path }}</div>
   <div class="path">{{ current_path }}</div>
 
   <!-- Breadcrumb -->
@@ -151,6 +160,10 @@ input[type="file"]{background:#21262d;color:#c9d1d9;padding:8px;
     </form>
   </div>
 </div>
+<footer>
+  <p>KTOx File Browser | Port 8888 | Cyberpunk Edition</p>
+</footer>
+<div class="scanlines"></div>
 </body>
 </html>"""
 
