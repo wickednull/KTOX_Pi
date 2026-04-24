@@ -1491,45 +1491,6 @@ def run_webui():
         server.shutdown()
         time.sleep(0.4)
 
-# ----------------------------------------------------------------------
-# LCD virtual keyboard
-# ----------------------------------------------------------------------
-VKB = [
-    ["q","w","e","r","t","y","u","i","o","p"],
-    ["a","s","d","f","g","h","j","k","l","BS"],
-    ["z","x","c","v","b","n","m",".","/","-"],
-    ["http","https","www",".com","SPC"],
-    ["CLR","ENT","ESC"],
-]
-
-def draw_vkb(buf, row, col):
-    img, d = clear_screen()
-    d.rectangle((0, 0, WIDTH, 13), fill=HEADER)
-    d.text((4, 2), "ENTER URL/CMD", font=FONT_BOLD, fill=ACCENT)
-
-    d.rectangle((2, 16, WIDTH - 2, 31), outline=ACCENT, fill=(25, 0, 0))
-    preview = buf[-20:] if buf else "_"
-    d.text((4, 20), preview, font=FONT_SMALL, fill=WHITE)
-
-    y = 36
-    for r, keys in enumerate(VKB):
-        x = 2
-        for c, key in enumerate(keys):
-            # Adjust width: 10 for single chars, 20 for longer strings
-            w = 10 if len(key) <= 2 else 20
-            if r == row and c == col:
-                d.rectangle((x, y, x + w, y + 12), fill=HEADER)
-                d.text((x + 1, y + 2), key[:4], font=FONT_SMALL, fill=WHITE)
-            else:
-                d.rectangle((x, y, x + w, y + 12), outline=ACCENT, fill=PANEL)
-                d.text((x + 1, y + 2), key[:4], font=FONT_SMALL, fill=FG)
-            x += w + 2
-        y += 15
-
-    d.rectangle((0, HEIGHT - 12, WIDTH, HEIGHT), fill=PANEL)
-    d.text((4, HEIGHT - 10), "K2/K3 cancel", font=FONT_SMALL, fill=ACCENT)
-    show_image(img)
-
 def vkb_input(initial=""):
     kb = DarkSecKeyboard(width=WIDTH, height=HEIGHT, lcd=LCD, gpio_pins=PINS, gpio_module=GPIO)
     result = kb.run()

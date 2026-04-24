@@ -95,41 +95,6 @@ def wait_btn(timeout=0.1):
         time.sleep(0.02)
     return None
 
-# ----------------------------------------------------------------------
-# On‑Screen Keyboard (QWERTY)
-# ----------------------------------------------------------------------
-KEYBOARD_PAGES = [
-    ["qwertyuiop", "asdfghjkl", "zxcvbnm", ".,!?@#$% "],
-    ["QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM", ";:'\"~`()"],
-    ["1234567890", "[]{}\\|<>", "!@#$%^&*", "-_=+/ "]
-]
-PAGE_NAMES = ["abc", "ABC", "123"]
-ROW_Y = [28, 40, 52, 64]
-CELL_W = 10
-START_X = 4
-
-def draw_keyboard(input_text, page, selected_row, selected_col):
-    img = Image.new("RGB", (W, H), "#0A0000")
-    d = ImageDraw.Draw(img)
-    d.rectangle((0, 0, W, 16), fill="#8B0000")
-    d.text((4, 2), f"VKB:{PAGE_NAMES[page]}", font=f9, fill=(231, 76, 60))
-    d.rectangle((2, 18, W-2, 26), fill=(10, 0, 0))
-    display_text = input_text[-18:] if len(input_text) > 18 else input_text
-    d.text((4, 19), display_text, font=f9, fill=(212, 172, 13))
-    rows = KEYBOARD_PAGES[page]
-    for r, row in enumerate(rows):
-        y = ROW_Y[r]
-        for c, ch in enumerate(row):
-            x = START_X + c * CELL_W
-            if r == selected_row and c == selected_col:
-                d.rectangle((x-1, y-1, x+CELL_W-1, y+8), fill="#FF8800")
-                d.text((x, y), ch, font=f9, fill="#000000")
-            else:
-                d.text((x, y), ch, font=f9, fill=(242, 243, 244))
-    d.rectangle((0, H-12, W, H), fill="#220000")
-    d.text((4, H-10), "OK=add K1=send K2=del K3=exit", font=f9, fill="#FF7777")
-    LCD.LCD_ShowImage(img, 0, 0)
-
 def osk_input(prompt="Enter:", initial=""):
     kb = DarkSecKeyboard(width=W, height=H, lcd=LCD, gpio_pins=PINS, gpio_module=GPIO)
     result = kb.run()
