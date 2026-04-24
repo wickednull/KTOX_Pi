@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 # NAME: APT Store
 
-import os, subprocess, time
+import os, subprocess, time, sys
 from pathlib import Path
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
+from payloads._darksec_keyboard import DarkSecKeyboard
 
 # ----------------------------------------------------------------------
 # Persistent LCD hardware (no re-init on every draw)
@@ -22,7 +26,7 @@ lcd.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
 LCD_Config.Driver_Delay_ms(50)
 
 W, H = 128, 128
-image = Image.new("RGB", (W, H), "#0a0a0a")
+image = Image.new("RGB", (W, H), "#0a0000")
 draw = ImageDraw.Draw(image)
 
 try:
@@ -35,7 +39,7 @@ def flush():
     lcd.LCD_ShowImage(image, 0, 0)
 
 def draw_menu(lines, title, selected=0, page=0, total_pages=1):
-    draw.rectangle((0,0,W,H), fill="#0a0a0a")
+    draw.rectangle((0,0,W,H), fill="#0a0000")
     draw.rectangle((0,0,W,12), fill="#8B0000")
     draw.text((2,2), title[:16], font=bold_font, fill="#fff")
     if total_pages > 1:
@@ -59,7 +63,7 @@ def wait_button():
         time.sleep(0.02)
 
 def show_message(text, delay=2):
-    draw.rectangle((0,0,W,H), fill="#0a0a0a")
+    draw.rectangle((0,0,W,H), fill="#0a0000")
     draw.text((4,10), text[:20], font=font, fill="#c8c8c8")
     flush()
     time.sleep(delay)
@@ -69,7 +73,7 @@ def show_text_scroll(lines, title="INFO"):
     page = 0
     total = max(1, (len(lines) + 5) // 6)
     while True:
-        draw.rectangle((0,0,W,H), fill="#0a0a0a")
+        draw.rectangle((0,0,W,H), fill="#0a0000")
         draw.rectangle((0,0,W,12), fill="#8B0000")
         draw.text((2,2), title[:16], font=bold_font, fill="#fff")
         if total > 1:
@@ -87,9 +91,9 @@ def show_text_scroll(lines, title="INFO"):
         elif btn in ("OK","KEY2","KEY3"): break
 
 def confirm(msg):
-    draw.rectangle((0,0,W,H), fill="#0a0a0a")
+    draw.rectangle((0,0,W,H), fill="#0a0000")
     draw.text((4,10), msg[:20], font=font, fill="#ff8800")
-    draw.text((4,30), "KEY1 = YES", font=font, fill="#2ecc40")
+    draw.text((4,30), "KEY1 = YES", font=font, fill="#e74c3c")
     draw.text((4,42), "KEY2 = NO", font=font, fill="#c8c8c8")
     flush()
     while True:
@@ -107,7 +111,7 @@ def run_apt(cmd, title="APT"):
         if line:
             lines.append(line.strip())
             if len(lines) > 6: lines = lines[-6:]
-            draw.rectangle((0,0,W,H), fill="#0a0a0a")
+            draw.rectangle((0,0,W,H), fill="#0a0000")
             draw.rectangle((0,0,W,12), fill="#8B0000")
             draw.text((2,2), title[:16], font=bold_font, fill="#fff")
             y = 16
@@ -171,39 +175,9 @@ KEYBOARD = [
 ]
 
 def keyboard_input(title="SEARCH"):
-    query = ""
-    row, col = 0, 0
-    while True:
-        draw.rectangle((0,0,W,H), fill="#0a0a0a")
-        draw.rectangle((0,0,W,12), fill="#8B0000")
-        draw.text((2,2), title[:16], font=bold_font, fill="#fff")
-        draw.text((2, H-12), f"> {query[:18]}", font=font, fill="#2ecc40")
-        y = 16
-        for r_idx, row_keys in enumerate(KEYBOARD):
-            x = 2
-            for c_idx, key in enumerate(row_keys):
-                if r_idx == row and c_idx == col:
-                    draw.rectangle((x-1, y-1, x+9, y+9), fill="#8B0000")
-                    draw.text((x, y), key, font=font, fill="#fff")
-                else:
-                    draw.text((x, y), key, font=font, fill="#c8c8c8")
-                x += 12
-            y += 12
-        flush()
-        btn = wait_button()
-        if btn == "UP": row = max(0, row-1)
-        elif btn == "DOWN": row = min(len(KEYBOARD)-1, row+1)
-        elif btn == "LEFT": col = max(0, col-1)
-        elif btn == "RIGHT": col = min(len(KEYBOARD[row])-1, col+1)
-        elif btn == "OK":
-            key = KEYBOARD[row][col]
-            if key == '←': query = query[:-1]
-            elif key == '⌫': query = ""
-            elif key in ('🔍','OK'): return query
-            elif key == 'EXIT': return None
-            else: query += key
-        elif btn == "KEY2": return None
-        elif btn == "KEY3": return None
+    kb = DarkSecKeyboard(width=W, height=H, lcd=lcd, gpio_pins=PINS, gpio_module=GPIO)
+    result = kb.run()
+    return result.strip() if result else None
 
 # ----------------------------------------------------------------------
 # Main menu

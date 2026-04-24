@@ -14,6 +14,11 @@ import requests
 import urllib.parse
 from urllib.request import urlopen, Request
 
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
+from payloads._darksec_keyboard import DarkSecKeyboard
+
 try:
     import RPi.GPIO as GPIO
     import LCD_1in44
@@ -126,53 +131,9 @@ def draw_status(lines, title="STATUS"):
 
 # ── On-Screen Keyboard ───────────────────────────────────────────────────────
 def on_screen_keyboard(prompt="Enter:"):
-    input_text = ""
-    char_idx = 0
-    while RUNNING:
-        _draw.rectangle((0,0,W,H), fill="#0A0000")
-        _draw.rectangle((0,0,W,17), fill="#8B0000")
-        _draw.text((4,3), prompt[:20], font=_font_sm, fill=(231, 76, 60))
-
-        shown = input_text[-17:] if len(input_text) > 17 else input_text
-        _draw.rectangle((0,19,W,36), fill="#220000")
-        _draw.text((4,21), "> " + shown, font=_font_sm, fill="#FFCCCC")
-
-        cs = CHAR_SET
-        prev = cs[(char_idx-1)%len(cs)]
-        curr = cs[char_idx]
-        nxt = cs[(char_idx+1)%len(cs)]
-        _draw.text((8,48), f"< {prev}  ", font=_font_md, fill="#884444")
-        _draw.rectangle((52,45,78,63), fill="#AA0000")
-        _draw.text((58,47), curr, font=_font_md, fill="#FF6666")
-        _draw.text((82,48), f"  {nxt} >", font=_font_md, fill="#884444")
-
-        hints = ["U/D=char OK=add", "L=del R=. K1=/", "K2=GO K3=Cancel"]
-        y = 72
-        for h in hints:
-            _draw.text((4,y), h, font=_font_sm, fill="#FF9999")
-            y += 11
-        push()
-
-        btn = None
-        t0 = time.time()
-        while not btn and RUNNING and time.time()-t0 < 60:
-            for name, pin in PINS.items():
-                if GPIO.input(pin) == 0:
-                    btn = name
-                    break
-            time.sleep(0.04)
-
-        if not btn or not RUNNING: return ""
-        if btn == "KEY3": return ""
-        if btn == "KEY2": return input_text.strip()
-        if btn == "OK": input_text += CHAR_SET[char_idx]
-        elif btn == "LEFT": input_text = input_text[:-1]
-        elif btn == "RIGHT": input_text += "."
-        elif btn == "KEY1": input_text += "/"
-        elif btn == "UP": char_idx = (char_idx - 1 + len(CHAR_SET)) % len(CHAR_SET)
-        elif btn == "DOWN": char_idx = (char_idx + 1) % len(CHAR_SET)
-        time.sleep(0.1)
-    return ""
+    kb = DarkSecKeyboard(width=W, height=H, lcd=LCD, gpio_pins=PINS, gpio_module=GPIO)
+    result = kb.run()
+    return (result or "").strip()
 
 # ── Awesome Recon Tools ──────────────────────────────────────────────────────
 def live_network_scan():
