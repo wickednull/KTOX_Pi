@@ -117,7 +117,7 @@ class WiFiLCDInterface:
 
         self.LCD.LCD_ShowImage(img, 0, 0)
 
-    def draw_text_input(self, prompt):
+    def draw_text_input(self, prompt, current_char=""):
         """Draw text input screen for password."""
         img = Image.new("RGB", (self.W, self.H), (10, 0, 0))
         d = ImageDraw.Draw(img)
@@ -133,11 +133,13 @@ class WiFiLCDInterface:
         display_text = self.input_text[-14:] if len(self.input_text) > 14 else self.input_text
         d.text((4, 28), display_text, fill=(212, 172, 13), font=self.font_sm)
 
-        # Instructions
-        d.text((4, 50), "KEY1:Done KEY3:Cancel", fill=(171, 178, 185), font=self.font_sm)
-        d.text((4, 65), "UP/DN: select char", fill=(113, 125, 126), font=self.font_sm)
-        d.text((4, 75), "LEFT/RIGHT: move", fill=(113, 125, 126), font=self.font_sm)
-        d.text((4, 85), "OK: add char KEY2: del", fill=(113, 125, 126), font=self.font_sm)
+        # Current character selection (large display)
+        if current_char:
+            d.text((50, 55), current_char, fill=(255, 140, 0), font=self.font_md)
+
+        # Character counter
+        char_count = len(self.input_text)
+        d.text((4, 70), f"Chars: {char_count}", fill=(171, 178, 185), font=self.font_sm)
 
         self.LCD.LCD_ShowImage(img, 0, 0)
 
@@ -348,7 +350,7 @@ class WiFiLCDInterface:
         char_idx = 0
 
         while True:
-            self.draw_text_input("Password")
+            self.draw_text_input("Password", charset[char_idx])
             btn = self.wait_btn(0.3)
 
             if btn == "UP":
