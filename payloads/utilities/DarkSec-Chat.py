@@ -26,6 +26,11 @@ import requests
 import textwrap
 from datetime import datetime
 
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
+from payloads._darksec_keyboard import DarkSecKeyboard
+
 # ----------------------------------------------------------------------
 # Hardware & LCD
 # ----------------------------------------------------------------------
@@ -90,79 +95,13 @@ def wait_btn(timeout=0.1):
         time.sleep(0.02)
     return None
 
-# ----------------------------------------------------------------------
-# On‑Screen Keyboard (QWERTY)
-# ----------------------------------------------------------------------
-KEYBOARD_PAGES = [
-    ["qwertyuiop", "asdfghjkl", "zxcvbnm", ".,!?@#$% "],
-    ["QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM", ";:'\"~`()"],
-    ["1234567890", "[]{}\\|<>", "!@#$%^&*", "-_=+/ "]
-]
-PAGE_NAMES = ["abc", "ABC", "123"]
-ROW_Y = [28, 40, 52, 64]
-CELL_W = 10
-START_X = 4
-
-def draw_keyboard(input_text, page, selected_row, selected_col):
-    img = Image.new("RGB", (W, H), "#0A0000")
-    d = ImageDraw.Draw(img)
-    d.rectangle((0, 0, W, 16), fill="#8B0000")
-    d.text((4, 2), f"VKB:{PAGE_NAMES[page]}", font=f9, fill=(231, 76, 60))
-    d.rectangle((2, 18, W-2, 26), fill=(10, 0, 0))
-    display_text = input_text[-18:] if len(input_text) > 18 else input_text
-    d.text((4, 19), display_text, font=f9, fill=(212, 172, 13))
-    rows = KEYBOARD_PAGES[page]
-    for r, row in enumerate(rows):
-        y = ROW_Y[r]
-        for c, ch in enumerate(row):
-            x = START_X + c * CELL_W
-            if r == selected_row and c == selected_col:
-                d.rectangle((x-1, y-1, x+CELL_W-1, y+8), fill="#FF8800")
-                d.text((x, y), ch, font=f9, fill="#000000")
-            else:
-                d.text((x, y), ch, font=f9, fill=(242, 243, 244))
-    d.rectangle((0, H-12, W, H), fill="#220000")
-    d.text((4, H-10), "OK=add K1=send K2=del K3=exit", font=f9, fill="#FF7777")
-    LCD.LCD_ShowImage(img, 0, 0)
-
 def osk_input(prompt="Enter:", initial=""):
-    input_text = initial
-    page = 0
-    selected_row = 0
-    selected_col = 0
-    while True:
-        draw_keyboard(input_text, page, selected_row, selected_col)
-        btn = wait_btn(0.5)
-        if btn == "KEY3":
-            return None
-        elif btn == "KEY1":
-            if input_text.strip():
-                return input_text.strip()
-        elif btn == "KEY2":
-            input_text = input_text[:-1]
-        elif btn == "UP":
-            selected_row = (selected_row - 1) % len(KEYBOARD_PAGES[page])
-            new_len = len(KEYBOARD_PAGES[page][selected_row])
-            if selected_col >= new_len:
-                selected_col = new_len - 1
-        elif btn == "DOWN":
-            selected_row = (selected_row + 1) % len(KEYBOARD_PAGES[page])
-            new_len = len(KEYBOARD_PAGES[page][selected_row])
-            if selected_col >= new_len:
-                selected_col = new_len - 1
-        elif btn == "LEFT":
-            selected_col = (selected_col - 1) % len(KEYBOARD_PAGES[page][selected_row])
-        elif btn == "RIGHT":
-            selected_col = (selected_col + 1) % len(KEYBOARD_PAGES[page][selected_row])
-        elif btn == "OK":
-            ch = KEYBOARD_PAGES[page][selected_row][selected_col]
-            if ch == " ":
-                input_text += " "
-            else:
-                input_text += ch
-                if page == 2 and selected_col > 5:
-                    page = 0
-        time.sleep(0.05)
+    kb = DarkSecKeyboard(width=W, height=H, lcd=LCD, gpio_pins=PINS, gpio_module=GPIO)
+    result = kb.run()
+    if result is None:
+        return None
+    result = result.strip()
+    return result or initial
 
 # ----------------------------------------------------------------------
 # Chat storage & viewer
@@ -199,7 +138,7 @@ def draw_chat():
                 lines.append(f"   {line}")
         lines.append("")
     visible = lines[scroll_pos:scroll_pos+6]
-    draw_screen(visible, title="DarkSec-Chat", title_color="#004466")
+    draw_screen(visible, title="DarkSec-Chat", title_color="#8B0000")
 
 def scroll_up():
     global scroll_pos
@@ -435,7 +374,7 @@ def main():
         with chat_lock:
             for sender, text, ts, src in chat_messages:
                 f.write(f"[{datetime.fromtimestamp(ts).strftime('%H:%M:%S')}] {sender}: {text}\n")
-    draw_screen([f"Session saved", log_file[-25:], "KEY3 to exit"], title="DarkSec-Chat", title_color="#00AA00")
+    draw_screen([f"Session saved", log_file[-25:], "KEY3 to exit"], title="DarkSec-Chat", title_color="#8B0000")
     while wait_btn(0.5) != "KEY3":
         pass
     mesh_running = False
