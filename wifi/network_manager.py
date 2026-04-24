@@ -27,6 +27,7 @@ try:
     from PIL import Image, ImageDraw, ImageFont
     import RPi.GPIO as GPIO
     from wifi_manager import WiFiManager
+    from payloads._darksec_keyboard import DarkSecKeyboard
     LCD_AVAILABLE = True
 except Exception as e:
     print(f"LCD not available: {e}")
@@ -118,32 +119,6 @@ class WiFiLCDInterface:
         d.rectangle([(0, self.H - 12), (self.W, self.H)], fill=(34, 0, 0))
         if button_hint:
             d.text((4, self.H - 10), button_hint[:26], fill=(113, 125, 126), font=self.font_sm)
-
-        self.LCD.LCD_ShowImage(img, 0, 0)
-
-    def draw_text_input(self, prompt, current_char=""):
-        """Draw text input screen for password."""
-        img = Image.new("RGB", (self.W, self.H), (10, 0, 0))
-        d = ImageDraw.Draw(img)
-
-        # Header
-        d.rectangle([(0, 0), (self.W, 16)], fill=(139, 0, 0))
-        d.text((4, 3), prompt[:18], fill=(231, 76, 60), font=self.font_md)
-
-        # Input line
-        d.rectangle([(2, 25), (self.W - 2, 40)], fill=(34, 0, 0))
-        d.rectangle([(2, 25), (self.W - 2, 40)], outline=(231, 76, 60))
-
-        display_text = self.input_text[-14:] if len(self.input_text) > 14 else self.input_text
-        d.text((4, 28), display_text, fill=(212, 172, 13), font=self.font_sm)
-
-        # Current character selection (large display)
-        if current_char:
-            d.text((50, 55), current_char, fill=(255, 140, 0), font=self.font_md)
-
-        # Character counter
-        char_count = len(self.input_text)
-        d.text((4, 70), f"Chars: {char_count}", fill=(171, 178, 185), font=self.font_sm)
 
         self.LCD.LCD_ShowImage(img, 0, 0)
 
@@ -276,7 +251,7 @@ class WiFiLCDInterface:
             # Get password if encrypted
             password = ""
             if network.get('encrypted', False):
-                password = self.get_password_simple()
+                password = self.get_password()
                 if password is None:
                     return
 
@@ -347,28 +322,14 @@ class WiFiLCDInterface:
             self.current_menu = "main"
             self.menu_index = 0
 
-    def get_password_simple(self):
-        """Simple on-screen password input without DarkSecKeyboard."""
-        self.input_text = ""
-        charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*-_=+"
-        char_idx = 0
-
-        while True:
-            self.draw_text_input("Password", charset[char_idx])
-            btn = self.wait_btn(0.3)
-
-            if btn == "UP":
-                char_idx = (char_idx - 1) % len(charset)
-            elif btn == "DOWN":
-                char_idx = (char_idx + 1) % len(charset)
-            elif btn == "OK":
-                self.input_text += charset[char_idx]
-            elif btn == "KEY1":
-                return self.input_text if self.input_text else None
-            elif btn == "KEY2":
-                self.input_text = self.input_text[:-1]
-            elif btn == "KEY3":
-                return None
+    def get_password(self):
+        """Get password using DarkSecKeyboard."""
+        kb = DarkSecKeyboard(
+            width=self.W, height=self.H, lcd=self.LCD,
+            gpio_pins=self.buttons, gpio_module=GPIO
+        )
+        password = kb.run()
+        return password
 
     def wait_btn(self, timeout=0.1):
         """Wait for button press with debounce state tracking."""
