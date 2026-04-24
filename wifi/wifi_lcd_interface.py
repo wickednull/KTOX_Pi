@@ -2,17 +2,16 @@
 """
 KTOx WiFi LCD Interface
 ===========================
-LCD-based WiFi management with cyberpunk UI and DarkSecKeyboard
+Simple LCD-based WiFi management interface
 
 Features:
 - Network scanning and selection
-- Profile management with DarkSecKeyboard
-- Connection status with live monitoring
-- Cyberpunk KTOx aesthetic with CRT scanlines
+- Profile management
+- Connection status display
+- DarkSecKeyboard for password entry
 
 Button Layout:
 - UP/DOWN: Navigate menus
-- LEFT/RIGHT: Change values
 - OK: Select/Confirm
 - KEY1: Quick connect/disconnect
 - KEY2: Refresh/Scan
@@ -35,19 +34,6 @@ except Exception as e:
     print(f"LCD not available: {e}")
     LCD_AVAILABLE = False
 
-# Cyberpunk color palette
-COLOR_BG_0 = "#0a0000"
-COLOR_BG_1 = "#220000"
-COLOR_HEADER = "#8b0000"
-COLOR_ACCENT = "#e74c3c"
-COLOR_WARN = "#d4ac0d"
-COLOR_FG = "#abb2b9"
-COLOR_FG_MUTED = "#717d7e"
-
-# Convert hex to RGB tuples for PIL
-def hex_to_rgb(hex_color):
-    h = hex_color.lstrip("#")
-    return tuple(int(h[i:i+2], 16) for i in (0, 2, 4))
 
 class WiFiLCDInterface:
     def __init__(self):
@@ -59,17 +45,21 @@ class WiFiLCDInterface:
         # LCD setup
         self.LCD = LCD_1in44.LCD()
         self.LCD.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
-        self.canvas = Image.new("RGB", (128, 128), hex_to_rgb(COLOR_BG_0))
-        self.font_sm = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 8)
-        self.font_md = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 9)
+        self.W, self.H = 128, 128
+
+        try:
+            self.font_sm = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 8)
+            self.font_md = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 9)
+        except:
+            self.font_sm = self.font_md = ImageFont.load_default()
 
         # GPIO setup
         GPIO.setmode(GPIO.BCM)
         self.setup_buttons()
 
-        # DarkSecKeyboard for password entry
+        # Keyboard for password entry
         self.keyboard = DarkSecKeyboard(
-            width=128, height=128, lcd=self.LCD,
+            width=self.W, height=self.H, lcd=self.LCD,
             gpio_pins=self.buttons, gpio_module=GPIO
         )
 
@@ -104,186 +94,112 @@ class WiFiLCDInterface:
         self.scanned_networks = self.wifi_manager.scan_networks()
         self.saved_profiles = self.wifi_manager.load_profiles()
 
-    def draw_scanlines(self, img):
-        """Add CRT scanlines overlay."""
-        from PIL import ImageDraw
+    def draw_screen(self, title, lines, button_hint=""):
+        """Draw a simple screen with title, content, and hints."""
+        img = Image.new("RGB", (self.W, self.H), (10, 0, 0))
         d = ImageDraw.Draw(img)
-        for y in range(0, 128, 2):
-            d.line([(0, y), (128, y)], fill=hex_to_rgb("#1a0000"))
 
-    def draw_header(self, title):
-        """Draw cyberpunk menu header."""
-        d = ImageDraw.Draw(self.canvas)
-        d.rectangle([(0, 0), (128, 16)], fill=hex_to_rgb(COLOR_HEADER))
-        d.text((4, 3), title[:20], fill=hex_to_rgb(COLOR_ACCENT), font=self.font_md)
+        # Header
+        d.rectangle([(0, 0), (self.W, 16)], fill=(139, 0, 0))
+        d.text((4, 3), title[:20], fill=(231, 76, 60), font=self.font_md)
 
-    def draw_status_bar(self):
-        """Draw connection status at bottom."""
-        d = ImageDraw.Draw(self.canvas)
-        status = self.wifi_manager.get_connection_status()
+        # Content
+        y = 20
+        for line in lines[:7]:
+            d.text((4, y), line[:20], fill=(171, 178, 185), font=self.font_sm)
+            y += 12
 
-        d.rectangle([(0, 116), (128, 128)], fill=hex_to_rgb(COLOR_BG_1))
-        d.rectangle([(0, 115), (128, 116)], fill=hex_to_rgb(COLOR_ACCENT))
+        # Footer with hints
+        d.rectangle([(0, self.H - 12), (self.W, self.H)], fill=(34, 0, 0))
+        if button_hint:
+            d.text((4, self.H - 10), button_hint[:26], fill=(113, 125, 126), font=self.font_sm)
 
-        if status["status"] == "connected":
-            status_text = f"📶 {status['ssid'][:12]}"
-            color = hex_to_rgb(COLOR_WARN)
-        else:
-            status_text = "Disconnected"
-            color = hex_to_rgb(COLOR_FG_MUTED)
-
-        d.text((4, 118), status_text[:20], fill=color, font=self.font_sm)
+        self.LCD.LCD_ShowImage(img, 0, 0)
 
     def draw_main_menu(self):
         """Draw main WiFi menu."""
-        self.canvas.paste(Image.new("RGB", (128, 128), hex_to_rgb(COLOR_BG_0)))
-        d = ImageDraw.Draw(self.canvas)
-
-        self.draw_header("WiFi MANAGER")
-
         menu_items = [
-            "SCAN NETWORKS",
-            "SAVED PROFILES",
-            "QUICK CONNECT",
-            "STATUS & INFO",
-            "EXIT"
+            "Scan Networks",
+            "Saved Profiles",
+            "Connection Info",
+            "Exit"
         ]
 
-        y_pos = 20
+        lines = []
         for i, item in enumerate(menu_items):
-            if i == self.menu_index:
-                d.rectangle([(0, y_pos-1), (128, y_pos+11)], fill=hex_to_rgb(COLOR_ACCENT))
-                color = hex_to_rgb(COLOR_BG_0)
-            else:
-                color = hex_to_rgb(COLOR_FG)
+            marker = ">" if i == self.menu_index else " "
+            lines.append(f"{marker} {item}")
 
-            d.text((4, y_pos), item[:18], fill=color, font=self.font_md)
-            y_pos += 14
-
-        # Button hints
-        d.text((2, 101), "UP/DN OK KEY3:back", fill=hex_to_rgb(COLOR_FG_MUTED), font=self.font_sm)
-        self.draw_status_bar()
-        self.draw_scanlines(self.canvas)
-        self.LCD.LCD_ShowImage(self.canvas, 0, 0)
+        self.draw_screen("WIFI MANAGER", lines, "UP/DN OK KEY3:back")
 
     def draw_network_scan(self):
         """Draw scanned networks list."""
-        self.canvas.paste(Image.new("RGB", (128, 128), hex_to_rgb(COLOR_BG_0)))
-        d = ImageDraw.Draw(self.canvas)
-
-        self.draw_header("AVAILABLE NETWORKS")
+        lines = []
 
         if not self.scanned_networks:
-            d.text((4, 30), "No networks found", fill=hex_to_rgb(COLOR_FG_MUTED), font=self.font_md)
-            d.text((4, 45), "KEY2: Scan again", fill=hex_to_rgb(COLOR_WARN), font=self.font_sm)
+            lines = ["No networks found", "", "KEY2: Scan again"]
         else:
-            y_pos = 20
-            display_count = min(5, len(self.scanned_networks))
             start_idx = max(0, self.menu_index - 2)
+            visible = self.scanned_networks[start_idx:start_idx + 5]
 
-            for i in range(start_idx, min(start_idx + display_count, len(self.scanned_networks))):
-                network = self.scanned_networks[i]
-                ssid = network.get('ssid', 'Unknown')[:14]
-                signal = network.get('signal', 0)
+            for i, network in enumerate(visible):
+                idx = start_idx + i
+                marker = ">" if idx == self.menu_index else " "
+                ssid = network.get('ssid', 'Unknown')[:16]
+                encrypted = "[L]" if network.get('encrypted', False) else "[O]"
+                lines.append(f"{marker} {encrypted} {ssid}")
 
-                if i == self.menu_index:
-                    d.rectangle([(0, y_pos-1), (128, y_pos+11)], fill=hex_to_rgb(COLOR_ACCENT))
-                    color = hex_to_rgb(COLOR_BG_0)
-                else:
-                    color = hex_to_rgb(COLOR_FG)
-
-                encrypted = "🔒" if network.get('encrypted', False) else "🔓"
-                d.text((4, y_pos), f"{encrypted} {ssid}", fill=color, font=self.font_md)
-                y_pos += 13
-
-        d.text((2, 101), "OK:Connect K3:back", fill=hex_to_rgb(COLOR_FG_MUTED), font=self.font_sm)
-        self.draw_status_bar()
-        self.draw_scanlines(self.canvas)
-        self.LCD.LCD_ShowImage(self.canvas, 0, 0)
+        self.draw_screen("NETWORKS", lines, "OK:Connect K3:back")
 
     def draw_saved_profiles(self):
         """Draw saved WiFi profiles."""
-        self.canvas.paste(Image.new("RGB", (128, 128), hex_to_rgb(COLOR_BG_0)))
-        d = ImageDraw.Draw(self.canvas)
-
-        self.draw_header("SAVED PROFILES")
+        lines = []
 
         if not self.saved_profiles:
-            d.text((4, 30), "No saved profiles", fill=hex_to_rgb(COLOR_FG_MUTED), font=self.font_md)
-            d.text((4, 45), "Scan & save networks", fill=hex_to_rgb(COLOR_WARN), font=self.font_sm)
+            lines = ["No saved profiles", "", "Scan & save networks"]
         else:
-            y_pos = 20
-            display_count = min(5, len(self.saved_profiles))
-            start_idx = max(0, min(self.menu_index, len(self.saved_profiles) - display_count))
+            start_idx = max(0, self.menu_index - 2)
+            visible = self.saved_profiles[start_idx:start_idx + 5]
 
-            for i in range(start_idx, min(start_idx + display_count, len(self.saved_profiles))):
-                profile = self.saved_profiles[i]
-                ssid = profile.get('ssid', 'Unknown')[:14]
+            for i, profile in enumerate(visible):
+                idx = start_idx + i
+                marker = ">" if idx == self.menu_index else " "
+                ssid = profile.get('ssid', 'Unknown')[:16]
+                lines.append(f"{marker} {ssid}")
 
-                if i == self.menu_index:
-                    d.rectangle([(0, y_pos-1), (128, y_pos+11)], fill=hex_to_rgb(COLOR_ACCENT))
-                    color = hex_to_rgb(COLOR_BG_0)
-                else:
-                    color = hex_to_rgb(COLOR_FG)
+        self.draw_screen("PROFILES", lines, "OK:Connect K3:back")
 
-                d.text((4, y_pos), ssid, fill=color, font=self.font_md)
-                y_pos += 13
-
-        d.text((2, 101), "OK:Connect K3:back", fill=hex_to_rgb(COLOR_FG_MUTED), font=self.font_sm)
-        self.draw_status_bar()
-        self.draw_scanlines(self.canvas)
-        self.LCD.LCD_ShowImage(self.canvas, 0, 0)
-
-    def draw_status_info(self):
+    def draw_connection_info(self):
         """Draw connection status and info."""
-        self.canvas.paste(Image.new("RGB", (128, 128), hex_to_rgb(COLOR_BG_0)))
-        d = ImageDraw.Draw(self.canvas)
-
-        self.draw_header("STATUS & INFO")
-
         status = self.wifi_manager.get_connection_status()
+
         lines = [
-            f"Status: {status['status'].upper()}",
-            f"SSID: {status.get('ssid', 'N/A')[:12]}",
+            f"Status: {status.get('status', 'unknown').upper()[:8]}",
+            f"SSID: {status.get('ssid', 'N/A')[:14]}",
             f"Signal: {status.get('signal', 0)}",
-            f"IP: {status.get('ip', 'N/A')[:15]}",
+            f"IP: {status.get('ip', 'N/A')[:14]}",
         ]
 
-        y_pos = 20
-        for line in lines:
-            d.text((4, y_pos), line[:20], fill=hex_to_rgb(COLOR_FG), font=self.font_sm)
-            y_pos += 13
-
-        d.text((2, 101), "K2:Refresh K3:back", fill=hex_to_rgb(COLOR_FG_MUTED), font=self.font_sm)
-        self.draw_status_bar()
-        self.draw_scanlines(self.canvas)
-        self.LCD.LCD_ShowImage(self.canvas, 0, 0)
-
-    def get_password_input(self):
-        """Get password using DarkSecKeyboard."""
-        return self.keyboard.run()
+        self.draw_screen("INFO", lines, "K2:Refresh K3:back")
 
     def handle_main_menu(self):
         """Handle main menu navigation."""
         btn = self.wait_btn(0.3)
 
         if btn == "UP":
-            self.menu_index = (self.menu_index - 1) % 5
+            self.menu_index = (self.menu_index - 1) % 4
         elif btn == "DOWN":
-            self.menu_index = (self.menu_index + 1) % 5
+            self.menu_index = (self.menu_index + 1) % 4
         elif btn == "OK":
-            if self.menu_index == 0:  # Scan Networks
+            if self.menu_index == 0:
                 self.current_menu = "scan"
                 self.menu_index = 0
-            elif self.menu_index == 1:  # Saved Profiles
+            elif self.menu_index == 1:
                 self.current_menu = "profiles"
                 self.menu_index = 0
-            elif self.menu_index == 2:  # Quick Connect
-                self.current_menu = "quick"
-                self.menu_index = 0
-            elif self.menu_index == 3:  # Status & Info
-                self.current_menu = "status"
-            elif self.menu_index == 4:  # Exit
+            elif self.menu_index == 2:
+                self.current_menu = "info"
+            elif self.menu_index == 3:
                 self.running = False
         elif btn == "KEY2":
             self.refresh_data()
@@ -297,7 +213,8 @@ class WiFiLCDInterface:
         if btn == "UP":
             self.menu_index = max(0, self.menu_index - 1)
         elif btn == "DOWN":
-            self.menu_index = min(len(self.scanned_networks) - 1, self.menu_index + 1)
+            if self.scanned_networks:
+                self.menu_index = min(len(self.scanned_networks) - 1, self.menu_index + 1)
         elif btn == "OK" and self.scanned_networks:
             network = self.scanned_networks[self.menu_index]
             ssid = network.get('ssid', '')
@@ -305,9 +222,8 @@ class WiFiLCDInterface:
             # Get password if encrypted
             password = ""
             if network.get('encrypted', False):
-                password = self.get_password_input()
+                password = self.keyboard.run()
                 if password is None:
-                    self.current_menu = "main"
                     return
 
             # Connect
@@ -330,7 +246,8 @@ class WiFiLCDInterface:
         if btn == "UP":
             self.menu_index = max(0, self.menu_index - 1)
         elif btn == "DOWN":
-            self.menu_index = min(len(self.saved_profiles) - 1, self.menu_index + 1)
+            if self.saved_profiles:
+                self.menu_index = min(len(self.saved_profiles) - 1, self.menu_index + 1)
         elif btn == "OK" and self.saved_profiles:
             profile = self.saved_profiles[self.menu_index]
             self.wifi_manager.connect_network(profile['ssid'], profile.get('password', ''))
@@ -342,8 +259,8 @@ class WiFiLCDInterface:
             self.current_menu = "main"
             self.menu_index = 0
 
-    def handle_status_menu(self):
-        """Handle status menu navigation."""
+    def handle_info_menu(self):
+        """Handle info menu navigation."""
         btn = self.wait_btn(0.3)
 
         if btn == "KEY2":
@@ -352,7 +269,7 @@ class WiFiLCDInterface:
             self.current_menu = "main"
 
     def wait_btn(self, timeout=0.1):
-        """Wait for button press."""
+        """Wait for button press with timeout."""
         start = time.time()
         while time.time() - start < timeout:
             for name, pin in self.buttons.items():
@@ -375,9 +292,9 @@ class WiFiLCDInterface:
                 elif self.current_menu == "profiles":
                     self.draw_saved_profiles()
                     self.handle_profiles_menu()
-                elif self.current_menu == "status":
-                    self.draw_status_info()
-                    self.handle_status_menu()
+                elif self.current_menu == "info":
+                    self.draw_connection_info()
+                    self.handle_info_menu()
 
                 time.sleep(0.05)
         finally:
@@ -390,10 +307,10 @@ def main():
     try:
         interface = WiFiLCDInterface()
         interface.run()
+        return True
     except Exception as e:
         print(f"Error: {e}")
         return False
-    return True
 
 
 if __name__ == "__main__":
