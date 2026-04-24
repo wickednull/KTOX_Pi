@@ -2822,6 +2822,7 @@ _FA_ICONS: dict = {
     "Network Info":     "\uf129",   # fa-info
     "ARP Watch":        "\uf06e",   # fa-eye
     # ── Offensive submenu ─────────────────────────────────────────────────
+    "Loki Engine":      "\uf0e7",   # fa-bolt
     "Kick ONE off":     "\uf05e",   # fa-ban
     "Kick ALL off":     "\uf1f8",   # fa-trash
     "ARP MITM":         "\uf0ec",
@@ -2936,13 +2937,14 @@ class KTOxMenu:
 
         # ── OFFENSIVE ─────────────────────────────────────────────────────────
         "off": (
-            (" Kick ONE off",   self._kick_one),
-            (" Kick ALL off",   self._kick_all),
-            (" ARP MITM",       self._do_mitm),
-            (" ARP Flood",      self._arp_flood),
-            (" Gateway DoS",    self._gw_dos),
-            (" ARP Cage",       self._arp_cage),
-            (" NTLMv2 Capture", self._ntlm),
+            (" Loki Engine",     self._loki_engine),
+            (" Kick ONE off",    self._kick_one),
+            (" Kick ALL off",    self._kick_all),
+            (" ARP MITM",        self._do_mitm),
+            (" ARP Flood",       self._arp_flood),
+            (" Gateway DoS",     self._gw_dos),
+            (" ARP Cage",        self._arp_cage),
+            (" NTLMv2 Capture",  self._ntlm),
             (" Back",            "home"),
         ),
 
@@ -3521,6 +3523,80 @@ class KTOxMenu:
             n = 0
         Dialog_info(f"Capture stopped.\n{n} hash(es).\nLoot: ntlm_hashes.txt",
                     wait=False, timeout=2)
+
+    # ── Loki Engine ───────────────────────────────────────────────────────────
+
+    def _loki_engine(self):
+        """Launch Loki autonomous security engine."""
+        try:
+            from payloads.offensive.loki_engine import get_loki_engine, LokiDisplay
+        except ImportError:
+            Dialog_info("Loki module\nnot found", wait=True)
+            return
+
+        engine = get_loki_engine()
+
+        # Initialize display
+        if HAS_GPIO:
+            LokiDisplay.init()
+
+        # Check if installed
+        if not engine.is_installed():
+            Dialog_info("Loki not\ninstalled", wait=False, timeout=1)
+            if not YNDialog("Install?", y="Yes", n="No", b="Install Loki\nfrom GitHub?"):
+                return
+
+            Dialog_info("Installing\nLoki…", wait=False, timeout=1)
+
+            def progress_cb(step, total, msg):
+                if HAS_GPIO:
+                    LokiDisplay.clear()
+                    LokiDisplay.centered(15, "LOKI", COLORS["RED"], 12)
+                    LokiDisplay.centered(27, "INSTALLING", COLORS["ORANGE"], 8)
+                    LokiDisplay.hbar(43, step / total * 100)
+                    LokiDisplay.text(6, 51, msg[:20], COLORS["WHITE"], 7)
+                    LokiDisplay.text(6, 62, f"step {step}/{total}", COLORS["DIM"], 7)
+                    LokiDisplay.show()
+
+            if not engine.install(progress_cb):
+                Dialog_info("Install\nFAILED", wait=True)
+                return
+
+            Dialog_info("Loki installed\nsuccessfully!", wait=True)
+
+        # Control loop
+        while True:
+            running = engine.is_running()
+            ip = engine.get_local_ip()
+            url = f"http://{ip}:{engine.port}"
+
+            if running:
+                web_up = engine.is_port_open()
+                Dialog_info(
+                    f"Loki {'RUN' if web_up else 'START'}\n{url}\nKEY1=stop\nKEY3=exit",
+                    wait=True,
+                )
+
+                if ktox_state.get("_loki_stop"):
+                    engine.stop()
+                    ktox_state["_loki_stop"] = False
+                    Dialog_info("Loki stopped", wait=False, timeout=1)
+                else:
+                    return
+            else:
+                Dialog_info(
+                    "Loki STOPPED\nKEY3=start\nKEY1=exit",
+                    wait=True,
+                )
+                if ktox_state.get("_loki_start"):
+                    ok, result = engine.start()
+                    if ok:
+                        Dialog_info(f"Loki running\n{result}", wait=True)
+                    else:
+                        Dialog_info(f"Start failed\n{result}", wait=True)
+                    ktox_state["_loki_start"] = False
+                else:
+                    return
 
     # ── WiFi actions ──────────────────────────────────────────────────────────
 
