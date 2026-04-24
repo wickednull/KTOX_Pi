@@ -33,6 +33,7 @@ try:
     from PIL import Image, ImageDraw, ImageFont
     import RPi.GPIO as GPIO
     from wifi_manager import WiFiManager
+    from payloads._darksec_keyboard import DarkSecKeyboard
     LCD_AVAILABLE = True
 except Exception as e:
     print(f"LCD not available: {e}")
@@ -206,44 +207,13 @@ class NetworkManager:
         self.draw_screen("SETTINGS", lines, "UP/DN OK K3:back")
 
     def get_password(self):
-        """Get password using simple character cycling input."""
-        charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*-_=+. "
-        password = ""
-        char_idx = 0
-
-        while True:
-            img = Image.new("RGB", (W, H), (10, 0, 0))
-            d = ImageDraw.Draw(img)
-
-            # Header
-            d.rectangle([(0, 0), (W, 16)], fill=(139, 0, 0))
-            d.text((4, 3), "PASSWORD", fill=(231, 76, 60), font=font_md)
-
-            # Input display
-            d.rectangle([(2, 25), (W - 2, 40)], fill=(34, 0, 0))
-            d.rectangle([(2, 25), (W - 2, 40)], outline=(231, 76, 60))
-            display = password + "*" * (len(password) > 0)
-            d.text((4, 28), display[-14:], fill=(212, 172, 13), font=font_sm)
-
-            # Current character
-            d.text((50, 55), charset[char_idx], fill=(255, 140, 0), font=font_md)
-            d.text((4, 70), f"Len: {len(password)}", fill=(171, 178, 185), font=font_sm)
-
-            LCD.LCD_ShowImage(img, 0, 0)
-            btn = self.wait_btn(0.3)
-
-            if btn == "UP":
-                char_idx = (char_idx - 1) % len(charset)
-            elif btn == "DOWN":
-                char_idx = (char_idx + 1) % len(charset)
-            elif btn == "OK":
-                password += charset[char_idx]
-            elif btn == "KEY1":
-                return password if password else None
-            elif btn == "KEY2":
-                password = password[:-1]
-            elif btn == "KEY3":
-                return None
+        """Get password using DarkSecKeyboard."""
+        kb = DarkSecKeyboard(
+            width=W, height=H, lcd=LCD,
+            gpio_pins=PINS, gpio_module=GPIO
+        )
+        result = kb.run()
+        return result if result else None
 
     def handle_main_menu(self):
         """Handle main menu navigation."""
