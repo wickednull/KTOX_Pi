@@ -252,13 +252,20 @@ LIBRARY_HTML = """
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>KTOxFLIX</title>
     <style>
+        :root {
+            --bg-0: #0a0000;
+            --bg-1: #220000;
+            --header: #8b0000;
+            --accent: #e74c3c;
+            --warn: #d4ac0d;
+            --fg: #abb2b9;
+            --fg-muted: #717d7e;
+        }
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-            background: #000000;
-            background-image: radial-gradient(rgba(255, 0, 0, 0.1) 1px, transparent 1px);
-            background-size: 40px 40px;
-            font-family: 'Share Tech Mono', 'Courier New', monospace;
-            color: #ff3333;
+            background: linear-gradient(135deg, var(--bg-0), var(--bg-1));
+            font-family: 'Courier New', monospace;
+            color: var(--fg);
             min-height: 100vh;
         }
         .glitch {
@@ -272,31 +279,33 @@ LIBRARY_HTML = """
             100% { text-shadow: 0.025em 0.05em 0 rgba(255,0,0,0.75), 0.05em -0.05em 0 rgba(0,255,255,0.75); }
         }
         nav {
-            background: #0a0000;
-            border-bottom: 2px solid #ff0000;
+            background: var(--header);
+            border-bottom: 2px solid var(--accent);
             padding: 1rem 2rem;
             display: flex;
             justify-content: space-between;
             align-items: baseline;
             flex-wrap: wrap;
-            box-shadow: 0 0 15px rgba(255,0,0,0.3);
+            box-shadow: 0 0 15px rgba(231, 76, 60, 0.3);
         }
         .logo {
             font-size: 1.8rem;
             font-weight: bold;
             letter-spacing: 4px;
+            color: var(--fg);
+            text-shadow: 0 0 5px var(--accent);
         }
-        .logo span { color: #00ffff; }
         .port-badge {
             font-size: 0.8rem;
-            border: 1px solid #ff0000;
+            border: 1px solid var(--accent);
             padding: 4px 12px;
             border-radius: 20px;
-            background: rgba(255,0,0,0.1);
+            background: rgba(231, 76, 60, 0.15);
+            color: var(--warn);
         }
         .tabs {
             display: flex;
-            border-bottom: 1px solid #330000;
+            border-bottom: 1px solid rgba(231, 76, 60, 0.2);
             margin: 0 30px;
         }
         .tab {
@@ -307,14 +316,15 @@ LIBRARY_HTML = """
             letter-spacing: 2px;
             transition: 0.2s;
             border-bottom: 2px solid transparent;
+            color: var(--fg-muted);
         }
         .tab.active {
-            color: #ff0000;
-            border-bottom: 2px solid #ff0000;
-            text-shadow: 0 0 5px rgba(255,0,0,0.5);
+            color: var(--accent);
+            border-bottom: 2px solid var(--accent);
+            text-shadow: 0 0 5px rgba(231, 76, 60, 0.5);
         }
         .tab:hover {
-            color: #ff8888;
+            color: var(--fg);
         }
         .grid {
             display: grid;
@@ -323,8 +333,8 @@ LIBRARY_HTML = """
             padding: 30px;
         }
         .card {
-            background: #0a0505;
-            border: 1px solid #330000;
+            background: var(--bg-1);
+            border: 1px solid rgba(231, 76, 60, 0.3);
             border-radius: 8px;
             transition: all 0.2s ease;
             text-decoration: none;
@@ -340,21 +350,21 @@ LIBRARY_HTML = """
             left: -100%;
             width: 100%;
             height: 100%;
-            background: linear-gradient(90deg, transparent, rgba(255,0,0,0.2), transparent);
+            background: linear-gradient(90deg, transparent, rgba(231, 76, 60, 0.2), transparent);
             transition: left 0.5s;
             z-index: 1;
         }
         .card:hover::before { left: 100%; }
         .card:hover {
             transform: translateY(-5px);
-            border-color: #ff0000;
-            box-shadow: 0 0 20px rgba(255,0,0,0.4);
+            border-color: var(--accent);
+            box-shadow: 0 0 20px rgba(231, 76, 60, 0.4);
         }
         .card img {
             width: 100%;
             aspect-ratio: 2/3;
             object-fit: cover;
-            border-bottom: 1px solid #330000;
+            border-bottom: 1px solid rgba(231, 76, 60, 0.2);
         }
         .card-title {
             padding: 12px;
@@ -362,7 +372,8 @@ LIBRARY_HTML = """
             text-align: center;
             text-transform: uppercase;
             letter-spacing: 1px;
-            background: #050000;
+            background: var(--bg-0);
+            color: var(--fg);
         }
         .section {
             display: none;
@@ -371,45 +382,62 @@ LIBRARY_HTML = """
             display: block;
         }
         .settings-panel {
-            background: #0a0505;
-            border: 1px solid #ff0000;
+            background: var(--bg-1);
+            border: 1px solid var(--accent);
             border-radius: 12px;
             padding: 25px;
             max-width: 500px;
             margin: 30px auto;
+            box-shadow: 0 0 10px rgba(231, 76, 60, 0.2);
+        }
+        .settings-panel h2 {
+            color: var(--accent);
+            text-shadow: 0 0 5px rgba(231, 76, 60, 0.5);
         }
         .settings-panel label {
             display: block;
             margin: 15px 0 5px;
-            color: #ff8888;
+            color: var(--fg);
         }
         .settings-panel input, .settings-panel select {
-            background: #1a1a1a;
-            border: 1px solid #ff0000;
-            color: #0f0;
+            background: var(--bg-0);
+            border: 1px solid rgba(231, 76, 60, 0.3);
+            color: var(--warn);
             padding: 8px;
             width: 100%;
             font-family: monospace;
         }
         .settings-panel button {
-            background: #2a0a0a;
-            border: 1px solid #ff0000;
-            color: #ff0000;
+            background: var(--header);
+            border: 1px solid var(--accent);
+            color: var(--accent);
             padding: 8px 16px;
             cursor: pointer;
             margin-top: 15px;
             font-family: monospace;
+            transition: 0.2s;
         }
         .settings-panel button:hover {
-            background: #ff0000;
-            color: #000;
+            background: var(--accent);
+            color: var(--bg-0);
+            box-shadow: 0 0 10px rgba(231, 76, 60, 0.4);
         }
         .status-msg {
             margin-top: 10px;
-            color: #ffcc00;
+            color: var(--warn);
         }
-        ::-webkit-scrollbar { width: 6px; background: #111; }
-        ::-webkit-scrollbar-thumb { background: #ff0000; border-radius: 3px; }
+        ::-webkit-scrollbar { width: 6px; background: var(--bg-0); }
+        ::-webkit-scrollbar-thumb { background: var(--accent); border-radius: 3px; }
+        .scanlines {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            background: repeating-linear-gradient(0deg, rgba(0,0,0,0.1), rgba(0,0,0,0.1) 1px, transparent 1px, transparent 2px);
+            z-index: 9999;
+        }
         @media (max-width: 600px) {
             .grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 15px; padding: 15px; }
             .tabs { margin: 0 15px; }
@@ -437,7 +465,7 @@ LIBRARY_HTML = """
             </a>
             {% endfor %}
             {% if not movies %}
-            <div style="color:#666; text-align:center; padding:40px;">No movies found. Upload via port 8888.</div>
+            <div style="color:var(--fg-muted); text-align:center; padding:40px;">No movies found. Upload via port 8888.</div>
             {% endif %}
         </div>
     </div>
@@ -450,7 +478,7 @@ LIBRARY_HTML = """
             </a>
             {% endfor %}
             {% if not series %}
-            <div style="color:#666; text-align:center; padding:40px;">No TV series found. Create folders inside /root/Videos.</div>
+            <div style="color:var(--fg-muted); text-align:center; padding:40px;">No TV series found. Create folders inside /root/Videos.</div>
             {% endif %}
         </div>
     </div>
@@ -504,6 +532,7 @@ LIBRARY_HTML = """
             });
         });
     </script>
+    <div class="scanlines"></div>
 </body>
 </html>
 """
@@ -514,69 +543,95 @@ SEASONS_LIST = """
 <head>
     <title>{{ series.name }} // KTOxFLIX</title>
     <style>
+        :root {
+            --bg-0: #0a0000;
+            --bg-1: #220000;
+            --header: #8b0000;
+            --accent: #e74c3c;
+            --fg: #abb2b9;
+            --fg-muted: #717d7e;
+        }
         body {
-            background: #000;
-            font-family: 'Share Tech Mono', monospace;
-            color: #ff4444;
+            background: linear-gradient(135deg, var(--bg-0), var(--bg-1));
+            font-family: 'Courier New', monospace;
+            color: var(--fg);
             margin: 0;
             padding: 20px;
         }
         .container {
             max-width: 900px;
             margin: 20px auto;
-            background: #0a0505;
-            border: 1px solid #ff0000;
+            background: var(--bg-1);
+            border: 1px solid var(--accent);
             border-radius: 12px;
             padding: 25px;
-            box-shadow: 0 0 30px rgba(255,0,0,0.2);
+            box-shadow: 0 0 30px rgba(231, 76, 60, 0.2);
         }
         .poster {
             float: left;
             width: 180px;
             margin-right: 25px;
-            border: 2px solid #ff0000;
+            border: 2px solid var(--accent);
             box-shadow: 5px 5px 15px rgba(0,0,0,0.8);
         }
         h2 {
             font-size: 1.8rem;
             text-transform: uppercase;
             letter-spacing: 2px;
-            text-shadow: 0 0 5px #ff0000;
+            color: var(--accent);
+            text-shadow: 0 0 5px rgba(231, 76, 60, 0.5);
             margin-top: 0;
         }
         .season-list {
             clear: both;
             margin-top: 30px;
-            border-top: 1px solid #330000;
+            border-top: 1px solid rgba(231, 76, 60, 0.2);
             padding-top: 20px;
         }
+        .season-list h3 {
+            color: var(--accent);
+        }
         .season {
-            background: #1a0505;
+            background: var(--bg-0);
             margin: 8px 0;
             padding: 10px;
-            border-left: 4px solid #ff0000;
+            border-left: 4px solid var(--accent);
             transition: 0.2s;
         }
         .season a {
-            color: #ff8888;
+            color: var(--fg);
             text-decoration: none;
             font-family: monospace;
             font-size: 1.2rem;
         }
+        .season a:hover {
+            color: var(--accent);
+            text-shadow: 0 0 5px rgba(231, 76, 60, 0.5);
+        }
         .back {
             display: inline-block;
             margin-top: 30px;
-            color: #ff0000;
+            color: var(--accent);
             text-decoration: none;
-            border: 1px solid #ff0000;
+            border: 1px solid var(--accent);
             padding: 8px 20px;
             border-radius: 30px;
             transition: 0.2s;
         }
         .back:hover {
-            background: #ff0000;
-            color: #000;
-            box-shadow: 0 0 15px #ff0000;
+            background: var(--accent);
+            color: var(--bg-0);
+            box-shadow: 0 0 15px rgba(231, 76, 60, 0.5);
+        }
+        .scanlines {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            background: repeating-linear-gradient(0deg, rgba(0,0,0,0.1), rgba(0,0,0,0.1) 1px, transparent 1px, transparent 2px);
+            z-index: 9999;
         }
         @media (max-width: 600px) {
             .poster { float: none; display: block; margin: 0 auto 20px; width: 140px; }
@@ -589,13 +644,14 @@ SEASONS_LIST = """
         {% if poster %}<img class="poster" src="{{ poster }}">{% endif %}
         <h2>{{ series.name }}</h2>
         <div class="season-list">
-            <h3 style="color:#ff0000;">▶ SEASONS</h3>
+            <h3>▶ SEASONS</h3>
             {% for season in seasons %}
             <div class="season"><a href="/detail/season/{{ season.path }}">⚡ {{ season.name }}</a></div>
             {% endfor %}
         </div>
         <div style="text-align: center;"><a href="/" class="back">⏎ RETURN TO LIBRARY</a></div>
     </div>
+    <div class="scanlines"></div>
 </body>
 </html>
 """
@@ -606,68 +662,94 @@ EPISODE_LIST = """
 <head>
     <title>{{ season_name }} // KTOxFLIX</title>
     <style>
+        :root {
+            --bg-0: #0a0000;
+            --bg-1: #220000;
+            --header: #8b0000;
+            --accent: #e74c3c;
+            --fg: #abb2b9;
+            --fg-muted: #717d7e;
+        }
         body {
-            background: #000;
-            font-family: 'Share Tech Mono', monospace;
-            color: #ff4444;
+            background: linear-gradient(135deg, var(--bg-0), var(--bg-1));
+            font-family: 'Courier New', monospace;
+            color: var(--fg);
             margin: 0;
             padding: 20px;
         }
         .container {
             max-width: 900px;
             margin: 20px auto;
-            background: #0a0505;
-            border: 1px solid #ff0000;
+            background: var(--bg-1);
+            border: 1px solid var(--accent);
             border-radius: 12px;
             padding: 25px;
-            box-shadow: 0 0 30px rgba(255,0,0,0.2);
+            box-shadow: 0 0 30px rgba(231, 76, 60, 0.2);
         }
         .poster {
             float: left;
             width: 180px;
             margin-right: 25px;
-            border: 2px solid #ff0000;
+            border: 2px solid var(--accent);
             box-shadow: 5px 5px 15px rgba(0,0,0,0.8);
         }
         h2 {
             font-size: 1.8rem;
             text-transform: uppercase;
             letter-spacing: 2px;
-            text-shadow: 0 0 5px #ff0000;
+            color: var(--accent);
+            text-shadow: 0 0 5px rgba(231, 76, 60, 0.5);
             margin-top: 0;
         }
         .episode-list {
             clear: both;
             margin-top: 30px;
-            border-top: 1px solid #330000;
+            border-top: 1px solid rgba(231, 76, 60, 0.2);
             padding-top: 20px;
         }
+        .episode-list h3 {
+            color: var(--accent);
+        }
         .episode {
-            background: #1a0505;
+            background: var(--bg-0);
             margin: 8px 0;
             padding: 10px;
-            border-left: 4px solid #ff0000;
+            border-left: 4px solid var(--accent);
             transition: 0.2s;
         }
         .episode a {
-            color: #ff8888;
+            color: var(--fg);
             text-decoration: none;
             font-family: monospace;
+        }
+        .episode a:hover {
+            color: var(--accent);
+            text-shadow: 0 0 5px rgba(231, 76, 60, 0.5);
         }
         .back {
             display: inline-block;
             margin-top: 30px;
-            color: #ff0000;
+            color: var(--accent);
             text-decoration: none;
-            border: 1px solid #ff0000;
+            border: 1px solid var(--accent);
             padding: 8px 20px;
             border-radius: 30px;
             transition: 0.2s;
         }
         .back:hover {
-            background: #ff0000;
-            color: #000;
-            box-shadow: 0 0 15px #ff0000;
+            background: var(--accent);
+            color: var(--bg-0);
+            box-shadow: 0 0 15px rgba(231, 76, 60, 0.5);
+        }
+        .scanlines {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            background: repeating-linear-gradient(0deg, rgba(0,0,0,0.1), rgba(0,0,0,0.1) 1px, transparent 1px, transparent 2px);
+            z-index: 9999;
         }
         @media (max-width: 600px) {
             .poster { float: none; display: block; margin: 0 auto 20px; width: 140px; }
@@ -680,13 +762,14 @@ EPISODE_LIST = """
         {% if poster %}<img class="poster" src="{{ poster }}">{% endif %}
         <h2>{{ series_name }} - {{ season_name }}</h2>
         <div class="episode-list">
-            <h3 style="color:#ff0000;">▶ EPISODES</h3>
+            <h3>▶ EPISODES</h3>
             {% for ep in episodes %}
             <div class="episode"><a href="/play/{{ season_path }}/{{ ep }}">⚡ {{ ep }}</a></div>
             {% endfor %}
         </div>
         <div style="text-align: center;"><a href="/detail/series/{{ series_path }}" class="back">⏎ BACK TO SEASONS</a></div>
     </div>
+    <div class="scanlines"></div>
 </body>
 </html>
 """
@@ -697,56 +780,75 @@ MOVIE_DETAIL = """
 <head>
     <title>{{ movie.name }} // KTOxFLIX</title>
     <style>
+        :root {
+            --bg-0: #0a0000;
+            --bg-1: #220000;
+            --header: #8b0000;
+            --accent: #e74c3c;
+            --fg: #abb2b9;
+            --fg-muted: #717d7e;
+        }
         body {
-            background: #000;
-            font-family: 'Share Tech Mono', monospace;
-            color: #ff4444;
+            background: linear-gradient(135deg, var(--bg-0), var(--bg-1));
+            font-family: 'Courier New', monospace;
+            color: var(--fg);
             margin: 0;
             padding: 20px;
         }
         .container {
             max-width: 900px;
             margin: 20px auto;
-            background: #0a0505;
-            border: 1px solid #ff0000;
+            background: var(--bg-1);
+            border: 1px solid var(--accent);
             border-radius: 12px;
             padding: 25px;
-            box-shadow: 0 0 30px rgba(255,0,0,0.2);
+            box-shadow: 0 0 30px rgba(231, 76, 60, 0.2);
         }
         .poster {
             float: left;
             width: 180px;
             margin-right: 25px;
-            border: 2px solid #ff0000;
+            border: 2px solid var(--accent);
             box-shadow: 5px 5px 15px rgba(0,0,0,0.8);
         }
         h2 {
             font-size: 1.8rem;
             text-transform: uppercase;
             letter-spacing: 2px;
-            text-shadow: 0 0 5px #ff0000;
+            color: var(--accent);
+            text-shadow: 0 0 5px rgba(231, 76, 60, 0.5);
             margin-top: 0;
         }
         video {
             width: 100%;
             margin-top: 25px;
-            border: 1px solid #ff0000;
+            border: 1px solid var(--accent);
             border-radius: 8px;
         }
         .back {
             display: inline-block;
             margin-top: 30px;
-            color: #ff0000;
+            color: var(--accent);
             text-decoration: none;
-            border: 1px solid #ff0000;
+            border: 1px solid var(--accent);
             padding: 8px 20px;
             border-radius: 30px;
             transition: 0.2s;
         }
         .back:hover {
-            background: #ff0000;
-            color: #000;
-            box-shadow: 0 0 15px #ff0000;
+            background: var(--accent);
+            color: var(--bg-0);
+            box-shadow: 0 0 15px rgba(231, 76, 60, 0.5);
+        }
+        .scanlines {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            background: repeating-linear-gradient(0deg, rgba(0,0,0,0.1), rgba(0,0,0,0.1) 1px, transparent 1px, transparent 2px);
+            z-index: 9999;
         }
         @media (max-width: 600px) {
             .poster { float: none; display: block; margin: 0 auto 20px; width: 140px; }
@@ -763,6 +865,7 @@ MOVIE_DETAIL = """
         </video>
         <div style="text-align: center;"><a href="/" class="back">⏎ RETURN TO LIBRARY</a></div>
     </div>
+    <div class="scanlines"></div>
 </body>
 </html>
 """
@@ -773,44 +876,65 @@ PLAYER_HTML = """
 <head>
     <title>{{ episode }} // KTOxFLIX</title>
     <style>
+        :root {
+            --bg-0: #0a0000;
+            --bg-1: #220000;
+            --header: #8b0000;
+            --accent: #e74c3c;
+            --fg: #abb2b9;
+            --fg-muted: #717d7e;
+        }
         body {
-            background: #000;
-            font-family: 'Share Tech Mono', monospace;
+            background: linear-gradient(135deg, var(--bg-0), var(--bg-1));
+            font-family: 'Courier New', monospace;
+            color: var(--fg);
             margin: 0;
             padding: 20px;
         }
         .container {
             max-width: 900px;
             margin: 20px auto;
-            background: #0a0505;
-            border: 1px solid #ff0000;
+            background: var(--bg-1);
+            border: 1px solid var(--accent);
             border-radius: 12px;
             padding: 25px;
             text-align: center;
+            box-shadow: 0 0 30px rgba(231, 76, 60, 0.2);
         }
         h2 {
-            color: #ff0000;
+            color: var(--accent);
+            text-shadow: 0 0 5px rgba(231, 76, 60, 0.5);
             margin-bottom: 20px;
         }
         video {
             width: 100%;
-            border: 1px solid #ff0000;
+            border: 1px solid var(--accent);
             border-radius: 8px;
         }
         .back {
             display: inline-block;
             margin-top: 30px;
-            color: #ff0000;
+            color: var(--accent);
             text-decoration: none;
-            border: 1px solid #ff0000;
+            border: 1px solid var(--accent);
             padding: 8px 20px;
             border-radius: 30px;
             transition: 0.2s;
         }
         .back:hover {
-            background: #ff0000;
-            color: #000;
-            box-shadow: 0 0 15px #ff0000;
+            background: var(--accent);
+            color: var(--bg-0);
+            box-shadow: 0 0 15px rgba(231, 76, 60, 0.5);
+        }
+        .scanlines {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            background: repeating-linear-gradient(0deg, rgba(0,0,0,0.1), rgba(0,0,0,0.1) 1px, transparent 1px, transparent 2px);
+            z-index: 9999;
         }
     </style>
 </head>
@@ -823,6 +947,7 @@ PLAYER_HTML = """
         <br>
         <a href="/detail/season/{{ season_path }}" class="back">⏎ BACK TO EPISODES</a>
     </div>
+    <div class="scanlines"></div>
 </body>
 </html>
 """
@@ -832,33 +957,76 @@ UPLINK_HTML = """
 <html>
 <head><title>KTOx // DATA UPLINK</title>
 <style>
+    :root {
+        --bg-0: #0a0000;
+        --bg-1: #220000;
+        --header: #8b0000;
+        --accent: #e74c3c;
+        --warn: #d4ac0d;
+        --fg: #abb2b9;
+        --fg-muted: #717d7e;
+    }
     body {
-        background: #000;
-        color: #0f0;
+        background: linear-gradient(135deg, var(--bg-0), var(--bg-1));
+        color: var(--fg);
         font-family: 'Courier New', monospace;
         padding: 30px;
+        margin: 0;
     }
     .container {
         max-width: 600px;
         margin: auto;
-        border: 1px solid #0f0;
+        border: 1px solid var(--accent);
         padding: 25px;
         border-radius: 12px;
-        background: #050505;
-        box-shadow: 0 0 20px #0f0;
+        background: var(--bg-1);
+        box-shadow: 0 0 20px rgba(231, 76, 60, 0.3);
     }
-    h1 { color: #0f0; text-shadow: 0 0 3px #0f0; }
+    h1 {
+        color: var(--accent);
+        text-shadow: 0 0 5px rgba(231, 76, 60, 0.5);
+        text-align: center;
+        margin-bottom: 25px;
+    }
+    label {
+        color: var(--fg);
+        display: block;
+        margin-top: 15px;
+        margin-bottom: 5px;
+    }
     input, button {
-        background: #111;
-        border: 1px solid #0f0;
-        color: #0f0;
+        background: var(--bg-0);
+        border: 1px solid rgba(231, 76, 60, 0.3);
+        color: var(--warn);
         padding: 10px;
         width: 100%;
         margin-bottom: 15px;
         font-family: monospace;
+        border-radius: 4px;
     }
-    button { cursor: pointer; width: auto; }
-    button:hover { background: #0f0; color: #000; }
+    button {
+        cursor: pointer;
+        width: auto;
+        background: var(--header);
+        color: var(--accent);
+        border: 1px solid var(--accent);
+        transition: 0.2s;
+    }
+    button:hover {
+        background: var(--accent);
+        color: var(--bg-0);
+        box-shadow: 0 0 10px rgba(231, 76, 60, 0.4);
+    }
+    .scanlines {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        background: repeating-linear-gradient(0deg, rgba(0,0,0,0.1), rgba(0,0,0,0.1) 1px, transparent 1px, transparent 2px);
+        z-index: 9999;
+    }
 </style>
 </head>
 <body>
@@ -866,14 +1034,15 @@ UPLINK_HTML = """
     <h1>⤒ KTOx DATA UPLINK ⤓</h1>
     <form method="POST" action="/upload" enctype="multipart/form-data">
         <label>Subdirectory (optional):</label>
-        <input type="text" name="subdir">
+        <input type="text" name="subdir" placeholder="Videos/Movies">
         <label>Files:</label>
         <input type="file" name="files" multiple>
         <label>Folder:</label>
         <input type="file" name="files" multiple webkitdirectory>
-        <button type="submit">UPLOAD</button>
+        <button type="submit">⬆ UPLOAD</button>
     </form>
 </div>
+<div class="scanlines"></div>
 </body>
 </html>
 """
