@@ -87,7 +87,8 @@ def wait_btn(timeout=0.1):
 # ----------------------------------------------------------------------
 # Paths & config
 # ----------------------------------------------------------------------
-LOOT_DIR = "/root/KTOx/loot/Pwnagotchi"
+KTOX_DIR = os.environ.get("KTOX_DIR", "/root/KTOx")
+LOOT_DIR = os.path.join(os.environ.get("KTOX_DIR", "/root/KTOx"), "loot", "Pwnagotchi")
 STATS_FILE = os.path.join(LOOT_DIR, "lifetime_stats.json")
 CONFIG_FILE = os.path.join(LOOT_DIR, "config.json")
 HANDSHAKE_DIR = os.path.join(LOOT_DIR, "handshakes")

@@ -31,7 +31,8 @@ KEY_DOWN = 19
 KEY_PRESS = 13
 KEY3 = 16
 
-LOOT_DIR = "/root/KTOx/loot/DHCP"
+KTOX_DIR = os.environ.get("KTOX_DIR", "/root/KTOx")
+LOOT_DIR = os.path.join(os.environ.get("KTOX_DIR", "/root/KTOx"), "loot", "DHCP")
 popup_message = ""
 popup_until = 0.0
 WPAD_DIR = "/tmp/ktox_wpad"
