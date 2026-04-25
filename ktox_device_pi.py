@@ -117,6 +117,34 @@ def _load_fonts():
     medium_icon_font = _f(FA,  20) if os.path.exists(FA) else None
     large_icon_font = _f(FA,   32) if os.path.exists(FA) else None
 
+# ── View modes ────────────────────────────────────────────────────────────────
+
+_view_mode = "list"  # list, grid, carousel, panel, table, paged, thumbnail, vcarousel
+
+def _icon_for(label):
+    """Return icon for menu label, or empty string if none."""
+    label_lower = label.lower().strip()
+    icons = {
+        "network": "🌐",
+        "offensive": "⚔",
+        "wifi engine": "📡",
+        "mitm & spoof": "🔀",
+        "responder": "📢",
+        "purple team": "🛡",
+        "payloads": "💣",
+        "loot": "🎁",
+        "stealth": "👻",
+        "system": "⚙",
+        "scan network": "🔍",
+        "show hosts": "🖥",
+        "reboot": "🔄",
+        "shutdown": "🔌",
+    }
+    for key, icon in icons.items():
+        if key in label_lower:
+            return icon
+    return ""
+
 # ── Runtime state ──────────────────────────────────────────────────────────────
 
 ktox_state = {
@@ -518,7 +546,7 @@ def GetMenuString(inlist, duplicates=False):
     If duplicates=True returns (int_index, label_string).
     KEY1/KEY2/KEY3 all act as back/escape.
     """
-    WINDOW = 7
+    WINDOW = 8
     if not inlist:
         inlist = ["(empty)"]
     if duplicates:
