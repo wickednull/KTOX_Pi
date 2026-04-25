@@ -28,9 +28,14 @@ import subprocess
 import hashlib
 from datetime import datetime
 
-# Add root directory to path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")))
-sys.path.append('/root/KTOx/wifi/')
+# Add KTOx root + payload wifi directory to path
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if ROOT_DIR not in sys.path:
+    sys.path.append(ROOT_DIR)
+
+WIFI_PAYLOAD_DIR = os.path.join(ROOT_DIR, "payloads", "wifi")
+if WIFI_PAYLOAD_DIR not in sys.path:
+    sys.path.append(WIFI_PAYLOAD_DIR)
 
 # Import wardriving engine (not cam_finder)
 try:

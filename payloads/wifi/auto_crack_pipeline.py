@@ -23,8 +23,12 @@ import sys
 import re
 import time
 import subprocess
-import requests
 from datetime import datetime
+
+try:
+    import requests
+except ImportError:
+    requests = None
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import monitor_mode_helper
@@ -71,6 +75,8 @@ os.makedirs(LOOT_DIR, exist_ok=True)
 WEBHOOK_FILE = os.path.join(KTOX_DIR, "discord_webhook.txt")
 
 def webhook(msg):
+    if requests is None:
+        return
     try:
         with open(WEBHOOK_FILE) as f:
             url = f.read().strip()
