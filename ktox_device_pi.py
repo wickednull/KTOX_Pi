@@ -4870,6 +4870,7 @@ class KTOxMenu:
                 " Connected Devices",
                 " Make Discoverable",
                 " Discoverable Off",
+                " Reset BT Stack",
                 " Controller Status",
                 " Back",
             ], title="Bluetooth")
@@ -4933,6 +4934,10 @@ class KTOxMenu:
             elif picked == "Discoverable Off":
                 self._btctl("discoverable", "off", timeout=8)
                 Dialog_info("Bluetooth:\nDiscoverable OFF", wait=False, timeout=1)
+            elif picked == "Reset BT Stack":
+                _run(["systemctl", "restart", "bluetooth"], timeout=10)
+                self._bt_prepare_controller()
+                Dialog_info("Bluetooth stack\nrestarted.", wait=False, timeout=1)
             elif picked == "Controller Status":
                 _, show = self._btctl("show", timeout=8)
                 lines = [f" {ln[:22]}" for ln in show.splitlines()[:12]] or [" No controller info"]
