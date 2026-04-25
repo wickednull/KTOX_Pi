@@ -84,7 +84,7 @@ _stop_evt   = threading.Event()
 _last_button       = None
 _last_button_time  = 0.0
 _button_down_since = 0.0
-_debounce_s        = 0.10
+_debounce_s        = 0.06
 _repeat_delay      = 0.25
 _repeat_interval   = 0.08
 
@@ -181,6 +181,9 @@ class ColorScheme:
     select            = "#640000"
     gamepad           = "#640000"
     gamepad_fill      = "#F0EDE8"
+    title_bg          = "#1a0000"
+    panel_bg          = "#0d0606"
+    current_theme     = "ktox_red"
 
     def DrawBorder(self):
         draw.line([(127,12),(127,127)], fill=self.border, width=5)
@@ -191,9 +194,34 @@ class ColorScheme:
     def DrawMenuBackground(self):
         draw.rectangle((3, 14, 124, 124), fill=self.background)
 
+    def apply_theme(self, name, persist=True):
+        preset = _theme_preset(name)
+        if not preset:
+            return False
+        self.current_theme = name
+        self.border        = preset["BORDER"]
+        self.background    = preset["BACKGROUND"]
+        self.text          = preset["TEXT"]
+        self.selected_text = preset["SELECTED_TEXT"]
+        self.select        = preset["SELECTED_TEXT_BACKGROUND"]
+        self.gamepad       = preset["GAMEPAD"]
+        self.gamepad_fill  = preset["GAMEPAD_FILL"]
+        self.title_bg      = preset.get("TITLE_BG", self.title_bg)
+        self.panel_bg      = preset.get("PANEL_BG", self.panel_bg)
+        _apply_ux_from_theme(preset)
+        if persist:
+            _save_ui_theme(name)
+        return True
+
     def load_from_file(self):
         try:
             data = json.loads(Path(default.config_file).read_text())
+            requested = str(data.get("UI", {}).get("THEME", "")).strip()
+            if requested:
+                if not self.apply_theme(requested, persist=False):
+                    self.apply_theme("ktox_red", persist=False)
+            else:
+                self.apply_theme("ktox_red", persist=False)
             c = data.get("COLORS", {})
             self.border        = c.get("BORDER",            self.border)
             self.background    = c.get("BACKGROUND",         self.background)
@@ -202,6 +230,8 @@ class ColorScheme:
             self.select        = c.get("SELECTED_TEXT_BACKGROUND", self.select)
             self.gamepad       = c.get("GAMEPAD",            self.gamepad)
             self.gamepad_fill  = c.get("GAMEPAD_FILL",       self.gamepad_fill)
+            self.title_bg      = c.get("TITLE_BG",           self.title_bg)
+            self.panel_bg      = c.get("PANEL_BG",           self.panel_bg)
             # Load lock config and screensaver path
             _lock_load_from_config(data)
             p = data.get("PATHS", {}).get("SCREENSAVER_GIF", "")
@@ -209,6 +239,183 @@ class ColorScheme:
                 default.screensaver_gif = p
         except Exception:
             pass
+
+
+UI_THEMES = {
+    "ktox_red": {
+        "label": "KTOx Operator",
+        "BORDER": "#8B0000", "BACKGROUND": "#0a0a0a", "TEXT": "#c8c8c8",
+        "SELECTED_TEXT": "#FFFFFF", "SELECTED_TEXT_BACKGROUND": "#640000",
+        "GAMEPAD": "#640000", "GAMEPAD_FILL": "#F0EDE8",
+        "TITLE_BG": "#1a0000", "PANEL_BG": "#0d0606",
+        "UX_WINDOW_ROWS": 7, "UX_ROW_H": 13, "UX_START_Y": 26,
+        "UX_SHOW_ICONS": True, "UX_SELECT_STYLE": "fill", "UX_ICON_LAYOUT": "left",
+    },
+    "ktox_neon_grid": {
+        "label": "KTOx Neon Grid",
+        "BORDER": "#00B7C2", "BACKGROUND": "#071015", "TEXT": "#BEEAF0",
+        "SELECTED_TEXT": "#FFFFFF", "SELECTED_TEXT_BACKGROUND": "#005B66",
+        "GAMEPAD": "#005B66", "GAMEPAD_FILL": "#DDF9FC",
+        "TITLE_BG": "#09242A", "PANEL_BG": "#0B1A20",
+        "UX_WINDOW_ROWS": 6, "UX_ROW_H": 15, "UX_START_Y": 27,
+        "UX_SHOW_ICONS": True, "UX_SELECT_STYLE": "outline", "UX_ICON_LAYOUT": "right",
+    },
+    "ktox_matrix_mono": {
+        "label": "KTOx Matrix Mono",
+        "BORDER": "#8A4DFF", "BACKGROUND": "#0B0815", "TEXT": "#D7CBFF",
+        "SELECTED_TEXT": "#FFFFFF", "SELECTED_TEXT_BACKGROUND": "#4A2B86",
+        "GAMEPAD": "#4A2B86", "GAMEPAD_FILL": "#EFE8FF",
+        "TITLE_BG": "#1A1030", "PANEL_BG": "#151028",
+        "UX_WINDOW_ROWS": 8, "UX_ROW_H": 11, "UX_START_Y": 25,
+        "UX_SHOW_ICONS": False, "UX_SELECT_STYLE": "fill", "UX_ICON_LAYOUT": "left",
+    },
+    "ktox_pager_mono": {
+        "label": "KTOx Pager Mono",
+        "BORDER": "#2AAE51", "BACKGROUND": "#060C08", "TEXT": "#A8E0B8",
+        "SELECTED_TEXT": "#FFFFFF", "SELECTED_TEXT_BACKGROUND": "#1C6D33",
+        "GAMEPAD": "#1C6D33", "GAMEPAD_FILL": "#E3F7E9",
+        "TITLE_BG": "#0E1F14", "PANEL_BG": "#0B1710",
+        "UX_WINDOW_ROWS": 6, "UX_ROW_H": 14, "UX_START_Y": 28,
+        "UX_SHOW_ICONS": True, "UX_SELECT_STYLE": "fill", "UX_ICON_LAYOUT": "compact",
+    },
+    "cyberpunk_magenta": {
+        "label": "Cyberpunk Magenta",
+        "BORDER": "#FF2BD6", "BACKGROUND": "#09040F", "TEXT": "#FFD6F8",
+        "SELECTED_TEXT": "#0B0210", "SELECTED_TEXT_BACKGROUND": "#FF2BD6",
+        "GAMEPAD": "#B00088", "GAMEPAD_FILL": "#FFD6F8",
+        "TITLE_BG": "#2A0A33", "PANEL_BG": "#14071C",
+        "UX_WINDOW_ROWS": 6, "UX_ROW_H": 15, "UX_START_Y": 27,
+        "UX_SHOW_ICONS": True, "UX_SELECT_STYLE": "outline", "UX_ICON_LAYOUT": "center",
+    },
+    "cyberpunk_amber": {
+        "label": "Cyberpunk Amber",
+        "BORDER": "#FF9F1A", "BACKGROUND": "#0E0703", "TEXT": "#FFD9AA",
+        "SELECTED_TEXT": "#1A0A03", "SELECTED_TEXT_BACKGROUND": "#FF9F1A",
+        "GAMEPAD": "#9C4E00", "GAMEPAD_FILL": "#FFE4C4",
+        "TITLE_BG": "#331A08", "PANEL_BG": "#1B1007",
+        "UX_WINDOW_ROWS": 7, "UX_ROW_H": 13, "UX_START_Y": 26,
+        "UX_SHOW_ICONS": True, "UX_SELECT_STYLE": "fill", "UX_ICON_LAYOUT": "left",
+    },
+    "cyberpunk_flux": {
+        "label": "Cyberpunk Flux (Exp)",
+        "BORDER": "#00E5FF", "BACKGROUND": "#070B14", "TEXT": "#CCF4FF",
+        "SELECTED_TEXT": "#041018", "SELECTED_TEXT_BACKGROUND": "#00A0CC",
+        "GAMEPAD": "#006B88", "GAMEPAD_FILL": "#D9F8FF",
+        "TITLE_BG": "#0B2033", "PANEL_BG": "#0B1422",
+        "UX_WINDOW_ROWS": 6, "UX_ROW_H": 15, "UX_START_Y": 27,
+        "UX_SHOW_ICONS": True, "UX_SELECT_STYLE": "pulse", "UX_ICON_LAYOUT": "right",
+        "UX_CYBER_BARS": True,
+    },
+    "neon_runner": {
+        "label": "Neon Runner (Exp)",
+        "BORDER": "#FF3B9D", "BACKGROUND": "#120713", "TEXT": "#FFD2F0",
+        "SELECTED_TEXT": "#19071A", "SELECTED_TEXT_BACKGROUND": "#FF3B9D",
+        "GAMEPAD": "#8D1E68", "GAMEPAD_FILL": "#FFE0F5",
+        "TITLE_BG": "#2A1030", "PANEL_BG": "#180D22",
+        "UX_WINDOW_ROWS": 7, "UX_ROW_H": 13, "UX_START_Y": 26,
+        "UX_SHOW_ICONS": True, "UX_SELECT_STYLE": "scanline", "UX_ICON_LAYOUT": "compact",
+        "UX_CYBER_BARS": True,
+    },
+    "custom_cyber": {
+        "label": "Custom Cyber (Color Picker)",
+        "BORDER": "#00E5FF", "BACKGROUND": "#070912", "TEXT": "#CFEFFF",
+        "SELECTED_TEXT": "#07111A", "SELECTED_TEXT_BACKGROUND": "#00E5FF",
+        "GAMEPAD": "#007A89", "GAMEPAD_FILL": "#D7F6FF",
+        "TITLE_BG": "#0C1E30", "PANEL_BG": "#0B1320",
+        "UX_WINDOW_ROWS": 7, "UX_ROW_H": 13, "UX_START_Y": 26,
+        "UX_SHOW_ICONS": True, "UX_SELECT_STYLE": "fill", "UX_ICON_LAYOUT": "left",
+    },
+}
+
+_ui_ux = {
+    "window_rows": 7,
+    "row_h": 13,
+    "start_y": 26,
+    "show_icons": True,
+    "select_style": "fill",
+    "icon_layout": "left",
+    "cyber_bars": False,
+}
+
+def _apply_ux_from_theme(preset: dict):
+    _ui_ux["window_rows"] = int(preset.get("UX_WINDOW_ROWS", 7))
+    _ui_ux["row_h"] = int(preset.get("UX_ROW_H", 13))
+    _ui_ux["start_y"] = int(preset.get("UX_START_Y", 26))
+    _ui_ux["show_icons"] = bool(preset.get("UX_SHOW_ICONS", True))
+    _ui_ux["select_style"] = str(preset.get("UX_SELECT_STYLE", "fill"))
+    _ui_ux["icon_layout"] = str(preset.get("UX_ICON_LAYOUT", "left"))
+    _ui_ux["cyber_bars"] = bool(preset.get("UX_CYBER_BARS", False))
+
+def _ux_window_rows():
+    return max(5, min(8, int(_ui_ux.get("window_rows", 7))))
+
+
+def _save_ui_theme(theme_name: str):
+    try:
+        path = default.config_file
+        try:
+            data = json.loads(Path(path).read_text())
+        except Exception:
+            data = {}
+        preset = _theme_preset(theme_name) or UI_THEMES["ktox_red"]
+        data.setdefault("UI", {})["THEME"] = theme_name
+        data["COLORS"] = {
+            "BORDER": preset["BORDER"],
+            "BACKGROUND": preset["BACKGROUND"],
+            "TEXT": preset["TEXT"],
+            "SELECTED_TEXT": preset["SELECTED_TEXT"],
+            "SELECTED_TEXT_BACKGROUND": preset["SELECTED_TEXT_BACKGROUND"],
+            "GAMEPAD": preset["GAMEPAD"],
+            "GAMEPAD_FILL": preset["GAMEPAD_FILL"],
+            "TITLE_BG": preset["TITLE_BG"],
+            "PANEL_BG": preset["PANEL_BG"],
+        }
+        Path(path).write_text(json.dumps(data, indent=2))
+    except Exception as e:
+        print(f"[UI] save theme failed: {e}")
+
+_CUSTOM_COLOR_KEYS = (
+    "BORDER", "BACKGROUND", "TEXT", "SELECTED_TEXT",
+    "SELECTED_TEXT_BACKGROUND", "GAMEPAD", "GAMEPAD_FILL",
+    "TITLE_BG", "PANEL_BG",
+)
+
+def _theme_preset(name: str):
+    preset = UI_THEMES.get(name)
+    if not preset:
+        return None
+    if name != "custom_cyber":
+        return preset
+    merged = dict(preset)
+    merged.update(_read_custom_theme_colors())
+    return merged
+
+def _read_custom_theme_colors() -> dict:
+    out = {}
+    try:
+        data = json.loads(Path(default.config_file).read_text())
+        bucket = data.get("UI", {}).get("CUSTOM_THEME_COLORS", {})
+        if isinstance(bucket, dict):
+            for key in _CUSTOM_COLOR_KEYS:
+                val = bucket.get(key)
+                if isinstance(val, str) and val.startswith("#") and len(val) == 7:
+                    out[key] = val
+    except Exception:
+        pass
+    return out
+
+def _save_custom_theme_colors(colors: dict):
+    try:
+        path = default.config_file
+        try:
+            data = json.loads(Path(path).read_text())
+        except Exception:
+            data = {}
+        bucket = {k: colors[k] for k in _CUSTOM_COLOR_KEYS if k in colors}
+        data.setdefault("UI", {})["CUSTOM_THEME_COLORS"] = bucket
+        Path(path).write_text(json.dumps(data, indent=2))
+    except Exception as e:
+        print(f"[UI] save custom colors failed: {e}")
 
 color = ColorScheme()
 
@@ -485,7 +692,7 @@ def Dialog(text, wait=True):
     with draw_lock:
         _draw_toolbar()
         draw.rectangle([0,12,128,128],   fill=color.background)
-        draw.rectangle([4,16,124,112],   fill="#0d0606")
+        draw.rectangle([4,16,124,112],   fill=color.panel_bg)
         draw.rectangle([4,16,124,112],   outline=color.border, width=1)
         # horizontal rule
         draw.line([(4,100),(124,100)],   fill=color.border, width=1)
@@ -525,7 +732,7 @@ def YNDialog(a="Are you sure?", y="Yes", n="No", b=""):
     with draw_lock:
         _draw_toolbar()
         draw.rectangle([0,12,128,128],  fill=color.background)
-        draw.rectangle([4,16,124,118],  fill="#0d0606")
+        draw.rectangle([4,16,124,118],  fill=color.panel_bg)
         draw.rectangle([4,16,124,118],  outline=color.border, width=1)
         _centered(a, 20, fill=color.selected_text)
         if b: _centered(b, 36, fill=color.text)
@@ -552,6 +759,70 @@ def YNDialog(a="Are you sure?", y="Yes", n="No", b=""):
         elif btn in ("KEY_RIGHT_PIN","KEY3_PIN"):   answer = False
         elif btn in ("KEY_PRESS_PIN","KEY2_PIN"):   return answer
 
+def _draw_menu_row_label(row_y: int, label: str, fill: str, narrow: bool = False):
+    txt = label.strip()
+    icon = _icon_for(txt)
+    if not icon or not _ui_ux.get("show_icons", True):
+        draw.text((5, row_y + 1), _truncate(txt, 110), font=text_font, fill=fill)
+        return
+
+    layout = str(_ui_ux.get("icon_layout", "left"))
+    if layout == "right":
+        draw.text((112, row_y + 1), icon, font=icon_font, fill=fill)
+        draw.text((5, row_y + 1), _truncate(txt, 96), font=text_font, fill=fill)
+    elif layout == "center":
+        draw.text((53, row_y + 1), icon, font=icon_font, fill=fill)
+        draw.text((5, row_y + 1), _truncate(txt, 86), font=text_font, fill=fill)
+    elif layout == "compact":
+        draw.text((4, row_y + 1), icon, font=icon_font, fill=fill)
+        draw.text((16, row_y + 1), _truncate(txt, 98), font=text_font, fill=fill)
+    else:
+        draw.text((5,  row_y + 1), icon, font=icon_font, fill=fill)
+        t = _truncate(txt, 90 if narrow else 94)
+        draw.text((23 if narrow else 19, row_y + 1), t, font=text_font, fill=fill)
+
+def _blend_hex(c1: str, c2: str, a: float) -> str:
+    a = max(0.0, min(1.0, float(a)))
+    try:
+        r1, g1, b1 = int(c1[1:3], 16), int(c1[3:5], 16), int(c1[5:7], 16)
+        r2, g2, b2 = int(c2[1:3], 16), int(c2[3:5], 16), int(c2[5:7], 16)
+        r = int(r1 + (r2 - r1) * a)
+        g = int(g1 + (g2 - g1) * a)
+        b = int(b1 + (b2 - b1) * a)
+        return f"#{r:02X}{g:02X}{b:02X}"
+    except Exception:
+        return c1
+
+def _draw_row_selection(row_y: int, row_h: int):
+    style = str(_ui_ux.get("select_style", "fill"))
+    if style == "outline":
+        draw.rectangle([3, row_y, 124, row_y + row_h - 1], outline=color.select, width=2)
+        return
+    if style == "pulse":
+        phase = (math.sin(time.time() * 6.0) + 1.0) * 0.5
+        bg = _blend_hex(color.select, color.title_bg, phase * 0.45)
+        draw.rectangle([3, row_y, 124, row_y + row_h - 1], fill=bg)
+        draw.rectangle([3, row_y, 124, row_y + row_h - 1], outline=color.border, width=1)
+        return
+    if style == "scanline":
+        draw.rectangle([3, row_y, 124, row_y + row_h - 1], fill=color.select)
+        line_y = row_y + int((time.time() * 35) % max(1, row_h - 1))
+        draw.line([(4, line_y), (123, line_y)], fill=color.selected_text, width=1)
+        return
+    draw.rectangle([3, row_y, 124, row_y + row_h - 1], fill=color.select)
+
+def _draw_theme_overlay(start_y: int, row_h: int, window_rows: int):
+    if not _ui_ux.get("cyber_bars", False):
+        return
+    span = row_h * window_rows
+    y0 = start_y + span + 1
+    y1 = min(123, y0 + 3)
+    offs = int((time.time() * 22) % 20)
+    for i in range(0, 120, 20):
+        x = 4 + ((i + offs) % 120)
+        draw.line([(x, y0), (min(123, x + 8), y0)], fill=color.border, width=1)
+    draw.line([(4, y1), (123, y1)], fill=color.title_bg, width=1)
+
 
 def GetMenuString(inlist, duplicates=False):
     """
@@ -559,7 +830,9 @@ def GetMenuString(inlist, duplicates=False):
     If duplicates=True returns (int_index, label_string).
     KEY1/KEY2/KEY3 all act as back/escape.
     """
-    WINDOW = 7
+    WINDOW = _ux_window_rows()
+    row_h  = int(_ui_ux.get("row_h", 13))
+    start_y = 14
     if not inlist:
         inlist = ["(empty)"]
     if duplicates:
@@ -580,18 +853,12 @@ def GetMenuString(inlist, duplicates=False):
             for i, raw in enumerate(window):
                 txt   = raw if not duplicates else raw.split("#", 1)[1]
                 sel   = (i == index - offset)
-                row_y = 14 + 14 * i
+                row_y = start_y + row_h * i
                 if sel:
-                    draw.rectangle([3, row_y, 124, row_y + 12], fill=color.select)
+                    _draw_row_selection(row_y, row_h)
                 fill = color.selected_text if sel else color.text
-                icon = _icon_for(txt)
-                if icon:
-                    draw.text((5,  row_y + 1), icon, font=icon_font, fill=fill)
-                    t = _truncate(txt.strip(), 90)
-                    draw.text((23, row_y + 1), t,    font=text_font, fill=fill)
-                else:
-                    t = _truncate(txt.strip(), 110)
-                    draw.text((5,  row_y + 1), t,    font=text_font, fill=fill)
+                _draw_menu_row_label(row_y, txt, fill, narrow=True)
+            _draw_theme_overlay(start_y, row_h, WINDOW)
             # Scroll-position pip (right edge)
             if total > WINDOW:
                 pip_h = max(6, int(WINDOW / total * 110))
@@ -614,7 +881,9 @@ def GetMenuString(inlist, duplicates=False):
 
 
 def RenderMenuWindowOnce(inlist, selected=0):
-    WINDOW = 7
+    WINDOW = _ux_window_rows()
+    row_h  = int(_ui_ux.get("row_h", 13))
+    start_y = 14
     if not inlist: inlist = ["(empty)"]
     total  = len(inlist)
     idx    = max(0, min(selected, total-1))
@@ -626,18 +895,12 @@ def RenderMenuWindowOnce(inlist, selected=0):
         color.DrawBorder()
         for i, txt in enumerate(window):
             sel   = (i == idx - offset)
-            row_y = 14 + 14 * i
+            row_y = start_y + row_h * i
             if sel:
-                draw.rectangle([3, row_y, 124, row_y + 12], fill=color.select)
+                _draw_row_selection(row_y, row_h)
             fill = color.selected_text if sel else color.text
-            icon = _icon_for(txt)
-            if icon:
-                draw.text((5,  row_y + 1), icon, font=icon_font, fill=fill)
-                t = _truncate(txt.strip(), 94)
-                draw.text((19, row_y + 1), t,    font=text_font, fill=fill)
-            else:
-                t = _truncate(txt.strip(), 110)
-                draw.text((5,  row_y + 1), t,    font=text_font, fill=fill)
+            _draw_menu_row_label(row_y, txt, fill, narrow=False)
+        _draw_theme_overlay(start_y, row_h, WINDOW)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # ── Payload engine ─────────────────────────────────────────────────────────────
@@ -1984,7 +2247,7 @@ def _pick_host():
             _draw_toolbar()
             draw.rectangle([0,12,128,128], fill=color.background)
             color.DrawBorder()
-            draw.rectangle([3,13,125,24], fill="#1a0000")
+            draw.rectangle([3,13,125,24], fill=color.title_bg)
             _centered("Pick Target", 13, font=small_font, fill=color.border)
             draw.line([3,24,125,24], fill=color.border, width=1)
             for i, ip in enumerate(window):
@@ -2040,7 +2303,7 @@ def _ask_pps():
             _draw_toolbar()
             draw.rectangle([0, 12, 128, 128], fill=color.background)
             color.DrawBorder()
-            draw.rectangle([3, 13, 125, 24], fill="#1a0000")
+            draw.rectangle([3, 13, 125, 24], fill=color.title_bg)
             _centered("PACKETS/SEC", 13, font=small_font, fill=color.border)
             draw.line([3, 24, 125, 24], fill=color.border, width=1)
             _centered(str(rates[idx]), 48, font=text_font, fill=color.selected_text)
@@ -2783,7 +3046,7 @@ PAYLOAD_CATEGORIES = [
 
 
 # ── FontAwesome 5 Solid icon map (Unicode Private-Use codepoints) ─────────────
-# These map menu label text → FA glyph so every item gets an icon like RaspyJack.
+# These map menu label text → FA glyph for consistent on-device iconography.
 
 _FA_ICONS: dict = {
     # ── Home menu ─────────────────────────────────────────────────────────
@@ -2862,6 +3125,7 @@ _FA_ICONS: dict = {
     "WebUI Status":     "\uf0e0",   # fa-envelope
     "Refresh State":    "\uf021",   # fa-sync
     "System Info":      "\uf129",
+    "UI Theme":         "\uf53f",   # fa-palette
     "Discord Status":   "\uf392",   # fa-discord
     "Reboot":           "\uf2f9",   # fa-redo
     "Shutdown":         "\uf011",   # fa-power-off
@@ -3001,6 +3265,7 @@ class KTOxMenu:
             (" WebUI Status",    self._webui_status),
             (" Refresh State",   self._refresh),
             (" System Info",     self._sysinfo),
+            (" UI Theme",        self._ui_theme_menu),
             (" OTA Update",      partial(exec_payload,"general/auto_update")),
             (" Discord Webhook", self._discord_status),
             (" Lock",            OpenLockMenu),
@@ -3056,26 +3321,19 @@ class KTOxMenu:
                     "pay":  "Payloads",
                 }
                 _t = _titles.get(key, key.upper())
-                draw.rectangle([3, 13, 125, 24], fill="#1a0000")
+                draw.rectangle([3, 13, 125, 24], fill=color.title_bg)
                 _centered(_t[:18], 13, font=small_font, fill=color.border)
                 draw.line([(3, 24), (125, 24)], fill=color.border, width=1)
-                _ST = 26   # items start-y
-                _RH = 13   # row height
+                _ST = int(_ui_ux.get("start_y", 26))
+                _RH = int(_ui_ux.get("row_h", 13))
                 for i, label in enumerate(window):
                     is_sel = (i == sel - offset)
                     row_y  = _ST + _RH * i
                     if is_sel:
-                        draw.rectangle([3, row_y, 124, row_y + 12],
-                                       fill=color.select)
+                        _draw_row_selection(row_y, _RH)
                     fill = color.selected_text if is_sel else color.text
-                    icon = _icon_for(label)
-                    if icon:
-                        draw.text((5,  row_y + 1), icon, font=icon_font, fill=fill)
-                        t = _truncate(label.strip(), 92)
-                        draw.text((23, row_y + 1), t,    font=text_font, fill=fill)
-                    else:
-                        t = _truncate(label.strip(), 108)
-                        draw.text((6,  row_y + 1), t,    font=text_font, fill=fill)
+                    _draw_menu_row_label(row_y, label, fill, narrow=True)
+                _draw_theme_overlay(_ST, _RH, WINDOW)
                 # ── Scroll pip ───────────────────────────────────────────
                 if len(labels) > WINDOW:
                     avail = _RH * WINDOW
@@ -3156,7 +3414,7 @@ class KTOxMenu:
                 draw.rectangle([0,12,128,128], fill=color.background)
                 color.DrawBorder()
                 # Title
-                draw.rectangle([3,13,125,24], fill="#1a0000")
+                draw.rectangle([3,13,125,24], fill=color.title_bg)
                 _centered(f"Hosts ({total})", 13, font=small_font, fill=color.border)
                 draw.line([3,24,125,24], fill=color.border, width=1)
                 # Rows
@@ -3654,7 +3912,7 @@ class KTOxMenu:
                         for name, path in payloads]
             labels   = [i[0] for i in items]
             sel      = 0
-            WINDOW   = 7
+            WINDOW   = _ux_window_rows()
             # Resolve display title for this category
             cat_title = next(
                 (lbl for k, lbl in PAYLOAD_CATEGORIES if k == cat_key), cat_key.upper()
@@ -3664,14 +3922,14 @@ class KTOxMenu:
                 total  = len(labels)
                 offset = max(0, min(sel - 2, total - WINDOW))
                 window = labels[offset:offset + WINDOW]
-                _ST    = 26   # items start-y (below title strip)
-                _RH    = 13   # row height
+                _ST    = int(_ui_ux.get("start_y", 26))
+                _RH    = int(_ui_ux.get("row_h", 13))
                 with draw_lock:
                     _draw_toolbar()
                     color.DrawMenuBackground()
                     color.DrawBorder()
                     # ── Category title strip ──────────────────────────────
-                    draw.rectangle([3, 13, 125, 24], fill="#1a0000")
+                    draw.rectangle([3, 13, 125, 24], fill=color.title_bg)
                     _hdr = (cat_icon + " " if cat_icon else "") + cat_title
                     _centered(_hdr[:20], 13, font=small_font, fill=color.border)
                     draw.line([(3, 24), (125, 24)], fill=color.border, width=1)
@@ -3680,17 +3938,10 @@ class KTOxMenu:
                         is_sel = (i == sel - offset)
                         row_y  = _ST + _RH * i
                         if is_sel:
-                            draw.rectangle([3, row_y, 124, row_y + 12],
-                                           fill=color.select)
+                            _draw_row_selection(row_y, _RH)
                         fill = color.selected_text if is_sel else color.text
-                        icon = _icon_for(label)
-                        if icon:
-                            draw.text((5,  row_y + 1), icon, font=icon_font, fill=fill)
-                            t = _truncate(label.strip(), 96)
-                            draw.text((19, row_y + 1), t,    font=text_font, fill=fill)
-                        else:
-                            t = _truncate(label.strip(), 110)
-                            draw.text((5,  row_y + 1), t,    font=text_font, fill=fill)
+                        _draw_menu_row_label(row_y, label, fill, narrow=False)
+                    _draw_theme_overlay(_ST, _RH, WINDOW)
                     # ── Scroll pip ────────────────────────────────────────
                     if total > WINDOW:
                         avail = _RH * WINDOW
@@ -3709,101 +3960,6 @@ class KTOxMenu:
                     self.which = "home"; return
             return
 
-        # ── Payload category grid view ────────────────────────────────────────
-        if key == "pay":
-            cats   = [(cat_key, cat_label)
-                      for cat_key, cat_label in PAYLOAD_CATEGORIES
-                      if _list_payloads(cat_key)]
-            if not cats:
-                Dialog_info("No payloads found.\nDrop .py files into\n/payloads/<cat>/", wait=True)
-                return
-
-            total  = len(cats)
-            COLS   = 2
-            ROWS   = 4
-            PAGE   = COLS * ROWS     # 8 cells per page
-            # Cell geometry (128×128 screen, title strip y=13-24, grid y=26+)
-            _CW    = 62              # cell width
-            _CH    = 24              # cell height
-            _GX    = 3              # grid left margin
-            _GY    = 26             # grid top margin
-            _GAP   = 2              # gap between columns
-            sel    = 0              # flat category index
-
-            while True:
-                page         = sel // PAGE
-                page_start   = page * PAGE
-                page_cats    = cats[page_start:page_start + PAGE]
-                sel_in_page  = sel - page_start
-                sel_row      = sel_in_page // COLS
-                sel_col      = sel_in_page % COLS
-                num_pages    = (total + PAGE - 1) // PAGE
-
-                with draw_lock:
-                    _draw_toolbar()
-                    color.DrawMenuBackground()
-                    color.DrawBorder()
-                    # Title strip
-                    draw.rectangle([3, 13, 125, 24], fill="#1a0000")
-                    _pg_lbl = f"PAYLOADS  {page+1}/{num_pages}" if num_pages > 1 else "PAYLOADS"
-                    _centered(_pg_lbl[:20], 13, font=small_font, fill=color.border)
-                    draw.line([(3, 24), (125, 24)], fill=color.border, width=1)
-                    # Grid cells
-                    for idx, (ckey, clabel) in enumerate(page_cats):
-                        crow = idx // COLS
-                        ccol = idx % COLS
-                        cx   = _GX + ccol * (_CW + _GAP)
-                        cy   = _GY + crow * _CH
-                        is_sel = (crow == sel_row and ccol == sel_col)
-                        # Cell background
-                        cell_fill = color.select if is_sel else "#0d0000"
-                        draw.rectangle([cx, cy, cx + _CW - 1, cy + _CH - 2],
-                                       fill=cell_fill, outline=color.border)
-                        txt_fill = color.selected_text if is_sel else color.text
-                        icon = _FA_ICONS.get(clabel, "")
-                        if icon and icon_font:
-                            draw.text((cx + 3, cy + 2), icon, font=icon_font, fill=txt_fill)
-                            draw.text((cx + 16, cy + 3), clabel[:7], font=small_font, fill=txt_fill)
-                        else:
-                            draw.text((cx + 3, cy + 6), clabel[:8], font=small_font, fill=txt_fill)
-                        # Payload count badge — bottom-right corner of cell
-                        n = len(_list_payloads(ckey))
-                        draw.text((cx + _CW - 14, cy + _CH - 11),
-                                  str(n), font=small_font, fill="#8B0000")
-                    # Page indicator pips
-                    if num_pages > 1:
-                        for pi in range(num_pages):
-                            px = 60 + pi * 6
-                            pc = color.border if pi == page else "#330000"
-                            draw.rectangle([px, 124, px + 4, 127], fill=pc)
-
-                time.sleep(0.08)
-                btn = getButton(timeout=0.5)
-                if btn is None:
-                    continue
-                elif btn == "KEY_DOWN_PIN":
-                    sel = (sel + COLS) % total  # move one row down
-                elif btn == "KEY_UP_PIN":
-                    sel = (sel - COLS) % total  # move one row up
-                elif btn == "KEY_RIGHT_PIN":
-                    sel = (sel + 1) % total
-                elif btn == "KEY_LEFT_PIN":
-                    if sel > 0:
-                        sel -= 1
-                    else:
-                        return  # back at first category
-                elif btn in ("KEY_PRESS_PIN",):
-                    ckey = cats[sel][0]
-                    saved      = self.which
-                    self.which = f"pay_{ckey}"
-                    self.navigate(f"pay_{ckey}")
-                    self.which = saved
-                elif btn == "KEY1_PIN":
-                    return
-                elif btn == "KEY2_PIN":
-                    self.which = "home"; return
-            return
-
         # Standard navigate
         tree = self._menu()
 
@@ -3818,7 +3974,7 @@ class KTOxMenu:
 
         labels = [item[0] for item in items]
         sel    = 0
-        WINDOW = 7
+        WINDOW = _ux_window_rows()
 
         while True:
             total  = len(labels)
@@ -3837,31 +3993,24 @@ class KTOxMenu:
                     "purple":"Purple Team","sys":"System","pay":"Payloads",
                 }
                 _t = _titles.get(key, key.upper())
-                draw.rectangle([3,13,125,24], fill="#1a0000")
+                draw.rectangle([3,13,125,24], fill=color.title_bg)
                 _centered(_t[:18], 13, font=small_font, fill=color.border)
                 draw.line([(3,24),(125,24)], fill=color.border, width=1)
-                _start_y = 26
+                _start_y = int(_ui_ux.get("start_y", 26))
+                _row_h = int(_ui_ux.get("row_h", 13))
                 for i, label in enumerate(window):
                     is_sel = (i == sel-offset)
-                    row_y  = _start_y + 13*i
+                    row_y  = _start_y + _row_h*i
                     if is_sel:
-                        draw.rectangle(
-                            [3, row_y, 124, row_y+12],
-                            fill=color.select
-                        )
+                        _draw_row_selection(row_y, _row_h)
                     fill = color.selected_text if is_sel else color.text
-                    icon = _icon_for(label)
-                    if icon:
-                        draw.text((5, row_y+1), icon, font=icon_font, fill=fill)
-                        t = _truncate(label.strip(), 94)
-                        draw.text((19, row_y+1), t, font=text_font, fill=fill)
-                    else:
-                        t = _truncate(label.strip(), 108)
-                        draw.text((6, row_y+1), t, font=text_font, fill=fill)
+                    _draw_menu_row_label(row_y, label, fill, narrow=False)
+                _draw_theme_overlay(_start_y, _row_h, WINDOW)
                 # Scroll pip
                 if total > WINDOW:
-                    pip_h = max(6, int(WINDOW / total * 110))
-                    pip_y = 14 + int(offset / max(1, total - WINDOW) * (110 - pip_h))
+                    avail = _row_h * WINDOW
+                    pip_h = max(6, int(WINDOW / total * avail))
+                    pip_y = _start_y + int(offset / max(1, total - WINDOW) * (avail - pip_h))
                     draw.rectangle([125, pip_y, 127, pip_y + pip_h], fill=color.border)
 
             time.sleep(0.08)
@@ -3932,6 +4081,99 @@ class KTOxMenu:
             f" Loot:  {loot_count()} files",
             f" IP:    {get_ip()}",
         ])
+
+    def _ui_theme_menu(self):
+        while True:
+            choice = GetMenuString([" Theme Presets", " Theme Colors (Picker)"])
+            if not choice:
+                return
+            if choice.strip() == "Theme Presets":
+                keys = list(UI_THEMES.keys())
+                labels = []
+                for key in keys:
+                    mark = "✔" if key == color.current_theme else " "
+                    labels.append(f" {mark} {UI_THEMES[key]['label']}")
+                sel = GetMenuString(labels, duplicates=True)
+                if not sel:
+                    continue
+                idx, _ = sel
+                chosen = keys[idx]
+                if color.apply_theme(chosen, persist=True):
+                    Dialog_info(f"Theme:\n{UI_THEMES[chosen]['label']}", wait=False, timeout=1)
+                else:
+                    Dialog_info("Theme apply\nfailed.", wait=True)
+            else:
+                self._ui_theme_color_menu()
+
+    def _pick_rgb_color(self, initial: str, title: str):
+        if not (isinstance(initial, str) and initial.startswith("#") and len(initial) == 7):
+            initial = "#00E5FF"
+        try:
+            rgb = [int(initial[1:3], 16), int(initial[3:5], 16), int(initial[5:7], 16)]
+        except Exception:
+            rgb = [0, 229, 255]
+        chan = 0
+        while True:
+            with draw_lock:
+                _draw_toolbar()
+                color.DrawMenuBackground()
+                color.DrawBorder()
+                draw.rectangle([3, 13, 125, 24], fill=color.title_bg)
+                _centered(_truncate(title, 108), 13, font=small_font, fill=color.border)
+                preview = f"#{rgb[0]:02X}{rgb[1]:02X}{rgb[2]:02X}"
+                draw.rectangle([8, 30, 120, 52], fill=preview, outline=color.border)
+                draw.text((10, 56), f"R:{rgb[0]:3d}", font=text_font,
+                          fill=color.selected_text if chan == 0 else color.text)
+                draw.text((10, 70), f"G:{rgb[1]:3d}", font=text_font,
+                          fill=color.selected_text if chan == 1 else color.text)
+                draw.text((10, 84), f"B:{rgb[2]:3d}", font=text_font,
+                          fill=color.selected_text if chan == 2 else color.text)
+                draw.text((10, 101), "L/R channel", font=small_font, fill=color.text)
+                draw.text((10, 112), "U/D ±5  K1/K3 ±1  OK save", font=small_font, fill=color.text)
+            btn = getButton(timeout=0.5)
+            if btn is None:
+                continue
+            if btn in ("KEY_LEFT_PIN",):
+                chan = (chan - 1) % 3
+            elif btn in ("KEY_RIGHT_PIN",):
+                chan = (chan + 1) % 3
+            elif btn == "KEY_UP_PIN":
+                rgb[chan] = min(255, rgb[chan] + 5)
+            elif btn == "KEY_DOWN_PIN":
+                rgb[chan] = max(0, rgb[chan] - 5)
+            elif btn == "KEY1_PIN":
+                rgb[chan] = min(255, rgb[chan] + 1)
+            elif btn == "KEY3_PIN":
+                rgb[chan] = max(0, rgb[chan] - 1)
+            elif btn in ("KEY_PRESS_PIN", "KEY2_PIN"):
+                return f"#{rgb[0]:02X}{rgb[1]:02X}{rgb[2]:02X}"
+
+    def _ui_theme_color_menu(self):
+        custom = _theme_preset("custom_cyber") or dict(UI_THEMES["custom_cyber"])
+        color_keys = [
+            ("BORDER", "Border"), ("BACKGROUND", "Background"), ("TEXT", "Text"),
+            ("SELECTED_TEXT", "Selected Text"), ("SELECTED_TEXT_BACKGROUND", "Selection BG"),
+            ("TITLE_BG", "Title BG"), ("PANEL_BG", "Panel BG"),
+            ("GAMEPAD", "Gamepad"), ("GAMEPAD_FILL", "Gamepad Fill"),
+        ]
+        while True:
+            items = [f" {label}: {custom[key]}" for key, label in color_keys]
+            items += [" Save to Custom Theme", " Back"]
+            sel = GetMenuString(items, duplicates=True)
+            if not sel:
+                return
+            idx, _ = sel
+            if idx == len(color_keys):
+                _save_custom_theme_colors(custom)
+                color.apply_theme("custom_cyber", persist=True)
+                Dialog_info("Saved to\nCustom Cyber.", wait=False, timeout=1)
+                return
+            if idx == len(color_keys) + 1:
+                return
+            key, label = color_keys[idx]
+            picked = self._pick_rgb_color(custom.get(key, "#00E5FF"), label)
+            if picked:
+                custom[key] = picked
 
     def _discord_status(self):
         wh = Path(INSTALL_PATH+"discord_webhook.txt")

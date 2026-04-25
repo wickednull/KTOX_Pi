@@ -4,12 +4,15 @@
         "BORDER": "#8B0000",
         "GAMEPAD": "#640000",
         "GAMEPAD_FILL": "#F0EDE8",
+        "PANEL_BG": "#0d0606",
         "SELECTED_TEXT": "#FFFFFF",
         "SELECTED_TEXT_BACKGROUND": "#640000",
-        "TEXT": "#c8c8c8"
+        "TEXT": "#c8c8c8",
+        "TITLE_BG": "#1a0000"
     },
     "PATHS": {
-        "IMAGEBROWSER_START": "/root/"
+        "IMAGEBROWSER_START": "/root/",
+        "SCREENSAVER_GIF": "/root/KTOx/img/screensaver/default.gif"
     },
     "PINS": {
         "KEY1_PIN": 21,
@@ -20,5 +23,19 @@
         "KEY_PRESS_PIN": 13,
         "KEY_RIGHT_PIN": 26,
         "KEY_UP_PIN": 6
+    },
+    "UI": {
+        "THEME": "ktox_red",
+        "CUSTOM_THEME_COLORS": {
+            "BORDER": "#00E5FF",
+            "BACKGROUND": "#070912",
+            "TEXT": "#CFEFFF",
+            "SELECTED_TEXT": "#07111A",
+            "SELECTED_TEXT_BACKGROUND": "#00E5FF",
+            "GAMEPAD": "#007A89",
+            "GAMEPAD_FILL": "#D7F6FF",
+            "TITLE_BG": "#0C1E30",
+            "PANEL_BG": "#0B1320"
+        }
     }
 }
