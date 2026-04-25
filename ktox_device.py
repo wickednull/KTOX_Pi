@@ -3822,6 +3822,8 @@ _FA_ICONS: dict = {
     "Offensive":        "\uf54c",   # fa-skull
     "WiFi Engine":      "\uf1eb",   # fa-wifi
     "MITM & Spoof":     "\uf0ec",   # fa-exchange
+    "Navarro Recon":    "\uf002",   # fa-search
+    "DNSSpoof":         "\uf0ac",   # fa-globe
     "Responder":        "\uf382",   # fa-satellite-dish
     "Purple Team":      "\uf3ed",   # fa-shield-alt
     "Payloads":         "\uf0e7",   # fa-bolt
@@ -3851,6 +3853,8 @@ _FA_ICONS: dict = {
     "Examples":         "\uf121",   # fa-code
     # ── Network submenu ───────────────────────────────────────────────────
     "Scan Network":     "\uf002",
+    "Scan Ports":       "\uf569",   # fa-ethernet
+    "Reports":          "\uf15c",   # fa-file-alt
     "Show Hosts":       "\uf0c0",   # fa-users
     "Ping Gateway":     "\uf492",   # fa-satellite
     "Network Info":     "\uf129",   # fa-info
@@ -3878,6 +3882,8 @@ _FA_ICONS: dict = {
     "Start MITM Suite": "\uf0ec",
     "DNS Spoofing ON":  "\uf0ac",
     "DNS Spoofing OFF": "\uf070",
+    "Start Spoof":      "\uf0ac",   # fa-globe
+    "Stop Spoof":       "\uf070",   # fa-eye-slash
     "Rogue DHCP/WPAD":  "\uf233",
     "Silent Bridge":    "\uf6ff",
     # ── Responder submenu ─────────────────────────────────────────────────
@@ -3982,6 +3988,8 @@ class KTOxMenu:
             (" Offensive",     "off"),
             (" WiFi Engine",   "wifi"),
             (" MITM & Spoof",  "mitm"),
+            (" Navarro Recon", "nav"),
+            (" DNSSpoof",      "dns"),
             (" Responder",     "resp"),
             (" Purple Team",   "purple"),
             (" Payloads",      "pay"),
@@ -4034,6 +4042,21 @@ class KTOxMenu:
             (" Rogue DHCP/WPAD",    partial(exec_payload,"interception/rogue_dhcp_wpad")),
             (" Silent Bridge",      partial(exec_payload,"interception/silent_bridge")),
             (" Evil Portal",        partial(exec_payload,"evil_portal/honeypot")),
+        ),
+
+        # ── NAVARRO RECON ────────────────────────────────────────────────────
+        "nav": (
+            (" Scan Network",   self._nav_scan),
+            (" Scan Ports",     self._nav_ports),
+            (" Reports",        self._nav_reports),
+            (" Back",           "home"),
+        ),
+
+        # ── DNSSPOOF ─────────────────────────────────────────────────────────
+        "dns": (
+            (" Start Spoof",    do_dns_spoofing),
+            (" Stop Spoof",     do_dns_spoof_stop),
+            (" Back",           "home"),
         ),
 
         # ── RESPONDER ─────────────────────────────────────────────────────────
