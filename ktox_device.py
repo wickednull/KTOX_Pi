@@ -85,7 +85,7 @@ _stop_evt   = threading.Event()
 _last_button       = None
 _last_button_time  = 0.0
 _button_down_since = 0.0
-_debounce_s        = 0.06
+_debounce_s        = 0.10
 _repeat_delay      = 0.25
 _repeat_interval   = 0.08
 
@@ -737,8 +737,8 @@ def getButton(timeout=120):
             start = time.time()
             continue
 
-        # Stuck-button safety: non-KEY3 buttons held >2s are discarded
-        if pressed == _last_button and pressed != _LOCK_HOLD_BTN and (now - _button_down_since) > 2.0:
+        # Stuck-button safety: non-KEY3 buttons held >4s are discarded
+        if pressed == _last_button and pressed != _LOCK_HOLD_BTN and (now - _button_down_since) > 4.0:
             _last_button = None
             time.sleep(0.15)
             continue
@@ -855,10 +855,9 @@ def YNDialog(a="Are you sure?", y="Yes", n="No", b=""):
             draw.line([(4,80),(124,80)], fill="#2a0505", width=1)
             _centered("LEFT=Yes  RIGHT=No", 84, font=small_font, fill="#4a2020")
         btn = getButton()
-        if   btn in ("KEY_LEFT_PIN","KEY1_PIN"):      answer = True
-        elif btn == "KEY_RIGHT_PIN":                  answer = False
-        elif btn == "KEY_PRESS_PIN":                  return answer
-        elif btn in ("KEY2_PIN", "KEY3_PIN"):         return False
+        if   btn in ("KEY_LEFT_PIN","KEY1_PIN"):    answer = True
+        elif btn in ("KEY_RIGHT_PIN","KEY3_PIN"):   answer = False
+        elif btn in ("KEY_PRESS_PIN","KEY2_PIN"):   return answer
 
 
 def _draw_row_selection(row_y, row_h):
