@@ -3970,21 +3970,6 @@ class KTOxMenu:
 
     # ── Navigation ────────────────────────────────────────────────────────────
 
-    def _nav_scan(self):
-        exec_payload("Navarro/navarro_scan.py")
-    def _nav_ports(self):
-        exec_payload("Navarro/navarro_ports.py")
-    def _nav_reports(self):
-        self._browse_dir(KTOX_DIR + "/Navarro/reports", "Navarro Reports")
-
-    def home_loop(self):
-        while True:
-            req = _check_payload_request()
-            if req:
-                exec_payload(req)
-                continue
-            self.navigate("home")
-
     # ── Network actions ───────────────────────────────────────────────────────
 
     def _show_hosts(self):
@@ -4596,6 +4581,8 @@ class KTOxMenu:
             return
 
         sel, _ = sel_result
+        if sel == -1:
+            return
         self.select = sel
         action = items[sel][1]
 
