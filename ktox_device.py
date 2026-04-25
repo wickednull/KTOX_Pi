@@ -315,7 +315,7 @@ UI_THEMES = {
         "UX_SHOW_ICONS": True, "UX_SELECT_STYLE": "fill",
     },
     "neon_magenta": {
-        "label": "Neon Magenta",
+        "label": "Magenta Ops",
         "BORDER": "#FF2BD6", "BACKGROUND": "#09040F", "TEXT": "#FFD6F8",
         "SELECTED_TEXT": "#0B0210", "SELECTED_TEXT_BACKGROUND": "#FF2BD6",
         "GAMEPAD": "#B00088", "GAMEPAD_FILL": "#FFD6F8",
@@ -324,7 +324,7 @@ UI_THEMES = {
         "UX_SHOW_ICONS": True, "UX_SELECT_STYLE": "fill",
     },
     "cyberpunk_amber": {
-        "label": "Cyberpunk Amber",
+        "label": "Amber Field",
         "BORDER": "#FF9F1A", "BACKGROUND": "#0E0703", "TEXT": "#FFD9AA",
         "SELECTED_TEXT": "#1A0A03", "SELECTED_TEXT_BACKGROUND": "#FF9F1A",
         "GAMEPAD": "#9C4E00", "GAMEPAD_FILL": "#FFE4C4",
@@ -333,7 +333,7 @@ UI_THEMES = {
         "UX_SHOW_ICONS": True, "UX_SELECT_STYLE": "fill",
     },
     "darksec_experimental": {
-        "label": "DarkSec (Exp)",
+        "label": "DarkSec Grid",
         "BORDER": "#00E5FF", "BACKGROUND": "#070B14", "TEXT": "#CCF4FF",
         "SELECTED_TEXT": "#041018", "SELECTED_TEXT_BACKGROUND": "#00A0CC",
         "GAMEPAD": "#006B88", "GAMEPAD_FILL": "#D9F8FF",
@@ -343,7 +343,7 @@ UI_THEMES = {
         "UX_CYBER_BARS": True,
     },
     "obsidian_red": {
-        "label": "Obsidian Red",
+        "label": "Red Team",
         "BORDER": "#CC0000", "BACKGROUND": "#0a0a0a", "TEXT": "#d4a574",
         "SELECTED_TEXT": "#FFFFFF", "SELECTED_TEXT_BACKGROUND": "#801414",
         "GAMEPAD": "#8B0000", "GAMEPAD_FILL": "#F5E6D3",
@@ -352,7 +352,7 @@ UI_THEMES = {
         "UX_SHOW_ICONS": True, "UX_SELECT_STYLE": "outline",
     },
     "slate_blue": {
-        "label": "Slate Blue",
+        "label": "Slate Console",
         "BORDER": "#4A5BB7", "BACKGROUND": "#0d0e15", "TEXT": "#c9d1e0",
         "SELECTED_TEXT": "#FFFFFF", "SELECTED_TEXT_BACKGROUND": "#2e3a7a",
         "GAMEPAD": "#1f2954", "GAMEPAD_FILL": "#e8edf8",
@@ -361,7 +361,7 @@ UI_THEMES = {
         "UX_SHOW_ICONS": True, "UX_SELECT_STYLE": "fill",
     },
     "forest_green": {
-        "label": "Forest Green",
+        "label": "Green Ops",
         "BORDER": "#3BA655", "BACKGROUND": "#080f09", "TEXT": "#b8d4ba",
         "SELECTED_TEXT": "#FFFFFF", "SELECTED_TEXT_BACKGROUND": "#2d5c3a",
         "GAMEPAD": "#1a4028", "GAMEPAD_FILL": "#dce8dd",
@@ -370,7 +370,7 @@ UI_THEMES = {
         "UX_SHOW_ICONS": True, "UX_SELECT_STYLE": "fill",
     },
     "sunburst_orange": {
-        "label": "Sunburst Orange",
+        "label": "Amber Signal",
         "BORDER": "#FF8C00", "BACKGROUND": "#0f0804", "TEXT": "#ffc89a",
         "SELECTED_TEXT": "#1a0a03", "SELECTED_TEXT_BACKGROUND": "#FF8C00",
         "GAMEPAD": "#cc5500", "GAMEPAD_FILL": "#ffe4d6",
@@ -379,7 +379,7 @@ UI_THEMES = {
         "UX_SHOW_ICONS": True, "UX_SELECT_STYLE": "fill",
     },
     "plasma_purple": {
-        "label": "Plasma Purple",
+        "label": "Violet Grid",
         "BORDER": "#B833FF", "BACKGROUND": "#0a0515", "TEXT": "#dfc8ff",
         "SELECTED_TEXT": "#FFFFFF", "SELECTED_TEXT_BACKGROUND": "#6b2d8f",
         "GAMEPAD": "#4a1a66", "GAMEPAD_FILL": "#e8d4ff",
@@ -388,7 +388,7 @@ UI_THEMES = {
         "UX_SHOW_ICONS": True, "UX_SELECT_STYLE": "fill",
     },
     "ice_blue": {
-        "label": "Ice Blue",
+        "label": "Arctic Blue",
         "BORDER": "#00D4FF", "BACKGROUND": "#050a12", "TEXT": "#b3e5ff",
         "SELECTED_TEXT": "#041c2e", "SELECTED_TEXT_BACKGROUND": "#00A8CC",
         "GAMEPAD": "#004466", "GAMEPAD_FILL": "#d9f7ff",
@@ -406,7 +406,7 @@ UI_THEMES = {
         "UX_SHOW_ICONS": True, "UX_SELECT_STYLE": "fill",
     },
     "neon_cyan": {
-        "label": "Neon Cyan",
+        "label": "Cyan Trace",
         "BORDER": "#00FFFF", "BACKGROUND": "#080808", "TEXT": "#00FFFF",
         "SELECTED_TEXT": "#000000", "SELECTED_TEXT_BACKGROUND": "#00FFFF",
         "GAMEPAD": "#008080", "GAMEPAD_FILL": "#E0FFFF",
@@ -415,7 +415,7 @@ UI_THEMES = {
         "UX_SHOW_ICONS": True, "UX_SELECT_STYLE": "scanline",
     },
     "synthetic_rose": {
-        "label": "Synthetic Rose",
+        "label": "Rose Console",
         "BORDER": "#FF1493", "BACKGROUND": "#0f080d", "TEXT": "#ffb3d9",
         "SELECTED_TEXT": "#FFFFFF", "SELECTED_TEXT_BACKGROUND": "#991166",
         "GAMEPAD": "#660044", "GAMEPAD_FILL": "#ffe0f0",
@@ -475,6 +475,50 @@ def _apply_ux_from_theme(preset: dict):
 
 def _ux_window_rows():
     return max(5, min(8, int(_ui_ux.get("window_rows", 8))))
+
+
+def _menu_metrics(start_y=None, row_h=None, rows=None):
+    start_y = int(_ui_ux.get("start_y", 26) if start_y is None else start_y)
+    row_h = int(_ui_ux.get("row_h", 13) if row_h is None else row_h)
+    start_y = max(25, min(32, start_y))
+    row_h = max(11, min(14, row_h))
+    max_rows = max(1, (124 - start_y) // row_h)
+    rows = _ux_window_rows() if rows is None else int(rows)
+    return start_y, row_h, max(1, min(rows, max_rows))
+
+
+def _menu_title(key_or_title):
+    titles = {
+        "home": "KTOx_Pi",
+        "net": "Network",
+        "off": "Offensive",
+        "wifi": "WiFi Engine",
+        "mitm": "MITM & Spoof",
+        "resp": "Responder",
+        "purple": "Purple Team",
+        "pay": "Payloads",
+        "loot": "Loot",
+        "sys": "System",
+    }
+    return titles.get(str(key_or_title or ""), str(key_or_title or "Menu"))
+
+
+def _draw_menu_title(title):
+    title = _menu_title(title)
+    icon = _icon_for(title)
+    text = (icon + " " if icon else "") + title
+    draw.rectangle([3, 13, 125, 24], fill=color.title_bg)
+    _centered(_truncate(text, 112, font=small_font), 14, font=small_font, fill=color.border)
+    draw.line([(3, 24), (125, 24)], fill=color.border, width=1)
+
+
+def _draw_scroll_pip(total, offset, rows, start_y, row_h):
+    if total <= rows:
+        return
+    span = max(1, row_h * rows)
+    pip_h = max(6, int(rows / total * span))
+    pip_y = start_y + int(offset / max(1, total - rows) * max(1, span - pip_h))
+    draw.rectangle([125, pip_y, 127, min(124, pip_y + pip_h)], fill=color.border)
 
 
 def _save_ui_theme(theme_name: str):
@@ -887,11 +931,23 @@ def _draw_row_selection(row_y, row_h):
         draw.rectangle([3, row_y, 124, row_y + row_h - 1], fill=color.select)
 
 
-def GetMenu(inlist, duplicates=False):
+def _handle_menu_key3():
+    """Stop the active operation from menu screens without navigating away."""
+    if ktox_state.get("running"):
+        ktox_state["running"] = None
+        Dialog_info("Stopped.", wait=False, timeout=1)
+        return True
+    return False
+
+
+def GetMenu(inlist, duplicates=False, title="Menu", view_modes=False):
     """
     Dispatcher function that routes to the correct view mode rendering function.
-    Used ONLY for Home menu. All other menus use GetMenuString directly.
+    Alternate view modes are opt-in for the Home launcher. Content screens,
+    pickers, logs, and submenus use the professional list renderer by default.
     """
+    if not view_modes:
+        return GetMenuString(inlist, duplicates=duplicates, title=title)
     mode_map = {
         "list": GetMenuString,
         "grid": GetMenuGrid,
@@ -903,18 +959,18 @@ def GetMenu(inlist, duplicates=False):
         "vcarousel": GetMenuVerticalCarousel,
     }
     func = mode_map.get(_view_mode, GetMenuString)
+    if func is GetMenuString:
+        return func(inlist, duplicates=duplicates, title=title)
     return func(inlist, duplicates=duplicates)
 
 
-def GetMenuString(inlist, duplicates=False):
+def GetMenuString(inlist, duplicates=False, title="Menu"):
     """
     Scrollable list.  Returns selected label string, or "" on back.
     If duplicates=True returns (int_index, label_string).
-    KEY1/KEY2/KEY3 all act as back/escape.
+    KEY1/KEY2 act as back/escape. KEY3 stops an active operation.
     """
-    WINDOW = _ux_window_rows()
-    row_h  = int(_ui_ux.get("row_h", 13))
-    start_y = 14
+    start_y, row_h, WINDOW = _menu_metrics()
     if not inlist:
         inlist = ["(empty)"]
     if duplicates:
@@ -932,6 +988,7 @@ def GetMenuString(inlist, duplicates=False):
             _draw_toolbar()
             color.DrawMenuBackground()
             color.DrawBorder()
+            _draw_menu_title(title)
             for i, raw in enumerate(window):
                 txt   = raw if not duplicates else raw.split("#", 1)[1]
                 sel   = (i == index - offset)
@@ -941,17 +998,13 @@ def GetMenuString(inlist, duplicates=False):
                 fill = color.selected_text if sel else color.text
                 icon = _icon_for(txt)
                 if icon and _ui_ux.get("show_icons", True):
-                    draw.text((5,  row_y + 1), icon, font=icon_font, fill=fill)
-                    t = _truncate(txt.strip(), 90)
-                    draw.text((23, row_y + 1), t,    font=text_font, fill=fill)
+                    draw.text((11, row_y + row_h // 2), icon, font=icon_font, fill=fill, anchor="mm")
+                    t = _truncate(txt.strip().lstrip("✔*+-•> "), 96)
+                    draw.text((23, row_y + 2), t, font=text_font, fill=fill)
                 else:
-                    t = _truncate(txt.strip(), 110)
-                    draw.text((5,  row_y + 1), t,    font=text_font, fill=fill)
-            # Scroll-position pip (right edge)
-            if total > WINDOW:
-                pip_h = max(6, int(WINDOW / total * 110))
-                pip_y = 14 + int(offset / max(1, total - WINDOW) * (110 - pip_h))
-                draw.rectangle([125, pip_y, 127, pip_y + pip_h], fill=color.border)
+                    t = _truncate(txt.strip(), 112)
+                    draw.text((7, row_y + 2), t, font=text_font, fill=fill)
+            _draw_scroll_pip(total, offset, WINDOW, start_y, row_h)
 
         time.sleep(0.08)
         btn = getButton(timeout=0.5)   # short timeout prevents deadlock
@@ -964,14 +1017,15 @@ def GetMenuString(inlist, duplicates=False):
                 idx, txt = raw.split("#", 1)
                 return int(idx), txt
             return raw
-        elif btn in ("KEY_LEFT_PIN","KEY1_PIN","KEY2_PIN","KEY3_PIN"):
+        elif btn == "KEY3_PIN":
+            _handle_menu_key3()
+            continue
+        elif btn in ("KEY_LEFT_PIN","KEY1_PIN","KEY2_PIN"):
             return (-1,"") if duplicates else ""
 
 
 def RenderMenuWindowOnce(inlist, selected=0):
-    WINDOW = _ux_window_rows()
-    row_h  = int(_ui_ux.get("row_h", 13))
-    start_y = 14
+    start_y, row_h, WINDOW = _menu_metrics()
     if not inlist: inlist = ["(empty)"]
     total  = len(inlist)
     idx    = max(0, min(selected, total-1))
@@ -981,6 +1035,7 @@ def RenderMenuWindowOnce(inlist, selected=0):
         _draw_toolbar()
         color.DrawMenuBackground()
         color.DrawBorder()
+        _draw_menu_title("home")
         for i, txt in enumerate(window):
             sel   = (i == idx - offset)
             row_y = start_y + row_h * i
@@ -989,12 +1044,13 @@ def RenderMenuWindowOnce(inlist, selected=0):
             fill = color.selected_text if sel else color.text
             icon = _icon_for(txt)
             if icon and _ui_ux.get("show_icons", True):
-                draw.text((5,  row_y + 1), icon, font=icon_font, fill=fill)
-                t = _truncate(txt.strip(), 94)
-                draw.text((19, row_y + 1), t,    font=text_font, fill=fill)
+                draw.text((11, row_y + row_h // 2), icon, font=icon_font, fill=fill, anchor="mm")
+                t = _truncate(txt.strip(), 96)
+                draw.text((23, row_y + 2), t, font=text_font, fill=fill)
             else:
-                t = _truncate(txt.strip(), 110)
-                draw.text((5,  row_y + 1), t,    font=text_font, fill=fill)
+                t = _truncate(txt.strip(), 112)
+                draw.text((7, row_y + 2), t, font=text_font, fill=fill)
+        _draw_scroll_pip(total, offset, WINDOW, start_y, row_h)
         # Optional cyber bars for themes like DarkSec
         if _ui_ux.get("cyber_bars", False):
             span = row_h * WINDOW
@@ -1081,7 +1137,10 @@ def GetMenuGrid(inlist, duplicates=False):
                 idx, txt = raw.split("#", 1)
                 return int(idx), txt
             return raw
-        elif btn in ("KEY1_PIN", "KEY2_PIN", "KEY3_PIN"):
+        elif btn == "KEY3_PIN":
+            _handle_menu_key3()
+            continue
+        elif btn in ("KEY1_PIN", "KEY2_PIN"):
             return (-1, "") if duplicates else ""
 
 
@@ -1144,7 +1203,10 @@ def GetMenuCarousel(inlist, duplicates=False):
                 idx, txt = raw.split("#", 1)
                 return int(idx), txt
             return raw
-        elif btn in ("KEY1_PIN", "KEY2_PIN", "KEY3_PIN"):
+        elif btn == "KEY3_PIN":
+            _handle_menu_key3()
+            continue
+        elif btn in ("KEY1_PIN", "KEY2_PIN"):
             return (-1, "") if duplicates else ""
 
 
@@ -1286,7 +1348,10 @@ def GetMenuPanel(inlist, duplicates=False):
                 idx, txt = raw.split("#", 1)
                 return int(idx), txt
             return raw
-        elif btn in ("KEY1_PIN", "KEY2_PIN", "KEY3_PIN", "KEY_LEFT_PIN"):
+        elif btn == "KEY3_PIN":
+            _handle_menu_key3()
+            continue
+        elif btn in ("KEY1_PIN", "KEY2_PIN", "KEY_LEFT_PIN"):
             return (-1, "") if duplicates else ""
 
 
@@ -1361,7 +1426,10 @@ def GetMenuTable(inlist, duplicates=False):
                 idx, txt = raw.split("#", 1)
                 return int(idx), txt
             return raw
-        elif btn in ("KEY1_PIN", "KEY2_PIN", "KEY3_PIN", "KEY_LEFT_PIN"):
+        elif btn == "KEY3_PIN":
+            _handle_menu_key3()
+            continue
+        elif btn in ("KEY1_PIN", "KEY2_PIN", "KEY_LEFT_PIN"):
             return (-1, "") if duplicates else ""
 
 
@@ -1436,7 +1504,10 @@ def GetMenuPaged(inlist, duplicates=False):
                 idx, txt = raw.split("#", 1)
                 return int(idx), txt
             return raw
-        elif btn in ("KEY1_PIN", "KEY2_PIN", "KEY3_PIN"):
+        elif btn == "KEY3_PIN":
+            _handle_menu_key3()
+            continue
+        elif btn in ("KEY1_PIN", "KEY2_PIN"):
             return (-1, "") if duplicates else ""
 
 
@@ -1516,7 +1587,10 @@ def GetMenuThumbnail(inlist, duplicates=False):
                 idx, txt = raw.split("#", 1)
                 return int(idx), txt
             return raw
-        elif btn in ("KEY1_PIN", "KEY2_PIN", "KEY3_PIN"):
+        elif btn == "KEY3_PIN":
+            _handle_menu_key3()
+            continue
+        elif btn in ("KEY1_PIN", "KEY2_PIN"):
             return (-1, "") if duplicates else ""
 
 
@@ -1579,7 +1653,10 @@ def GetMenuVerticalCarousel(inlist, duplicates=False):
                 idx, txt = raw.split("#", 1)
                 return int(idx), txt
             return raw
-        elif btn in ("KEY1_PIN", "KEY2_PIN", "KEY3_PIN"):
+        elif btn == "KEY3_PIN":
+            _handle_menu_key3()
+            continue
+        elif btn in ("KEY1_PIN", "KEY2_PIN"):
             return (-1, "") if duplicates else ""
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -3740,6 +3817,7 @@ _FA_ICONS: dict = {
     "Loot":             "\uf07c",   # fa-folder-open
     "Stealth":          "\uf070",   # fa-eye-slash
     "System":           "\uf013",   # fa-cog
+    "KTOx_Pi":          "\uf2db",   # fa-microchip
     # ── Payload categories ────────────────────────────────────────────────
     "Recon":            "\uf002",   # fa-search
     "Intercept":        "\uf0ec",   # fa-exchange
@@ -3754,6 +3832,8 @@ _FA_ICONS: dict = {
     "Exfiltrate":       "\uf019",   # fa-download
     "Remote":           "\uf233",   # fa-server
     "Evil Portal":      "\uf0ac",   # fa-globe
+    "Media":            "\uf03e",   # fa-image
+    "Testing":          "\uf0c3",   # fa-flask
     "Utilities":        "\uf0ad",   # fa-wrench
     "Games":            "\uf11b",   # fa-gamepad
     "General":          "\uf013",   # fa-cog
@@ -3779,6 +3859,7 @@ _FA_ICONS: dict = {
     "WiFi Scan":        "\uf002",
     "Deauth AP":        "\uf1d8",   # fa-paper-plane
     "Handshake Cap":    "\uf0a3",   # fa-certificate
+    "HS Engine Pro":    "\uf085",   # fa-cogs
     "PMKID Attack":     "\uf084",
     "Evil Twin AP":     "\uf1eb",
     "Select Adapter":   "\uf233",
@@ -3792,6 +3873,7 @@ _FA_ICONS: dict = {
     "Responder ON":     "\uf382",
     "Responder OFF":    "\uf070",
     "Responder Logs":   "\uf15c",   # fa-file-alt
+    "Read Hashes":      "\uf1c0",   # fa-database
     # ── Purple Team submenu ───────────────────────────────────────────────
     "ARP Hardening":    "\uf3ed",
     "Disable LLMNR":    "\uf070",
@@ -3801,17 +3883,39 @@ _FA_ICONS: dict = {
     "Export Baseline":  "\uf019",
     "Verify Baseline":  "\uf00c",   # fa-check
     "Defense Report":   "\uf15c",
+    "ARP Diff Live":    "\uf0ec",   # fa-exchange
+    "ARP Harden":       "\uf3ed",   # fa-shield-alt
+    "Rogue Detector":   "\uf06e",   # fa-eye
+    "LLMNR Detector":   "\uf002",   # fa-search
+    "SMB Probe":        "\uf233",   # fa-server
+    "Baseline Export":  "\uf019",   # fa-download
     # ── System submenu ────────────────────────────────────────────────────
     "WebUI Status":     "\uf0e0",   # fa-envelope
     "Refresh State":    "\uf021",   # fa-sync
     "System Info":      "\uf129",
     "UI Theme":         "\uf53f",   # fa-palette
     "Discord Status":   "\uf392",   # fa-discord
+    "Discord Webhook":  "\uf392",   # fa-discord
+    "Lock":             "\uf023",   # fa-lock
+    "OTA Update":       "\uf021",   # fa-sync
+    "Theme Presets":    "\uf53f",   # fa-palette
+    "Custom Colors":    "\uf1fb",   # fa-paint-brush
+    "View Mode":        "\uf00a",   # fa-th
+    "Wallpaper":        "\uf03e",   # fa-image
+    "No Wallpaper":     "\uf070",   # fa-eye-slash
+    "Return to Default":"\uf2ea",   # fa-undo
+    "Save & Apply":     "\uf0c7",   # fa-save
     "Reboot":           "\uf2f9",   # fa-redo
     "Shutdown":         "\uf011",   # fa-power-off
     # ── Payload categories (continued) ────────────────────────────────────
-    "Media":            "",   # fa-image
-    "Testing":          "",   # fa-flask
+    "List":             "\uf03a",   # fa-list
+    "Grid":             "\uf00a",   # fa-th
+    "Carousel":         "\uf362",   # fa-exchange-alt
+    "Panel":            "\uf2d0",   # fa-window-maximize
+    "Table":            "\uf0ce",   # fa-table
+    "Paged":            "\uf15b",   # fa-file
+    "Thumbnail":        "\uf03e",   # fa-image
+    "V-Carousel":       "\uf338",   # fa-arrows-alt-v
     # ── Universal ─────────────────────────────────────────────────────────
     "Back":             "\uf060",   # fa-arrow-left
     "Home":             "\uf015",   # fa-home
@@ -3823,6 +3927,9 @@ def _icon_for(label: str) -> str:
     if not icon_font:
         return ""
     bare = label.strip()
+    bare = bare.lstrip("✔*+-•> ")
+    if bare.startswith("[") and "]" in bare:
+        bare = bare.split("]", 1)[1].strip()
     if bare in _FA_ICONS:
         return _FA_ICONS[bare]
     # Strip trailing payload count like " Games (13)" → "Games"
@@ -4556,6 +4663,9 @@ class KTOxMenu:
                 elif btn in ("KEY_LEFT_PIN", "KEY1_PIN"):        return
                 elif btn == "KEY2_PIN":
                     self.which = "home"; return
+                elif btn == "KEY3_PIN":
+                    _handle_menu_key3()
+                    continue
             return
 
         # Standard navigate
@@ -4573,9 +4683,9 @@ class KTOxMenu:
         labels = [item[0] for item in items]
         # View modes ONLY for Home menu, everything else uses List view
         if key == "home":
-            sel_result = GetMenu(labels, duplicates=True)
+            sel_result = GetMenu(labels, duplicates=True, title="home", view_modes=True)
         else:
-            sel_result = GetMenuString(labels, duplicates=True)
+            sel_result = GetMenuString(labels, duplicates=True, title=key)
 
         if not sel_result:
             return
@@ -4648,7 +4758,7 @@ class KTOxMenu:
                 " Wallpaper",
                 " Return to Default",
             ]
-            choice = GetMenuString(menu)
+            choice = GetMenuString(menu, title="UI Theme")
             if not choice:
                 return
             s = choice.strip()
@@ -4672,7 +4782,7 @@ class KTOxMenu:
         for key in keys:
             mark = "✔" if key == color.current_theme else " "
             labels.append(f" {mark} {UI_THEMES[key]['label']}")
-        sel = GetMenuString(labels, duplicates=True)
+        sel = GetMenuString(labels, duplicates=True, title="Theme Presets")
         if not sel:
             return
         idx, _ = sel
@@ -4701,7 +4811,7 @@ class KTOxMenu:
         for mode in modes:
             mark = "✔" if mode == _view_mode else " "
             labels.append(f" {mark} {mode_names[mode]}")
-        sel = GetMenuString(labels, duplicates=True)
+        sel = GetMenuString(labels, duplicates=True, title="View Mode")
         if not sel:
             return
         idx, _ = sel
@@ -4742,7 +4852,7 @@ class KTOxMenu:
                         menu_items.append(label)
                         wallpaper_files.append(str(img_file))
 
-        sel = GetMenuString(menu_items, duplicates=True)
+        sel = GetMenuString(menu_items, duplicates=True, title="Wallpaper")
         if not sel:
             return
 
@@ -4862,7 +4972,7 @@ class KTOxMenu:
             items += [" Save & Apply"]
             items += [" Back"]
 
-            sel = GetMenuString(items, duplicates=True)
+            sel = GetMenuString(items, duplicates=True, title="Custom Colors")
             if not sel:
                 return
 
