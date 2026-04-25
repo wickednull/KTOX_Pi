@@ -1739,11 +1739,35 @@ def exec_payload(filename, *args):
             ["python3", full] + list(args),
             cwd=INSTALL_PATH,
             env=env,
-            stdout=log_fh,
-            stderr=subprocess.STDOUT,
+            capture_output=True,
         )
+        if result.stdout:
+            log_fh.write(result.stdout)
+        if result.stderr:
+            log_fh.write(result.stderr)
         if result.returncode != 0:
             print(f"[PAYLOAD] exit code {result.returncode}")
+            combined = b""
+            if result.stdout:
+                combined += result.stdout
+            if result.stderr:
+                combined += b"\n" + result.stderr
+            last_line = ""
+            try:
+                lines = combined.decode("utf-8", errors="replace").splitlines()
+                for line in reversed(lines):
+                    if line.strip():
+                        last_line = line.strip()
+                        break
+            except Exception:
+                pass
+            hint = _truncate(last_line or "See payload.log", 18)
+            Dialog_info(
+                "Payload crashed:\n"
+                f"{os.path.basename(full)[:18]}\n"
+                f"{hint}",
+                wait=True,
+            )
     except Exception as exc:
         print(f"[PAYLOAD] ERROR: {exc!r}")
     finally:

@@ -8,14 +8,20 @@ import os
 import sys
 import time
 import subprocess
-import requests
 import urllib.parse
+import json
 from urllib.request import urlopen, Request
+from urllib.error import URLError, HTTPError
 
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
-from payloads._darksec_keyboard import DarkSecKeyboard
+
+try:
+    import requests
+    HAS_REQUESTS = True
+except ImportError:
+    HAS_REQUESTS = False
 
 try:
     import RPi.GPIO as GPIO
@@ -65,6 +71,40 @@ MENU = [
 ]
 
 VISIBLE_LINES = 8   # How many menu items fit on screen
+
+
+class _SimpleResponse:
+    def __init__(self, status_code=0, text="", json_data=None):
+        self.status_code = status_code
+        self.text = text
+        self._json_data = json_data
+
+    def json(self):
+        if self._json_data is not None:
+            return self._json_data
+        return json.loads(self.text or "{}")
+
+
+def _http_get(url, timeout=8, headers=None, allow_redirects=True):  # noqa: ARG001
+    if HAS_REQUESTS:
+        return requests.get(url, timeout=timeout, headers=headers, allow_redirects=allow_redirects)
+    req = Request(url, headers=headers or {"User-Agent": "KTOx-OSINT/1.0"})
+    try:
+        with urlopen(req, timeout=timeout) as r:
+            data = r.read()
+            return _SimpleResponse(
+                status_code=getattr(r, "status", 200),
+                text=data.decode("utf-8", errors="replace"),
+            )
+    except HTTPError as e:
+        body = ""
+        try:
+            body = e.read().decode("utf-8", errors="replace")
+        except Exception:
+            pass
+        return _SimpleResponse(status_code=e.code, text=body)
+    except URLError as e:
+        raise RuntimeError(str(e)) from e
 
 # ── Hardware Init ────────────────────────────────────────────────────────────
 def init_hw():
@@ -141,6 +181,12 @@ def draw_result(lines, title="Result"):
 
 # ── On-Screen Keyboard (Dark theme) ──────────────────────────────────────────
 def on_screen_keyboard(prompt="Enter:"):
+    if not HAS_HW:
+        return ""
+    try:
+        from payloads._darksec_keyboard import DarkSecKeyboard
+    except Exception:
+        return ""
     kb = DarkSecKeyboard(width=W, height=H, lcd=LCD, gpio_pins=PINS, gpio_module=GPIO)
     result = kb.run()
     return (result or "").strip()
@@ -148,7 +194,7 @@ def on_screen_keyboard(prompt="Enter:"):
 # ── OSINT Tools (Sherlock included) ──────────────────────────────────────────
 def my_ip_info():
     try:
-        pub = requests.get("https://api.ipify.org", timeout=8).text.strip()
+        pub = _http_get("https://api.ipify.org", timeout=8).text.strip()
         loc = subprocess.getoutput("hostname -I").strip().split()[0] or "N/A"
         return [f"Pub: {pub}", f"Loc: {loc}"]
     except:
@@ -196,7 +242,7 @@ def username_check_basic():
     res = []
     for s in sites:
         try:
-            r = requests.get(f"https://{s}.com/{user}", timeout=6, allow_redirects=True)
+            r = _http_get(f"https://{s}.com/{user}", timeout=6, allow_redirects=True)
             status = "Found" if r.status_code in (200, 301, 302) else "Not found"
             res.append(f"{s}: {status}")
         except:
@@ -207,8 +253,8 @@ def email_breach_check():
     email = on_screen_keyboard("Email:")
     if not email: return ["Cancelled"]
     try:
-        r = requests.get(f"https://haveibeenpwned.com/api/v3/breachedaccount/{urllib.parse.quote(email)}",
-                         headers={"User-Agent": "KTOx-OSINT"}, timeout=10)
+        r = _http_get(f"https://haveibeenpwned.com/api/v3/breachedaccount/{urllib.parse.quote(email)}",
+                      headers={"User-Agent": "KTOx-OSINT"}, timeout=10)
         if r.status_code == 200:
             return ["Breached!", "See terminal"]
         return ["No known breaches"]
@@ -219,7 +265,7 @@ def subdomain_enum():
     domain = on_screen_keyboard("Domain:")
     if not domain: return ["Cancelled"]
     try:
-        r = requests.get(f"https://crt.sh/?q=%25.{domain}&output=json", timeout=12)
+        r = _http_get(f"https://crt.sh/?q=%25.{domain}&output=json", timeout=12)
         data = r.json()[:12]
         subs = list(set([entry['name_value'].split('\n')[0] for entry in data]))
         return [s[:20] for s in subs[:8]] or ["None found"]
@@ -249,7 +295,7 @@ def reverse_ip_lookup():
     ip = on_screen_keyboard("IP:")
     if not ip: return ["Cancelled"]
     try:
-        r = requests.get(f"http://api.hackertarget.com/reverseiplookup/?q={ip}", timeout=8)
+        r = _http_get(f"http://api.hackertarget.com/reverseiplookup/?q={ip}", timeout=8)
         lines = r.text.strip().splitlines()[:8]
         return lines or ["No domains"]
     except:
@@ -259,7 +305,7 @@ def geo_from_ip():
     ip = on_screen_keyboard("IP:")
     if not ip: return ["Cancelled"]
     try:
-        r = requests.get(f"https://ipapi.co/{ip}/json/", timeout=8)
+        r = _http_get(f"https://ipapi.co/{ip}/json/", timeout=8)
         data = r.json()
         return [f"City: {data.get('city','?')}", f"Country: {data.get('country_name','?')}"]
     except:
@@ -291,6 +337,9 @@ def sherlock_hunt():
 def main():
     global RUNNING, _menu_idx, _scroll_offset
     hw_ok = init_hw()
+    if not hw_ok:
+        print("Hardware unavailable: LCD/GPIO init failed.")
+        return 1
     draw_menu()
 
     held = {}
