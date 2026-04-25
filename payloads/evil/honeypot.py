@@ -18,11 +18,11 @@ Features:
 
 Usage examples:
 - Basic defaults (common ports, requires root for low ports):
-    python3 payloads/honeypot.py --profile basic
+    python3 payloads/evil/honeypot.py --profile basic
 - High ports only (no root needed):
-    python3 payloads/honeypot.py --ports 8022:ssh,8080:http,2323:telnet,2121:ftp,2525:smtp
+    python3 payloads/evil/honeypot.py --ports 8022:ssh,8080:http,2323:telnet,2121:ftp,2525:smtp
 - Disable LCD UI even if present:
-    python3 payloads/honeypot.py --headless
+    python3 payloads/evil/honeypot.py --headless
 
 Notes:
 - Binding privileged ports (<1024) typically requires root or CAP_NET_BIND_SERVICE.
@@ -50,7 +50,7 @@ from typing import Dict, List, Optional, Tuple, Callable
 # ---------------------------------------------------------------------------
 # Paths & configuration
 # ---------------------------------------------------------------------------
-ROOT_DIR = Path(__file__).resolve().parents[1]
+ROOT_DIR = Path(__file__).resolve().parents[2]
 LOOT_DIR = ROOT_DIR / "loot" / "honeypot"
 LOOT_DIR.mkdir(parents=True, exist_ok=True)
 WEBHOOK_FILE = ROOT_DIR / "discord_webhook.txt"
@@ -897,5 +897,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
 
