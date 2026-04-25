@@ -100,9 +100,11 @@ draw  = None
 text_font  = None
 small_font = None
 icon_font  = None
+medium_icon_font = None
+large_icon_font = None
 
 def _load_fonts():
-    global text_font, small_font, icon_font
+    global text_font, small_font, icon_font, medium_icon_font, large_icon_font
     MONO_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf"
     MONO      = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"
     FA        = "/usr/share/fonts/truetype/fontawesome/fa-solid-900.ttf"
@@ -111,7 +113,37 @@ def _load_fonts():
         except: return ImageFont.load_default()
     text_font  = _f(MONO_BOLD, 9)
     small_font = _f(MONO,      8)
-    icon_font  = _f(FA,       11) if os.path.exists(FA) else _f(MONO, 9)
+    icon_font  = _f(FA,       12) if os.path.exists(FA) else None
+    medium_icon_font = _f(FA,  20) if os.path.exists(FA) else None
+    large_icon_font = _f(FA,   32) if os.path.exists(FA) else None
+
+# ── View modes ────────────────────────────────────────────────────────────────
+
+_view_mode = "list"  # list, grid, carousel, panel, table, paged, thumbnail, vcarousel
+
+def _icon_for(label):
+    """Return icon for menu label, or empty string if none."""
+    label_lower = label.lower().strip()
+    icons = {
+        "network": "🌐",
+        "offensive": "⚔",
+        "wifi engine": "📡",
+        "mitm & spoof": "🔀",
+        "responder": "📢",
+        "purple team": "🛡",
+        "payloads": "💣",
+        "loot": "🎁",
+        "stealth": "👻",
+        "system": "⚙",
+        "scan network": "🔍",
+        "show hosts": "🖥",
+        "reboot": "🔄",
+        "shutdown": "🔌",
+    }
+    for key, icon in icons.items():
+        if key in label_lower:
+            return icon
+    return ""
 
 # ── Runtime state ──────────────────────────────────────────────────────────────
 
@@ -514,7 +546,7 @@ def GetMenuString(inlist, duplicates=False):
     If duplicates=True returns (int_index, label_string).
     KEY1/KEY2/KEY3 all act as back/escape.
     """
-    WINDOW = 7
+    WINDOW = 8
     if not inlist:
         inlist = ["(empty)"]
     if duplicates:
@@ -580,6 +612,303 @@ def RenderMenuWindowOnce(inlist, selected=0):
 # ═══════════════════════════════════════════════════════════════════════════════
 # ── Payload engine ─────────────────────────────────────════════════════════════
 # ═══════════════════════════════════════════════════════════════════════════════
+
+
+def GetMenu(inlist, duplicates=False):
+    mode_map = {"list": GetMenuString, "grid": GetMenuGrid, "carousel": GetMenuCarousel, "panel": GetMenuPanel, "table": GetMenuTable, "paged": GetMenuPaged, "thumbnail": GetMenuThumbnail, "vcarousel": GetMenuVerticalCarousel}
+    func = mode_map.get(_view_mode, GetMenuString)
+    return func(inlist, duplicates=duplicates)
+
+
+def GetMenuGrid(inlist, duplicates=False):
+    if not inlist: inlist = ["(empty)"]
+    if duplicates: inlist = [f"{i}#{t}" for i, t in enumerate(inlist)]
+    total = len(inlist)
+    index = 0
+    COLS, ROWS = 2, 3
+    ITEMS_PER_VIEW = COLS * ROWS
+    CELL_W, CELL_H, GAP = 55, 32, 3
+    START_X, START_Y = 2, 16
+    while True:
+        offset = (index // ITEMS_PER_VIEW) * ITEMS_PER_VIEW
+        with draw_lock:
+            _draw_toolbar()
+            color.DrawMenuBackground()
+            color.DrawBorder()
+            for i, raw in enumerate(inlist[offset:offset+ITEMS_PER_VIEW]):
+                if offset + i >= total: break
+                txt = raw if not duplicates else raw.split("#", 1)[1]
+                row, col = i // COLS, i % COLS
+                x, y = START_X + col * (CELL_W + GAP), START_Y + row * (CELL_H + GAP)
+                sel = (offset + i == index)
+                if sel: draw.rectangle([x, y, x + CELL_W, y + CELL_H], fill=color.select, outline=color.border, width=2)
+                else: draw.rectangle([x, y, x + CELL_W, y + CELL_H], outline=color.border, width=1)
+                fill = color.selected_text if sel else color.text
+                icon = _icon_for(txt)
+                if icon and _ui_ux.get("show_icons", True):
+                    draw.text((x + CELL_W // 2, y + 8), icon, font=medium_icon_font, fill=fill, anchor="mm")
+                    draw.text((x + CELL_W // 2, y + 24), _truncate(txt.strip(), 9), font=small_font, fill=fill, anchor="mm")
+                else: draw.text((x + CELL_W // 2, y + 16), _truncate(txt.strip(), 11), font=text_font, fill=fill, anchor="mm")
+        time.sleep(0.08)
+        btn = getButton(timeout=0.5)
+        if btn is None: continue
+        elif btn == "KEY_DOWN_PIN": index = min(index + COLS, total - 1)
+        elif btn == "KEY_UP_PIN": index = max(index - COLS, 0)
+        elif btn == "KEY_RIGHT_PIN": index = min(index + 1, total - 1)
+        elif btn == "KEY_LEFT_PIN": index = max(index - 1, 0) if index % COLS != 0 else index
+        elif btn == "KEY_PRESS_PIN":
+            raw = inlist[index]
+            if duplicates: idx, txt = raw.split("#", 1); return int(idx), txt
+            return raw
+        elif btn in ("KEY1_PIN", "KEY2_PIN", "KEY3_PIN"): return (-1,"") if duplicates else ""
+
+
+def GetMenuCarousel(inlist, duplicates=False):
+    if not inlist: inlist = ["(empty)"]
+    if duplicates: inlist = [f"{i}#{t}" for i, t in enumerate(inlist)]
+    total = len(inlist)
+    index = 0
+    while True:
+        with draw_lock:
+            _draw_toolbar()
+            color.DrawMenuBackground()
+            color.DrawBorder()
+            raw = inlist[index]
+            txt = raw if not duplicates else raw.split("#", 1)[1]
+            draw.rectangle([3, 20, 124, 115], outline=color.border, width=1)
+            icon = _icon_for(txt)
+            if icon and _ui_ux.get("show_icons", True):
+                draw.text((64, 50), icon, font=large_icon_font, fill=color.selected_text, anchor="mm")
+                draw.text((64, 110), _truncate(txt.strip(), 80), font=text_font, fill=color.text, anchor="mm")
+            else: draw.text((64, 60), _truncate(txt.strip(), 100), font=text_font, fill=color.selected_text, anchor="mm")
+            draw.text((55, 105), f"{index+1}/{total}", font=small_font, fill=color.text)
+        time.sleep(0.08)
+        btn = getButton(timeout=0.5)
+        if btn is None: continue
+        elif btn == "KEY_LEFT_PIN": index = (index - 1) % total
+        elif btn == "KEY_RIGHT_PIN": index = (index + 1) % total
+        elif btn == "KEY_UP_PIN": index = (index - 1) % total
+        elif btn == "KEY_DOWN_PIN": index = (index + 1) % total
+        elif btn == "KEY_PRESS_PIN":
+            raw = inlist[index]
+            if duplicates: idx, txt = raw.split("#", 1); return int(idx), txt
+            return raw
+        elif btn in ("KEY1_PIN", "KEY2_PIN", "KEY3_PIN"): return (-1, "") if duplicates else ""
+
+
+def GetMenuPanel(inlist, duplicates=False):
+    if not inlist: inlist = ["(empty)"]
+    if duplicates: inlist = [f"{i}#{t}" for i, t in enumerate(inlist)]
+    total = len(inlist)
+    index = 0
+    SIDEBAR_ITEMS, ICON_H = 5, 20
+    while True:
+        with draw_lock:
+            _draw_toolbar()
+            color.DrawMenuBackground()
+            color.DrawBorder()
+            draw.rectangle([3, 14, 34, 127], fill=color.panel_bg, outline=color.border, width=1)
+            offset = max(0, min(index - SIDEBAR_ITEMS // 2, total - SIDEBAR_ITEMS))
+            for i in range(SIDEBAR_ITEMS):
+                item_idx = offset + i
+                if item_idx >= total: break
+                label = inlist[item_idx] if not duplicates else inlist[item_idx].split("#", 1)[1]
+                y = 18 + i * ICON_H
+                fill = color.selected_text if item_idx == index else color.text
+                icon = _icon_for(label)
+                if icon and _ui_ux.get("show_icons", True): draw.text((18, y + 8), icon, font=medium_icon_font, fill=fill, anchor="mm")
+            if total > 0:
+                raw = inlist[index]
+                txt = raw if not duplicates else raw.split("#", 1)[1]
+                draw.rectangle([36, 15, 125, 125], outline=color.border, width=2, fill=color.background)
+                icon = _icon_for(txt)
+                if icon and _ui_ux.get("show_icons", True):
+                    draw.text((80, 40), icon, font=large_icon_font, fill=color.selected_text, anchor="mm")
+                    draw.text((80, 105), _truncate(txt.strip(), 45), font=text_font, fill=color.selected_text, anchor="mm")
+                else: draw.text((80, 60), _truncate(txt.strip(), 50), font=text_font, fill=color.selected_text, anchor="mm")
+        time.sleep(0.08)
+        btn = getButton(timeout=0.5)
+        if btn is None: continue
+        elif btn == "KEY_DOWN_PIN": index = (index + 1) % total
+        elif btn == "KEY_UP_PIN": index = (index - 1) % total
+        elif btn == "KEY_PRESS_PIN":
+            raw = inlist[index]
+            if duplicates: idx, txt = raw.split("#", 1); return int(idx), txt
+            return raw
+        elif btn in ("KEY1_PIN", "KEY2_PIN", "KEY3_PIN"): return (-1, "") if duplicates else ""
+
+
+def GetMenuTable(inlist, duplicates=False):
+    if not inlist: inlist = ["(empty)"]
+    if duplicates: inlist = [f"{i}#{t}" for i, t in enumerate(inlist)]
+    total = len(inlist)
+    index = 0
+    COLS, ROWS = 2, 4
+    ITEMS_PER_VIEW = COLS * ROWS
+    CELL_W, CELL_H = 60, 24
+    START_X, START_Y = 5, 16
+    while True:
+        offset = (index // ITEMS_PER_VIEW) * ITEMS_PER_VIEW
+        with draw_lock:
+            _draw_toolbar()
+            color.DrawMenuBackground()
+            color.DrawBorder()
+            draw.line([(1, 14), (127, 14)], fill=color.border, width=1)
+            for i, raw in enumerate(inlist[offset:offset+ITEMS_PER_VIEW]):
+                if offset + i >= total: break
+                txt = raw if not duplicates else raw.split("#", 1)[1]
+                row, col = i // COLS, i % COLS
+                x, y = START_X + col * CELL_W, START_Y + row * CELL_H
+                sel = (offset + i == index)
+                if sel:
+                    draw.rectangle([x - 2, y, x + CELL_W - 2, y + CELL_H - 1], fill=color.select, outline=color.border, width=1)
+                    fill = color.selected_text
+                else:
+                    draw.line([(x - 2, y), (x + CELL_W - 2, y)], fill=color.border, width=1)
+                    fill = color.text
+                icon = _icon_for(txt)
+                if icon and _ui_ux.get("show_icons", True):
+                    draw.text((x, y + 7), icon, font=icon_font, fill=fill)
+                    draw.text((x + 16, y + 7), _truncate(txt.strip(), 12), font=small_font, fill=fill)
+                else: draw.text((x + 5, y + 7), _truncate(txt.strip(), 14), font=small_font, fill=fill)
+        time.sleep(0.08)
+        btn = getButton(timeout=0.5)
+        if btn is None: continue
+        elif btn == "KEY_DOWN_PIN": index = min(index + 1, total - 1)
+        elif btn == "KEY_UP_PIN": index = max(index - 1, 0)
+        elif btn == "KEY_PRESS_PIN":
+            raw = inlist[index]
+            if duplicates: idx, txt = raw.split("#", 1); return int(idx), txt
+            return raw
+        elif btn in ("KEY1_PIN", "KEY2_PIN", "KEY3_PIN"): return (-1, "") if duplicates else ""
+
+
+def GetMenuPaged(inlist, duplicates=False):
+    if not inlist: inlist = ["(empty)"]
+    if duplicates: inlist = [f"{i}#{t}" for i, t in enumerate(inlist)]
+    total = len(inlist)
+    index = 0
+    ITEMS_PER_PAGE, ITEM_H, START_Y = 3, 35, 25
+    while True:
+        page = index // ITEMS_PER_PAGE
+        page_items = inlist[page * ITEMS_PER_PAGE:(page + 1) * ITEMS_PER_PAGE]
+        with draw_lock:
+            _draw_toolbar()
+            color.DrawMenuBackground()
+            color.DrawBorder()
+            draw.rectangle([3, 13, 125, 24], fill=color.title_bg)
+            page_text = f"Page {page + 1}/{(total + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE}"
+            _centered(page_text, 13, font=small_font, fill=color.border)
+            draw.line([(3, 24), (125, 24)], fill=color.border, width=1)
+            for i, raw in enumerate(page_items):
+                txt = raw if not duplicates else raw.split("#", 1)[1]
+                y = START_Y + i * ITEM_H
+                sel = (page * ITEMS_PER_PAGE + i == index)
+                if sel:
+                    draw.rectangle([3, y, 125, y + ITEM_H - 2], fill=color.select, outline=color.border, width=1)
+                    fill = color.selected_text
+                else:
+                    draw.rectangle([3, y, 125, y + ITEM_H - 2], outline=color.border, width=1)
+                    fill = color.text
+                icon = _icon_for(txt)
+                if icon and _ui_ux.get("show_icons", True):
+                    draw.text((12, y + 17), icon, font=icon_font, fill=fill)
+                    draw.text((30, y + 17), _truncate(txt.strip(), 70), font=text_font, fill=fill)
+                else: draw.text((64, y + 17), _truncate(txt.strip(), 100), font=text_font, fill=fill, anchor="mm")
+        time.sleep(0.08)
+        btn = getButton(timeout=0.5)
+        if btn is None: continue
+        elif btn == "KEY_DOWN_PIN": index = min(index + 1, total - 1)
+        elif btn == "KEY_UP_PIN": index = max(index - 1, 0)
+        elif btn == "KEY_RIGHT_PIN":
+            if (index + 1) % ITEMS_PER_PAGE != 0 and index + 1 < total: index += 1
+        elif btn == "KEY_LEFT_PIN":
+            if index % ITEMS_PER_PAGE != 0: index -= 1
+        elif btn == "KEY_PRESS_PIN":
+            raw = inlist[index]
+            if duplicates: idx, txt = raw.split("#", 1); return int(idx), txt
+            return raw
+        elif btn in ("KEY1_PIN", "KEY2_PIN", "KEY3_PIN"): return (-1, "") if duplicates else ""
+
+
+def GetMenuThumbnail(inlist, duplicates=False):
+    if not inlist: inlist = ["(empty)"]
+    if duplicates: inlist = [f"{i}#{t}" for i, t in enumerate(inlist)]
+    total = len(inlist)
+    index = 0
+    COLS, ROWS = 2, 2
+    ITEMS_PER_VIEW = COLS * ROWS
+    CELL_W, CELL_H = 62, 50
+    START_X, START_Y = 4, 18
+    while True:
+        offset = (index // ITEMS_PER_VIEW) * ITEMS_PER_VIEW
+        with draw_lock:
+            _draw_toolbar()
+            color.DrawMenuBackground()
+            color.DrawBorder()
+            for i, raw in enumerate(inlist[offset:offset+ITEMS_PER_VIEW]):
+                if offset + i >= total: break
+                txt = raw if not duplicates else raw.split("#", 1)[1]
+                row, col = i // COLS, i % COLS
+                x, y = START_X + col * CELL_W, START_Y + row * CELL_H
+                sel = (offset + i == index)
+                if sel:
+                    draw.rectangle([x, y, x + CELL_W - 2, y + CELL_H - 2], fill=color.select, outline=color.border, width=2)
+                    icon_fill, text_fill = color.selected_text, color.selected_text
+                else:
+                    draw.rectangle([x, y, x + CELL_W - 2, y + CELL_H - 2], outline=color.border, width=1)
+                    icon_fill, text_fill = color.text, color.text
+                icon = _icon_for(txt)
+                if icon and _ui_ux.get("show_icons", True):
+                    draw.text((x + 31, y + 12), icon, font=medium_icon_font, fill=icon_fill, anchor="mm")
+                    draw.text((x + 31, y + 38), _truncate(txt.strip(), 15), font=small_font, fill=text_fill, anchor="mm")
+                else: draw.text((x + 31, y + 25), _truncate(txt.strip(), 20), font=text_font, fill=text_fill, anchor="mm")
+        time.sleep(0.08)
+        btn = getButton(timeout=0.5)
+        if btn is None: continue
+        elif btn == "KEY_DOWN_PIN": index = min(index + COLS, total - 1)
+        elif btn == "KEY_UP_PIN": index = max(index - COLS, 0)
+        elif btn == "KEY_RIGHT_PIN": index = min(index + 1, total - 1)
+        elif btn == "KEY_LEFT_PIN": index = max(index - 1, 0) if index % COLS != 0 else index
+        elif btn == "KEY_PRESS_PIN":
+            raw = inlist[index]
+            if duplicates: idx, txt = raw.split("#", 1); return int(idx), txt
+            return raw
+        elif btn in ("KEY1_PIN", "KEY2_PIN", "KEY3_PIN"): return (-1, "") if duplicates else ""
+
+
+def GetMenuVerticalCarousel(inlist, duplicates=False):
+    if not inlist: inlist = ["(empty)"]
+    if duplicates: inlist = [f"{i}#{t}" for i, t in enumerate(inlist)]
+    total = len(inlist)
+    index = 0
+    while True:
+        with draw_lock:
+            _draw_toolbar()
+            color.DrawMenuBackground()
+            color.DrawBorder()
+            draw.rectangle([3, 20, 124, 115], outline=color.border, width=1)
+            raw = inlist[index]
+            txt = raw if not duplicates else raw.split("#", 1)[1]
+            icon = _icon_for(txt)
+            if icon and _ui_ux.get("show_icons", True):
+                draw.text((64, 45), icon, font=large_icon_font, fill=color.selected_text, anchor="mm")
+                draw.text((64, 105), _truncate(txt.strip(), 80), font=text_font, fill=color.text, anchor="mm")
+            else: draw.text((64, 60), _truncate(txt.strip(), 100), font=text_font, fill=color.selected_text, anchor="mm")
+            draw.text((55, 105), f"{index+1}/{total}", font=small_font, fill=color.text)
+        time.sleep(0.08)
+        btn = getButton(timeout=0.5)
+        if btn is None: continue
+        elif btn == "KEY_UP_PIN": index = (index - 1) % total
+        elif btn == "KEY_DOWN_PIN": index = (index + 1) % total
+        elif btn == "KEY_LEFT_PIN": index = (index - 1) % total
+        elif btn == "KEY_RIGHT_PIN": index = (index + 1) % total
+        elif btn == "KEY_PRESS_PIN":
+            raw = inlist[index]
+            if duplicates: idx, txt = raw.split("#", 1); return int(idx), txt
+            return raw
+        elif btn in ("KEY1_PIN", "KEY2_PIN", "KEY3_PIN"): return (-1, "") if duplicates else ""
+
 
 def _write_payload_state(running: bool, path=None):
     try:
@@ -2695,8 +3024,9 @@ class KTOxMenu:
                     self.which = saved
                 elif callable(action):
                     action()
-            elif btn in ("KEY_LEFT_PIN","KEY1_PIN"):       return
-            elif btn == "KEY2_PIN":                         return
+            elif btn == "KEY1_PIN":                        return
+            elif btn == "KEY2_PIN":
+                self.which = "home"; return
             elif btn == "KEY3_PIN":
                 if ktox_state.get("running"):
                     ktox_state["running"] = None
@@ -2998,8 +3328,9 @@ class KTOxMenu:
                 elif btn == "KEY_UP_PIN":                      sel = (sel-1)%total
                 elif btn in ("KEY_PRESS_PIN","KEY_RIGHT_PIN"):
                     items[sel][1]()
-                elif btn in ("KEY_LEFT_PIN","KEY1_PIN"):       return
+                elif btn == "KEY1_PIN":                        return
                 elif btn == "KEY2_PIN":                        return
+                elif btn == "KEY3_PIN":                        return
             return
 
         # Standard navigate
@@ -3067,8 +3398,9 @@ class KTOxMenu:
                     self.which = saved
                 elif callable(action):
                     action()
-            elif btn in ("KEY_LEFT_PIN","KEY1_PIN"):       return
-            elif btn == "KEY2_PIN":                         return
+            elif btn == "KEY1_PIN":                        return
+            elif btn == "KEY2_PIN":
+                self.which = "home"; return
             elif btn == "KEY3_PIN":
                 if ktox_state.get("running"):
                     ktox_state["running"] = None
