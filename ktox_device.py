@@ -3912,6 +3912,7 @@ _FA_ICONS: dict = {
     "WebUI Status":     "\uf0e0",   # fa-envelope
     "Refresh State":    "\uf021",   # fa-sync
     "System Info":      "\uf129",
+    "Bluetooth Mgr":    "\uf294",   # fa-bluetooth-b
     "UI Theme":         "\uf53f",   # fa-palette
     "Discord Status":   "\uf392",   # fa-discord
     "Discord Webhook":  "\uf392",   # fa-discord
@@ -4041,9 +4042,9 @@ class KTOxMenu:
             (" Start MITM Suite",   do_start_mitm_suite),
             (" DNS Spoofing ON",    do_dns_spoofing),
             (" DNS Spoofing OFF",   do_dns_spoof_stop),
-            (" Rogue DHCP/WPAD",    partial(exec_payload,"interception/rogue_dhcp_wpad")),
-            (" Silent Bridge",      partial(exec_payload,"interception/silent_bridge")),
-            (" Evil Portal",        partial(exec_payload,"evil_portal/honeypot")),
+            (" Rogue DHCP/WPAD",    partial(exec_payload,"intercept/rogue_dhcp_wpad")),
+            (" Silent Bridge",      partial(exec_payload,"intercept/silent_bridge")),
+            (" Evil Portal",        partial(exec_payload,"recon/honeypot")),
         ),
 
         # ── NAVARRO RECON ────────────────────────────────────────────────────
@@ -4077,7 +4078,7 @@ class KTOxMenu:
             (" ARP Harden",       do_arp_harden),
             (" Baseline Export",  do_baseline_export),
             (" Verify Baseline",  self._verify_baseline),
-            (" SMB Probe",        partial(exec_payload,"reconnaissance/smb_probe")),
+            (" SMB Probe",        partial(exec_payload,"recon/smb_probe")),
         ),
 
         # ── PAYLOADS ──────────────────────────────────────────────────────────
@@ -4091,6 +4092,7 @@ class KTOxMenu:
             (" WebUI Status",    self._webui_status),
             (" Refresh State",   self._refresh),
             (" System Info",     self._sysinfo),
+            (" Bluetooth Mgr",   self._bluetooth_manager),
             (" UI Theme",        self._ui_theme_menu),
             (" OTA Update",      partial(exec_payload,"general/auto_update")),
             (" Discord Webhook", self._discord_status),
@@ -4799,6 +4801,171 @@ class KTOxMenu:
         Dialog_info("Refreshing…", wait=False, timeout=1)
         refresh_state()
         Dialog_info(f"IF: {ktox_state['iface']}\nGW: {ktox_state['gateway']}", wait=True)
+
+    def _bt_parse_devices(self, output: str):
+        import re
+        devices = []
+        for line in output.splitlines():
+            m = re.match(r"Device\s+([0-9A-Fa-f:]{17})\s+(.+)$", line.strip())
+            if m:
+                mac = m.group(1).upper()
+                name = m.group(2).strip() or "Unknown"
+                devices.append((mac, name))
+        return devices
+
+    def _btctl(self, *args, timeout=12):
+        rc, out = _run(["bluetoothctl", *args], timeout=timeout)
+        return rc, (out or "").strip()
+
+    def _bt_prepare_controller(self):
+        _run(["rfkill", "unblock", "bluetooth"], timeout=4)
+        _run(["systemctl", "start", "bluetooth"], timeout=6)
+        self._btctl("power", "on", timeout=8)
+        self._btctl("agent", "on", timeout=8)
+        self._btctl("default-agent", timeout=8)
+        self._btctl("pairable", "on", timeout=8)
+
+    def _bt_is_audio_device(self, mac: str) -> bool:
+        _, info = self._btctl("info", mac, timeout=10)
+        info_l = info.lower()
+        markers = (
+            "audio sink", "audio source", "headset", "headphones",
+            "a2dp", "avrcp", "handsfree",
+        )
+        return any(m in info_l for m in markers)
+
+    def _bt_scan_devices(self, seconds: int = 15, audio_only: bool = False):
+        self._bt_prepare_controller()
+        Dialog_info(f"Scanning BT...\n~{seconds}s", wait=False, timeout=1)
+        self._btctl("scan", "on", timeout=max(6, seconds + 1))
+        self._btctl("scan", "off", timeout=6)
+        _, out = self._btctl("devices", timeout=8)
+        devices = self._bt_parse_devices(out)
+        if audio_only and devices:
+            devices = [(m, n) for m, n in devices if self._bt_is_audio_device(m)]
+        return devices
+
+    def _bt_device_action_menu(self, mac: str, name: str):
+        while True:
+            choice = GetMenuString([
+                f" {name[:18]}",
+                f" {mac}",
+                " Pair + Trust + Connect",
+                " Connect",
+                " Trust Device",
+                " Disconnect",
+                " Forget Device",
+                " Device Info",
+                " Back",
+            ], title="Bluetooth")
+            if not choice:
+                return
+            picked = choice.strip()
+            if picked == "Pair + Trust + Connect":
+                self._btctl("pair", mac, timeout=30)
+                self._btctl("trust", mac, timeout=10)
+                self._btctl("connect", mac, timeout=20)
+                Dialog_info(f"Pair/connect\nsent:\n{name[:18]}", wait=False, timeout=1)
+            elif picked == "Connect":
+                self._btctl("trust", mac, timeout=10)
+                self._btctl("connect", mac, timeout=20)
+                Dialog_info(f"Connect sent:\n{name[:18]}", wait=False, timeout=1)
+            elif picked == "Trust Device":
+                self._btctl("trust", mac, timeout=10)
+                Dialog_info(f"Trusted:\n{name[:18]}", wait=False, timeout=1)
+            elif picked == "Disconnect":
+                self._btctl("disconnect", mac, timeout=15)
+                Dialog_info(f"Disconnect:\n{name[:18]}", wait=False, timeout=1)
+            elif picked == "Forget Device":
+                self._btctl("remove", mac, timeout=15)
+                Dialog_info(f"Forgot:\n{name[:18]}", wait=False, timeout=1)
+                return
+            elif picked == "Device Info":
+                _, info = self._btctl("info", mac, timeout=10)
+                lines = [f" {name[:18]}", f" {mac}"] + [f" {ln[:22]}" for ln in info.splitlines()[:10]]
+                GetMenu(lines)
+            elif picked == "Back":
+                return
+
+    def _bluetooth_manager(self):
+        self._bt_prepare_controller()
+        while True:
+            choice = GetMenuString([
+                " Scan Devices",
+                " Scan Audio Devices",
+                " Paired Devices",
+                " Connected Devices",
+                " Make Discoverable",
+                " Discoverable Off",
+                " Controller Status",
+                " Back",
+            ], title="Bluetooth")
+            if not choice:
+                return
+            picked = choice.strip()
+            if picked == "Scan Devices":
+                devices = self._bt_scan_devices(seconds=15, audio_only=False)
+                if not devices:
+                    Dialog_info("No BT devices\nfound.\n(put device in\npair mode)", wait=True)
+                    continue
+                labels = [f" {n[:14]} {m}" for m, n in devices]
+                sel = GetMenuString(labels, duplicates=True, title="BT Scan")
+                if not sel:
+                    continue
+                idx, _ = sel
+                mac, name = devices[idx]
+                self._bt_device_action_menu(mac, name)
+            elif picked == "Scan Audio Devices":
+                devices = self._bt_scan_devices(seconds=18, audio_only=True)
+                if not devices:
+                    Dialog_info("No audio BT\nfound.\nHeadphones must\nbe in pair mode.", wait=True)
+                    continue
+                labels = [f" {n[:14]} {m}" for m, n in devices]
+                sel = GetMenuString(labels, duplicates=True, title="BT Audio")
+                if not sel:
+                    continue
+                idx, _ = sel
+                mac, name = devices[idx]
+                self._bt_device_action_menu(mac, name)
+            elif picked == "Paired Devices":
+                _, out = self._btctl("paired-devices", timeout=8)
+                paired = self._bt_parse_devices(out)
+                if not paired:
+                    Dialog_info("No paired BT\ndevices.", wait=True)
+                    continue
+                labels = [f" {n[:14]} {m}" for m, n in paired]
+                sel = GetMenuString(labels, duplicates=True, title="Paired BT")
+                if not sel:
+                    continue
+                idx, _ = sel
+                mac, name = paired[idx]
+                self._bt_device_action_menu(mac, name)
+            elif picked == "Connected Devices":
+                _, out = self._btctl("devices", "Connected", timeout=8)
+                connected = self._bt_parse_devices(out)
+                if not connected:
+                    Dialog_info("No connected\nBT devices.", wait=True)
+                    continue
+                labels = [f" {n[:14]} {m}" for m, n in connected]
+                sel = GetMenuString(labels, duplicates=True, title="Connected BT")
+                if not sel:
+                    continue
+                idx, _ = sel
+                mac, name = connected[idx]
+                self._bt_device_action_menu(mac, name)
+            elif picked == "Make Discoverable":
+                self._btctl("discoverable", "on", timeout=8)
+                self._btctl("pairable", "on", timeout=8)
+                Dialog_info("Bluetooth set:\nDiscoverable\nPairable", wait=False, timeout=1)
+            elif picked == "Discoverable Off":
+                self._btctl("discoverable", "off", timeout=8)
+                Dialog_info("Bluetooth:\nDiscoverable OFF", wait=False, timeout=1)
+            elif picked == "Controller Status":
+                _, show = self._btctl("show", timeout=8)
+                lines = [f" {ln[:22]}" for ln in show.splitlines()[:12]] or [" No controller info"]
+                GetMenu(lines)
+            elif picked == "Back":
+                return
 
     def _sysinfo(self):
         rc, kern = _run(["uname","-r"])

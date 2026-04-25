@@ -81,6 +81,9 @@ class Display:
                 print(f"LCD: {e}")
 
     def show(self, title, lines, col="#ff2200"):
+        if not HAS_HW or "Image" not in globals():
+            print(f"[{title}]", lines)
+            return
         img  = Image.new("RGB", (W, H), (10, 0, 0))
         draw = ImageDraw.Draw(img)
         draw.rectangle((0, 0, W, 14), fill="#cc0000")
