@@ -14,7 +14,7 @@ Fix (2025‑07‑21 – rev 2)
 Usage
 -----
 ```bash
-sudo python3 payloads/bt_keyboard_picker.py
+sudo python3 payloads/utilities/bt_keyboard_picker.py
 ```
 UP/DOWN : navigation OK : sélectionner KEY3 : retour/menu RaspyJack.
 """
@@ -256,4 +256,3 @@ except Exception as e:
     print(f"[ERROR] {e}", file=sys.stderr)
 finally:
     LCD.LCD_Clear(); GPIO.cleanup()
-
