@@ -489,10 +489,9 @@ def YNDialog(a="Are you sure?", y="Yes", n="No", b=""):
             draw.line([(4,80),(124,80)], fill="#2a0505", width=1)
             _centered("LEFT=Yes  RIGHT=No", 84, font=small_font, fill="#4a2020")
         btn = getButton()
-        if   btn in ("KEY_LEFT_PIN","KEY1_PIN"):      answer = True
-        elif btn == "KEY_RIGHT_PIN":                  answer = False
-        elif btn == "KEY_PRESS_PIN":                  return answer
-        elif btn in ("KEY2_PIN", "KEY3_PIN"):         return False
+        if   btn in ("KEY_LEFT_PIN","KEY1_PIN"):    answer = True
+        elif btn in ("KEY_RIGHT_PIN","KEY3_PIN"):   answer = False
+        elif btn in ("KEY_PRESS_PIN","KEY2_PIN"):   return answer
 
 
 def GetMenuString(inlist, duplicates=False):
@@ -1399,80 +1398,7 @@ class KTOxMenu:
         RenderMenuWindowOnce(self.GetMenuList(), self.select)
 
     # ── Navigation ────────────────────────────────────────────────────────────
-
-    def navigate(self, key):
-        tree  = self._menu()
-
-        if key == "loot":
-            self._browse_loot()
-            return
-
-        items = tree.get(key)
-        if not items:
-            Dialog_info("Empty menu.", wait=True)
-            return
-
-        labels = [item[0] for item in items]
-        sel    = 0
-        WINDOW = 7
-
-        while True:
-            total  = len(labels)
-            offset = max(0, min(sel-2, total-WINDOW))
-            window = labels[offset:offset+WINDOW]
-
-            with draw_lock:
-                _draw_toolbar()
-                color.DrawMenuBackground()
-                color.DrawBorder()
-                # menu title strip
-                _titles = {
-                    "home":"▐ KTOx_Pi ▌","net":"Network",
-                    "off":"Offensive","wifi":"WiFi Engine",
-                    "mitm":"MITM & Spoof","resp":"Responder",
-                    "purple":"Purple Team","sys":"System","pay":"Payloads",
-                }
-                _t = _titles.get(key, key.upper())
-                draw.rectangle([3,13,125,24], fill="#1a0000")
-                _centered(_t[:18], 13, font=small_font, fill=color.border)
-                draw.line([(3,24),(125,24)], fill=color.border, width=1)
-                _start_y = 26
-                for i, label in enumerate(window):
-                    is_sel = (i == sel-offset)
-                    row_y  = _start_y + 13*i
-                    if is_sel:
-                        draw.rectangle(
-                            [3, row_y, 124, row_y+12],
-                            fill=color.select
-                        )
-                    fill = color.selected_text if is_sel else color.text
-                    t = _truncate(label.strip(), 108)
-                    draw.text((6, row_y+1), t, font=text_font, fill=fill)
-
-            time.sleep(0.08)
-            btn = getButton(timeout=120)
-
-            if btn is None:                                continue
-            elif btn == "KEY_DOWN_PIN":                    sel = (sel+1) % len(labels)
-            elif btn == "KEY_UP_PIN":                      sel = (sel-1) % len(labels)
-            elif btn in ("KEY_PRESS_PIN","KEY_RIGHT_PIN"):
-                self.select = sel
-                action = items[sel][1]
-                if isinstance(action, str):
-                    saved = self.which
-                    self.which = action
-                    self.navigate(action)
-                    self.which = saved
-                elif callable(action):
-                    action()
-            elif btn in ("KEY_LEFT_PIN","KEY1_PIN"):       return
-            elif btn == "KEY2_PIN":
-                self.which = "home"
-                return
-            elif btn == "KEY3_PIN":
-                if ktox_state.get("running"):
-                    ktox_state["running"] = None
-                    Dialog_info("Stopped.", wait=False, timeout=1)
+    # (Complete navigate() with payload submenu handler is defined later)
 
     def home_loop(self):
         while True:
