@@ -855,10 +855,9 @@ def YNDialog(a="Are you sure?", y="Yes", n="No", b=""):
             draw.line([(4,80),(124,80)], fill="#2a0505", width=1)
             _centered("LEFT=Yes  RIGHT=No", 84, font=small_font, fill="#4a2020")
         btn = getButton()
-        if   btn in ("KEY_LEFT_PIN","KEY1_PIN"):      answer = True
-        elif btn == "KEY_RIGHT_PIN":                  answer = False
-        elif btn == "KEY_PRESS_PIN":                  return answer
-        elif btn in ("KEY2_PIN", "KEY3_PIN"):         return False
+        if   btn in ("KEY_LEFT_PIN","KEY1_PIN"):    answer = True
+        elif btn in ("KEY_RIGHT_PIN","KEY3_PIN"):   answer = False
+        elif btn in ("KEY_PRESS_PIN","KEY2_PIN"):   return answer
 
 
 def _draw_row_selection(row_y, row_h):
