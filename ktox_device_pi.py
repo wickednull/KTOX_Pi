@@ -45,7 +45,7 @@ try:
     from PIL import Image, ImageDraw, ImageFont
     import LCD_1in44
     import LCD_Config
-    import rj_input
+    from ktox_pi import ktox_input
     HAS_HW = True
 except ImportError as _ie:
     print(f"[WARN] Hardware libs missing ({_ie}) — headless mode")
@@ -327,7 +327,7 @@ def start_background_loops():
 def getButton(timeout=120):
     """
     Block until a button press and return its pin name string.
-    Checks WebUI virtual buttons (Unix socket via rj_input) first.
+    Checks WebUI virtual buttons (Unix socket via ktox_input) first.
     timeout: max seconds to wait (default 120 — prevents infinite freeze).
     Returns None on timeout.
     """
@@ -356,7 +356,7 @@ def getButton(timeout=120):
         # Virtual button from WebUI (Unix socket)
         if HAS_HW:
             try:
-                v = rj_input.get_virtual_button()
+                v = ktox_input.get_virtual_button()
                 if v:
                     _last_button = None
                     return v
@@ -670,7 +670,7 @@ def exec_payload(filename, *args):
     _load_fonts()
 
     try:
-        rj_input.restart_listener()
+        ktox_input.restart_listener()
     except Exception:
         pass
 
@@ -926,7 +926,7 @@ def _get_lock_button():
     """Non-blocking: return pressed button name or None."""
     if HAS_HW:
         try:
-            v = rj_input.get_virtual_button()
+            v = ktox_input.get_virtual_button()
             if v: _mark_user_activity(); return v
         except Exception:
             pass
@@ -942,7 +942,7 @@ def _get_sequence_button(held: set):
     """Non-blocking sequence input: returns (button, new_held_set)."""
     if HAS_HW:
         try:
-            v = rj_input.get_virtual_button()
+            v = ktox_input.get_virtual_button()
             if v: _mark_user_activity(); return v, held
         except Exception:
             pass
