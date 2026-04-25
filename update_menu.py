@@ -3,9 +3,13 @@ import sys, os, time, subprocess
 # This script is OPTIONAL. Run it if you want to add Navarro, DNSSpoof, and Screensaver
 # to your working KTOX_Pi menu. It will back up your ktox_device.py first.
 
-path = "/root/KTOx/ktox_pi/ktox_device.py"
+path = "/root/KTOx/ktox_device.py"
 if not os.path.exists(path):
-    path = "ktox_pi/ktox_device.py" # Local check
+    path = "ktox_device.py"  # Local check
+if not os.path.exists(path):
+    path = "/root/KTOx/ktox_pi/ktox_device.py"  # Legacy location
+if not os.path.exists(path):
+    path = "ktox_pi/ktox_device.py"  # Legacy local check
 
 if not os.path.exists(path):
     print(f"Error: Could not find {path}")

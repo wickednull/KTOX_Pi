@@ -363,11 +363,11 @@ ktox_pi/                       copy this to the Pi → run install.sh
 ├── install.sh                       one-shot installer
 ├── README.md                        this file
 │
-├── ktox_pi/                   LCD firmware
-│   ├── ktox_device.py               main controller + menu tree
+├── ktox_device.py                   main LCD controller + menu tree (installed as /root/KTOx/ktox_device.py)
+├── ktox_pi/                         helper modules used by installer/runtime
 │   ├── LCD_1in44.py                 Waveshare ST7735S driver (real)
 │   ├── LCD_Config.py                SPI + GPIO hardware config (real)
-│   └── rj_input.py                  WebUI virtual button bridge (Unix socket)
+│   └── ktox_input.py                WebUI virtual button bridge (Unix socket)
 │
 ├── ktox.py                          KTOx main suite TUI
 ├── ktox_mitm.py                     MITM + credential harvest engine
