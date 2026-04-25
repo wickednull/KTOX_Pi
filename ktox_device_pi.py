@@ -2694,7 +2694,9 @@ class KTOxMenu:
                 elif callable(action):
                     action()
             elif btn in ("KEY_LEFT_PIN","KEY1_PIN"):       return
-            elif btn == "KEY2_PIN":                         return
+            elif btn == "KEY2_PIN":
+                self.which = "home"
+                return
             elif btn == "KEY3_PIN":
                 if ktox_state.get("running"):
                     ktox_state["running"] = None
