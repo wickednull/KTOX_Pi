@@ -3258,6 +3258,7 @@ class KTOxMenu:
                 elif btn == "KEY1_PIN":                        return
                 elif btn == "KEY2_PIN":                        return
                 elif btn == "KEY3_PIN":                        return
+                elif btn == "KEY_LEFT_PIN":                    return
             return
 
         # Standard navigate
@@ -3332,6 +3333,7 @@ class KTOxMenu:
                 if ktox_state.get("running"):
                     ktox_state["running"] = None
                     Dialog_info("Stopped.", wait=False, timeout=1)
+            elif btn == "KEY_LEFT_PIN":                    return
 
     def home_loop(self):
         while True:
