@@ -504,8 +504,7 @@ def YNDialog(a="Are you sure?", y="Yes", n="No", b=""):
         btn = getButton()
         if   btn in ("KEY_LEFT_PIN","KEY1_PIN"):    answer = True
         elif btn in ("KEY_RIGHT_PIN","KEY3_PIN"):   answer = False
-        elif btn == "KEY_PRESS_PIN":                return answer
-        elif btn == "KEY2_PIN":                     return False
+        elif btn in ("KEY_PRESS_PIN","KEY2_PIN"):   return answer
 
 
 def GetMenuString(inlist, duplicates=False):
