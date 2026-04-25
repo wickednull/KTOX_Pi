@@ -4561,80 +4561,22 @@ class KTOxMenu:
             return
 
         labels = [item[0] for item in items]
-        sel    = 0
-        WINDOW = _ux_window_rows()
+        sel_result = GetMenu(labels, duplicates=True)
 
-        while True:
-            total  = len(labels)
-            offset = max(0, min(sel-2, total-WINDOW))
-            window = labels[offset:offset+WINDOW]
+        if not sel_result:
+            return
 
-            with draw_lock:
-                _draw_toolbar()
-                color.DrawMenuBackground()
-                color.DrawBorder()
-                # menu title strip
-                _titles = {
-                    "home":"▐ KTOx_Pi ▌","net":"Network",
-                    "off":"Offensive","wifi":"WiFi Engine",
-                    "mitm":"MITM & Spoof","resp":"Responder",
-                    "purple":"Purple Team","sys":"System","pay":"Payloads",
-                }
-                _t = _titles.get(key, key.upper())
-                draw.rectangle([3,13,125,24], fill=color.title_bg)
-                _centered(_t[:18], 13, font=small_font, fill=color.border)
-                draw.line([(3,24),(125,24)], fill=color.border, width=1)
-                _start_y = int(_ui_ux.get("start_y", 26))
-                _row_h = int(_ui_ux.get("row_h", 13))
-                for i, label in enumerate(window):
-                    is_sel = (i == sel-offset)
-                    row_y  = _start_y + _row_h*i
-                    if is_sel:
-                        if _ui_ux.get("select_style") == "outline":
-                            draw.rectangle([3, row_y, 124, row_y + _row_h - 1],
-                                           outline=color.select, width=2)
-                        else:
-                            draw.rectangle([3, row_y, 124, row_y + _row_h - 1],
-                                           fill=color.select)
-                    fill = color.selected_text if is_sel else color.text
-                    icon = _icon_for(label)
-                    if icon and _ui_ux.get("show_icons", True):
-                        draw.text((5, row_y+1), icon, font=icon_font, fill=fill)
-                        t = _truncate(label.strip(), 94)
-                        draw.text((19, row_y+1), t, font=text_font, fill=fill)
-                    else:
-                        t = _truncate(label.strip(), 108)
-                        draw.text((6, row_y+1), t, font=text_font, fill=fill)
-                # Scroll pip
-                if total > WINDOW:
-                    avail = _row_h * WINDOW
-                    pip_h = max(6, int(WINDOW / total * avail))
-                    pip_y = _start_y + int(offset / max(1, total - WINDOW) * (avail - pip_h))
-                    draw.rectangle([125, pip_y, 127, pip_y + pip_h], fill=color.border)
+        sel, _ = sel_result
+        self.select = sel
+        action = items[sel][1]
 
-            time.sleep(0.08)
-            btn = getButton(timeout=0.5)
-
-            if btn is None:                                continue
-            elif btn == "KEY_DOWN_PIN":                    sel = (sel+1)%len(labels)
-            elif btn == "KEY_UP_PIN":                      sel = (sel-1)%len(labels)
-            elif btn in ("KEY_PRESS_PIN","KEY_RIGHT_PIN"):
-                self.select = sel
-                action = items[sel][1]
-                if isinstance(action, str):
-                    saved      = self.which
-                    self.which = action
-                    self.navigate(action)
-                    self.which = saved
-                elif callable(action):
-                    action()
-            elif btn in ("KEY_LEFT_PIN","KEY1_PIN"):       return
-            elif btn == "KEY2_PIN":
-                self.which = "home"; return
-            elif btn == "KEY3_PIN":
-                if ktox_state.get("running"):
-                    ktox_state["running"] = None
-                    Dialog_info("Stopped.", wait=False, timeout=1)
+        if isinstance(action, str):
+            saved      = self.which
+            self.which = action
+            self.navigate(action)
+            self.which = saved
+        elif callable(action):
+            action()
 
     
     def _nav_scan(self):
