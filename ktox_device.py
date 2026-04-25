@@ -830,6 +830,25 @@ def _draw_row_selection(row_y, row_h):
         draw.rectangle([3, row_y, 124, row_y + row_h - 1], fill=color.select)
 
 
+def GetMenu(inlist, duplicates=False):
+    """
+    Dispatcher function that routes to the correct view mode rendering function.
+    All menu calls should use this instead of GetMenuString directly.
+    """
+    mode_map = {
+        "list": GetMenuString,
+        "grid": GetMenuGrid,
+        "carousel": GetMenuCarousel,
+        "panel": GetMenuPanel,
+        "table": GetMenuTable,
+        "paged": GetMenuPaged,
+        "thumbnail": GetMenuThumbnail,
+        "vcarousel": GetMenuVerticalCarousel,
+    }
+    func = mode_map.get(_view_mode, GetMenuString)
+    return func(inlist, duplicates=duplicates)
+
+
 def GetMenuString(inlist, duplicates=False):
     """
     Scrollable list.  Returns selected label string, or "" on back.
@@ -2250,7 +2269,7 @@ def OpenLockMenu() -> None:
             " Screensaver GIF",
             f" Random screensaver: {rand_lbl}",
         ]
-        sel = GetMenuString(opts)
+        sel = GetMenu(opts)
         if not sel: return
         s = sel.strip()
         if s == "Lock now":
@@ -2266,7 +2285,7 @@ def OpenLockMenu() -> None:
         elif s.startswith("Lock type"):
             prev = _lock_mode()
             labels = [" PIN", " Sequence"]
-            choice = GetMenuString(labels)
+            choice = GetMenu(labels)
             if not choice: continue
             new_mode = LOCK_MODE_SEQUENCE if "Sequence" in choice else LOCK_MODE_PIN
             if new_mode == prev: continue
@@ -2280,7 +2299,7 @@ def OpenLockMenu() -> None:
             _set_active_secret(require_current=_lock_has_secret())
         elif s.startswith("Auto-lock"):
             labels = [f" {lbl}" for _, lbl in LOCK_TIMEOUT_OPTIONS]
-            choice = GetMenuString(labels)
+            choice = GetMenu(labels)
             if not choice: continue
             for v, lbl in LOCK_TIMEOUT_OPTIONS:
                 if lbl in choice:
@@ -2860,7 +2879,7 @@ def do_network_scan():
     lines = [f"✔ {len(hosts)} host(s) found", f"  Net: {net}"]
     for h in hosts[:4]: lines.append(f"  {h['ip']}")
     if len(hosts)>4: lines.append(f"  +{len(hosts)-4} more")
-    GetMenuString(lines)
+    GetMenu(lines)
 
 
 # ── ARP helpers ────────────────────────────────────────────────────────────────
@@ -3337,7 +3356,7 @@ def do_dns_spoofing():
         Dialog_info("No phishing sites\nfound.", wait=True)
         return
     items = [f" {s}" for s in sites]
-    sel   = GetMenuString(items)
+    sel   = GetMenu(items)
     if not sel: return
     site  = sel.strip()
     if not YNDialog("DNS SPOOF", y="Yes", n="No", b=f"Spoof {site}?"):
@@ -3421,7 +3440,7 @@ def do_deauth_targeted():
         Dialog_info("No APs found.\nTry again.", wait=True)
         return
     items = [f" {e}  ch{c}" for b,c,e in aps]
-    sel   = GetMenuString(items)
+    sel   = GetMenu(items)
     if not sel: return
     bssid, ch, essid = aps[items.index(sel)]
     if not YNDialog("DEAUTH", y="Yes", n="No", b=f"{essid}\nch{ch}?"):
@@ -3469,7 +3488,7 @@ def do_handshake_targeted():
         Dialog_info("No APs found.", wait=True)
         return
     items = [f" {e}  ch{c}" for b,c,e in aps]
-    sel   = GetMenuString(items)
+    sel   = GetMenu(items)
     if not sel: return
     bssid, ch, essid = aps[items.index(sel)]
     if not YNDialog("HANDSHAKE", y="Yes", n="No", b=f"{essid}\nch{ch}?"):
@@ -3522,7 +3541,7 @@ def do_wifi_handshake_engine():
 
     networks = engine.get_networks_list()
     items = [f" {e[:20]:20} {b} ch{c}" for b, e, c, s in networks]
-    sel = GetMenuString(items)
+    sel = GetMenu(items)
     if not sel:
         engine.disable_monitor_mode()
         return
@@ -3569,7 +3588,7 @@ def do_wifi_pmkid_attack():
 
     networks = engine.get_networks_list()
     items = [f" {e[:20]:20} {b} ch{c}" for b, e, c, s in networks]
-    sel = GetMenuString(items)
+    sel = GetMenu(items)
     if not sel:
         engine.disable_monitor_mode()
         return
@@ -4026,13 +4045,13 @@ class KTOxMenu:
             return
         rc, out = _run(["ping","-c","4","-W","1",gw], timeout=10)
         lines = [f" GW: {gw}"] + [f" {l}" for l in out.splitlines()[-4:]]
-        GetMenuString(lines)
+        GetMenu(lines)
 
     def _net_info(self):
         ip  = get_ip()
         gw  = ktox_state["gateway"]
         ifc = ktox_state["iface"]
-        GetMenuString([
+        GetMenu([
             f" IP:    {ip}",
             f" GW:    {gw}",
             f" IF:    {ifc}",
@@ -4407,7 +4426,7 @@ class KTOxMenu:
         if not ifaces:
             Dialog_info("No WiFi adapters!", wait=True)
             return
-        sel = GetMenuString([f" {i}" for i in ifaces])
+        sel = GetMenu([f" {i}" for i in ifaces])
         if sel:
             ktox_state["wifi_iface"] = sel.strip()
             Dialog_info(f"Adapter:\n{sel.strip()}", wait=True)
@@ -4423,13 +4442,13 @@ class KTOxMenu:
         if not files:
             Dialog_info("No log files yet.", wait=True)
             return
-        sel = GetMenuString([f" {f.name[:22]}" for f in files])
+        sel = GetMenu([f" {f.name[:22]}" for f in files])
         if not sel: return
         fname = sel.strip()
         match = [f for f in files if f.name == fname]
         if match:
             lines = match[0].read_text(errors="ignore").splitlines()
-            GetMenuString([f" {l[:24]}" for l in lines[:50]])
+            GetMenu([f" {l[:24]}" for l in lines[:50]])
 
     # ── Purple Team ───────────────────────────────────────────────────────────
 
@@ -4448,7 +4467,7 @@ class KTOxMenu:
                 ip  = h.get("ip",h[0])  if isinstance(h,dict) else h[0]
                 if mac and mac not in known:     issues.append(f"! ROGUE {ip}")
                 elif mac and known.get(mac) != ip: issues.append(f"! MOVED {mac[:11]}")
-            if issues: GetMenuString(issues)
+            if issues: GetMenu(issues)
             else:      Dialog_info(f"✔ Clean!\n{len(current)} hosts match.", wait=True)
         except Exception as e:
             Dialog_info(f"Error:\n{str(e)[:28]}", wait=True)
@@ -4660,7 +4679,7 @@ class KTOxMenu:
 
     def _webui_status(self):
         ip = get_ip()
-        GetMenuString([
+        GetMenu([
             f" WebUI:  http://{ip}:8080",
             f" WS:     ws://{ip}:8765",
             f" Frame:  /dev/shm/ktox_last.jpg",
@@ -4676,7 +4695,7 @@ class KTOxMenu:
     def _sysinfo(self):
         rc, kern = _run(["uname","-r"])
         rc2, up  = _run(["uptime","-p"])
-        GetMenuString([
+        GetMenu([
             f" KTOx_Pi v{VERSION}",
             f" Kernel: {kern.strip()[:18]}",
             f" {up.strip()[:22]}",
@@ -4693,7 +4712,7 @@ class KTOxMenu:
                 " View Mode",
                 " Return to Default",
             ]
-            choice = GetMenuString(menu)
+            choice = GetMenu(menu)
             if not choice:
                 return
             s = choice.strip()
@@ -4715,7 +4734,7 @@ class KTOxMenu:
         for key in keys:
             mark = "✔" if key == color.current_theme else " "
             labels.append(f" {mark} {UI_THEMES[key]['label']}")
-        sel = GetMenuString(labels, duplicates=True)
+        sel = GetMenu(labels, duplicates=True)
         if not sel:
             return
         idx, _ = sel
@@ -4744,7 +4763,7 @@ class KTOxMenu:
         for mode in modes:
             mark = "✔" if mode == _view_mode else " "
             labels.append(f" {mark} {mode_names[mode]}")
-        sel = GetMenuString(labels, duplicates=True)
+        sel = GetMenu(labels, duplicates=True)
         if not sel:
             return
         idx, _ = sel
@@ -4848,7 +4867,7 @@ class KTOxMenu:
             items += [" Save & Apply"]
             items += [" Back"]
 
-            sel = GetMenuString(items, duplicates=True)
+            sel = GetMenu(items, duplicates=True)
             if not sel:
                 return
 
@@ -4899,7 +4918,7 @@ class KTOxMenu:
         else:
             lines = [" Discord: not set.",
                      " Edit:", " discord_webhook.txt"]
-        GetMenuString(lines)
+        GetMenu(lines)
 
     def _reboot(self):
         if YNDialog("REBOOT", y="Yes", n="No", b="Reboot device?"):
@@ -4922,14 +4941,14 @@ class KTOxMenu:
             Dialog_info("No loot yet!", wait=True)
             return
         items = [f" {f.name[:22]}" for f in files[:30]]
-        sel   = GetMenuString(items)
+        sel   = GetMenu(items)
         if not sel: return
         fname = sel.strip()
         match = [f for f in files if f.name == fname]
         if not match: return
         try:
             lines = match[0].read_text(errors="ignore").splitlines()
-            GetMenuString([f" {l[:24]}" for l in lines[:60]])
+            GetMenu([f" {l[:24]}" for l in lines[:60]])
         except Exception:
             Dialog_info("Can't read file.", wait=True)
 
