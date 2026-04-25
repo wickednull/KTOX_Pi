@@ -2727,7 +2727,7 @@ class KTOxMenu:
                     self.which = saved
                 elif callable(action):
                     action()
-            elif btn in ("KEY_LEFT_PIN","KEY1_PIN"):       return
+            elif btn == "KEY1_PIN":                        return
             elif btn == "KEY2_PIN":
                 self.which = "home"; return
             elif btn == "KEY3_PIN":
@@ -3031,7 +3031,7 @@ class KTOxMenu:
                 elif btn == "KEY_UP_PIN":                      sel = (sel-1)%total
                 elif btn in ("KEY_PRESS_PIN","KEY_RIGHT_PIN"):
                     items[sel][1]()
-                elif btn in ("KEY_LEFT_PIN","KEY1_PIN"):       return
+                elif btn == "KEY1_PIN":                        return
                 elif btn == "KEY2_PIN":                        return
                 elif btn == "KEY3_PIN":                        return
             return
@@ -3101,7 +3101,7 @@ class KTOxMenu:
                     self.which = saved
                 elif callable(action):
                     action()
-            elif btn in ("KEY_LEFT_PIN","KEY1_PIN"):       return
+            elif btn == "KEY1_PIN":                        return
             elif btn == "KEY2_PIN":
                 self.which = "home"; return
             elif btn == "KEY3_PIN":
