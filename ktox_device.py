@@ -1256,7 +1256,7 @@ def GetMenuPanel(inlist, duplicates=False):
 
                 icon = _icon_for(label)
                 if icon and _ui_ux.get("show_icons", True):
-                    draw.text((18, y + 8), icon, font=medium_icon_font, fill=fill, anchor="mm")
+                    draw.text((18, y + 8), icon, font=small_icon_font, fill=fill, anchor="mm")
 
             if total > 0:
                 raw = inlist[index]
@@ -1265,12 +1265,12 @@ def GetMenuPanel(inlist, duplicates=False):
 
                 icon = _icon_for(txt)
                 if icon and _ui_ux.get("show_icons", True):
-                    draw.text((80, 40), icon, font=large_icon_font, fill=color.selected_text, anchor="mm")
+                    draw.text((80, 60), icon, font=large_icon_font, fill=color.selected_text, anchor="mm")
                     display_txt = _truncate(txt.strip(), 45)
-                    draw.text((80, 105), display_txt, font=text_font, fill=color.selected_text, anchor="mm")
+                    draw.text((80, 115), display_txt, font=text_font, fill=color.selected_text, anchor="mm")
                 else:
                     display_txt = _truncate(txt.strip(), 50)
-                    draw.text((80, 60), display_txt, font=text_font, fill=color.selected_text, anchor="mm")
+                    draw.text((80, 70), display_txt, font=text_font, fill=color.selected_text, anchor="mm")
 
         time.sleep(0.08)
         btn = getButton(timeout=0.5)
