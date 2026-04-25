@@ -2628,6 +2628,51 @@ class KTOxMenu:
     # ── Navigation ────────────────────────────────────────────────────────────
 
     def navigate(self, key):
+        # ── Payload submenu handler ────────────────────────────────────────────
+        if key.startswith("pay_"):
+            cat_key  = key[4:]
+            payloads = _list_payloads(cat_key)
+            if not payloads:
+                Dialog_info("No payloads\nin this category.", wait=True)
+                return
+            items  = [(f" {name}", partial(exec_payload, path))
+                      for name, path in payloads]
+            labels = [i[0] for i in items]
+            sel    = 0
+            WINDOW = 7
+            while True:
+                total  = len(labels)
+                offset = max(0, min(sel-2, total-WINDOW))
+                window = labels[offset:offset+WINDOW]
+                with draw_lock:
+                    _draw_toolbar()
+                    color.DrawMenuBackground()
+                    color.DrawBorder()
+                    draw.rectangle([3,13,125,24], fill="#1a0000")
+                    _centered(cat_key.upper()[:18], 13, font=small_font, fill=color.border)
+                    draw.line([(3,24),(125,24)], fill=color.border, width=1)
+                    _start_y = 26
+                    for i, label in enumerate(window):
+                        is_sel = (i == sel-offset)
+                        row_y  = _start_y + 13*i
+                        if is_sel:
+                            draw.rectangle([3, row_y, 124, row_y+12], fill=color.select)
+                        fill = color.selected_text if is_sel else color.text
+                        t = _truncate(label.strip(), 108)
+                        draw.text((6, row_y+1), t, font=text_font, fill=fill)
+                time.sleep(0.08)
+                btn = getButton(timeout=120)
+                if btn is None:                                continue
+                elif btn == "KEY_DOWN_PIN":                    sel = (sel+1)%total
+                elif btn == "KEY_UP_PIN":                      sel = (sel-1)%total
+                elif btn in ("KEY_PRESS_PIN","KEY_RIGHT_PIN"): items[sel][1]()
+                elif btn in ("KEY_LEFT_PIN","KEY1_PIN"):       return
+                elif btn == "KEY2_PIN":
+                    self.which = "home"
+                    return
+            return
+
+        # ── Standard navigate ──────────────────────────────────────────────────
         tree  = self._menu()
 
         if key == "loot":
