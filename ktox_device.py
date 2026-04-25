@@ -1081,10 +1081,10 @@ def GetMenuGrid(inlist, duplicates=False):
     ROWS = 3
     ITEMS_PER_VIEW = COLS * ROWS
     CELL_W = 58
-    CELL_H = 34
-    GAP = 2
+    CELL_H = 33
+    GAP = 3
     START_X = 4
-    START_Y = 17
+    START_Y = 18
 
     while True:
         offset = (index // ITEMS_PER_VIEW) * ITEMS_PER_VIEW
@@ -1112,9 +1112,9 @@ def GetMenuGrid(inlist, duplicates=False):
                 fill = color.selected_text if sel else color.text
                 icon = _icon_for(txt)
                 if icon and _ui_ux.get("show_icons", True):
-                    draw.text((x + CELL_W // 2, y + 12), icon, font=medium_icon_font or icon_font, fill=fill, anchor="mm")
+                    draw.text((x + CELL_W // 2, y + 11), icon, font=medium_icon_font or icon_font, fill=fill, anchor="mm")
                     t = _truncate(txt.strip(), CELL_W - 8, font=small_font)
-                    draw.text((x + CELL_W // 2, y + CELL_H - 7), t, font=small_font, fill=fill, anchor="mm")
+                    draw.text((x + CELL_W // 2, y + CELL_H - 6), t, font=small_font, fill=fill, anchor="mm")
                 else:
                     t = _truncate(txt.strip(), CELL_W - 10, font=text_font)
                     draw.text((x + CELL_W // 2, y + (CELL_H // 2)), t, font=text_font, fill=fill, anchor="mm")
@@ -1176,8 +1176,9 @@ def GetMenuCarousel(inlist, duplicates=False):
 
             icon = _icon_for(txt)
             if icon and _ui_ux.get("show_icons", True):
-                draw.text((64, 66), icon, font=xlarge_icon_font or large_icon_font, fill=color.selected_text, anchor="mm")
-                display_txt = _truncate(txt.strip().lstrip("✔*+-•> "), 96, font=text_font)
+                draw.text((64, 62), icon, font=xlarge_icon_font or large_icon_font, fill=color.selected_text, anchor="mm")
+                draw.rectangle([8, 93, 119, 112], fill=color.title_bg, outline=color.border, width=1)
+                display_txt = _truncate(txt.strip().lstrip("✔*+-•> "), 102, font=text_font)
                 draw.text((64, 102), display_txt, font=text_font, fill=color.selected_text, anchor="mm")
             else:
                 display_txt = _truncate(txt.strip(), 100)
@@ -1185,9 +1186,9 @@ def GetMenuCarousel(inlist, duplicates=False):
 
             if total > 1:
                 if index > 0:
-                    draw.text((12, 68), "◄", font=text_font, fill=color.text, anchor="mm")
+                    draw.text((12, 64), "◄", font=text_font, fill=color.text, anchor="mm")
                 if index < total - 1:
-                    draw.text((116, 68), "►", font=text_font, fill=color.text, anchor="mm")
+                    draw.text((116, 64), "►", font=text_font, fill=color.text, anchor="mm")
 
             draw.rectangle([84, 14, 124, 24], fill=color.title_bg, outline=color.border, width=1)
             draw.text((104, 19), f"{index+1}/{total}", font=small_font, fill=color.text, anchor="mm")
@@ -1275,8 +1276,9 @@ def RenderMenuCarouselOnce(inlist, selected=0):
 
         icon = _icon_for(txt)
         if icon and _ui_ux.get("show_icons", True):
-            draw.text((64, 66), icon, font=xlarge_icon_font or large_icon_font, fill=color.selected_text, anchor="mm")
-            display_txt = _truncate(txt.strip().lstrip("✔*+-•> "), 96, font=text_font)
+            draw.text((64, 62), icon, font=xlarge_icon_font or large_icon_font, fill=color.selected_text, anchor="mm")
+            draw.rectangle([8, 93, 119, 112], fill=color.title_bg, outline=color.border, width=1)
+            display_txt = _truncate(txt.strip().lstrip("✔*+-•> "), 102, font=text_font)
             draw.text((64, 102), display_txt, font=text_font, fill=color.selected_text, anchor="mm")
         else:
             display_txt = _truncate(txt.strip(), 100)
@@ -1284,9 +1286,9 @@ def RenderMenuCarouselOnce(inlist, selected=0):
 
         if total > 1:
             if idx > 0:
-                draw.text((12, 68), "◄", font=text_font, fill=color.text, anchor="mm")
+                draw.text((12, 64), "◄", font=text_font, fill=color.text, anchor="mm")
             if idx < total - 1:
-                draw.text((116, 68), "►", font=text_font, fill=color.text, anchor="mm")
+                draw.text((116, 64), "►", font=text_font, fill=color.text, anchor="mm")
 
         draw.rectangle([84, 14, 124, 24], fill=color.title_bg, outline=color.border, width=1)
         draw.text((104, 19), f"{idx+1}/{total}", font=small_font, fill=color.text, anchor="mm")
@@ -1490,9 +1492,9 @@ def GetMenuPaged(inlist, duplicates=False):
 
                 icon = _icon_for(txt)
                 if icon and _ui_ux.get("show_icons", True):
-                    draw.text((33, y + (ITEM_H // 2)), icon, font=xlarge_icon_font or large_icon_font, fill=fill, anchor="mm")
-                    t = _truncate(txt.strip(), 70, font=text_font)
-                    draw.text((87, y + (ITEM_H // 2)), t, font=text_font, fill=fill, anchor="mm")
+                    draw.text((33, y + (ITEM_H // 2) - 3), icon, font=large_icon_font or medium_icon_font or icon_font, fill=fill, anchor="mm")
+                    t = _truncate(txt.strip(), 74, font=text_font)
+                    draw.text((87, y + (ITEM_H // 2) + 8), t, font=text_font, fill=fill, anchor="mm")
                 else:
                     t = _truncate(txt.strip(), 100, font=text_font)
                     draw.text((64, y + (ITEM_H // 2)), t, font=text_font, fill=fill, anchor="mm")
@@ -1534,9 +1536,9 @@ def GetMenuThumbnail(inlist, duplicates=False):
     ROWS = 2
     ITEMS_PER_VIEW = COLS * ROWS
     CELL_W = 59
-    CELL_H = 50
+    CELL_H = 51
     START_X = 4
-    START_Y = 18
+    START_Y = 17
 
     while True:
         offset = (index // ITEMS_PER_VIEW) * ITEMS_PER_VIEW
@@ -1569,9 +1571,9 @@ def GetMenuThumbnail(inlist, duplicates=False):
 
                 icon = _icon_for(txt)
                 if icon and _ui_ux.get("show_icons", True):
-                    draw.text((x + (CELL_W // 2), y + 17), icon, font=large_icon_font, fill=icon_fill, anchor="mm")
+                    draw.text((x + (CELL_W // 2), y + 16), icon, font=large_icon_font or medium_icon_font or icon_font, fill=icon_fill, anchor="mm")
                     label = _truncate(txt.strip(), CELL_W - 8, font=small_font)
-                    draw.text((x + (CELL_W // 2), y + 40), label, font=small_font, fill=text_fill, anchor="mm")
+                    draw.text((x + (CELL_W // 2), y + 41), label, font=small_font, fill=text_fill, anchor="mm")
                 else:
                     label = _truncate(txt.strip(), CELL_W - 10, font=text_font)
                     draw.text((x + (CELL_W // 2), y + 24), label, font=text_font, fill=text_fill, anchor="mm")
@@ -1627,8 +1629,9 @@ def GetMenuVerticalCarousel(inlist, duplicates=False):
 
             icon = _icon_for(txt)
             if icon and _ui_ux.get("show_icons", True):
-                draw.text((64, 66), icon, font=xlarge_icon_font or large_icon_font, fill=color.selected_text, anchor="mm")
-                display_txt = _truncate(txt.strip().lstrip("✔*+-•> "), 96, font=text_font)
+                draw.text((64, 62), icon, font=xlarge_icon_font or large_icon_font, fill=color.selected_text, anchor="mm")
+                draw.rectangle([8, 93, 119, 112], fill=color.title_bg, outline=color.border, width=1)
+                display_txt = _truncate(txt.strip().lstrip("✔*+-•> "), 102, font=text_font)
                 draw.text((64, 102), display_txt, font=text_font, fill=color.selected_text, anchor="mm")
             else:
                 display_txt = _truncate(txt.strip(), 100)
@@ -1636,9 +1639,9 @@ def GetMenuVerticalCarousel(inlist, duplicates=False):
 
             if total > 1:
                 if index > 0:
-                    draw.text((64, 26), "▲", font=text_font, fill=color.border, anchor="mm")
+                    draw.text((64, 28), "▲", font=text_font, fill=color.text, anchor="mm")
                 if index < total - 1:
-                    draw.text((64, 110), "▼", font=text_font, fill=color.border, anchor="mm")
+                    draw.text((64, 88), "▼", font=text_font, fill=color.text, anchor="mm")
 
             draw.rectangle([84, 14, 124, 24], fill=color.title_bg, outline=color.border, width=1)
             draw.text((104, 19), f"{index+1}/{total}", font=small_font, fill=color.text, anchor="mm")
