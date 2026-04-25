@@ -931,15 +931,6 @@ def RenderMenuWindowOnce(inlist, selected=0):
             draw.line([(4, y1), (123, y1)], fill=color.title_bg, width=1)
 
 
-def toggle_view_mode():
-    """Cycle through view modes: list -> grid -> carousel -> list."""
-    global _view_mode
-    modes = ["list", "grid", "carousel"]
-    current_idx = modes.index(_view_mode) if _view_mode in modes else 0
-    _view_mode = modes[(current_idx + 1) % len(modes)]
-    return _view_mode
-
-
 def GetMenuGrid(inlist, duplicates=False):
     """
     2-column grid layout (8 items visible: 4 rows × 2 cols).
