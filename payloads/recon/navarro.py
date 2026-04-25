@@ -627,7 +627,11 @@ KB_PAGES = [
 
 
 def keyboard_input(initial: str) -> str:
-    kb = DarkSecKeyboard(width=W, height=H, lcd=LCD, gpio_pins=PINS, gpio_module=GPIO)
+    """
+    Use the shared DarkSec virtual keyboard used across KTOx payloads.
+    Falls back to the previous value when the keyboard is cancelled.
+    """
+    kb = DarkSecKeyboard(width=WIDTH, height=HEIGHT, lcd=LCD, gpio_pins=PINS, gpio_module=GPIO)
     result = kb.run()
     if result is None:
         return initial
