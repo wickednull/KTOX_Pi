@@ -85,7 +85,7 @@ _stop_evt   = threading.Event()
 _last_button       = None
 _last_button_time  = 0.0
 _button_down_since = 0.0
-_debounce_s        = 0.06
+_debounce_s        = 0.10
 _repeat_delay      = 0.25
 _repeat_interval   = 0.08
 
@@ -737,8 +737,8 @@ def getButton(timeout=120):
             start = time.time()
             continue
 
-        # Stuck-button safety: non-KEY3 buttons held >2s are discarded
-        if pressed == _last_button and pressed != _LOCK_HOLD_BTN and (now - _button_down_since) > 2.0:
+        # Stuck-button safety: non-KEY3 buttons held >4s are discarded
+        if pressed == _last_button and pressed != _LOCK_HOLD_BTN and (now - _button_down_since) > 4.0:
             _last_button = None
             time.sleep(0.15)
             continue
