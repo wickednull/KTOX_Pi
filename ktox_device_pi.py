@@ -4055,9 +4055,9 @@ class KTOxMenu:
             (" Start MITM Suite",   do_start_mitm_suite),
             (" DNS Spoofing ON",    do_dns_spoofing),
             (" DNS Spoofing OFF",   do_dns_spoof_stop),
-            (" Rogue DHCP/WPAD",    partial(exec_payload,"interception/rogue_dhcp_wpad")),
-            (" Silent Bridge",      partial(exec_payload,"interception/silent_bridge")),
-            (" Evil Portal",        partial(exec_payload,"evil_portal/honeypot")),
+            (" Rogue DHCP/WPAD",    partial(exec_payload,"intercept/rogue_dhcp_wpad")),
+            (" Silent Bridge",      partial(exec_payload,"intercept/silent_bridge")),
+            (" Evil Portal",        partial(exec_payload,"recon/honeypot")),
         ),
 
         # ── RESPONDER ─────────────────────────────────────────────────────────
@@ -4076,7 +4076,7 @@ class KTOxMenu:
             (" ARP Harden",       do_arp_harden),
             (" Baseline Export",  do_baseline_export),
             (" Verify Baseline",  self._verify_baseline),
-            (" SMB Probe",        partial(exec_payload,"reconnaissance/smb_probe")),
+            (" SMB Probe",        partial(exec_payload,"recon/smb_probe")),
         ),
 
         # ── PAYLOADS ──────────────────────────────────────────────────────────
@@ -4741,11 +4741,12 @@ class KTOxMenu:
 
     
     def _nav_scan(self):
-        exec_payload("Navarro/navarro_scan.py")
+        exec_payload("recon/navarro.py")
     def _nav_ports(self):
-        exec_payload("Navarro/navarro_ports.py")
+        exec_payload("recon/navarro.py")
     def _nav_reports(self):
-        self._browse_dir(KTOX_DIR + "/Navarro/reports", "Navarro Reports")
+        os.makedirs(f"{KTOX_DIR}/loot/OSINT", exist_ok=True)
+        self._browse_dir(f"{KTOX_DIR}/loot/OSINT", "Navarro Reports")
 
     def home_loop(self):
         while True:
