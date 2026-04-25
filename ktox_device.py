@@ -3853,6 +3853,8 @@ _FA_ICONS: dict = {
     "Examples":         "\uf121",   # fa-code
     # ── Network submenu ───────────────────────────────────────────────────
     "Scan Network":     "\uf002",
+    "Username Recon":   "\uf002",   # fa-search
+    "Navarro Status":   "\uf129",   # fa-info
     "Scan Ports":       "\uf569",   # fa-ethernet
     "Reports":          "\uf15c",   # fa-file-alt
     "Show Hosts":       "\uf0c0",   # fa-users
@@ -4046,8 +4048,8 @@ class KTOxMenu:
 
         # ── NAVARRO RECON ────────────────────────────────────────────────────
         "nav": (
-            (" Scan Network",   self._nav_scan),
-            (" Scan Ports",     self._nav_ports),
+            (" Username Recon", self._nav_scan),
+            (" Navarro Status", self._nav_status),
             (" Reports",        self._nav_reports),
             (" Back",           "home"),
         ),
@@ -4740,11 +4742,36 @@ class KTOxMenu:
 
     
     def _nav_scan(self):
-        exec_payload("Navarro/navarro_scan.py")
-    def _nav_ports(self):
-        exec_payload("Navarro/navarro_ports.py")
+        # Canonical KTOx payload wrapper for Navarro username OSINT.
+        exec_payload("recon/navarro.py")
+
+    def _nav_status(self):
+        nav_candidates = [
+            f"{KTOX_DIR}/Navarro/navarro.py",
+            "/home/ktox/Navarro/navarro.py",
+            "/root/Navarro/navarro.py",
+        ]
+        nav_found = next((p for p in nav_candidates if os.path.exists(p)), None)
+
+        rc_req, reqs = _run(["python3", "-m", "pip", "show", "requests"])
+        rc_rich, rich = _run(["python3", "-m", "pip", "show", "rich"])
+        requests_ok = (rc_req == 0 and bool(reqs.strip()))
+        rich_ok = (rc_rich == 0 and bool(rich.strip()))
+
+        GetMenu([
+            " Navarro Recon Status",
+            f" payload: {'OK' if os.path.exists(f'{default.payload_path}recon/navarro.py') else 'MISSING'}",
+            f" engine:  {'OK' if nav_found else 'MISSING'}",
+            f" requests:{'OK' if requests_ok else 'MISSING'}",
+            f" rich:    {'OK' if rich_ok else 'OPTIONAL'}",
+            " Install path:",
+            " /root/KTOx/Navarro/navarro.py",
+            " Reports: /root/KTOx/loot/OSINT",
+        ])
+
     def _nav_reports(self):
-        self._browse_dir(KTOX_DIR + "/Navarro/reports", "Navarro Reports")
+        os.makedirs(f"{KTOX_DIR}/loot/OSINT", exist_ok=True)
+        self._browse_dir(f"{KTOX_DIR}/loot/OSINT", "Navarro Reports")
 
     def home_loop(self):
         while True:
