@@ -214,21 +214,48 @@ class ColorScheme:
         return True
 
     def load_from_file(self):
+        global _view_mode
         try:
             data = json.loads(Path(default.config_file).read_text())
             requested = str(data.get("UI", {}).get("THEME", "")).strip()
-            if requested in UI_THEMES:
+
+            if requested == "custom":
+                # Load custom colors
+                c = data.get("COLORS", {})
+                self.border        = c.get("BORDER",            self.border)
+                self.background    = c.get("BACKGROUND",         self.background)
+                self.text          = c.get("TEXT",               self.text)
+                self.selected_text = c.get("SELECTED_TEXT",      self.selected_text)
+                self.select        = c.get("SELECTED_TEXT_BACKGROUND", self.select)
+                self.gamepad       = c.get("GAMEPAD",            self.gamepad)
+                self.gamepad_fill  = c.get("GAMEPAD_FILL",       self.gamepad_fill)
+                self.title_bg      = c.get("TITLE_BG",           self.title_bg)
+                self.panel_bg      = c.get("PANEL_BG",           self.panel_bg)
+                self.current_theme = "custom"
+            elif requested in UI_THEMES:
+                # Load preset theme
                 self.apply_theme(requested, persist=False)
-            c = data.get("COLORS", {})
-            self.border        = c.get("BORDER",            self.border)
-            self.background    = c.get("BACKGROUND",         self.background)
-            self.text          = c.get("TEXT",               self.text)
-            self.selected_text = c.get("SELECTED_TEXT",      self.selected_text)
-            self.select        = c.get("SELECTED_TEXT_BACKGROUND", self.select)
-            self.gamepad       = c.get("GAMEPAD",            self.gamepad)
-            self.gamepad_fill  = c.get("GAMEPAD_FILL",       self.gamepad_fill)
-            self.title_bg      = c.get("TITLE_BG",           self.title_bg)
-            self.panel_bg      = c.get("PANEL_BG",           self.panel_bg)
+                # But also load any color overrides from COLORS section if present
+                c = data.get("COLORS", {})
+                if c:  # Only override if COLORS section exists
+                    self.border        = c.get("BORDER",            self.border)
+                    self.background    = c.get("BACKGROUND",         self.background)
+                    self.text          = c.get("TEXT",               self.text)
+                    self.selected_text = c.get("SELECTED_TEXT",      self.selected_text)
+                    self.select        = c.get("SELECTED_TEXT_BACKGROUND", self.select)
+                    self.gamepad       = c.get("GAMEPAD",            self.gamepad)
+                    self.gamepad_fill  = c.get("GAMEPAD_FILL",       self.gamepad_fill)
+                    self.title_bg      = c.get("TITLE_BG",           self.title_bg)
+                    self.panel_bg      = c.get("PANEL_BG",           self.panel_bg)
+            else:
+                # Fallback to ktox_red
+                self.apply_theme("ktox_red", persist=False)
+
+            # Load view mode preference
+            view_mode = str(data.get("UI", {}).get("VIEW_MODE", "list")).strip()
+            if view_mode in ("list", "grid", "carousel"):
+                _view_mode = view_mode
+
             # Load lock config and screensaver path
             _lock_load_from_config(data)
             p = data.get("PATHS", {}).get("SCREENSAVER_GIF", "")
@@ -275,6 +302,115 @@ UI_THEMES = {
         "UX_WINDOW_ROWS": 6, "UX_ROW_H": 14, "UX_START_Y": 28,
         "UX_SHOW_ICONS": True, "UX_SELECT_STYLE": "fill",
     },
+    "neon_magenta": {
+        "label": "Neon Magenta",
+        "BORDER": "#FF2BD6", "BACKGROUND": "#09040F", "TEXT": "#FFD6F8",
+        "SELECTED_TEXT": "#0B0210", "SELECTED_TEXT_BACKGROUND": "#FF2BD6",
+        "GAMEPAD": "#B00088", "GAMEPAD_FILL": "#FFD6F8",
+        "TITLE_BG": "#2A0A33", "PANEL_BG": "#14071C",
+        "UX_WINDOW_ROWS": 6, "UX_ROW_H": 15, "UX_START_Y": 27,
+        "UX_SHOW_ICONS": True, "UX_SELECT_STYLE": "fill",
+    },
+    "cyberpunk_amber": {
+        "label": "Cyberpunk Amber",
+        "BORDER": "#FF9F1A", "BACKGROUND": "#0E0703", "TEXT": "#FFD9AA",
+        "SELECTED_TEXT": "#1A0A03", "SELECTED_TEXT_BACKGROUND": "#FF9F1A",
+        "GAMEPAD": "#9C4E00", "GAMEPAD_FILL": "#FFE4C4",
+        "TITLE_BG": "#331A08", "PANEL_BG": "#1B1007",
+        "UX_WINDOW_ROWS": 7, "UX_ROW_H": 13, "UX_START_Y": 26,
+        "UX_SHOW_ICONS": True, "UX_SELECT_STYLE": "fill",
+    },
+    "darksec_experimental": {
+        "label": "DarkSec (Exp)",
+        "BORDER": "#00E5FF", "BACKGROUND": "#070B14", "TEXT": "#CCF4FF",
+        "SELECTED_TEXT": "#041018", "SELECTED_TEXT_BACKGROUND": "#00A0CC",
+        "GAMEPAD": "#006B88", "GAMEPAD_FILL": "#D9F8FF",
+        "TITLE_BG": "#0B2033", "PANEL_BG": "#0B1422",
+        "UX_WINDOW_ROWS": 6, "UX_ROW_H": 15, "UX_START_Y": 27,
+        "UX_SHOW_ICONS": True, "UX_SELECT_STYLE": "pulse",
+        "UX_CYBER_BARS": True,
+    },
+    "obsidian_red": {
+        "label": "Obsidian Red",
+        "BORDER": "#CC0000", "BACKGROUND": "#0a0a0a", "TEXT": "#d4a574",
+        "SELECTED_TEXT": "#FFFFFF", "SELECTED_TEXT_BACKGROUND": "#801414",
+        "GAMEPAD": "#8B0000", "GAMEPAD_FILL": "#F5E6D3",
+        "TITLE_BG": "#220000", "PANEL_BG": "#1a0a0a",
+        "UX_WINDOW_ROWS": 7, "UX_ROW_H": 13, "UX_START_Y": 26,
+        "UX_SHOW_ICONS": True, "UX_SELECT_STYLE": "outline",
+    },
+    "slate_blue": {
+        "label": "Slate Blue",
+        "BORDER": "#4A5BB7", "BACKGROUND": "#0d0e15", "TEXT": "#c9d1e0",
+        "SELECTED_TEXT": "#FFFFFF", "SELECTED_TEXT_BACKGROUND": "#2e3a7a",
+        "GAMEPAD": "#1f2954", "GAMEPAD_FILL": "#e8edf8",
+        "TITLE_BG": "#15172a", "PANEL_BG": "#0f1320",
+        "UX_WINDOW_ROWS": 7, "UX_ROW_H": 13, "UX_START_Y": 26,
+        "UX_SHOW_ICONS": True, "UX_SELECT_STYLE": "fill",
+    },
+    "forest_green": {
+        "label": "Forest Green",
+        "BORDER": "#3BA655", "BACKGROUND": "#080f09", "TEXT": "#b8d4ba",
+        "SELECTED_TEXT": "#FFFFFF", "SELECTED_TEXT_BACKGROUND": "#2d5c3a",
+        "GAMEPAD": "#1a4028", "GAMEPAD_FILL": "#dce8dd",
+        "TITLE_BG": "#0f2416", "PANEL_BG": "#0c1a0e",
+        "UX_WINDOW_ROWS": 6, "UX_ROW_H": 14, "UX_START_Y": 28,
+        "UX_SHOW_ICONS": True, "UX_SELECT_STYLE": "fill",
+    },
+    "sunburst_orange": {
+        "label": "Sunburst Orange",
+        "BORDER": "#FF8C00", "BACKGROUND": "#0f0804", "TEXT": "#ffc89a",
+        "SELECTED_TEXT": "#1a0a03", "SELECTED_TEXT_BACKGROUND": "#FF8C00",
+        "GAMEPAD": "#cc5500", "GAMEPAD_FILL": "#ffe4d6",
+        "TITLE_BG": "#3d2207", "PANEL_BG": "#1f1207",
+        "UX_WINDOW_ROWS": 7, "UX_ROW_H": 13, "UX_START_Y": 26,
+        "UX_SHOW_ICONS": True, "UX_SELECT_STYLE": "fill",
+    },
+    "plasma_purple": {
+        "label": "Plasma Purple",
+        "BORDER": "#B833FF", "BACKGROUND": "#0a0515", "TEXT": "#dfc8ff",
+        "SELECTED_TEXT": "#FFFFFF", "SELECTED_TEXT_BACKGROUND": "#6b2d8f",
+        "GAMEPAD": "#4a1a66", "GAMEPAD_FILL": "#e8d4ff",
+        "TITLE_BG": "#1a0a2a", "PANEL_BG": "#0d0518",
+        "UX_WINDOW_ROWS": 6, "UX_ROW_H": 15, "UX_START_Y": 27,
+        "UX_SHOW_ICONS": True, "UX_SELECT_STYLE": "fill",
+    },
+    "ice_blue": {
+        "label": "Ice Blue",
+        "BORDER": "#00D4FF", "BACKGROUND": "#050a12", "TEXT": "#b3e5ff",
+        "SELECTED_TEXT": "#041c2e", "SELECTED_TEXT_BACKGROUND": "#00A8CC",
+        "GAMEPAD": "#004466", "GAMEPAD_FILL": "#d9f7ff",
+        "TITLE_BG": "#0a1820", "PANEL_BG": "#08141f",
+        "UX_WINDOW_ROWS": 8, "UX_ROW_H": 11, "UX_START_Y": 25,
+        "UX_SHOW_ICONS": False, "UX_SELECT_STYLE": "outline",
+    },
+    "midnight_noir": {
+        "label": "Midnight Noir",
+        "BORDER": "#505050", "BACKGROUND": "#050505", "TEXT": "#e0e0e0",
+        "SELECTED_TEXT": "#FFFFFF", "SELECTED_TEXT_BACKGROUND": "#2a2a2a",
+        "GAMEPAD": "#1a1a1a", "GAMEPAD_FILL": "#f5f5f5",
+        "TITLE_BG": "#0a0a0a", "PANEL_BG": "#0f0f0f",
+        "UX_WINDOW_ROWS": 7, "UX_ROW_H": 13, "UX_START_Y": 26,
+        "UX_SHOW_ICONS": True, "UX_SELECT_STYLE": "fill",
+    },
+    "neon_cyan": {
+        "label": "Neon Cyan",
+        "BORDER": "#00FFFF", "BACKGROUND": "#080808", "TEXT": "#00FFFF",
+        "SELECTED_TEXT": "#000000", "SELECTED_TEXT_BACKGROUND": "#00FFFF",
+        "GAMEPAD": "#008080", "GAMEPAD_FILL": "#E0FFFF",
+        "TITLE_BG": "#0a1818", "PANEL_BG": "#0a0f0f",
+        "UX_WINDOW_ROWS": 6, "UX_ROW_H": 15, "UX_START_Y": 27,
+        "UX_SHOW_ICONS": True, "UX_SELECT_STYLE": "scanline",
+    },
+    "synthetic_rose": {
+        "label": "Synthetic Rose",
+        "BORDER": "#FF1493", "BACKGROUND": "#0f080d", "TEXT": "#ffb3d9",
+        "SELECTED_TEXT": "#FFFFFF", "SELECTED_TEXT_BACKGROUND": "#991166",
+        "GAMEPAD": "#660044", "GAMEPAD_FILL": "#ffe0f0",
+        "TITLE_BG": "#330033", "PANEL_BG": "#1a0d1a",
+        "UX_WINDOW_ROWS": 6, "UX_ROW_H": 14, "UX_START_Y": 28,
+        "UX_SHOW_ICONS": True, "UX_SELECT_STYLE": "fill",
+    },
 }
 
 _ui_ux = {
@@ -283,7 +419,10 @@ _ui_ux = {
     "start_y": 26,
     "show_icons": True,
     "select_style": "fill",
+    "cyber_bars": False,
 }
+
+_view_mode = "list"  # list, grid, or carousel
 
 def _apply_ux_from_theme(preset: dict):
     _ui_ux["window_rows"] = int(preset.get("UX_WINDOW_ROWS", 7))
@@ -291,6 +430,7 @@ def _apply_ux_from_theme(preset: dict):
     _ui_ux["start_y"] = int(preset.get("UX_START_Y", 26))
     _ui_ux["show_icons"] = bool(preset.get("UX_SHOW_ICONS", True))
     _ui_ux["select_style"] = str(preset.get("UX_SELECT_STYLE", "fill"))
+    _ui_ux["cyber_bars"] = bool(preset.get("UX_CYBER_BARS", False))
 
 def _ux_window_rows():
     return max(5, min(8, int(_ui_ux.get("window_rows", 7))))
@@ -663,6 +803,33 @@ def YNDialog(a="Are you sure?", y="Yes", n="No", b=""):
         elif btn in ("KEY_PRESS_PIN","KEY2_PIN"):   return answer
 
 
+def _draw_row_selection(row_y, row_h):
+    """Draw menu row selection with style from theme."""
+    style = str(_ui_ux.get("select_style", "fill"))
+    if style == "outline":
+        draw.rectangle([3, row_y, 124, row_y + row_h - 1], outline=color.select, width=2)
+    elif style == "pulse":
+        phase = (math.sin(time.time() * 6.0) + 1.0) * 0.5
+        blend_r = int(color.select[1:3], 16)
+        blend_g = int(color.select[3:5], 16)
+        blend_b = int(color.select[5:7], 16)
+        bg_r = int(color.background[1:3], 16)
+        bg_g = int(color.background[3:5], 16)
+        bg_b = int(color.background[5:7], 16)
+        r = int(blend_r + (bg_r - blend_r) * phase)
+        g = int(blend_g + (bg_g - blend_g) * phase)
+        b = int(blend_b + (bg_b - blend_b) * phase)
+        blend_col = f"#{r:02X}{g:02X}{b:02X}"
+        draw.rectangle([3, row_y, 124, row_y + row_h - 1], fill=blend_col)
+        draw.rectangle([3, row_y, 124, row_y + row_h - 1], outline=color.border, width=1)
+    elif style == "scanline":
+        draw.rectangle([3, row_y, 124, row_y + row_h - 1], fill=color.select)
+        line_y = row_y + int((time.time() * 35) % max(1, row_h - 1))
+        draw.line([(4, line_y), (123, line_y)], fill=color.selected_text, width=1)
+    else:
+        draw.rectangle([3, row_y, 124, row_y + row_h - 1], fill=color.select)
+
+
 def GetMenuString(inlist, duplicates=False):
     """
     Scrollable list.  Returns selected label string, or "" on back.
@@ -694,10 +861,7 @@ def GetMenuString(inlist, duplicates=False):
                 sel   = (i == index - offset)
                 row_y = start_y + row_h * i
                 if sel:
-                    if _ui_ux.get("select_style") == "outline":
-                        draw.rectangle([3, row_y, 124, row_y + row_h - 1], outline=color.select, width=2)
-                    else:
-                        draw.rectangle([3, row_y, 124, row_y + row_h - 1], fill=color.select)
+                    _draw_row_selection(row_y, row_h)
                 fill = color.selected_text if sel else color.text
                 icon = _icon_for(txt)
                 if icon and _ui_ux.get("show_icons", True):
@@ -745,10 +909,7 @@ def RenderMenuWindowOnce(inlist, selected=0):
             sel   = (i == idx - offset)
             row_y = start_y + row_h * i
             if sel:
-                if _ui_ux.get("select_style") == "outline":
-                    draw.rectangle([3, row_y, 124, row_y + row_h - 1], outline=color.select, width=2)
-                else:
-                    draw.rectangle([3, row_y, 124, row_y + row_h - 1], fill=color.select)
+                _draw_row_selection(row_y, row_h)
             fill = color.selected_text if sel else color.text
             icon = _icon_for(txt)
             if icon and _ui_ux.get("show_icons", True):
@@ -758,6 +919,224 @@ def RenderMenuWindowOnce(inlist, selected=0):
             else:
                 t = _truncate(txt.strip(), 110)
                 draw.text((5,  row_y + 1), t,    font=text_font, fill=fill)
+        # Optional cyber bars for themes like DarkSec
+        if _ui_ux.get("cyber_bars", False):
+            span = row_h * WINDOW
+            y0 = start_y + span + 1
+            y1 = min(123, y0 + 3)
+            offs = int((time.time() * 22) % 20)
+            for i in range(0, 120, 20):
+                x = 4 + ((i + offs) % 120)
+                draw.line([(x, y0), (min(123, x + 8), y0)], fill=color.border, width=1)
+            draw.line([(4, y1), (123, y1)], fill=color.title_bg, width=1)
+
+
+def GetMenuGrid(inlist, duplicates=False):
+    """
+    2-column grid layout (8 items visible: 4 rows × 2 cols).
+    Returns selected label string, or "" on back.
+    """
+    if not inlist:
+        inlist = ["(empty)"]
+    if duplicates:
+        inlist = [f"{i}#{t}" for i, t in enumerate(inlist)]
+
+    total = len(inlist)
+    index = 0
+    COLS = 2
+    ROWS = 4
+    ITEMS_PER_VIEW = COLS * ROWS
+    CELL_W = 60
+    CELL_H = 25
+    START_X = 8
+    START_Y = 20
+
+    while True:
+        offset = (index // ITEMS_PER_VIEW) * ITEMS_PER_VIEW
+
+        with draw_lock:
+            _draw_toolbar()
+            color.DrawMenuBackground()
+            color.DrawBorder()
+
+            for i, raw in enumerate(inlist[offset:offset+ITEMS_PER_VIEW]):
+                if offset + i >= total:
+                    break
+                txt = raw if not duplicates else raw.split("#", 1)[1]
+                row = i // COLS
+                col = i % COLS
+                x = START_X + col * CELL_W
+                y = START_Y + row * CELL_H
+                sel = (offset + i == index)
+
+                if sel:
+                    draw.rectangle([x, y, x + CELL_W - 2, y + CELL_H - 2],
+                                 fill=color.select, outline=color.border, width=1)
+                else:
+                    draw.rectangle([x, y, x + CELL_W - 2, y + CELL_H - 2],
+                                 outline=color.border, width=1)
+
+                fill = color.selected_text if sel else color.text
+                t = _truncate(txt.strip(), 40)
+                draw.text((x + 3, y + 7), t, font=small_font, fill=fill)
+
+        time.sleep(0.08)
+        btn = getButton(timeout=0.5)
+        if btn is None:
+            continue
+        elif btn == "KEY_DOWN_PIN":
+            index = min(index + COLS, total - 1)
+        elif btn == "KEY_UP_PIN":
+            index = max(index - COLS, 0)
+        elif btn == "KEY_RIGHT_PIN":
+            index = min(index + 1, total - 1)
+        elif btn == "KEY_LEFT_PIN":
+            index = max(index - 1, 0) if index % COLS != 0 else index
+        elif btn == "KEY_PRESS_PIN":
+            raw = inlist[index]
+            if duplicates:
+                idx, txt = raw.split("#", 1)
+                return int(idx), txt
+            return raw
+        elif btn in ("KEY1_PIN", "KEY2_PIN", "KEY3_PIN"):
+            return (-1, "") if duplicates else ""
+
+
+def GetMenuCarousel(inlist, duplicates=False):
+    """
+    Carousel mode: single item focus with left/right navigation.
+    Returns selected label string, or "" on back.
+    """
+    if not inlist:
+        inlist = ["(empty)"]
+    if duplicates:
+        inlist = [f"{i}#{t}" for i, t in enumerate(inlist)]
+
+    total = len(inlist)
+    index = 0
+
+    while True:
+        with draw_lock:
+            _draw_toolbar()
+            color.DrawMenuBackground()
+            color.DrawBorder()
+
+            raw = inlist[index]
+            txt = raw if not duplicates else raw.split("#", 1)[1]
+
+            draw.rectangle([3, 20, 124, 115], outline=color.border, width=1)
+
+            icon = _icon_for(txt)
+            if icon and _ui_ux.get("show_icons", True):
+                draw.text((30, 35), icon, font=icon_font, fill=color.selected_text)
+                display_txt = _truncate(txt.strip(), 80)
+                draw.text((8, 95), display_txt, font=text_font, fill=color.text)
+            else:
+                display_txt = _truncate(txt.strip(), 100)
+                draw.text((8, 60), display_txt, font=icon_font, fill=color.selected_text)
+
+            if total > 1:
+                if index > 0:
+                    draw.text((5, 105), "◄", font=text_font, fill=color.text)
+                if index < total - 1:
+                    draw.text((120, 105), "►", font=text_font, fill=color.text)
+
+            draw.text((55, 105), f"{index+1}/{total}", font=small_font, fill=color.text)
+
+        time.sleep(0.08)
+        btn = getButton(timeout=0.5)
+        if btn is None:
+            continue
+        elif btn == "KEY_LEFT_PIN":
+            index = (index - 1) % total
+        elif btn == "KEY_RIGHT_PIN":
+            index = (index + 1) % total
+        elif btn == "KEY_UP_PIN":
+            index = (index - 1) % total
+        elif btn == "KEY_DOWN_PIN":
+            index = (index + 1) % total
+        elif btn == "KEY_PRESS_PIN":
+            raw = inlist[index]
+            if duplicates:
+                idx, txt = raw.split("#", 1)
+                return int(idx), txt
+            return raw
+        elif btn in ("KEY1_PIN", "KEY2_PIN", "KEY3_PIN"):
+            return (-1, "") if duplicates else ""
+
+
+def RenderMenuGridOnce(inlist, selected=0):
+    """Non-interactive grid snapshot."""
+    if not inlist:
+        inlist = ["(empty)"]
+
+    total = len(inlist)
+    idx = max(0, min(selected, total - 1))
+    COLS = 2
+    ROWS = 4
+    CELL_W = 60
+    CELL_H = 25
+    START_X = 8
+    START_Y = 20
+
+    with draw_lock:
+        _draw_toolbar()
+        color.DrawMenuBackground()
+        color.DrawBorder()
+
+        for i, txt in enumerate(inlist[:COLS * ROWS]):
+            if i >= total:
+                break
+            row = i // COLS
+            col = i % COLS
+            x = START_X + col * CELL_W
+            y = START_Y + row * CELL_H
+            sel = (i == idx)
+
+            if sel:
+                draw.rectangle([x, y, x + CELL_W - 2, y + CELL_H - 2],
+                             fill=color.select, outline=color.border, width=1)
+            else:
+                draw.rectangle([x, y, x + CELL_W - 2, y + CELL_H - 2],
+                             outline=color.border, width=1)
+
+            fill = color.selected_text if sel else color.text
+            t = _truncate(txt.strip(), 40)
+            draw.text((x + 3, y + 7), t, font=small_font, fill=fill)
+
+
+def RenderMenuCarouselOnce(inlist, selected=0):
+    """Non-interactive carousel snapshot."""
+    if not inlist:
+        inlist = ["(empty)"]
+
+    total = len(inlist)
+    idx = max(0, min(selected, total - 1))
+    txt = inlist[idx]
+
+    with draw_lock:
+        _draw_toolbar()
+        color.DrawMenuBackground()
+        color.DrawBorder()
+
+        draw.rectangle([3, 20, 124, 115], outline=color.border, width=1)
+
+        icon = _icon_for(txt)
+        if icon and _ui_ux.get("show_icons", True):
+            draw.text((30, 35), icon, font=icon_font, fill=color.selected_text)
+            display_txt = _truncate(txt.strip(), 80)
+            draw.text((8, 95), display_txt, font=text_font, fill=color.text)
+        else:
+            display_txt = _truncate(txt.strip(), 100)
+            draw.text((8, 60), display_txt, font=icon_font, fill=color.selected_text)
+
+        if total > 1:
+            if idx > 0:
+                draw.text((5, 105), "◄", font=text_font, fill=color.text)
+            if idx < total - 1:
+                draw.text((120, 105), "►", font=text_font, fill=color.text)
+
+        draw.text((55, 105), f"{idx+1}/{total}", font=small_font, fill=color.text)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # ── Payload engine ─────────────────────────────────────────────────────────────
@@ -3969,6 +4348,30 @@ class KTOxMenu:
         ])
 
     def _ui_theme_menu(self):
+        while True:
+            menu = [
+                " Theme Presets",
+                " Custom Colors",
+                " View Mode",
+                " Return to Default",
+            ]
+            choice = GetMenuString(menu)
+            if not choice:
+                return
+            s = choice.strip()
+            if s == "Theme Presets":
+                self._theme_presets_menu()
+            elif s == "Custom Colors":
+                self._custom_color_picker_menu()
+            elif s == "View Mode":
+                self._view_mode_menu()
+            elif s == "Return to Default":
+                if YNDialog("RESET THEME", y="Yes", n="No",
+                           b="Reset to\nKTOx_Pi\nClassic?"):
+                    color.apply_theme("ktox_red", persist=True)
+                    Dialog_info("Reset to\ndefault.", wait=False, timeout=1)
+
+    def _theme_presets_menu(self):
         keys = list(UI_THEMES.keys())
         labels = []
         for key in keys:
@@ -3980,9 +4383,166 @@ class KTOxMenu:
         idx, _ = sel
         chosen = keys[idx]
         if color.apply_theme(chosen, persist=True):
-            Dialog_info(f"Theme:\n{UI_THEMES[chosen]['label']}", wait=False, timeout=1)
+            Dialog_info(f"Theme:\n{UI_THEMES[chosen]['label']}",
+                       wait=False, timeout=1)
         else:
             Dialog_info("Theme apply\nfailed.", wait=True)
+
+    def _view_mode_menu(self):
+        """Switch between list, grid, and carousel view modes."""
+        global _view_mode
+        modes = ["list", "grid", "carousel"]
+        labels = []
+        for mode in modes:
+            mark = "✔" if mode == _view_mode else " "
+            mode_label = mode.capitalize()
+            labels.append(f" {mark} {mode_label}")
+        sel = GetMenuString(labels, duplicates=True)
+        if not sel:
+            return
+        idx, _ = sel
+        _view_mode = modes[idx]
+        self._save_view_mode(_view_mode)
+        mode_names = {"list": "List", "grid": "Grid", "carousel": "Carousel"}
+        Dialog_info(f"View Mode:\n{mode_names[_view_mode]}",
+                   wait=False, timeout=1)
+
+    def _save_view_mode(self, mode: str):
+        """Persist view mode to config file."""
+        try:
+            path = default.config_file
+            try:
+                data = json.loads(Path(path).read_text())
+            except Exception:
+                data = {}
+            data.setdefault("UI", {})["VIEW_MODE"] = mode
+            Path(path).write_text(json.dumps(data, indent=2))
+        except Exception as e:
+            print(f"[UI] save view mode failed: {e}")
+
+    def _pick_color(self, initial: str, title: str):
+        """Interactive RGB color picker. Returns hex string or None."""
+        if not (isinstance(initial, str) and initial.startswith("#") and len(initial) == 7):
+            initial = "#00E5FF"
+        try:
+            rgb = [int(initial[1:3], 16), int(initial[3:5], 16), int(initial[5:7], 16)]
+        except Exception:
+            rgb = [0, 229, 255]
+        chan = 0
+        while True:
+            with draw_lock:
+                _draw_toolbar()
+                color.DrawMenuBackground()
+                color.DrawBorder()
+                draw.rectangle([3, 13, 125, 24], fill=color.title_bg)
+                _centered(_truncate(title, 108), 13, font=small_font, fill=color.border)
+                draw.line([(3, 24), (125, 24)], fill=color.border, width=1)
+
+                preview = f"#{rgb[0]:02X}{rgb[1]:02X}{rgb[2]:02X}"
+                draw.rectangle([8, 30, 120, 52], fill=preview, outline=color.border, width=2)
+
+                draw.text((10, 56), f"R:{rgb[0]:3d}", font=text_font,
+                         fill=color.selected_text if chan == 0 else color.text)
+                draw.text((10, 70), f"G:{rgb[1]:3d}", font=text_font,
+                         fill=color.selected_text if chan == 1 else color.text)
+                draw.text((10, 84), f"B:{rgb[2]:3d}", font=text_font,
+                         fill=color.selected_text if chan == 2 else color.text)
+
+                draw.text((10, 101), "L/R=chan  U/D=±5", font=small_font, fill=color.text)
+                draw.text((10, 112), "K1/K3=±1  OK=save", font=small_font, fill=color.text)
+
+            btn = getButton(timeout=0.5)
+            if btn is None:
+                continue
+            if btn == "KEY_LEFT_PIN":
+                chan = (chan - 1) % 3
+            elif btn == "KEY_RIGHT_PIN":
+                chan = (chan + 1) % 3
+            elif btn == "KEY_UP_PIN":
+                rgb[chan] = min(255, rgb[chan] + 5)
+            elif btn == "KEY_DOWN_PIN":
+                rgb[chan] = max(0, rgb[chan] - 5)
+            elif btn == "KEY1_PIN":
+                rgb[chan] = min(255, rgb[chan] + 1)
+            elif btn == "KEY3_PIN":
+                rgb[chan] = max(0, rgb[chan] - 1)
+            elif btn in ("KEY_PRESS_PIN", "KEY2_PIN"):
+                return f"#{rgb[0]:02X}{rgb[1]:02X}{rgb[2]:02X}"
+            elif btn == "KEY_LEFT_PIN" and chan == 0:
+                return None
+
+    def _custom_color_picker_menu(self):
+        """Menu to pick custom colors for each field and persist."""
+        color_fields = [
+            ("BORDER", "Border Color"),
+            ("BACKGROUND", "Background"),
+            ("TEXT", "Text Color"),
+            ("SELECTED_TEXT", "Selected Text"),
+            ("SELECTED_TEXT_BACKGROUND", "Selection BG"),
+            ("TITLE_BG", "Title Background"),
+            ("PANEL_BG", "Panel Background"),
+            ("GAMEPAD", "Gamepad Color"),
+            ("GAMEPAD_FILL", "Gamepad Fill"),
+        ]
+
+        custom_colors = {
+            "BORDER": color.border,
+            "BACKGROUND": color.background,
+            "TEXT": color.text,
+            "SELECTED_TEXT": color.selected_text,
+            "SELECTED_TEXT_BACKGROUND": color.select,
+            "TITLE_BG": color.title_bg,
+            "PANEL_BG": color.panel_bg,
+            "GAMEPAD": color.gamepad,
+            "GAMEPAD_FILL": color.gamepad_fill,
+        }
+
+        while True:
+            items = [f" {label}: {custom_colors[key]}" for key, label in color_fields]
+            items += [" Save & Apply"]
+            items += [" Back"]
+
+            sel = GetMenuString(items, duplicates=True)
+            if not sel:
+                return
+
+            idx, _ = sel
+            if idx == len(color_fields):
+                self._apply_custom_colors(custom_colors)
+                Dialog_info("Colors saved\nand applied.", wait=False, timeout=1)
+                return
+            elif idx == len(color_fields) + 1:
+                return
+
+            key, label = color_fields[idx]
+            picked = self._pick_color(custom_colors[key], label)
+            if picked:
+                custom_colors[key] = picked
+
+    def _apply_custom_colors(self, colors: dict):
+        """Apply and persist custom colors."""
+        color.border = colors["BORDER"]
+        color.background = colors["BACKGROUND"]
+        color.text = colors["TEXT"]
+        color.selected_text = colors["SELECTED_TEXT"]
+        color.select = colors["SELECTED_TEXT_BACKGROUND"]
+        color.title_bg = colors["TITLE_BG"]
+        color.panel_bg = colors["PANEL_BG"]
+        color.gamepad = colors["GAMEPAD"]
+        color.gamepad_fill = colors["GAMEPAD_FILL"]
+        color.current_theme = "custom"
+
+        try:
+            path = default.config_file
+            try:
+                data = json.loads(Path(path).read_text())
+            except Exception:
+                data = {}
+            data.setdefault("UI", {})["THEME"] = "custom"
+            data["COLORS"] = colors
+            Path(path).write_text(json.dumps(data, indent=2))
+        except Exception as e:
+            print(f"[UI] save custom colors failed: {e}")
 
     def _discord_status(self):
         wh = Path(INSTALL_PATH+"discord_webhook.txt")
