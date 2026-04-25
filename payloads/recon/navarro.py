@@ -57,6 +57,7 @@ FONT_SMALL_SIZE = 9
 FONT_BIG_SIZE = 11
 
 NAVARRO_PATHS = [
+    os.path.join(os.path.dirname(__file__), "navarro_engine.py"),
     "/root/KTOx/Navarro/navarro.py",
     "/home/ktox/Navarro/navarro.py",
     "/root/Navarro/navarro.py",
