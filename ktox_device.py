@@ -5799,7 +5799,7 @@ def _sig(sig, frame):
         try: GPIO.cleanup()
         except Exception: pass
     if HAS_KEYBOARD:
-        try: keyboard_input.stop()
+        try: keyboard_input.close()
         except Exception: pass
     sys.exit(0)
 
