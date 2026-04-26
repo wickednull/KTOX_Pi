@@ -10,7 +10,7 @@ import os
 import sys
 import subprocess
 import time
-from payloads._display_helper import ScaledDraw, scaled_font
+from _display_helper import ScaledDraw, scaled_font
 
 # Ensure RaspyJack modules are importable when launched directly
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")))
@@ -44,7 +44,7 @@ def _show(lines, progress=None):
         return
     try:
         from PIL import Image, ImageDraw  # type: ignore
-        from payloads._display_helper import ScaledDraw, scaled_font
+        from _display_helper import ScaledDraw, scaled_font
 
         img = Image.new("RGB", (WIDTH, HEIGHT), (10, 0, 0))
         draw = ScaledDraw(img)

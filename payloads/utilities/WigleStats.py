@@ -34,7 +34,7 @@ import LCD_Config
 from PIL import Image, ImageDraw, ImageFont
 
 from payloads._input_helper import get_button
-from payloads._display_helper import ScaledDraw, scaled_font
+from _display_helper import ScaledDraw, scaled_font
 
 API_BASE = "https://api.wigle.net/api/v2"
 CREDENTIALS_PATH = ROOT_DIR / ".wigle_credentials.json"

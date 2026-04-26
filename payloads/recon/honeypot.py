@@ -59,7 +59,7 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 from payloads._input_helper import get_virtual_button
-from payloads._display_helper import ScaledDraw, scaled_font
+from _display_helper import ScaledDraw, scaled_font
 
 # ---------------------------------------------------------------------------
 # Optional dependencies (Discord + LCD)
@@ -77,7 +77,7 @@ try:
     import RPi.GPIO as GPIO
     import LCD_1in44, LCD_Config
     from PIL import Image, ImageDraw, ImageFont
-    from payloads._display_helper import ScaledDraw, scaled_font
+    from _display_helper import ScaledDraw, scaled_font
     HAS_LCD = True
 except Exception as _lcd_exc:
     HAS_LCD = False

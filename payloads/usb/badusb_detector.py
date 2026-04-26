@@ -17,7 +17,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".
 
 import LCD_1in44, LCD_Config  # type: ignore
 from PIL import Image, ImageDraw, ImageFont  # type: ignore
-from payloads._display_helper import ScaledDraw, scaled_font
+from _display_helper import ScaledDraw, scaled_font
 import RPi.GPIO as GPIO  # type: ignore
 
 # Shared input helper (WebUI virtual + GPIO)

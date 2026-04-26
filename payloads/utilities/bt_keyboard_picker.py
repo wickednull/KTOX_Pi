@@ -31,7 +31,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.
 import RPi.GPIO as GPIO               # Raspberry Pi GPIO access
 import LCD_1in44                      # Waveshare LCD driver
 from PIL import Image, ImageDraw, ImageFont  # Pillow – draw text
-from payloads._display_helper import ScaledDraw, scaled_font
+from _display_helper import ScaledDraw, scaled_font
 
 # Shared input helper (WebUI virtual + GPIO)
 from payloads._input_helper import get_button

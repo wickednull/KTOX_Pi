@@ -24,7 +24,7 @@ import sys
 import time
 import subprocess
 import signal
-from payloads._display_helper import ScaledDraw, scaled_font
+from _display_helper import ScaledDraw, scaled_font
 
 # Add the required paths
 sys.path.append('/root/KTOx/')
@@ -35,7 +35,7 @@ try:
     import LCD_1in44, LCD_Config
     import RPi.GPIO as GPIO
     from PIL import Image, ImageDraw, ImageFont
-    from payloads._display_helper import ScaledDraw, scaled_font
+    from _display_helper import ScaledDraw, scaled_font
     from payloads._input_helper import get_button as _get_btn
     
     # Import WiFi integration functions

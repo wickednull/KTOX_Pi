@@ -1034,7 +1034,7 @@ class LiveCamDetector(WardrivingScanner):
             return
         try:
             from PIL import Image, ImageDraw
-            from payloads._display_helper import ScaledDraw, scaled_font
+            from _display_helper import ScaledDraw, scaled_font
             
             if self.debug:
                 self.log("LiveCam LCD display update - our method")
