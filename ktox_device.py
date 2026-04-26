@@ -5371,6 +5371,45 @@ class KTOxMenu:
             elif btn in ("KEY2_PIN", "KEY_LEFT_PIN") and chan == 0:
                 return None
 
+    def _get_text_input(self, title="Enter Text", max_len=20, initial=""):
+        """Interactive text input using DarkSecKeyboard."""
+        if not HAS_HW or not LCD or not GPIO:
+            return None
+
+        try:
+            from payloads._darksec_keyboard import DarkSecKeyboard
+
+            # Map our PINS format to DarkSecKeyboard format
+            kb_pins = {
+                "UP": PINS["KEY_UP_PIN"],
+                "DOWN": PINS["KEY_DOWN_PIN"],
+                "LEFT": PINS["KEY_LEFT_PIN"],
+                "RIGHT": PINS["KEY_RIGHT_PIN"],
+                "OK": PINS["KEY_PRESS_PIN"],
+                "KEY1": PINS["KEY1_PIN"],
+                "KEY2": PINS["KEY2_PIN"],
+                "KEY3": PINS["KEY3_PIN"],
+            }
+
+            # Freeze background display threads while keyboard runs
+            screen_lock.set()
+            try:
+                kb = DarkSecKeyboard(
+                    width=128,
+                    height=128,
+                    lcd=LCD,
+                    gpio_pins=kb_pins,
+                    gpio_module=GPIO
+                )
+                result = kb.run()
+                return result
+            finally:
+                # Resume background threads
+                screen_lock.clear()
+        except Exception as e:
+            print(f"[UI] text input failed: {e}")
+            return None
+
     def _custom_color_picker_menu(self):
         """Menu to pick custom colors for each field and persist."""
         color_fields = [
