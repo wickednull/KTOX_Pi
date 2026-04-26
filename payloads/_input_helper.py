@@ -20,8 +20,15 @@ try:
     import keyboard_input
     HAS_KEYBOARD = keyboard_input.HAS_EVDEV
 except Exception:
-    HAS_KEYBOARD = False
-    keyboard_input = None
+    try:
+        _ktox_dir = os.environ.get("KTOX_DIR", "/root/KTOx")
+        if _ktox_dir not in sys.path:
+            sys.path.insert(0, _ktox_dir)
+        import keyboard_input
+        HAS_KEYBOARD = keyboard_input.HAS_EVDEV
+    except Exception:
+        HAS_KEYBOARD = False
+        keyboard_input = None
 
 _VIRTUAL_TO_BTN = {
     "KEY_UP_PIN": "UP",
