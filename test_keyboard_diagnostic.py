@@ -32,24 +32,23 @@ except Exception as e:
 
 print()
 
-# Test 2: Check if background thread is running
-print("TEST 2: Background Thread Status")
+# Test 2: Check if initialization completed
+print("TEST 2: Initialization Status")
 print("-" * 70)
-time.sleep(0.2)  # Give thread time to start
-if keyboard_input._listener_thread is None:
-    print("✗ Thread never created")
-elif not keyboard_input._listener_thread.is_alive():
-    print("✗ Thread is not running")
+if keyboard_input._keyboards is None:
+    print("✗ Keyboards not initialized")
+elif not keyboard_input._keyboards:
+    print("⚠ Initialization complete but no keyboards found")
+    print("  (This is OK if no keyboards are plugged in)")
 else:
-    print("✓ Background thread is running")
+    print("✓ Initialization complete")
 
 print()
 
 # Test 3: Check if devices were found
 print("TEST 3: Device Discovery")
 print("-" * 70)
-with keyboard_input._devices_lock:
-    devices = keyboard_input._devices[:]
+devices = keyboard_input._keyboards or []
 
 if not devices:
     print("✗ NO KEYBOARDS FOUND")
@@ -85,17 +84,13 @@ print()
 # Test 4: Check if poller is set up
 print("TEST 4: Poller Setup")
 print("-" * 70)
-if keyboard_input._poller is None:
-    print("✗ Poller not initialized")
+if not devices:
+    print("⚠ No devices to poll (expected if no keyboards found)")
+elif keyboard_input._poller is None:
+    print("✗ Poller not initialized but devices exist")
 else:
-    print("✓ Poller is initialized")
-    # Try to check registered fds
-    try:
-        # This is hard to check without accessing internals
-        # Just verify it exists
-        print(f"  Poller object: {keyboard_input._poller}")
-    except Exception as e:
-        print(f"  Error: {e}")
+    print(f"✓ Poller initialized for {len(devices)} device(s)")
+    print(f"  Poller object: {keyboard_input._poller}")
 
 print()
 
