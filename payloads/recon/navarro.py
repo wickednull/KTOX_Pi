@@ -319,8 +319,12 @@ def _parse_json_results(json_path: str) -> list:
     try:
         with open(json_path, "r", encoding="utf-8") as jf:
             data = json.load(jf)
+    except FileNotFoundError:
+        return []  # JSON file not created - subprocess may not have completed
+    except json.JSONDecodeError:
+        return []  # JSON file is malformed
     except Exception:
-        return []
+        return []  # Other file read error
 
     items = []
 
@@ -579,7 +583,20 @@ def main():
             results, run_dir = run_navarro(username.strip())
             page = 1
             if not results:
-                draw_center(["No results found", "(log saved)", "K3 Back"], small=True)
+                # Show scanning stats from log even if no profiles found
+                try:
+                    with open(os.path.join(run_dir, "log.txt"), "r") as f:
+                        log = f.read()
+                    # Try to extract found count from summary line
+                    found_match = re.search(r"Found:\s*(\d+)/(\d+)", log, re.IGNORECASE)
+                    if found_match:
+                        found = found_match.group(1)
+                        total = found_match.group(2)
+                        draw_center([f"Scan complete!", f"Found: {found}/{total}", "", "K3 Back"], small=True)
+                    else:
+                        draw_center(["Scan completed", "0 profiles found", "(log saved)", "K3 Back"], small=True)
+                except Exception:
+                    draw_center(["No profiles found", "(log saved)", "K3 Back"], small=True)
                 wait_release(btn)
             else:
                 cursor = 1
