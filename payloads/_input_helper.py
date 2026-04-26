@@ -1,6 +1,6 @@
 """
 Shared input helper for KTOx payloads.
-Checks WebUI virtual input first, then falls back to GPIO.
+Checks WebUI virtual input, keyboard, then GPIO.
 """
 
 import os, sys
@@ -8,7 +8,6 @@ import os, sys
 try:
     import ktox_input
 except Exception:
-    # ktox_input lives in ktox_pi/ — add it to the path and retry
     try:
         _ktox_pi = os.path.join(os.environ.get("KTOX_DIR", "/root/KTOx"), "ktox_pi")
         if _ktox_pi not in sys.path:
@@ -16,6 +15,13 @@ except Exception:
         import ktox_input
     except Exception:
         ktox_input = None
+
+try:
+    import keyboard_input
+    HAS_KEYBOARD = keyboard_input.HAS_EVDEV
+except Exception:
+    HAS_KEYBOARD = False
+    keyboard_input = None
 
 _VIRTUAL_TO_BTN = {
     "KEY_UP_PIN": "UP",
@@ -44,12 +50,18 @@ def get_virtual_button():
 
 def get_button(pins, gpio):
     """
-    Return a button name using WebUI virtual input if available,
-    otherwise fall back to GPIO.
+    Return a button name using WebUI virtual input, keyboard, or GPIO.
     """
     mapped = get_virtual_button()
     if mapped:
         return mapped
+    if HAS_KEYBOARD:
+        try:
+            k = keyboard_input.get_keyboard_button(timeout_ms=10)
+            if k:
+                return _VIRTUAL_TO_BTN.get(k, k)
+        except Exception:
+            pass
     for btn, pin in pins.items():
         if gpio.input(pin) == 0:
             return btn
