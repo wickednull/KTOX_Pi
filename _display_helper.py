@@ -2,7 +2,7 @@
 Display helper for payloads – automatic 128-base coordinate scaling.
 
 Usage in a payload:
-    from payloads._display_helper import ScaledDraw, scaled_font
+    from _display_helper import ScaledDraw, scaled_font
 
     img = Image.new("RGB", (WIDTH, HEIGHT), (10, 0, 0))
     d = ScaledDraw(img)           # drop-in replacement for ImageDraw.Draw

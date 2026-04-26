@@ -4883,7 +4883,7 @@ class KTOxMenu:
 
     def _network_text_input(self, prompt="Enter text", secret=False):
         try:
-            from payloads._darksec_keyboard import DarkSecKeyboard
+            from _darksec_keyboard import DarkSecKeyboard
             pin_map = {
                 "UP": PINS["KEY_UP_PIN"],
                 "DOWN": PINS["KEY_DOWN_PIN"],

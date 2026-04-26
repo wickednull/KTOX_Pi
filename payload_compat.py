@@ -46,7 +46,7 @@ import textwrap
 from pathlib import Path
 
 # ── Shim inserted into KTOx → RaspyJack payloads ────────────────────────────
-# Replaces the `from payloads._input_helper import get_button` line.
+# Replaces the `from _input_helper import get_button` line.
 # Provides an identical get_button(pins, gpio) API using rj_input natively.
 _RJ_SHIM = textwrap.dedent("""\
     # ── get_button shim (added by payload_compat.py for RaspyJack) ─────────
@@ -79,7 +79,7 @@ _RJ_SHIM = textwrap.dedent("""\
 """)
 
 # Import line added to RaspyJack → KTOx payloads (if not already present)
-_KTOX_IMPORT = "from payloads._input_helper import get_button\n"
+_KTOX_IMPORT = "from _input_helper import get_button\n"
 
 # ── Conversion rules ─────────────────────────────────────────────────────────
 
@@ -90,7 +90,7 @@ def _make_rules_to_rj(ktox_root: str, rj_root: str) -> list[tuple]:
     """
     return [
         # Input helper import → inject shim marker (replaced in post-process)
-        ("from payloads._input_helper import get_button",
+        ("from _input_helper import get_button",
          "__KTOX_SHIM_PLACEHOLDER__"),
 
         # Root path variable name
@@ -164,7 +164,7 @@ def _convert_to_ktox(source: str, ktox_root: str, rj_root: str) -> str:
         "gpio.input(" in result or
         "get_button" in result
     )
-    already_imported = "from payloads._input_helper import get_button" in result
+    already_imported = "from _input_helper import get_button" in result
 
     if uses_gpio_buttons and not already_imported:
         result = _inject_before_first_import(result, _KTOX_IMPORT)

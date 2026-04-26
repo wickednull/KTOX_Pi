@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-payloads/_debug_helper.py — KTOx Central Debug Logger
-======================================================
+_debug_helper.py — KTOx Central Debug Logger
+=============================================
 All payloads should import and use log() for consistent, timestamped
 debug output written to /root/KTOx/loot/ktox_debug.log.
 
 Usage:
-    from payloads._debug_helper import log
+    from _debug_helper import log
     log("Starting scan", tag="DEAUTH")
     log("Monitor mode failed", level="ERROR", tag="MON")
 """

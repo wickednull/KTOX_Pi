@@ -5402,7 +5402,7 @@ class KTOxMenu:
             return None
 
         try:
-            from payloads._darksec_keyboard import DarkSecKeyboard
+            from _darksec_keyboard import DarkSecKeyboard
 
             # Map our PINS format to DarkSecKeyboard format
             kb_pins = {

@@ -31,7 +31,7 @@ import subprocess
 import time
 
 try:
-    from payloads._debug_helper import log as _log
+    from _debug_helper import log as _log
 except Exception:
     def _log(msg, level="INFO", tag="MON"):
         ts = time.strftime("%H:%M:%S")

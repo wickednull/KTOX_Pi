@@ -95,7 +95,7 @@ _RJ_SHIM = textwrap.dedent("""\
     # ── end shim ─────────────────────────────────────────────────────────────
 """)
 
-_KTOX_IMPORT = "from payloads._input_helper import get_button\n"
+_KTOX_IMPORT = "from _input_helper import get_button\n"
 
 
 def _compat_inject_before_first_import(source: str, injection: str) -> str:
@@ -115,7 +115,7 @@ def _compat_convert(source: str, target: str,
     result = source
     if target == "raspyjack":
         result = result.replace(
-            "from payloads._input_helper import get_button",
+            "from _input_helper import get_button",
             "__KTOX_SHIM__"
         )
         result = result.replace("KTOX_ROOT", "RJ_ROOT")
@@ -135,7 +135,7 @@ def _compat_convert(source: str, target: str,
         ]:
             result = result.replace(old, new)
         uses_buttons = "GPIO.input(" in result or "gpio.input(" in result or "get_button" in result
-        already_imported = "from payloads._input_helper import get_button" in result
+        already_imported = "from _input_helper import get_button" in result
         if uses_buttons and not already_imported:
             result = _compat_inject_before_first_import(result, _KTOX_IMPORT)
     return result

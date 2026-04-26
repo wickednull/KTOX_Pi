@@ -31,7 +31,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.
 import RPi.GPIO as GPIO
 import LCD_1in44
 from PIL import Image, ImageDraw, ImageFont
-from _input_helper import get_button
+from _input_helper import get_button, flush_input
 from _darksec_keyboard import DarkSecKeyboard
 try:
     import qrcode 
@@ -63,7 +63,7 @@ NAVARRO_PATHS = [
     "/home/ktox/Navarro/navarro.py",
     "/root/Navarro/navarro.py",
 ]
-NAVARRO_PATH = next((p for p in NAVARRO_PATHS if os.path.exists(p)), None)
+NAVARRO_PATH = next((os.path.abspath(p) for p in NAVARRO_PATHS if os.path.exists(p)), None)
 LOOT_BASE = "/root/KTOx/loot/OSINT"
 os.makedirs(LOOT_BASE, exist_ok=True)
 APP_RUNNING = True
@@ -633,6 +633,8 @@ def keyboard_input(initial: str) -> str:
     Use the shared DarkSec virtual keyboard used across KTOx payloads.
     Falls back to the previous value when the keyboard is cancelled.
     """
+    flush_input()
+    time.sleep(0.1)
     kb = DarkSecKeyboard(width=WIDTH, height=HEIGHT, lcd=LCD, gpio_pins=PINS, gpio_module=GPIO)
     result = kb.run()
     if result is None:
