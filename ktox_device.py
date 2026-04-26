@@ -3943,16 +3943,18 @@ _FA_ICONS: dict = {
     "Network Mgr":      "\uf6ff",   # fa-network-wired
     "Bluetooth Mgr":    "\uf294",   # fa-bluetooth-b
     "UI Theme":         "\uf53f",   # fa-palette
+    "Theme Presets":    "\uf53f",   # fa-palette
+    "User Themes":      "\uf0c0",   # fa-users
+    "Custom Colors":    "\uf576",   # fa-paint-brush
+    "Save as User Theme": "\uf0c7", # fa-save
+    "View Mode":        "\uf03a",   # fa-th
+    "Wallpaper":        "\uf03e",   # fa-image
+    "Return to Default": "\uf01e",  # fa-reply
     "Discord Status":   "\uf392",   # fa-discord
     "Discord Webhook":  "\uf392",   # fa-discord
     "Lock":             "\uf023",   # fa-lock
     "OTA Update":       "\uf021",   # fa-sync
-    "Theme Presets":    "\uf53f",   # fa-palette
-    "Custom Colors":    "\uf1fb",   # fa-paint-brush
-    "View Mode":        "\uf00a",   # fa-th
-    "Wallpaper":        "\uf03e",   # fa-image
     "No Wallpaper":     "\uf070",   # fa-eye-slash
-    "Return to Default":"\uf2ea",   # fa-undo
     "Save & Apply":     "\uf0c7",   # fa-save
     "Reboot":           "\uf2f9",   # fa-redo
     "Shutdown":         "\uf011",   # fa-power-off
