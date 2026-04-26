@@ -18,14 +18,16 @@ and WebUI buttons.
 """
 
 import os
+import sys
 import threading
 import queue
 import time
+import select
+import fcntl
 from typing import Optional
 
 try:
-    import evdev
-    from evdev import ecodes
+    from evdev import InputDevice, ecodes, list_devices, categorize
     HAS_EVDEV = True
     # Map evdev keycodes to KTOx button names
     _KEY_MAP = {
@@ -48,80 +50,101 @@ except ImportError:
 _q: "queue.Queue[str]" = queue.Queue()
 _listener_thread: Optional[threading.Thread] = None
 _stop_monitoring = False
+_devices_lock = threading.Lock()
+_active_devices = []  # Keep device objects alive
 
 
-def _find_keyboard_devices():
-    """Scan /dev/input/ for keyboard devices."""
+def _find_keyboards():
+    """Find all connected keyboard devices."""
     if not HAS_EVDEV:
         return []
 
-    devices = []
+    keyboards = []
     try:
-        for dev_path in [f"/dev/input/{f}" for f in os.listdir("/dev/input/") if f.startswith("event")]:
+        for dev_path in list_devices():
             try:
-                dev = evdev.InputDevice(dev_path)
-                # Check if device has keyboard capability
+                dev = InputDevice(dev_path)
                 if ecodes.EV_KEY in dev.capabilities():
-                    devices.append(dev)
+                    # Set non-blocking mode
+                    if hasattr(dev, 'set_blocking'):
+                        dev.set_blocking(False)
+                    else:
+                        fcntl.fcntl(dev.fd, fcntl.F_SETFL,
+                                   fcntl.fcntl(dev.fd, fcntl.F_GETFL) | os.O_NONBLOCK)
+                    keyboards.append(dev)
             except Exception:
                 pass
     except Exception:
         pass
-    return devices
+    return keyboards
 
 
 def _monitor_keyboards():
     """Background thread: monitor all connected keyboards for key presses."""
-    global _stop_monitoring
+    global _stop_monitoring, _active_devices
 
-    # evdev.InputDevice context manager auto-closes on error
-    devices = _find_keyboard_devices()
-    if not devices:
-        time.sleep(1)
-        # Retry periodically for hot-plugged devices
-        if not _stop_monitoring:
-            threading.Thread(target=_monitor_keyboards, daemon=True).start()
-        return
+    last_scan = time.monotonic()
 
-    # Multi-device polling: use select to wait for events from any device
-    try:
-        import selectors
-        sel = selectors.DefaultSelector()
-        for dev in devices:
-            sel.register(dev, selectors.EVENT_READ)
+    while not _stop_monitoring:
+        try:
+            now = time.monotonic()
+            # Rescan for new keyboards frequently to catch hotplugged devices
+            if now - last_scan >= 0.2:  # Rescan every 200ms
+                with _devices_lock:
+                    _active_devices = _find_keyboards()
+                last_scan = now
 
-        while not _stop_monitoring:
-            events = sel.select(timeout=0.5)
-            for key, mask in events:
+            with _devices_lock:
+                devices = _active_devices
+
+            if not devices:
+                time.sleep(0.5)
+                continue
+
+            # Use select() to poll all device file descriptors
+            fds = [dev.fd for dev in devices]
+            try:
+                readable, _, _ = select.select(fds, [], [], 0.5)
+            except Exception:
+                time.sleep(0.1)
+                continue
+
+            for fd in readable:
                 try:
-                    dev = key.fileobj
+                    # Find the device with this fd
+                    dev = next((d for d in devices if d.fd == fd), None)
+                    if dev is None:
+                        continue
+
                     for event in dev.read():
-                        if event.type == ecodes.EV_KEY and event.value == 1:  # Key press (value=1)
+                        if event.type == ecodes.EV_KEY and event.value == 1:  # Key press
                             button = _KEY_MAP.get(event.code)
                             if button:
                                 try:
                                     _q.put_nowait(button)
                                 except Exception:
                                     pass
+                except (OSError, IOError):
+                    # Device disconnected
+                    with _devices_lock:
+                        _active_devices = [d for d in _active_devices if d.fd != fd]
                 except Exception:
                     pass
 
-        sel.close()
-    except Exception:
-        pass
-
-    # Restart monitoring if devices were disconnected
-    if not _stop_monitoring:
-        time.sleep(0.5)
-        threading.Thread(target=_monitor_keyboards, daemon=True).start()
+        except Exception:
+            time.sleep(0.5)
 
 
-def get_keyboard_button() -> Optional[str]:
-    """Return next keyboard button name (e.g. 'KEY_UP_PIN') or None."""
+def get_keyboard_button(timeout: float = 0.05) -> Optional[str]:
+    """
+    Return next keyboard button name (e.g. 'KEY_UP_PIN') or None.
+    Blocks briefly to allow background thread to discover devices and queue events.
+    timeout: seconds to wait (default 0.05 = 50ms, matches hardware debounce)
+    """
     if not HAS_EVDEV:
         return None
     try:
-        return _q.get_nowait()
+        return _q.get(timeout=timeout)
     except queue.Empty:
         return None
 
@@ -147,9 +170,16 @@ def _ensure_started():
 
 
 def stop():
-    """Stop keyboard monitoring thread."""
-    global _stop_monitoring
+    """Stop keyboard monitoring thread and close devices."""
+    global _stop_monitoring, _active_devices
     _stop_monitoring = True
+    with _devices_lock:
+        for dev in _active_devices:
+            try:
+                dev.close()
+            except Exception:
+                pass
+        _active_devices.clear()
     flush()
 
 
