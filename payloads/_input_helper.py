@@ -66,7 +66,7 @@ def get_button(pins, gpio):
         try:
             k = keyboard_input.get_keyboard_button(timeout_ms=10)
             if k:
-                return k
+                return _VIRTUAL_TO_BTN.get(k, k)
         except Exception:
             pass
     for btn, pin in pins.items():
