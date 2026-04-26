@@ -2002,7 +2002,7 @@ def GetMenuDocked(inlist, duplicates=False):
                         icon_fill = f"#{r:02X}{g:02X}{b:02X}"
 
                 if icon and _ui_ux.get("show_icons", True):
-                    draw.text((x + ITEM_W // 2, 116), icon, font=icon_font or small_font, fill=icon_fill, anchor="mm")
+                    draw.text((x + ITEM_W // 2, 116), icon, font=medium_icon_font or icon_font, fill=icon_fill, anchor="mm")
                 else:
                     draw.text((x + ITEM_W // 2, 116), (label.strip()[:1] or "•"), font=small_font, fill=icon_fill, anchor="mm")
 
