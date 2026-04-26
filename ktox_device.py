@@ -53,9 +53,8 @@ except Exception as _ie:
 
 try:
     import keyboard_input
-    HAS_KEYBOARD = True
+    HAS_KEYBOARD = keyboard_input.HAS_EVDEV
 except Exception as _ke:
-    print(f"[WARN] Keyboard input handler unavailable ({_ke})")
     HAS_KEYBOARD = False
 
 # ── Hardware imports ───────────────────────────────────────────────────────────
@@ -785,6 +784,17 @@ def getButton(timeout=120):
                     _mark_user_activity()
                     _last_button = None
                     return v
+            except Exception:
+                pass
+
+        # Keyboard input from USB/Bluetooth keyboards
+        if HAS_KEYBOARD:
+            try:
+                k = keyboard_input.get_keyboard_button(timeout_ms=10)
+                if k:
+                    _mark_user_activity()
+                    _last_button = None
+                    return k
             except Exception:
                 pass
 
