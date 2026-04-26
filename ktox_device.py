@@ -3912,6 +3912,7 @@ _FA_ICONS: dict = {
     "WebUI Status":     "\uf0e0",   # fa-envelope
     "Refresh State":    "\uf021",   # fa-sync
     "System Info":      "\uf129",
+    "Network Mgr":      "\uf6ff",   # fa-network-wired
     "Bluetooth Mgr":    "\uf294",   # fa-bluetooth-b
     "UI Theme":         "\uf53f",   # fa-palette
     "Discord Status":   "\uf392",   # fa-discord
@@ -4092,6 +4093,7 @@ class KTOxMenu:
             (" WebUI Status",    self._webui_status),
             (" Refresh State",   self._refresh),
             (" System Info",     self._sysinfo),
+            (" Network Mgr",     self._network_manager),
             (" Bluetooth Mgr",   self._bluetooth_manager),
             (" UI Theme",        self._ui_theme_menu),
             (" OTA Update",      partial(exec_payload,"general/auto_update")),
@@ -4801,6 +4803,169 @@ class KTOxMenu:
         Dialog_info("Refreshing…", wait=False, timeout=1)
         refresh_state()
         Dialog_info(f"IF: {ktox_state['iface']}\nGW: {ktox_state['gateway']}", wait=True)
+
+    def _nmcli_available(self) -> bool:
+        rc, _ = _run(["which", "nmcli"], timeout=4)
+        return rc == 0
+
+    def _nmcli(self, *args, timeout=12):
+        return _run(["nmcli", *args], timeout=timeout)
+
+    def _network_interfaces_menu(self):
+        rc, out = _run(["ip", "-o", "link", "show"], timeout=8)
+        if rc != 0:
+            Dialog_info("Failed to read\ninterfaces.", wait=True)
+            return
+        import re
+        ifaces = [i for i in re.findall(r"\d+:\s+([A-Za-z0-9_.:-]+):", out) if i != "lo"]
+        if not ifaces:
+            Dialog_info("No interfaces\nfound.", wait=True)
+            return
+        labels = [f" {i}" for i in ifaces]
+        sel = GetMenuString(labels, duplicates=True, title="Interfaces")
+        if not sel:
+            return
+        idx, _ = sel
+        iface = ifaces[idx]
+        while True:
+            pick = GetMenuString([
+                f" {iface}",
+                " Bring Up",
+                " Bring Down",
+                " Renew DHCP",
+                " Back",
+            ], title="IF Action")
+            if not pick:
+                return
+            s = pick.strip()
+            if s == "Bring Up":
+                _run(["ip", "link", "set", iface, "up"], timeout=8)
+                Dialog_info(f"{iface}\nset UP", wait=False, timeout=1)
+            elif s == "Bring Down":
+                _run(["ip", "link", "set", iface, "down"], timeout=8)
+                Dialog_info(f"{iface}\nset DOWN", wait=False, timeout=1)
+            elif s == "Renew DHCP":
+                _run(["dhclient", "-r", iface], timeout=10)
+                _run(["dhclient", iface], timeout=12)
+                Dialog_info(f"DHCP renewed\n{iface}", wait=False, timeout=1)
+            elif s == "Back":
+                return
+
+    def _network_wifi_scan_menu(self):
+        iface = ktox_state.get("wifi_iface", "wlan0")
+        if not self._nmcli_available():
+            Dialog_info("nmcli missing.\nInstall Network\nManager.", wait=True)
+            return
+        Dialog_info(f"Scanning WiFi\non {iface}...", wait=False, timeout=1)
+        rc, out = self._nmcli("-t", "--escape", "no", "-f", "IN-USE,SSID,SIGNAL,SECURITY",
+                              "dev", "wifi", "list", "ifname", iface, timeout=15)
+        rows = []
+        for ln in out.splitlines():
+            parts = ln.split(":", 3)
+            if len(parts) < 4:
+                continue
+            in_use, ssid, signal, sec = parts
+            ssid = ssid or "<hidden>"
+            rows.append((in_use == "*", ssid, signal or "?", sec or "open"))
+        if not rows:
+            Dialog_info("No WiFi APs\nfound.", wait=True)
+            return
+        labels = [
+            f" {'*' if use else ' '} {ssid[:12]:12} {sig:>3}% {sec[:6]}"
+            for use, ssid, sig, sec in rows
+        ]
+        GetMenuString(labels, title="WiFi Scan")
+
+    def _network_saved_profiles_menu(self):
+        if not self._nmcli_available():
+            Dialog_info("nmcli missing.\nNo profile mgr.", wait=True)
+            return
+        rc, out = self._nmcli("-t", "--escape", "no", "-f", "NAME,TYPE", "connection", "show", timeout=10)
+        profiles = []
+        for ln in out.splitlines():
+            if ":" not in ln:
+                continue
+            name, typ = ln.split(":", 1)
+            if typ in ("wifi", "ethernet", "802-11-wireless", "802-3-ethernet"):
+                profiles.append((name, typ))
+        if not profiles:
+            Dialog_info("No saved\nprofiles.", wait=True)
+            return
+        labels = [f" {n[:18]} ({t})" for n, t in profiles]
+        sel = GetMenuString(labels, duplicates=True, title="Profiles")
+        if not sel:
+            return
+        idx, _ = sel
+        name, _typ = profiles[idx]
+        while True:
+            pick = GetMenuString([
+                f" {name[:20]}",
+                " Connect",
+                " Disconnect",
+                " Forget Profile",
+                " Back",
+            ], title="Profile")
+            if not pick:
+                return
+            s = pick.strip()
+            if s == "Connect":
+                self._nmcli("connection", "up", name, timeout=20)
+                Dialog_info(f"Connect req:\n{name[:20]}", wait=False, timeout=1)
+            elif s == "Disconnect":
+                self._nmcli("connection", "down", name, timeout=20)
+                Dialog_info(f"Disconnect:\n{name[:20]}", wait=False, timeout=1)
+            elif s == "Forget Profile":
+                self._nmcli("connection", "delete", name, timeout=20)
+                Dialog_info(f"Deleted:\n{name[:20]}", wait=False, timeout=1)
+                return
+            elif s == "Back":
+                return
+
+    def _network_status_screen(self):
+        rc_ip, ip_br = _run(["ip", "-br", "addr"], timeout=8)
+        rc_rt, route = _run(["ip", "route", "show", "default"], timeout=8)
+        dns = []
+        try:
+            for ln in Path("/etc/resolv.conf").read_text(errors="ignore").splitlines():
+                if ln.startswith("nameserver"):
+                    dns.append(ln.split()[1])
+        except Exception:
+            pass
+        lines = [
+            f" IF: {ktox_state.get('iface','?')}",
+            f" WiFi: {ktox_state.get('wifi_iface','?')}",
+            f" GW: {(route.strip() or 'none')[:18]}",
+            f" DNS: {(dns[0] if dns else 'none')[:18]}",
+        ]
+        if rc_ip == 0:
+            lines += [f" {ln[:22]}" for ln in ip_br.splitlines()[:6]]
+        GetMenuString(lines, title="Net Status")
+
+    def _network_manager(self):
+        while True:
+            choice = GetMenuString([
+                " Status",
+                " Interfaces",
+                " WiFi Scan",
+                " Saved Profiles",
+                " Refresh State",
+                " Back",
+            ], title="Network Mgr")
+            if not choice:
+                return
+            s = choice.strip()
+            if s == "Status":
+                self._network_status_screen()
+            elif s == "Interfaces":
+                self._network_interfaces_menu()
+            elif s == "WiFi Scan":
+                self._network_wifi_scan_menu()
+            elif s == "Saved Profiles":
+                self._network_saved_profiles_menu()
+            elif s == "Refresh State":
+                self._refresh()
+            elif s == "Back":
+                return
 
     def _bt_parse_devices(self, output: str):
         import re
