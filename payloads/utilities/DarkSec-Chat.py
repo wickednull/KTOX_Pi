@@ -30,6 +30,7 @@ ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 from _darksec_keyboard import DarkSecKeyboard
+from _input_helper import flush_input
 
 # ----------------------------------------------------------------------
 # Hardware & LCD
@@ -96,6 +97,8 @@ def wait_btn(timeout=0.1):
     return None
 
 def osk_input(prompt="Enter:", initial=""):
+    flush_input()
+    time.sleep(0.1)
     kb = DarkSecKeyboard(width=W, height=H, lcd=LCD, gpio_pins=PINS, gpio_module=GPIO)
     result = kb.run()
     if result is None:
