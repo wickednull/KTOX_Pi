@@ -49,6 +49,15 @@ except Exception as _ie:
     print(f"[WARN] WebUI input bridge unavailable ({_ie})")
     HAS_INPUT = False
 
+# ── USB/Bluetooth keyboard input handler ──────────────────────────────────────
+
+try:
+    import keyboard_input
+    HAS_KEYBOARD = True
+except Exception as _ke:
+    print(f"[WARN] Keyboard input handler unavailable ({_ke})")
+    HAS_KEYBOARD = False
+
 # ── Hardware imports ───────────────────────────────────────────────────────────
 
 try:
@@ -776,6 +785,17 @@ def getButton(timeout=120):
                     _mark_user_activity()
                     _last_button = None
                     return v
+            except Exception:
+                pass
+
+        # Keyboard input from USB/Bluetooth keyboards
+        if HAS_KEYBOARD:
+            try:
+                k = keyboard_input.get_keyboard_button()
+                if k:
+                    _mark_user_activity()
+                    _last_button = None
+                    return k
             except Exception:
                 pass
 
@@ -5778,6 +5798,9 @@ def _sig(sig, frame):
     _stop_evt.set()
     if HAS_HW:
         try: GPIO.cleanup()
+        except Exception: pass
+    if HAS_KEYBOARD:
+        try: keyboard_input.stop()
         except Exception: pass
     sys.exit(0)
 
