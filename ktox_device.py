@@ -5684,9 +5684,9 @@ class KTOxMenu:
             Dialog_info("Theme apply\nfailed.", wait=True)
 
     def _view_mode_menu(self):
-        """Switch between 8 different view modes."""
+        """Switch between 9 different view modes."""
         global _view_mode
-        modes = ["list", "grid", "carousel", "panel", "table", "paged", "thumbnail", "vcarousel"]
+        modes = ["list", "grid", "carousel", "panel", "table", "paged", "thumbnail", "vcarousel", "docked"]
         mode_names = {
             "list": "List",
             "grid": "Grid",
@@ -5695,7 +5695,8 @@ class KTOxMenu:
             "table": "Table",
             "paged": "Paged",
             "thumbnail": "Thumbnail",
-            "vcarousel": "V-Carousel"
+            "vcarousel": "V-Carousel",
+            "docked": "Docked"
         }
         labels = []
         for mode in modes:
