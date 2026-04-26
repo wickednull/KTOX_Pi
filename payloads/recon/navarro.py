@@ -301,19 +301,17 @@ def _extract_platform_from_line(line: str) -> str | None:
 def _detect_export_flag(navarro_path: str) -> str:
     """Ask Navarro for --help and pick the right export flag."""
     try:
-        out = subprocess.run(
+        result = subprocess.run(
             ["python3", navarro_path, "--help"],
-            capture_output=True, text=True, timeout=8
-        ).stdout + subprocess.run(
-            ["python3", navarro_path, "--help"],
-            capture_output=True, text=True, timeout=8
-        ).stderr
-        for flag in ("--output", "--export", "-o"):
+            capture_output=True, text=True, timeout=5
+        )
+        out = result.stdout + result.stderr
+        for flag in ("--export", "--output", "-o", "-e"):
             if flag in out:
                 return flag
     except Exception:
         pass
-    return "--output"   # best guess if --help fails
+    return "--export"   # best guess if --help fails
 
 
 def _parse_json_results(json_path: str) -> list:
@@ -461,7 +459,8 @@ def run_navarro(username: str) -> tuple:
                     bounce_dir *= -1
                 draw_running(username, bounce_pos)
 
-                if get_button(PINS, GPIO) == "KEY3":
+                # Check for KEY3 abort (direct GPIO read, not full get_button)
+                if GPIO.input(PINS["KEY3"]) == 0:
                     try:
                         proc.terminate()
                         time.sleep(0.3)
