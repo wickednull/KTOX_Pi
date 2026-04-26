@@ -26,11 +26,14 @@ try:
         ecodes.KEY_SPACE:  "KEY_PRESS_PIN",
         ecodes.KEY_ESC:    "KEY1_PIN",
         ecodes.KEY_GRAVE:  "KEY1_PIN",           # M5Stack escape/back
+        ecodes.KEY_1:      "KEY1_PIN",
         ecodes.KEY_HOME:   "KEY2_PIN",
         ecodes.KEY_H:      "KEY2_PIN",
+        ecodes.KEY_2:      "KEY2_PIN",
         ecodes.KEY_DELETE: "KEY3_PIN",
         ecodes.KEY_BACKSPACE: "KEY3_PIN",        # M5Stack delete/lock
         ecodes.KEY_Q:      "KEY3_PIN",
+        ecodes.KEY_3:      "KEY3_PIN",
     }
 except ImportError:
     HAS_EVDEV = False
