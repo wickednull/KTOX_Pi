@@ -280,6 +280,22 @@ class ColorScheme:
                 # Fallback to ktox_red
                 self.apply_theme("ktox_red", persist=False)
 
+            # Load UX settings (animations, icons, etc.) from config
+            ux_config = data.get("UX", {})
+            if ux_config:
+                if "WINDOW_ROWS" in ux_config:
+                    _ui_ux["window_rows"] = int(ux_config.get("WINDOW_ROWS", 7))
+                if "ROW_H" in ux_config:
+                    _ui_ux["row_h"] = int(ux_config.get("ROW_H", 13))
+                if "START_Y" in ux_config:
+                    _ui_ux["start_y"] = int(ux_config.get("START_Y", 26))
+                if "SHOW_ICONS" in ux_config:
+                    _ui_ux["show_icons"] = bool(ux_config.get("SHOW_ICONS", True))
+                if "SELECT_STYLE" in ux_config:
+                    _ui_ux["select_style"] = str(ux_config.get("SELECT_STYLE", "fill"))
+                if "CYBER_BARS" in ux_config:
+                    _ui_ux["cyber_bars"] = bool(ux_config.get("CYBER_BARS", False))
+
             # Load view mode preference
             view_mode = str(data.get("UI", {}).get("VIEW_MODE", "list")).strip()
             if view_mode in ("list", "grid", "carousel", "panel", "table", "paged", "thumbnail", "vcarousel", "docked"):
