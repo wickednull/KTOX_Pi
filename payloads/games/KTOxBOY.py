@@ -246,7 +246,8 @@ def _run_emulator(rom_path):
                     break
             else:
                 if key3_down_at is not None and not key3_was_held:
-                    pyboy.button("select")   # tap = select
+                    pyboy.button_press("select")
+                    pyboy.button_release("select")
                 key3_down_at = None
                 key3_was_held = False
 
