@@ -33,7 +33,7 @@ try:
     from PIL import Image, ImageDraw, ImageFont
     import RPi.GPIO as GPIO
     from wifi_manager import WiFiManager
-    from payloads._darksec_keyboard import DarkSecKeyboard
+    from _darksec_keyboard import DarkSecKeyboard
     LCD_AVAILABLE = True
 except Exception as e:
     print(f"LCD not available: {e}")

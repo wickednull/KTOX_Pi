@@ -6,7 +6,7 @@ This module is the shared keyboard implementation for LCD payloads and mirrors
 the keyboard behavior used by `payloads/general/shell_plus.py`.
 
 Usage:
-    from payloads._darksec_keyboard import DarkSecKeyboard
+    from _darksec_keyboard import DarkSecKeyboard
     kb = DarkSecKeyboard(width=128, height=128, lcd=LCD)
     result = kb.run()  # returns typed text or None
 """
