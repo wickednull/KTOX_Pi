@@ -88,8 +88,8 @@ def _monitor_keyboards():
     while not _stop_monitoring:
         try:
             now = time.monotonic()
-            # Rescan for new keyboards every 2 seconds
-            if now - last_scan >= 2.0:
+            # Rescan for new keyboards frequently to catch hotplugged devices
+            if now - last_scan >= 0.2:  # Rescan every 200ms
                 with _devices_lock:
                     _active_devices = _find_keyboards()
                 last_scan = now
@@ -135,12 +135,16 @@ def _monitor_keyboards():
             time.sleep(0.5)
 
 
-def get_keyboard_button() -> Optional[str]:
-    """Return next keyboard button name (e.g. 'KEY_UP_PIN') or None."""
+def get_keyboard_button(timeout: float = 0.05) -> Optional[str]:
+    """
+    Return next keyboard button name (e.g. 'KEY_UP_PIN') or None.
+    Blocks briefly to allow background thread to discover devices and queue events.
+    timeout: seconds to wait (default 0.05 = 50ms, matches hardware debounce)
+    """
     if not HAS_EVDEV:
         return None
     try:
-        return _q.get_nowait()
+        return _q.get(timeout=timeout)
     except queue.Empty:
         return None
 
