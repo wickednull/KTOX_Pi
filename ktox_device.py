@@ -5181,7 +5181,9 @@ class KTOxMenu:
         while True:
             menu = [
                 " Theme Presets",
+                " User Themes",
                 " Custom Colors",
+                " Save as User Theme",
                 " View Mode",
                 " Wallpaper",
                 " Return to Default",
@@ -5192,8 +5194,12 @@ class KTOxMenu:
             s = choice.strip()
             if s == "Theme Presets":
                 self._theme_presets_menu()
+            elif s == "User Themes":
+                self._user_themes_menu()
             elif s == "Custom Colors":
                 self._custom_color_picker_menu()
+            elif s == "Save as User Theme":
+                self._save_as_user_theme()
             elif s == "View Mode":
                 self._view_mode_menu()
             elif s == "Wallpaper":
@@ -5369,6 +5375,27 @@ class KTOxMenu:
             elif btn in ("KEY2_PIN", "KEY_LEFT_PIN") and chan == 0:
                 return None
 
+    def _get_text_input(self, title="Enter Text", max_len=20, initial=""):
+        """Interactive text input using DarkSecKeyboard."""
+        try:
+            sys.path.insert(0, KTOX_DIR + "/payloads")
+            from _darksec_keyboard import DarkSecKeyboard
+
+            if not HAS_HW or not LCD:
+                return None
+
+            kb = DarkSecKeyboard(
+                width=128,
+                height=128,
+                lcd=LCD,
+                gpio_pins=PINS
+            )
+            result = kb.run()
+            return result
+        except Exception as e:
+            print(f"[UI] text input failed: {e}")
+            return None
+
     def _custom_color_picker_menu(self):
         """Menu to pick custom colors for each field and persist."""
         color_fields = [
@@ -5450,6 +5477,127 @@ class KTOxMenu:
             Path(path).write_text(json.dumps(data, indent=2))
         except Exception as e:
             print(f"[UI] save custom colors failed: {e}")
+
+    def _save_as_user_theme(self):
+        """Save current colors as a new user theme with custom name."""
+        theme_name = self._get_text_input("Theme Name:", max_len=15)
+        if not theme_name:
+            Dialog_info("Cancelled.", wait=False, timeout=1)
+            return
+
+        colors = {
+            "BORDER": color.border,
+            "BACKGROUND": color.background,
+            "TEXT": color.text,
+            "SELECTED_TEXT": color.selected_text,
+            "SELECTED_TEXT_BACKGROUND": color.select,
+            "TITLE_BG": color.title_bg,
+            "PANEL_BG": color.panel_bg,
+            "GAMEPAD": color.gamepad,
+            "GAMEPAD_FILL": color.gamepad_fill,
+            "TOPBAR_BG": color.topbar_bg,
+            "TOPBAR_TEXT": color.topbar_text,
+            "TOPBAR_ACCENT": color.topbar_accent,
+        }
+
+        try:
+            path = default.config_file
+            try:
+                data = json.loads(Path(path).read_text())
+            except Exception:
+                data = {}
+            data.setdefault("USER_THEMES", {})[theme_name] = colors
+            Path(path).write_text(json.dumps(data, indent=2))
+            Dialog_info(f"Theme saved:\n{theme_name}", wait=False, timeout=1)
+        except Exception as e:
+            Dialog_info("Save failed.", wait=True)
+            print(f"[UI] save user theme failed: {e}")
+
+    def _load_user_themes(self) -> dict:
+        """Load user-defined themes from config. Returns {name: colors_dict}."""
+        try:
+            data = json.loads(Path(default.config_file).read_text())
+            return data.get("USER_THEMES", {})
+        except Exception:
+            return {}
+
+    def _user_themes_menu(self):
+        """Browse and apply user-defined themes."""
+        user_themes = self._load_user_themes()
+        if not user_themes:
+            Dialog_info("No user themes.", wait=True)
+            return
+
+        while True:
+            keys = list(user_themes.keys())
+            labels = []
+            for key in keys:
+                mark = "✔" if key == color.current_theme else " "
+                labels.append(f" {mark} {key}")
+            labels.append(" Delete Theme")
+            labels.append(" Back")
+
+            sel = GetMenuString(labels, duplicates=True, title="User Themes")
+            if not sel:
+                return
+
+            idx, _ = sel
+            if idx >= len(keys):
+                if idx == len(keys):
+                    if YNDialog("Delete", y="Yes", n="No", b="Delete theme?"):
+                        sel_name = GetMenuString([f" {k}" for k in keys], title="Delete which?")
+                        if sel_name:
+                            theme_to_delete = sel_name.strip()
+                            self._delete_user_theme(theme_to_delete)
+                        continue
+                else:
+                    return
+            else:
+                chosen = keys[idx]
+                if self._apply_user_theme(chosen, user_themes[chosen]):
+                    Dialog_info(f"Theme:\n{chosen}", wait=False, timeout=1)
+                else:
+                    Dialog_info("Theme apply\nfailed.", wait=True)
+
+    def _apply_user_theme(self, name: str, colors: dict) -> bool:
+        """Apply a user theme by name and persist selection."""
+        try:
+            color.border = colors.get("BORDER", color.border)
+            color.background = colors.get("BACKGROUND", color.background)
+            color.text = colors.get("TEXT", color.text)
+            color.selected_text = colors.get("SELECTED_TEXT", color.selected_text)
+            color.select = colors.get("SELECTED_TEXT_BACKGROUND", color.select)
+            color.title_bg = colors.get("TITLE_BG", color.title_bg)
+            color.panel_bg = colors.get("PANEL_BG", color.panel_bg)
+            color.gamepad = colors.get("GAMEPAD", color.gamepad)
+            color.gamepad_fill = colors.get("GAMEPAD_FILL", color.gamepad_fill)
+            color.topbar_bg = colors.get("TOPBAR_BG", color.topbar_bg)
+            color.topbar_text = colors.get("TOPBAR_TEXT", color.topbar_text)
+            color.topbar_accent = colors.get("TOPBAR_ACCENT", color.topbar_accent)
+            color.current_theme = name
+            _save_ui_theme(name)
+            return True
+        except Exception as e:
+            print(f"[UI] apply user theme failed: {e}")
+            return False
+
+    def _delete_user_theme(self, name: str):
+        """Delete a user theme from config."""
+        try:
+            path = default.config_file
+            try:
+                data = json.loads(Path(path).read_text())
+            except Exception:
+                data = {}
+            if name in data.get("USER_THEMES", {}):
+                del data["USER_THEMES"][name]
+                Path(path).write_text(json.dumps(data, indent=2))
+                Dialog_info(f"Deleted:\n{name}", wait=False, timeout=1)
+            else:
+                Dialog_info("Theme not found.", wait=True)
+        except Exception as e:
+            Dialog_info("Delete failed.", wait=True)
+            print(f"[UI] delete user theme failed: {e}")
 
     def _discord_status(self):
         wh = Path(INSTALL_PATH+"discord_webhook.txt")
