@@ -21,9 +21,9 @@ try:
     HAS_KEYBOARD = keyboard_input.HAS_EVDEV
 except Exception:
     try:
-        _ktox_dir = os.environ.get("KTOX_DIR", "/root/KTOx")
-        if _ktox_dir not in sys.path:
-            sys.path.insert(0, _ktox_dir)
+        _ktox_pi = os.path.join(os.environ.get("KTOX_DIR", "/root/KTOx"), "ktox_pi")
+        if _ktox_pi not in sys.path:
+            sys.path.insert(0, _ktox_pi)
         import keyboard_input
         HAS_KEYBOARD = keyboard_input.HAS_EVDEV
     except Exception:
