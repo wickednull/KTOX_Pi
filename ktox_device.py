@@ -35,7 +35,7 @@ LOOT_DIR      = KTOX_DIR + "/loot"
 PAYLOAD_DIR   = KTOX_DIR + "/payloads"
 WALLPAPER_DIR = LOOT_DIR + "/wallpapers"
 PAYLOAD_LOG   = LOOT_DIR + "/payload.log"
-VERSION      = "1.0"
+VERSION      = "1.7"
 
 sys.path.insert(0, KTOX_DIR)
 sys.path.insert(0, KTOX_DIR + "/ktox_pi")
@@ -190,6 +190,9 @@ class ColorScheme:
     gamepad_fill      = "#F0EDE8"
     title_bg          = "#1a0000"
     panel_bg          = "#0d0606"
+    topbar_bg         = "#0d0000"
+    topbar_text       = "#5a2020"
+    topbar_accent     = "#3a0000"
     current_theme     = "ktox_red"
 
     def DrawBorder(self):
@@ -217,6 +220,9 @@ class ColorScheme:
         self.gamepad_fill  = preset["GAMEPAD_FILL"]
         self.title_bg      = preset.get("TITLE_BG", self.title_bg)
         self.panel_bg      = preset.get("PANEL_BG", self.panel_bg)
+        self.topbar_bg     = preset.get("TOPBAR_BG", self.topbar_bg)
+        self.topbar_text   = preset.get("TOPBAR_TEXT", self.topbar_text)
+        self.topbar_accent = preset.get("TOPBAR_ACCENT", self.topbar_accent)
         _apply_ux_from_theme(preset)
         if persist:
             _save_ui_theme(name)
@@ -240,6 +246,9 @@ class ColorScheme:
                 self.gamepad_fill  = c.get("GAMEPAD_FILL",       self.gamepad_fill)
                 self.title_bg      = c.get("TITLE_BG",           self.title_bg)
                 self.panel_bg      = c.get("PANEL_BG",           self.panel_bg)
+                self.topbar_bg     = c.get("TOPBAR_BG",          self.topbar_bg)
+                self.topbar_text   = c.get("TOPBAR_TEXT",        self.topbar_text)
+                self.topbar_accent = c.get("TOPBAR_ACCENT",      self.topbar_accent)
                 self.current_theme = "custom"
             elif requested in UI_THEMES:
                 # Load preset theme
@@ -256,6 +265,9 @@ class ColorScheme:
                     self.gamepad_fill  = c.get("GAMEPAD_FILL",       self.gamepad_fill)
                     self.title_bg      = c.get("TITLE_BG",           self.title_bg)
                     self.panel_bg      = c.get("PANEL_BG",           self.panel_bg)
+                    self.topbar_bg     = c.get("TOPBAR_BG",          self.topbar_bg)
+                    self.topbar_text   = c.get("TOPBAR_TEXT",        self.topbar_text)
+                    self.topbar_accent = c.get("TOPBAR_ACCENT",      self.topbar_accent)
             else:
                 # Fallback to ktox_red
                 self.apply_theme("ktox_red", persist=False)
@@ -286,6 +298,7 @@ UI_THEMES = {
         "SELECTED_TEXT": "#FFFFFF", "SELECTED_TEXT_BACKGROUND": "#640000",
         "GAMEPAD": "#640000", "GAMEPAD_FILL": "#F0EDE8",
         "TITLE_BG": "#1a0000", "PANEL_BG": "#0d0606",
+        "TOPBAR_BG": "#0d0000", "TOPBAR_TEXT": "#5a2020", "TOPBAR_ACCENT": "#3a0000",
         "UX_WINDOW_ROWS": 7, "UX_ROW_H": 13, "UX_START_Y": 26,
         "UX_SHOW_ICONS": True, "UX_SELECT_STYLE": "fill",
     },
@@ -295,6 +308,7 @@ UI_THEMES = {
         "SELECTED_TEXT": "#FFFFFF", "SELECTED_TEXT_BACKGROUND": "#005B66",
         "GAMEPAD": "#005B66", "GAMEPAD_FILL": "#DDF9FC",
         "TITLE_BG": "#09242A", "PANEL_BG": "#0B1A20",
+        "TOPBAR_BG": "#051113", "TOPBAR_TEXT": "#006B7A", "TOPBAR_ACCENT": "#00495A",
         "UX_WINDOW_ROWS": 6, "UX_ROW_H": 15, "UX_START_Y": 27,
         "UX_SHOW_ICONS": True, "UX_SELECT_STYLE": "outline",
     },
@@ -304,6 +318,7 @@ UI_THEMES = {
         "SELECTED_TEXT": "#FFFFFF", "SELECTED_TEXT_BACKGROUND": "#4A2B86",
         "GAMEPAD": "#4A2B86", "GAMEPAD_FILL": "#EFE8FF",
         "TITLE_BG": "#1A1030", "PANEL_BG": "#151028",
+        "TOPBAR_BG": "#0A050F", "TOPBAR_TEXT": "#5A3D99", "TOPBAR_ACCENT": "#3A1F66",
         "UX_WINDOW_ROWS": 8, "UX_ROW_H": 11, "UX_START_Y": 25,
         "UX_SHOW_ICONS": True, "UX_SELECT_STYLE": "fill",
     },
@@ -313,6 +328,7 @@ UI_THEMES = {
         "SELECTED_TEXT": "#FFFFFF", "SELECTED_TEXT_BACKGROUND": "#1C6D33",
         "GAMEPAD": "#1C6D33", "GAMEPAD_FILL": "#E3F7E9",
         "TITLE_BG": "#0E1F14", "PANEL_BG": "#0B1710",
+        "TOPBAR_BG": "#050A07", "TOPBAR_TEXT": "#1C5D2F", "TOPBAR_ACCENT": "#0D3D1F",
         "UX_WINDOW_ROWS": 6, "UX_ROW_H": 14, "UX_START_Y": 28,
         "UX_SHOW_ICONS": True, "UX_SELECT_STYLE": "fill",
     },
@@ -322,6 +338,7 @@ UI_THEMES = {
         "SELECTED_TEXT": "#0B0210", "SELECTED_TEXT_BACKGROUND": "#FF2BD6",
         "GAMEPAD": "#B00088", "GAMEPAD_FILL": "#FFD6F8",
         "TITLE_BG": "#2A0A33", "PANEL_BG": "#14071C",
+        "TOPBAR_BG": "#08030D", "TOPBAR_TEXT": "#881B66", "TOPBAR_ACCENT": "#550088",
         "UX_WINDOW_ROWS": 6, "UX_ROW_H": 15, "UX_START_Y": 27,
         "UX_SHOW_ICONS": True, "UX_SELECT_STYLE": "fill",
     },
@@ -331,6 +348,7 @@ UI_THEMES = {
         "SELECTED_TEXT": "#1A0A03", "SELECTED_TEXT_BACKGROUND": "#FF9F1A",
         "GAMEPAD": "#9C4E00", "GAMEPAD_FILL": "#FFE4C4",
         "TITLE_BG": "#331A08", "PANEL_BG": "#1B1007",
+        "TOPBAR_BG": "#0D0602", "TOPBAR_TEXT": "#7A3D00", "TOPBAR_ACCENT": "#552200",
         "UX_WINDOW_ROWS": 7, "UX_ROW_H": 13, "UX_START_Y": 26,
         "UX_SHOW_ICONS": True, "UX_SELECT_STYLE": "fill",
     },
@@ -340,6 +358,7 @@ UI_THEMES = {
         "SELECTED_TEXT": "#041018", "SELECTED_TEXT_BACKGROUND": "#00A0CC",
         "GAMEPAD": "#006B88", "GAMEPAD_FILL": "#D9F8FF",
         "TITLE_BG": "#0B2033", "PANEL_BG": "#0B1422",
+        "TOPBAR_BG": "#051219", "TOPBAR_TEXT": "#005A88", "TOPBAR_ACCENT": "#003D66",
         "UX_WINDOW_ROWS": 6, "UX_ROW_H": 15, "UX_START_Y": 27,
         "UX_SHOW_ICONS": True, "UX_SELECT_STYLE": "pulse",
         "UX_CYBER_BARS": True,
@@ -350,6 +369,7 @@ UI_THEMES = {
         "SELECTED_TEXT": "#FFFFFF", "SELECTED_TEXT_BACKGROUND": "#801414",
         "GAMEPAD": "#8B0000", "GAMEPAD_FILL": "#F5E6D3",
         "TITLE_BG": "#220000", "PANEL_BG": "#1a0a0a",
+        "TOPBAR_BG": "#0C0000", "TOPBAR_TEXT": "#663333", "TOPBAR_ACCENT": "#440000",
         "UX_WINDOW_ROWS": 7, "UX_ROW_H": 13, "UX_START_Y": 26,
         "UX_SHOW_ICONS": True, "UX_SELECT_STYLE": "outline",
     },
@@ -359,6 +379,7 @@ UI_THEMES = {
         "SELECTED_TEXT": "#FFFFFF", "SELECTED_TEXT_BACKGROUND": "#2e3a7a",
         "GAMEPAD": "#1f2954", "GAMEPAD_FILL": "#e8edf8",
         "TITLE_BG": "#15172a", "PANEL_BG": "#0f1320",
+        "TOPBAR_BG": "#0A0B11", "TOPBAR_TEXT": "#2A3055", "TOPBAR_ACCENT": "#151B3D",
         "UX_WINDOW_ROWS": 7, "UX_ROW_H": 13, "UX_START_Y": 26,
         "UX_SHOW_ICONS": True, "UX_SELECT_STYLE": "fill",
     },
@@ -368,6 +389,7 @@ UI_THEMES = {
         "SELECTED_TEXT": "#FFFFFF", "SELECTED_TEXT_BACKGROUND": "#2d5c3a",
         "GAMEPAD": "#1a4028", "GAMEPAD_FILL": "#dce8dd",
         "TITLE_BG": "#0f2416", "PANEL_BG": "#0c1a0e",
+        "TOPBAR_BG": "#070D08", "TOPBAR_TEXT": "#1F4D2F", "TOPBAR_ACCENT": "#0F2A1F",
         "UX_WINDOW_ROWS": 6, "UX_ROW_H": 14, "UX_START_Y": 28,
         "UX_SHOW_ICONS": True, "UX_SELECT_STYLE": "fill",
     },
@@ -377,6 +399,7 @@ UI_THEMES = {
         "SELECTED_TEXT": "#1a0a03", "SELECTED_TEXT_BACKGROUND": "#FF8C00",
         "GAMEPAD": "#cc5500", "GAMEPAD_FILL": "#ffe4d6",
         "TITLE_BG": "#3d2207", "PANEL_BG": "#1f1207",
+        "TOPBAR_BG": "#0E0703", "TOPBAR_TEXT": "#665522", "TOPBAR_ACCENT": "#443300",
         "UX_WINDOW_ROWS": 7, "UX_ROW_H": 13, "UX_START_Y": 26,
         "UX_SHOW_ICONS": True, "UX_SELECT_STYLE": "fill",
     },
@@ -386,6 +409,7 @@ UI_THEMES = {
         "SELECTED_TEXT": "#FFFFFF", "SELECTED_TEXT_BACKGROUND": "#6b2d8f",
         "GAMEPAD": "#4a1a66", "GAMEPAD_FILL": "#e8d4ff",
         "TITLE_BG": "#1a0a2a", "PANEL_BG": "#0d0518",
+        "TOPBAR_BG": "#090413", "TOPBAR_TEXT": "#5A2D7A", "TOPBAR_ACCENT": "#351A55",
         "UX_WINDOW_ROWS": 6, "UX_ROW_H": 15, "UX_START_Y": 27,
         "UX_SHOW_ICONS": True, "UX_SELECT_STYLE": "fill",
     },
@@ -395,6 +419,7 @@ UI_THEMES = {
         "SELECTED_TEXT": "#041c2e", "SELECTED_TEXT_BACKGROUND": "#00A8CC",
         "GAMEPAD": "#004466", "GAMEPAD_FILL": "#d9f7ff",
         "TITLE_BG": "#0a1820", "PANEL_BG": "#08141f",
+        "TOPBAR_BG": "#040810", "TOPBAR_TEXT": "#005080", "TOPBAR_ACCENT": "#003355",
         "UX_WINDOW_ROWS": 8, "UX_ROW_H": 11, "UX_START_Y": 25,
         "UX_SHOW_ICONS": True, "UX_SELECT_STYLE": "outline",
     },
@@ -404,6 +429,7 @@ UI_THEMES = {
         "SELECTED_TEXT": "#FFFFFF", "SELECTED_TEXT_BACKGROUND": "#2a2a2a",
         "GAMEPAD": "#1a1a1a", "GAMEPAD_FILL": "#f5f5f5",
         "TITLE_BG": "#0a0a0a", "PANEL_BG": "#0f0f0f",
+        "TOPBAR_BG": "#040404", "TOPBAR_TEXT": "#2A2A2A", "TOPBAR_ACCENT": "#161616",
         "UX_WINDOW_ROWS": 7, "UX_ROW_H": 13, "UX_START_Y": 26,
         "UX_SHOW_ICONS": True, "UX_SELECT_STYLE": "fill",
     },
@@ -413,6 +439,7 @@ UI_THEMES = {
         "SELECTED_TEXT": "#000000", "SELECTED_TEXT_BACKGROUND": "#00FFFF",
         "GAMEPAD": "#008080", "GAMEPAD_FILL": "#E0FFFF",
         "TITLE_BG": "#0a1818", "PANEL_BG": "#0a0f0f",
+        "TOPBAR_BG": "#070707", "TOPBAR_TEXT": "#006666", "TOPBAR_ACCENT": "#004040",
         "UX_WINDOW_ROWS": 6, "UX_ROW_H": 15, "UX_START_Y": 27,
         "UX_SHOW_ICONS": True, "UX_SELECT_STYLE": "scanline",
     },
@@ -422,6 +449,7 @@ UI_THEMES = {
         "SELECTED_TEXT": "#FFFFFF", "SELECTED_TEXT_BACKGROUND": "#991166",
         "GAMEPAD": "#660044", "GAMEPAD_FILL": "#ffe0f0",
         "TITLE_BG": "#330033", "PANEL_BG": "#1a0d1a",
+        "TOPBAR_BG": "#0E080C", "TOPBAR_TEXT": "#664455", "TOPBAR_ACCENT": "#442233",
         "UX_WINDOW_ROWS": 6, "UX_ROW_H": 14, "UX_START_Y": 28,
         "UX_SHOW_ICONS": True, "UX_SELECT_STYLE": "fill",
     },
@@ -625,16 +653,16 @@ def _temp() -> float:
 def _draw_toolbar():
     """Draw temp + status bar at y=0..11.  Caller holds draw_lock."""
     try:
-        draw.rectangle([(0,0),(128,11)], fill="#0d0000")
+        draw.rectangle([(0,0),(128,11)], fill=color.topbar_bg)
         # Temp left side
-        draw.text((1,1), f"{_temp_c:.0f}C", font=small_font, fill="#5a2020")
+        draw.text((1,1), f"{_temp_c:.0f}C", font=small_font, fill=color.topbar_text)
         # Version tag right side
-        draw.text((100,1), f"v{VERSION}", font=small_font, fill="#3a0000")
+        draw.text((100,1), f"v{VERSION}", font=small_font, fill=color.topbar_accent)
         # Status or brand centre
         if _status_text:
             draw.text((22,1), _status_text[:14], font=small_font, fill=color.border)
         else:
-            draw.text((34,1), "KTOx_Pi", font=small_font, fill="#4a0000")
+            draw.text((34,1), "KTOx_Pi", font=small_font, fill=color.topbar_text)
         draw.line([(0,11),(128,11)], fill=color.border, width=1)
     except Exception:
         pass
@@ -5353,6 +5381,9 @@ class KTOxMenu:
             ("PANEL_BG", "Panel Background"),
             ("GAMEPAD", "Gamepad Color"),
             ("GAMEPAD_FILL", "Gamepad Fill"),
+            ("TOPBAR_BG", "Topbar Background"),
+            ("TOPBAR_TEXT", "Topbar Text"),
+            ("TOPBAR_ACCENT", "Topbar Accent"),
         ]
 
         custom_colors = {
@@ -5365,6 +5396,9 @@ class KTOxMenu:
             "PANEL_BG": color.panel_bg,
             "GAMEPAD": color.gamepad,
             "GAMEPAD_FILL": color.gamepad_fill,
+            "TOPBAR_BG": color.topbar_bg,
+            "TOPBAR_TEXT": color.topbar_text,
+            "TOPBAR_ACCENT": color.topbar_accent,
         }
 
         while True:
@@ -5400,6 +5434,9 @@ class KTOxMenu:
         color.panel_bg = colors["PANEL_BG"]
         color.gamepad = colors["GAMEPAD"]
         color.gamepad_fill = colors["GAMEPAD_FILL"]
+        color.topbar_bg = colors["TOPBAR_BG"]
+        color.topbar_text = colors["TOPBAR_TEXT"]
+        color.topbar_accent = colors["TOPBAR_ACCENT"]
         color.current_theme = "custom"
 
         try:
