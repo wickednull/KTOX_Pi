@@ -41,7 +41,7 @@ except Exception:
     ImageFont = None
     LCD_AVAILABLE = False
 
-from payloads._input_helper import get_button
+from _input_helper import get_button
 
 try:
     from bleak import BleakScanner

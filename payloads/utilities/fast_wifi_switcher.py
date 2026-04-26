@@ -36,7 +36,7 @@ try:
     import RPi.GPIO as GPIO
     from PIL import Image, ImageDraw, ImageFont
     from _display_helper import ScaledDraw, scaled_font
-    from payloads._input_helper import get_button as _get_btn
+    from _input_helper import get_button as _get_btn
     
     # Import WiFi integration functions
     from wifi.ktox_integration import (

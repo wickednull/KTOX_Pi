@@ -17,7 +17,7 @@ if KTOX_ROOT not in sys.path:
     sys.path.insert(0, KTOX_ROOT)
 
 # Import the keyboard module
-from payloads._darksec_keyboard import DarkSecKeyboard
+from _darksec_keyboard import DarkSecKeyboard
 
 try:
     import RPi.GPIO as GPIO
@@ -150,7 +150,7 @@ def run_vkb():
 
 NEW CODE (replacement):
 
-from payloads._darksec_keyboard import DarkSecKeyboard
+from _darksec_keyboard import DarkSecKeyboard
 
 keyboard = DarkSecKeyboard(...)
 result = keyboard.run()

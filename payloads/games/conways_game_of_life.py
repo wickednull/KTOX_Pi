@@ -21,7 +21,7 @@ import RPi.GPIO as GPIO  # type: ignore
 import LCD_1in44, LCD_Config  # type: ignore
 from PIL import Image, ImageDraw, ImageFont  # type: ignore
 
-from payloads._input_helper import get_button
+from _input_helper import get_button
 
 WIDTH, HEIGHT = 128, 128
 FONT = ImageFont.load_default()

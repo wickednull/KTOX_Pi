@@ -14,7 +14,7 @@ import signal
 import RPi.GPIO as GPIO
 import LCD_1in44, LCD_Config
 from PIL import Image, ImageDraw, ImageFont
-from payloads._input_helper import get_button
+from _input_helper import get_button
 
 PINS = {"UP": 6, "DOWN": 19, "LEFT": 5, "RIGHT": 26, "OK": 13, "KEY1": 21, "KEY2": 20, "KEY3": 16}
 GPIO.setmode(GPIO.BCM)

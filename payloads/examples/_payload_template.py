@@ -17,7 +17,7 @@ import LCD_1in44, LCD_Config
 from PIL import Image, ImageDraw, ImageFont
 
 # WebUI + GPIO input helper
-from payloads._input_helper import get_button
+from _input_helper import get_button
 
 PINS = {
     "UP": 6,

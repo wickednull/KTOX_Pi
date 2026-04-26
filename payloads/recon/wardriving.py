@@ -38,7 +38,7 @@ try:
     import LCD_1in44, LCD_Config
     from PIL import Image, ImageDraw, ImageFont
     import RPi.GPIO as GPIO
-    from payloads._input_helper import get_button
+    from _input_helper import get_button
     LCD_AVAILABLE = True
 except ImportError:
     LCD_AVAILABLE = False

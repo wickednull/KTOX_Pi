@@ -24,7 +24,7 @@ from PIL import Image, ImageDraw, ImageFont  # type: ignore
 from _display_helper import ScaledDraw, scaled_font
 
 # Shared input helper (WebUI virtual + GPIO)
-from payloads._input_helper import get_button
+from _input_helper import get_button
 
 WIDTH, HEIGHT = LCD_1in44.LCD_WIDTH, LCD_1in44.LCD_HEIGHT
 KEY_UP = 6

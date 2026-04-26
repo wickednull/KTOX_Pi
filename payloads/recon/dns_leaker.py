@@ -79,7 +79,7 @@ import LCD_1in44, LCD_Config
 from PIL import Image, ImageDraw, ImageFont
 
 # Shared input helper (WebUI virtual + GPIO)
-from payloads._input_helper import get_button
+from _input_helper import get_button
 
 from scapy.all import sniff, DNS, DNSQR, IP
 from scapy.layers.netbios import NBNSQueryRequest

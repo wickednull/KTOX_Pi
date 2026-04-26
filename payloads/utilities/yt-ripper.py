@@ -56,7 +56,7 @@ from PIL import Image, ImageDraw, ImageFont
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
-from payloads._darksec_keyboard import DarkSecKeyboard
+from _darksec_keyboard import DarkSecKeyboard
 
 # ----------------------------------------------------------------------
 # Directories

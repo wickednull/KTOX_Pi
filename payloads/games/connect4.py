@@ -19,7 +19,7 @@ import random
 import RPi.GPIO as GPIO
 import LCD_1in44, LCD_Config
 from PIL import Image, ImageDraw, ImageFont
-from payloads._input_helper import get_button
+from _input_helper import get_button
 
 # ---------------------------------------------------------------------------
 # GPIO setup

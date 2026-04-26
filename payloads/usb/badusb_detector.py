@@ -21,7 +21,7 @@ from _display_helper import ScaledDraw, scaled_font
 import RPi.GPIO as GPIO  # type: ignore
 
 # Shared input helper (WebUI virtual + GPIO)
-from payloads._input_helper import get_button
+from _input_helper import get_button
 
 try:
     import pyudev  # type: ignore

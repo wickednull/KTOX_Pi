@@ -34,7 +34,7 @@ try:
 except ImportError:
     HAS_EVDEV = False
 
-from payloads._input_helper import get_virtual_button
+from _input_helper import get_virtual_button
 
 # ---------------------------------------------------------
 # 1) LCD initialisation

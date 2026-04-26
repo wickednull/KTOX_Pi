@@ -38,8 +38,8 @@ import LCD_1in44
 import LCD_Config
 from PIL import Image, ImageDraw, ImageFont
 from _display_helper import ScaledDraw, scaled_font
-from payloads._input_helper import get_button
-from payloads._debug_helper import log as _dbg
+from _input_helper import get_button
+from _debug_helper import log as _dbg
 
 _root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 if _root not in sys.path:

@@ -42,7 +42,7 @@ if KTOX_ROOT not in sys.path:
 import RPi.GPIO as GPIO
 import LCD_1in44
 from PIL import Image, ImageDraw, ImageFont
-from payloads._input_helper import get_button
+from _input_helper import get_button
 
 # ── Hardware ──────────────────────────────────────────────────────────────────
 PINS = {"UP": 6, "DOWN": 19, "LEFT": 5, "RIGHT": 26,

@@ -184,7 +184,7 @@ def on_screen_keyboard(prompt="Enter:"):
     if not HAS_HW:
         return ""
     try:
-        from payloads._darksec_keyboard import DarkSecKeyboard
+        from _darksec_keyboard import DarkSecKeyboard
     except Exception:
         return ""
     kb = DarkSecKeyboard(width=W, height=H, lcd=LCD, gpio_pins=PINS, gpio_module=GPIO)

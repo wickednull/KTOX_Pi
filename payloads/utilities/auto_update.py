@@ -31,7 +31,7 @@ from PIL import Image, ImageDraw, ImageFont
 from _display_helper import ScaledDraw
 
 # Shared input helper (WebUI virtual + GPIO)
-from payloads._input_helper import get_button
+from _input_helper import get_button
 
 # ---------------------------------------------------------------------------
 # 1) Constants

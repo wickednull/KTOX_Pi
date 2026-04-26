@@ -34,7 +34,7 @@ from PIL import Image, ImageDraw, ImageFont  # Pillow – draw text
 from _display_helper import ScaledDraw, scaled_font
 
 # Shared input helper (WebUI virtual + GPIO)
-from payloads._input_helper import get_button
+from _input_helper import get_button
 
 # ---------------------------------------------------------------------------
 # 1) GPIO mapping (BCM)

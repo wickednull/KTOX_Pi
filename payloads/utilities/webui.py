@@ -24,7 +24,7 @@ import RPi.GPIO as GPIO
 import LCD_1in44, LCD_Config
 from PIL import Image, ImageDraw, ImageFont
 from _display_helper import ScaledDraw
-from payloads._input_helper import get_button
+from _input_helper import get_button
 
 # --------------------------- LCD and GPIO setup ---------------------------
 PINS = {

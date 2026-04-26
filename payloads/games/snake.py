@@ -33,7 +33,7 @@ from typing import List, Tuple, Optional
 import RPi.GPIO as GPIO               # Raspberry Pi GPIO access
 import LCD_1in44, LCD_Config          # Waveshare driver helpers for the LCD
 from PIL import Image, ImageDraw, ImageFont
-from payloads._input_helper import get_button
+from _input_helper import get_button
 
 # ---------------------------------------------------------------------------
 # 1) GPIO pin mapping (BCM numbering) – same as in *Show Buttons*

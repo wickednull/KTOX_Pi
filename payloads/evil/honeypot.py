@@ -59,7 +59,7 @@ DEBUG_LOG = LOOT_DIR / "honeypot_debug.log"
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from payloads._input_helper import get_virtual_button
+from _input_helper import get_virtual_button
 
 # ---------------------------------------------------------------------------
 # Optional dependencies (Discord + LCD)
