@@ -282,7 +282,7 @@ class ColorScheme:
 
             # Load view mode preference
             view_mode = str(data.get("UI", {}).get("VIEW_MODE", "list")).strip()
-            if view_mode in ("list", "grid", "carousel", "panel", "table", "paged", "thumbnail", "vcarousel"):
+            if view_mode in ("list", "grid", "carousel", "panel", "table", "paged", "thumbnail", "vcarousel", "docked"):
                 _view_mode = view_mode
 
             # Load wallpaper preference
@@ -1104,6 +1104,7 @@ def GetMenu(inlist, duplicates=False, title="Menu", view_modes=False):
         "paged": GetMenuPaged,
         "thumbnail": GetMenuThumbnail,
         "vcarousel": GetMenuVerticalCarousel,
+        "docked": GetMenuDocked,
     }
     func = mode_map.get(_view_mode, GetMenuString)
     if func is GetMenuString:
@@ -1914,6 +1915,163 @@ def GetMenuVerticalCarousel(inlist, duplicates=False):
             index = (index - 1) % total
         elif btn == "KEY_RIGHT_PIN":
             index = (index + 1) % total
+        elif btn == "KEY_PRESS_PIN":
+            raw = inlist[index]
+            if duplicates:
+                idx, txt = raw.split("#", 1)
+                return int(idx), txt
+            return raw
+        elif btn == "KEY3_PIN":
+            _handle_menu_key3()
+            continue
+        elif btn in ("KEY1_PIN", "KEY2_PIN"):
+            return (-1, "") if duplicates else ""
+
+
+def GetMenuDocked(inlist, duplicates=False):
+    """
+    Docked view: big icon/text on top, horizontal sidebar items at bottom.
+    Returns selected label string, or "" on back.
+    """
+    if not inlist:
+        inlist = ["(empty)"]
+    if duplicates:
+        inlist = [f"{i}#{t}" for i, t in enumerate(inlist)]
+
+    total = len(inlist)
+    index = 0
+    SIDEBAR_ITEMS = 5
+    ITEM_W = 24
+
+    while True:
+        with draw_lock:
+            _draw_toolbar()
+            color.DrawMenuBackground()
+            color.DrawBorder()
+
+            # Draw bottom dock with horizontal sidebar
+            draw.rectangle([3, 103, 125, 127], fill=color.panel_bg, outline=color.border, width=1)
+
+            offset = max(0, min(index - SIDEBAR_ITEMS // 2, total - SIDEBAR_ITEMS))
+            for i in range(SIDEBAR_ITEMS):
+                item_idx = offset + i
+                if item_idx >= total:
+                    break
+                label = inlist[item_idx] if not duplicates else inlist[item_idx].split("#", 1)[1]
+                x = 8 + i * ITEM_W
+                sel_item = (item_idx == index)
+                fill = color.selected_text if sel_item else color.text
+                if sel_item:
+                    _draw_row_selection(108, 16, x1=x, x2=x + ITEM_W - 2, min_y=103, max_y=127)
+
+                # Animate selected icon on dock
+                icon = _icon_for(label)
+                icon_fill = fill
+                if sel_item:
+                    ts = time.time()
+                    style = str(_ui_ux.get("select_style", "fill"))
+                    if style == "glow":
+                        phase = (math.sin(ts * 8.0) + 1.0) * 0.5
+                        glow_intensity = int(80 * phase)
+                        r = int(icon_fill[1:3], 16) + glow_intensity
+                        g = int(icon_fill[3:5], 16) + glow_intensity
+                        b = int(icon_fill[5:7], 16) + glow_intensity
+                        icon_fill = f"#{min(255, r):02X}{min(255, g):02X}{min(255, b):02X}"
+                    elif style == "pulse":
+                        strength = math.sin(ts * 5.0)
+                        factor = abs(strength) * 0.4
+                        r = int(int(icon_fill[1:3], 16) * (1 - factor * 0.3))
+                        g = int(int(icon_fill[3:5], 16) * (1 - factor * 0.3))
+                        b = int(int(icon_fill[5:7], 16) * (1 - factor * 0.3))
+                        icon_fill = f"#{r:02X}{g:02X}{b:02X}"
+
+                if icon and _ui_ux.get("show_icons", True):
+                    draw.text((x + ITEM_W // 2, 116), icon, font=small_font, fill=icon_fill, anchor="mm")
+                else:
+                    draw.text((x + ITEM_W // 2, 116), (label.strip()[:1] or "•"), font=small_font, fill=icon_fill, anchor="mm")
+
+            # Draw top main content area with animated border
+            if total > 0:
+                raw = inlist[index]
+                txt = raw if not duplicates else raw.split("#", 1)[1]
+                style = str(_ui_ux.get("select_style", "fill"))
+                ts = time.time()
+
+                if style == "neon":
+                    phase = (math.sin(ts * 10.0) + 1.0) * 0.5
+                    neon_width = max(1, int(1 + phase * 2))
+                    draw.rectangle([3, 15, 125, 100], fill=color.background)
+                    draw.rectangle([3, 15, 125, 100], outline=color.border, width=neon_width)
+                elif style == "glow":
+                    phase = (math.sin(ts * 8.0) + 1.0) * 0.5
+                    draw.rectangle([3, 15, 125, 100], fill=color.background)
+                    glow_intensity = int(150 * phase)
+                    r = int(color.border[1:3], 16) + glow_intensity
+                    g = int(color.border[3:5], 16) + glow_intensity
+                    b = int(color.border[5:7], 16) + glow_intensity
+                    glow_col = f"#{min(255, r):02X}{min(255, g):02X}{min(255, b):02X}"
+                    draw.rectangle([3, 15, 125, 100], outline=glow_col, width=2)
+                elif style == "pulse":
+                    phase = _easing_smooth(ts * 2.5)
+                    blend_r = int(color.border[1:3], 16)
+                    blend_g = int(color.border[3:5], 16)
+                    blend_b = int(color.border[5:7], 16)
+                    bg_r = int(color.background[1:3], 16)
+                    bg_g = int(color.background[3:5], 16)
+                    bg_b = int(color.background[5:7], 16)
+                    strength = math.sin(ts * 5.0)
+                    factor = abs(strength)
+                    r = int(blend_r + (bg_r - blend_r) * factor)
+                    g = int(blend_g + (bg_g - blend_g) * factor)
+                    b = int(blend_b + (bg_b - blend_b) * factor)
+                    blend_col = f"#{r:02X}{g:02X}{b:02X}"
+                    draw.rectangle([3, 15, 125, 100], fill=color.background)
+                    draw.rectangle([3, 15, 125, 100], outline=blend_col, width=2)
+                else:  # fill or default
+                    draw.rectangle([3, 15, 125, 100], fill=color.background, outline=color.border, width=2)
+
+                # Draw animated icon and text on top
+                icon = _icon_for(txt)
+                if icon and _ui_ux.get("show_icons", True):
+                    # Animate both icon and text colors
+                    icon_color = color.selected_text
+                    text_color = color.selected_text
+                    if style == "glow":
+                        phase = (math.sin(ts * 8.0) + 1.0) * 0.5
+                        glow_intensity = int(100 * phase)
+                        r = int(icon_color[1:3], 16) + glow_intensity
+                        g = int(icon_color[3:5], 16) + glow_intensity
+                        b = int(icon_color[5:7], 16) + glow_intensity
+                        icon_color = f"#{min(255, r):02X}{min(255, g):02X}{min(255, b):02X}"
+                        text_color = icon_color
+                    elif style == "pulse":
+                        strength = math.sin(ts * 5.0)
+                        factor = abs(strength) * 0.5
+                        r = int(int(color.selected_text[1:3], 16) * (1 - factor * 0.3))
+                        g = int(int(color.selected_text[3:5], 16) * (1 - factor * 0.3))
+                        b = int(int(color.selected_text[5:7], 16) * (1 - factor * 0.3))
+                        icon_color = f"#{r:02X}{g:02X}{b:02X}"
+                        text_color = icon_color
+
+                    draw.text((64, 45), icon, font=large_icon_font or medium_icon_font, fill=icon_color, anchor="mm")
+                    display_txt = _truncate(txt.strip(), 90, font=small_font)
+                    draw.text((64, 85), display_txt, font=small_font, fill=text_color, anchor="mm")
+                else:
+                    display_txt = _truncate(txt.strip(), 50)
+                    draw.text((64, 55), display_txt, font=text_font, fill=color.selected_text, anchor="mm")
+
+        time.sleep(0.08)
+        btn = getButton(timeout=0.5)
+        if btn is None:
+            continue
+        elif btn == "KEY_RIGHT_PIN":
+            index = (index + 1) % total
+        elif btn == "KEY_LEFT_PIN":
+            index = (index - 1) % total
+        elif btn == "KEY_DOWN_PIN":
+            index = (index + 1) % total
+        elif btn == "KEY_UP_PIN":
+            index = (index - 1) % total
         elif btn == "KEY_PRESS_PIN":
             raw = inlist[index]
             if duplicates:
@@ -5526,9 +5684,9 @@ class KTOxMenu:
             Dialog_info("Theme apply\nfailed.", wait=True)
 
     def _view_mode_menu(self):
-        """Switch between 8 different view modes."""
+        """Switch between 9 different view modes."""
         global _view_mode
-        modes = ["list", "grid", "carousel", "panel", "table", "paged", "thumbnail", "vcarousel"]
+        modes = ["list", "grid", "carousel", "panel", "table", "paged", "thumbnail", "vcarousel", "docked"]
         mode_names = {
             "list": "List",
             "grid": "Grid",
@@ -5537,7 +5695,8 @@ class KTOxMenu:
             "table": "Table",
             "paged": "Paged",
             "thumbnail": "Thumbnail",
-            "vcarousel": "V-Carousel"
+            "vcarousel": "V-Carousel",
+            "docked": "Docked"
         }
         labels = []
         for mode in modes:
