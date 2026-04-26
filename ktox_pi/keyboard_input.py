@@ -12,29 +12,29 @@ from typing import Optional, List, Dict
 try:
     from evdev import InputDevice, ecodes, list_devices
     HAS_EVDEV = True
+    # Map evdev keycodes to KTOx button names
+    _KEY_MAP = {
+        ecodes.KEY_UP:     "KEY_UP_PIN",
+        ecodes.KEY_DOWN:   "KEY_DOWN_PIN",
+        ecodes.KEY_LEFT:   "KEY_LEFT_PIN",
+        ecodes.KEY_RIGHT:  "KEY_RIGHT_PIN",
+        ecodes.KEY_ENTER:  "KEY_PRESS_PIN",
+        ecodes.KEY_SPACE:  "KEY_PRESS_PIN",
+        ecodes.KEY_ESC:    "KEY1_PIN",
+        ecodes.KEY_HOME:   "KEY2_PIN",
+        ecodes.KEY_H:      "KEY2_PIN",
+        ecodes.KEY_DELETE: "KEY3_PIN",
+        ecodes.KEY_Q:      "KEY3_PIN",
+    }
 except ImportError:
     HAS_EVDEV = False
+    _KEY_MAP = {}
 
-# Map evdev keycodes to KTOx button names
-_KEY_MAP = {
-    ecodes.KEY_UP:     "KEY_UP_PIN",
-    ecodes.KEY_DOWN:   "KEY_DOWN_PIN",
-    ecodes.KEY_LEFT:   "KEY_LEFT_PIN",
-    ecodes.KEY_RIGHT:  "KEY_RIGHT_PIN",
-    ecodes.KEY_ENTER:  "KEY_PRESS_PIN",
-    ecodes.KEY_SPACE:  "KEY_PRESS_PIN",
-    ecodes.KEY_ESC:    "KEY1_PIN",
-    ecodes.KEY_HOME:   "KEY2_PIN",
-    ecodes.KEY_H:      "KEY2_PIN",
-    ecodes.KEY_DELETE: "KEY3_PIN",
-    ecodes.KEY_Q:      "KEY3_PIN",
-} if HAS_EVDEV else {}
-
-_keyboards: Optional[List[InputDevice]] = None
-_poller: Optional[select.poll] = None
+_keyboards = None
+_poller = None
 
 
-def _find_keyboards() -> List[InputDevice]:
+def _find_keyboards():
     """Find all connected keyboard devices with EV_KEY capability."""
     if not HAS_EVDEV:
         return []
