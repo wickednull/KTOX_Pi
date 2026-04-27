@@ -9,10 +9,19 @@ from api import WAIT_FOR_NOTPRESENT
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Wait until a BLE device is no longer present.")
-    parser.add_argument("--name", default="", help="Device name to match (partial, case-insensitive)")
+    parser = argparse.ArgumentParser(
+        description="Wait until a Bluetooth, Wi-Fi, or GPIO signal is no longer present."
+    )
+    parser.add_argument(
+        "--signal-type",
+        choices=["bluetooth", "wifi", "gpio"],
+        default="bluetooth",
+        help="Signal family to monitor (default: bluetooth)",
+    )
+    parser.add_argument("--identifier", default="", help="Name/MAC (bluetooth), SSID (wifi), or GPIO label (gpio)")
+    parser.add_argument("--name", default="", help="Device name to match (bluetooth only, partial)")
     parser.add_argument("--mac", default="", help="MAC address to match (AA:BB:CC:DD:EE:FF)")
-    parser.add_argument("--service-uuid", default="", help="Service UUID to match")
+    parser.add_argument("--service-uuid", default="", help="Service UUID to match (bluetooth only)")
     parser.add_argument(
         "--timeout-seconds",
         type=int,
@@ -23,7 +32,7 @@ def main() -> int:
         "--scan-window-seconds",
         type=int,
         default=4,
-        help="Duration of each BLE scan window",
+        help="Duration of each scan window",
     )
     parser.add_argument(
         "--poll-interval-seconds",
@@ -39,13 +48,16 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    if not args.name and not args.mac and not args.service_uuid:
-        print("Error: At least one of --name, --mac, or --service-uuid required", file=sys.stderr)
-        return 2
+    if not args.identifier and args.signal_type != "gpio":
+        if not args.name and not args.mac:
+            print("Error: --identifier or (--name/--mac) required", file=sys.stderr)
+            return 2
 
     try:
         fail_closed = args.failure_policy == "fail_closed"
         result = WAIT_FOR_NOTPRESENT(
+            signal_type=args.signal_type,
+            identifier=args.identifier,
             name=args.name,
             mac=args.mac,
             service_uuid=args.service_uuid,
@@ -55,10 +67,10 @@ def main() -> int:
             fail_closed=fail_closed,
         )
         if result:
-            print("Device no longer present")
+            print(f"Signal no longer present: {args.signal_type}={args.identifier or args.name or args.mac}")
             return 0
         else:
-            print("Device still present (warn_only mode)", file=sys.stderr)
+            print("Signal still present (warn_only mode)", file=sys.stderr)
             return 1
     except TimeoutError as exc:
         print(str(exc), file=sys.stderr)
