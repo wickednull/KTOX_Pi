@@ -25,14 +25,14 @@ import time
 import signal
 import logging
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")))
 
 import RPi.GPIO as GPIO
 import LCD_1in44
 import LCD_Config
 from PIL import Image, ImageDraw, ImageFont
-from _display_helper import ScaledDraw, scaled_font
-from _input_helper import get_button, flush_input
+from payloads._display_helper import ScaledDraw, scaled_font
+from payloads._input_helper import get_button, flush_input
 
 # Suppress PyBoy's verbose startup output
 logging.getLogger("pyboy").setLevel(logging.ERROR)
@@ -41,7 +41,6 @@ try:
     from pyboy import PyBoy
     PYBOY_OK = True
 except ImportError:
-    PyBoy = None
     PYBOY_OK = False
 
 # ── Hardware ──────────────────────────────────────────────────────────────────
@@ -351,7 +350,7 @@ def _auto_install():
 # MAIN
 # ══════════════════════════════════════════════════════════════════════════════
 def main():
-    global PYBOY_OK, PyBoy
+    global PYBOY_OK
 
     if not PYBOY_OK:
         if not _auto_install():
