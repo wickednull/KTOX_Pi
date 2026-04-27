@@ -566,27 +566,28 @@ def _cookie_session_ok(ws) -> bool:
 async def handle_client(ws):
     # websockets v12+ : path is in ws.request.path
     path = getattr(getattr(ws, "request", None), "path", "/")
+
+    # Check authentication status
     if not _auth_initialized():
         # No auth configured - allow all connections
         authenticated = True
     elif TOKEN:
-        # Token configured - require either token or session cookie
-        authenticated = _cookie_session_ok(ws) or authorize(path)
+        # Token configured - check for token in URL or valid session cookie
+        authenticated = authorize(path) or _cookie_session_ok(ws)
     else:
-        # Auth initialized but no TOKEN - allow frame-only clients (M5Cardputer)
-        # that may not have cookies. Full access requires valid session.
+        # Auth initialized but no TOKEN - allow all connections for frame access
         authenticated = True
 
+    # Always add to clients - allow unauthenticated for frame streaming only
+    # Protected operations will check authentication again
+    async with clients_lock:
+        clients.add(ws)
+
     if authenticated:
-        async with clients_lock:
-            clients.add(ws)
-        log.info("Client connected (%d online)", len(clients))
+        log.info("Client connected - authenticated (%d online)", len(clients))
     else:
-        try:
-            await ws.send(json.dumps({"type": "auth_required"}))
-        except Exception:
-            await ws.close(code=4401, reason="Unauthorized")
-            return
+        log.info("Client connected - frames only, no auth (%d online)", len(clients))
+
     loop = asyncio.get_running_loop()
     shell = None
 
@@ -597,8 +598,19 @@ async def handle_client(ws):
             except Exception:
                 continue
 
+            # Check if operation requires authentication
+            msg_type = data.get("type")
+
+            # Frame requests are always allowed (no auth needed for streaming)
+            if msg_type in ("frame", "frame_m5"):
+                continue
+
+            # Input and text events are allowed without auth (M5 remote)
+            if msg_type in ("input", "text_key"):
+                continue
+
+            # Protected operations require authentication
             if not authenticated:
-                msg_type = data.get("type")
                 if msg_type not in ("auth", "auth_session"):
                     continue
                 token_ok = msg_type == "auth" and (
@@ -640,6 +652,9 @@ async def handle_client(ws):
                 continue
 
             if data.get("type") == "stealth_exit":
+                # Protected operation - require authentication
+                if not authenticated:
+                    continue
                 try:
                     Path("/dev/shm/ktox_stealth.json").write_text(
                         json.dumps({"stealth": False})
@@ -649,6 +664,9 @@ async def handle_client(ws):
                 continue
 
             if data.get("type") == "shell_open":
+                # Protected operation - require authentication
+                if not authenticated:
+                    continue
                 if shell:
                     shell.close()
                 shell = ShellSession(loop, ws)
