@@ -24,8 +24,21 @@ import sys
 import time
 import signal
 import logging
+import traceback
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")))
+
+# Setup logging to file for debugging
+LOG_FILE = "/tmp/ktoxboy.log"
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(LOG_FILE),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 
 try:
     import RPi.GPIO as GPIO
@@ -309,17 +322,22 @@ def _auto_install():
     ]
     install_script = next((p for p in _candidates if os.path.isfile(p)), None)
 
+    logger.info(f"PyBoy not found. Install script: {install_script}")
     _show_message(["PyBoy not found", "Auto-installing...", "May take 2-5 min", "on Pi Zero 2W"], footer="Please wait")
     try:
         if install_script:
+            logger.info(f"Running install script: {install_script}")
             result = subprocess.run(
                 ["sudo", "bash", install_script],
                 capture_output=True, text=True, timeout=360,
             )
             if result.returncode != 0:
-                raise RuntimeError((result.stderr or result.stdout).strip()[-80:])
+                err_msg = (result.stderr or result.stdout).strip()
+                logger.error(f"Install script failed: {err_msg}")
+                raise RuntimeError(err_msg[-80:])
         else:
             # Script not found — run the confirmed working pip command directly
+            logger.info("No install script found, trying pip directly...")
             result = subprocess.run(
                 ["pip", "install", "pyboy",
                  "--extra-index-url", "https://www.piwheels.org/simple",
@@ -327,6 +345,7 @@ def _auto_install():
                 capture_output=True, text=True, timeout=360,
             )
             if result.returncode != 0:
+                logger.info("pip failed, trying python3 -m pip...")
                 # Try python3 -m pip as fallback
                 result = subprocess.run(
                     ["python3", "-m", "pip", "install", "pyboy",
@@ -335,11 +354,16 @@ def _auto_install():
                     capture_output=True, text=True, timeout=360,
                 )
                 if result.returncode != 0:
-                    raise RuntimeError((result.stderr or result.stdout).strip()[-80:])
-        subprocess.run(["python3", "-c", "from pyboy import PyBoy"], capture_output=True, timeout=15)
+                    err_msg = (result.stderr or result.stdout).strip()
+                    logger.error(f"pip install failed: {err_msg}")
+                    raise RuntimeError(err_msg[-80:])
+        logger.info("Verifying PyBoy installation...")
+        subprocess.run(["python3", "-c", "from pyboy import PyBoy"], capture_output=True, timeout=15, check=True)
+        logger.info("PyBoy installed successfully!")
         _show_message(["Installed OK!", "Loading..."], timeout=1.5)
         return True
     except Exception as e:
+        logger.error(f"Auto-install failed: {e}")
         _show_message(
             ["Install failed", str(e)[:22],
              "Run manually:",
@@ -360,30 +384,63 @@ def _auto_install():
 def main():
     global PYBOY_OK
 
+    logger.info(f"PYBOY_OK={PYBOY_OK}")
+
     if not PYBOY_OK:
+        logger.info("PyBoy not available, attempting auto-install...")
         if not _auto_install():
-            GPIO.cleanup()
-            return 0
+            logger.error("Auto-install failed")
+            if GPIO is not None:
+                GPIO.cleanup()
+            return 1
         try:
             from pyboy import PyBoy
             PYBOY_OK = True
-        except ImportError:
-            GPIO.cleanup()
-            return 0
+            logger.info("PyBoy imported successfully after install")
+        except ImportError as e:
+            logger.error(f"Failed to import PyBoy after install: {e}")
+            if GPIO is not None:
+                GPIO.cleanup()
+            return 1
 
     try:
         while running:
+            logger.info("Starting ROM browser...")
             rom = _rom_browser()
             if rom is None:
+                logger.info("User exited ROM browser")
                 break
+            logger.info(f"Running emulator for ROM: {rom}")
             _run_emulator(rom)
+    except Exception as e:
+        logger.error(f"Error in main loop: {e}")
+        logger.error(traceback.format_exc())
     finally:
-        LCD.LCD_Clear()
+        try:
+            LCD.LCD_Clear()
+        except Exception as e:
+            logger.warning(f"Failed to clear LCD: {e}")
         if GPIO is not None:
-            GPIO.cleanup()
+            try:
+                GPIO.cleanup()
+            except Exception as e:
+                logger.warning(f"Failed to cleanup GPIO: {e}")
 
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        logger.info("KTOxBOY starting...")
+        exit_code = main()
+        logger.info(f"KTOxBOY exited with code {exit_code}")
+        raise SystemExit(exit_code)
+    except Exception as e:
+        logger.error(f"KTOxBOY crashed: {e}")
+        logger.error(traceback.format_exc())
+        if GPIO is not None:
+            try:
+                GPIO.cleanup()
+            except:
+                pass
+        raise SystemExit(1)
