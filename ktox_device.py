@@ -6223,6 +6223,7 @@ def boot():
                 subprocess.Popen(
                     ["python3", str(spath)],
                     cwd=INSTALL_PATH,
+                    env=os.environ.copy(),
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
                 )
             except Exception:
