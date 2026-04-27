@@ -48,7 +48,7 @@ if os.path.isdir(PREFERRED_KTOX):
     if PREFERRED_KTOX not in sys.path:
         sys.path.insert(0, PREFERRED_KTOX)
 else:
-    KTOX_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'KTOx'))
+    KTOX_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
     if os.path.isdir(KTOX_PATH) and KTOX_PATH not in sys.path:
         sys.path.insert(0, KTOX_PATH)
 
@@ -78,7 +78,7 @@ except ImportError:
 WIFI_INTERFACE = get_best_interface() # Hardcoded to wlan1 as per user request for evil twin attacks
 FAKE_AP_SSID = "Free Public WiFi"
 FAKE_AP_CHANNEL = "1"
-KTOX_DIR = '/root/KTOx' if os.path.isdir('/root/KTOx') else os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'KTOx'))
+KTOX_DIR = '/root/KTOx' if os.path.isdir('/root/KTOx') else os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 CAPTIVE_PORTAL_BASE_PATH = os.path.join(KTOX_DIR, "DNSSpoof", "sites")
 CAPTIVE_PORTAL_PATH = os.path.join(CAPTIVE_PORTAL_BASE_PATH, "wifi")
 LOOT_FILE = os.path.join(CAPTIVE_PORTAL_PATH, "loot.txt")

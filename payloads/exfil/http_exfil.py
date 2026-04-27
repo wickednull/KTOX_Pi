@@ -35,7 +35,7 @@ import threading
 import math
 from datetime import datetime
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
 import RPi.GPIO as GPIO
 import LCD_1in44
@@ -401,7 +401,7 @@ def _send_all_files():
 
 def _log_transfer(filename, size, chunks):
     """Log successful transfer to manifest."""
-    log_path = os.path.join(EXFIL_DIR, "transfer_log.jsonl")
+    log_path = os.path.join(LOOT_DIR, "transfer_log.jsonl")
     entry = {
         "timestamp": datetime.now().isoformat(),
         "filename": filename,

@@ -64,7 +64,7 @@ def cleanup():
     subprocess.run(["ip", "link", "set", "eth0", "down"], stdout=subprocess.DEVNULL)
     subprocess.run(["ip", "link", "set", "eth1", "down"], stdout=subprocess.DEVNULL)
     # Try multiple logo path candidates
-    _base = os.path.normpath(os.path.join(os.path.abspath(__file__), "..", "..", ".."))
+    _base = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".."))
     _logo_paths = [
         os.path.join(_base, "img", "logo.bmp"),
         "/root/KTOx/img/logo.bmp",

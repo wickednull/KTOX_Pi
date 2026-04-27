@@ -18,7 +18,7 @@ import requests
 from collections import deque
 
 # Ensure local imports work when launched directly from payloads/
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
 import RPi.GPIO as GPIO
 import LCD_1in44, LCD_Config
@@ -29,7 +29,6 @@ from _input_helper import get_button
 
 # --------------------------- Configuration ---------------------------------
 
-WIDTH, HEIGHT = LCD.width, LCD.height
 HISTORY_LEN = 64              # number of points to show in the sparkline
 PROBE_TIMEOUT_S = 1.0         # TCP connect timeout per probe
 JITTER_WINDOW = 10            # last N samples to compute jitter
@@ -189,6 +188,7 @@ for pin in PINS.values():
 
 LCD = LCD_1in44.LCD()
 LCD.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
+WIDTH, HEIGHT = LCD.width, LCD.height
 
 canvas = Image.new("RGB", (WIDTH, HEIGHT), (10, 0, 0))
 draw = ScaledDraw(canvas)
@@ -265,7 +265,7 @@ def show() -> None:
 
 # ------------------------------ Logging -------------------------------------
 
-BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 LOOT_FILE = os.path.join(BASE_DIR, 'loot', 'latency_jitter.csv')
 
 
@@ -326,7 +326,7 @@ def wait_release(btn: str | None) -> None:
 
 # ------------------------------ Discord summary ------------------------------
 
-BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 
 
 def _read_webhook() -> str | None:

@@ -7,7 +7,7 @@ Author: 7h30th3r0n3
 Controls: D-pad=input colors, OK=start, KEY1=restart, KEY3=exit
 """
 import os, sys, time
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
 import random
 import signal

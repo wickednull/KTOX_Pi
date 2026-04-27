@@ -48,7 +48,7 @@ if os.path.isdir(PREFERRED_KTOX):
     if PREFERRED_KTOX not in sys.path:
         sys.path.insert(0, PREFERRED_KTOX)
 else:
-    KTOX_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'KTOx'))
+    KTOX_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
     if os.path.isdir(KTOX_PATH) and KTOX_PATH not in sys.path:
         sys.path.insert(0, KTOX_PATH)
 
@@ -78,7 +78,7 @@ except ImportError:
 WIFI_INTERFACE = get_best_interface() # Hardcoded to wlan1 as per user request for evil twin attacks
 FAKE_AP_SSID = "Free Public WiFi"
 FAKE_AP_CHANNEL = "1"
-KTOX_DIR = '/root/KTOx' if os.path.isdir('/root/KTOx') else os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'KTOx'))
+KTOX_DIR = '/root/KTOx' if os.path.isdir('/root/KTOx') else os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 CAPTIVE_PORTAL_BASE_PATH = os.path.join(KTOX_DIR, "DNSSpoof", "sites")
 CAPTIVE_PORTAL_PATH = os.path.join(CAPTIVE_PORTAL_BASE_PATH, "paypal")
 LOOT_FILE = os.path.join(CAPTIVE_PORTAL_PATH, "loot.txt")
@@ -101,6 +101,7 @@ LCD.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
 WIDTH, HEIGHT = 128, 128
 FONT_TITLE = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 12)
 FONT = ImageFont.load_default()
+CHAR_SET = " abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()-_=+\\[]{};:'\",<.>/?`~"
 
 running = True
 attack_processes = {}
@@ -268,17 +269,17 @@ def handle_text_input_logic(initial_text, input_type, char_set): # Renamed scree
                 current_char = current_value[cursor_pos]
                 
                 try:
-                    char_index = CHAR_SET.index(current_char)
+                    char_index = char_set.index(current_char)
                     if btn == "UP":
-                        char_index = (char_index + 1) % len(CHAR_SET)
+                        char_index = (char_index + 1) % len(char_set)
                     else:
-                        char_index = (char_index - 1 + len(CHAR_SET)) % len(CHAR_SET)
-                    current_value[cursor_pos] = CHAR_SET[char_index]
+                        char_index = (char_index - 1 + len(char_set)) % len(char_set)
+                    current_value[cursor_pos] = char_set[char_index]
                 except ValueError:
-                    current_value[cursor_pos] = CHAR_SET[0]
+                    current_value[cursor_pos] = char_set[0]
             elif cursor_pos == len(current_value):
                 if btn == "UP":
-                    current_value.append(CHAR_SET[0])
+                    current_value.append(char_set[0])
                 else:
                     if len(current_value) > 0:
                         current_value.pop()

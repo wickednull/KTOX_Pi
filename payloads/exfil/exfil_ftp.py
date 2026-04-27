@@ -28,9 +28,10 @@ import time
 import json
 import socket
 import threading
+import subprocess
 from datetime import datetime
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
 import RPi.GPIO as GPIO
 import LCD_1in44, LCD_Config
@@ -433,7 +434,6 @@ def _get_pi_ip():
         out = subprocess.run(
             ["hostname", "-I"], capture_output=True, text=True, timeout=5,
         )
-        import subprocess  # noqa: already imported
         ips = out.stdout.strip().split()
         return ips[0] if ips else "?.?.?.?"
     except Exception:

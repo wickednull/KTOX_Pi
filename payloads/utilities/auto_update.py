@@ -12,7 +12,7 @@ Controls
 * **KEY3**  - abort and return to menu.
 
 After update, it runs:
-  /root/KTOx/install_raspyjack.sh
+  /root/KTOx/install.sh
 then reboots (after LCD/GPIO cleanup).
 """
 
@@ -22,7 +22,7 @@ then reboots (after LCD/GPIO cleanup).
 import os, sys, time, signal, subprocess, tarfile, shutil
 from datetime import datetime
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
 # ---------------------------- Third-party libs ----------------------------
 import RPi.GPIO as GPIO
@@ -221,7 +221,7 @@ def restart_service() -> tuple[bool, str]:
     return True, "restarted"
 
 def run_install_script() -> tuple[bool, str]:
-    """Run /root/KTOx/install_raspyjack.sh before reboot."""
+    """Run /root/KTOx/install.sh before reboot."""
     if not os.path.isfile(INSTALL_SCRIPT):
         return False, "install script missing"
     if not os.access(INSTALL_SCRIPT, os.X_OK):

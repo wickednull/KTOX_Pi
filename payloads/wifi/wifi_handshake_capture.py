@@ -57,7 +57,7 @@ if os.path.isdir(PREFERRED_KTOX):
     if PREFERRED_KTOX not in sys.path:
         sys.path.insert(0, PREFERRED_KTOX)
 else:
-    KTOX_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'KTOx'))
+    KTOX_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
     if os.path.isdir(KTOX_PATH) and KTOX_PATH not in sys.path:
         sys.path.insert(0, KTOX_PATH)
 

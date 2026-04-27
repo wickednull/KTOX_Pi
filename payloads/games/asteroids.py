@@ -11,7 +11,7 @@ Controls: LEFT/RIGHT=rotate, UP=thrust, OK=fire, KEY1=restart, KEY3=exit.
 """
 
 import os, sys, time
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
 import math
 import random

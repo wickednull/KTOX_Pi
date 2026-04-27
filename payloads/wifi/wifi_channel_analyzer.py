@@ -40,7 +40,7 @@ def is_root():
     return os.geteuid() == 0
 
 # Dynamically add KTOx path
-KTOX_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'KTOx'))
+KTOX_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 if KTOX_PATH not in sys.path:
     sys.path.append(KTOX_PATH)
 
