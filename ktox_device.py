@@ -758,9 +758,10 @@ def _stats_loop():
 
 
 def _display_loop():
-    _FRAME_PATH     = os.environ.get("RJ_FRAME_PATH", "/dev/shm/ktox_last.jpg")
-    _FRAME_ENABLED  = os.environ.get("RJ_FRAME_MIRROR", "1") != "0"
-    _FRAME_INTERVAL = 1.0 / max(1.0, float(os.environ.get("RJ_FRAME_FPS", "10")))
+    # Support both KTOX and RaspyJack naming conventions
+    _FRAME_PATH     = os.environ.get("KTOX_FRAME_PATH") or os.environ.get("RJ_FRAME_PATH", "/dev/shm/ktox_last.jpg")
+    _FRAME_ENABLED  = (os.environ.get("KTOX_FRAME_MIRROR") or os.environ.get("RJ_FRAME_MIRROR", "1")) != "0"
+    _FRAME_INTERVAL = 1.0 / max(1.0, float(os.environ.get("KTOX_FRAME_FPS") or os.environ.get("RJ_FRAME_FPS", "10")))
     last_save = 0.0
 
     while not _stop_evt.is_set():
@@ -6223,6 +6224,7 @@ def boot():
                 subprocess.Popen(
                     ["python3", str(spath)],
                     cwd=INSTALL_PATH,
+                    env=os.environ.copy(),
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
                 )
             except Exception:

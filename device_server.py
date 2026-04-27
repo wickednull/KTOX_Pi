@@ -20,25 +20,43 @@ import struct
 import pty
 from http.cookies import SimpleCookie
 from pathlib import Path
-from typing import Set
+from typing import Set, Optional
 from urllib.parse import urlparse, parse_qs
 
 import websockets
 
+try:
+	from PIL import Image
+	HAS_PIL = True
+except ImportError:
+	HAS_PIL = False
+
 
 # ------------------------------ Config ---------------------------------------
-FRAME_PATH = Path(os.environ.get("RJ_FRAME_PATH", "/dev/shm/ktox_last.jpg"))
-HOST = os.environ.get("RJ_WS_HOST", "0.0.0.0")
-PORT = int(os.environ.get("RJ_WS_PORT", "8765"))
-FPS = float(os.environ.get("RJ_FPS", "10"))
+# Support both KTOX and RaspyJack naming conventions
+FRAME_PATH = Path(os.environ.get("KTOX_FRAME_PATH") or os.environ.get("RJ_FRAME_PATH", "/dev/shm/ktox_last.jpg"))
+HOST = os.environ.get("KTOX_WS_HOST") or os.environ.get("RJ_WS_HOST", "0.0.0.0")
+PORT = int(os.environ.get("KTOX_WS_PORT") or os.environ.get("RJ_WS_PORT", "8765"))
+FPS = float(os.environ.get("KTOX_FRAME_FPS") or os.environ.get("RJ_FRAME_FPS", "6"))
 ROOT_DIR = Path(__file__).resolve().parent
-TOKEN_FILE = Path(os.environ.get("RJ_WS_TOKEN_FILE", str(ROOT_DIR / ".webui_token")))
-AUTH_FILE = Path(os.environ.get("RJ_WEB_AUTH_FILE", "/root/KTOx/.webui_auth.json"))
-AUTH_SECRET_FILE = Path(os.environ.get("RJ_WEB_AUTH_SECRET_FILE", "/root/KTOx/.webui_session_secret"))
-SESSION_COOKIE_NAME = os.environ.get("RJ_WEB_SESSION_COOKIE", "ktox_session")
-INPUT_SOCK = os.environ.get("RJ_INPUT_SOCK", "/dev/shm/ktox_input.sock")
-SHELL_CMD = os.environ.get("RJ_SHELL_CMD", "/bin/bash")
-SHELL_CWD = os.environ.get("RJ_SHELL_CWD", "/")
+TOKEN_FILE = Path(os.environ.get("KTOX_WS_TOKEN_FILE") or os.environ.get("RJ_WS_TOKEN_FILE", str(ROOT_DIR / ".webui_token")))
+AUTH_FILE = Path(os.environ.get("KTOX_WEB_AUTH_FILE") or os.environ.get("RJ_WEB_AUTH_FILE", "/root/KTOx/.webui_auth.json"))
+AUTH_SECRET_FILE = Path(os.environ.get("KTOX_WEB_AUTH_SECRET_FILE") or os.environ.get("RJ_WEB_AUTH_SECRET_FILE", "/root/KTOx/.webui_session_secret"))
+SESSION_COOKIE_NAME = os.environ.get("KTOX_WEB_SESSION_COOKIE") or os.environ.get("RJ_WEB_SESSION_COOKIE", "ktox_session")
+INPUT_SOCK = os.environ.get("KTOX_INPUT_SOCK") or os.environ.get("RJ_INPUT_SOCK", "/dev/shm/ktox_input.sock")
+SHELL_CMD = os.environ.get("KTOX_SHELL_CMD") or os.environ.get("RJ_SHELL_CMD", "/bin/bash")
+SHELL_CWD = os.environ.get("KTOX_SHELL_CWD") or os.environ.get("RJ_SHELL_CWD", "/")
+
+# M5Cardputer-specific frame configuration
+# Support both KTOX and RaspyJack naming conventions
+CARDPUTER_ENABLED = (os.environ.get("KTOX_CARDPUTER_ENABLED") or os.environ.get("RJ_CARDPUTER_ENABLED", "1")) != "0"
+CARDPUTER_FRAME_PATH = Path(os.environ.get("KTOX_CARDPUTER_FRAME_PATH") or os.environ.get("RJ_CARDPUTER_FRAME_PATH", "/dev/shm/ktox_m5.jpg"))
+CARDPUTER_FRAME_WIDTH = int(os.environ.get("KTOX_CARDPUTER_FRAME_WIDTH") or os.environ.get("RJ_CARDPUTER_FRAME_WIDTH", "240"))
+CARDPUTER_FRAME_HEIGHT = int(os.environ.get("KTOX_CARDPUTER_FRAME_HEIGHT") or os.environ.get("RJ_CARDPUTER_FRAME_HEIGHT", "135"))
+CARDPUTER_FPS = float(os.environ.get("KTOX_CARDPUTER_FPS") or os.environ.get("RJ_CARDPUTER_FPS", "6"))
+CARDPUTER_FRAME_MODE = os.environ.get("KTOX_CARDPUTER_FRAME_MODE") or os.environ.get("RJ_CARDPUTER_FRAME_MODE", "contain")
+CARDPUTER_FRAME_QUALITY = int(os.environ.get("KTOX_CARDPUTER_FRAME_QUALITY") or os.environ.get("RJ_CARDPUTER_FRAME_QUALITY", "75"))
+CARDPUTER_FRAME_SUBSAMPLING = os.environ.get("KTOX_CARDPUTER_FRAME_SUBSAMPLING") or os.environ.get("RJ_CARDPUTER_FRAME_SUBSAMPLING", "4:2:0")
 
 SEND_TIMEOUT = 0.5
 PING_INTERVAL = 15
@@ -288,6 +306,44 @@ class ShellSession:
             pass
 
 
+# ----------------------- Frame Profile and Scaling -----------------------------
+def _scale_frame(frame_path: Path, target_width: int, target_height: int, mode: str = "contain") -> Optional[bytes]:
+    """Scale frame to target dimensions using specified mode. Returns JPEG bytes or None."""
+    if not HAS_PIL or not frame_path.exists():
+        return None
+    try:
+        img = Image.open(frame_path)
+        orig_w, orig_h = img.size
+
+        if mode == "stretch":
+            scaled = img.resize((target_width, target_height), Image.LANCZOS)
+        elif mode == "contain":
+            img.thumbnail((target_width, target_height), Image.LANCZOS)
+            new_img = Image.new('RGB', (target_width, target_height), (0, 0, 0))
+            offset_x = (target_width - img.width) // 2
+            offset_y = (target_height - img.height) // 2
+            new_img.paste(img, (offset_x, offset_y))
+            scaled = new_img
+        elif mode == "fit":
+            ratio_orig = orig_w / orig_h
+            ratio_target = target_width / target_height
+            if ratio_orig > ratio_target:
+                new_w = int(orig_h * ratio_target)
+                crop_img = img.crop(((orig_w - new_w) // 2, 0, (orig_w + new_w) // 2, orig_h))
+            else:
+                new_h = int(orig_w / ratio_target)
+                crop_img = img.crop((0, (orig_h - new_h) // 2, orig_w, (orig_h + new_h) // 2))
+            scaled = crop_img.resize((target_width, target_height), Image.LANCZOS)
+        else:
+            scaled = img.resize((target_width, target_height), Image.LANCZOS)
+
+        buf = __import__('io').BytesIO()
+        scaled.save(buf, format='JPEG', quality=CARDPUTER_FRAME_QUALITY, subsampling=CARDPUTER_FRAME_SUBSAMPLING)
+        return buf.getvalue()
+    except Exception:
+        return None
+
+
 # -------------------------- Frame Broadcasting --------------------------------
 class FrameCache:
     def __init__(self, path: Path):
@@ -321,10 +377,48 @@ class FrameCache:
         return self._last_payload
 
 
-async def broadcast_frames(cache: FrameCache):
-    delay = max(0.001, 1.0 / max(1.0, FPS))
-    log.info("Frame broadcaster started at ~%.1f FPS", 1.0 / delay)
+class CardputerFrameCache:
+    """Optimized frame cache for M5Cardputer display (240x135)."""
+    def __init__(self, source_path: Path):
+        self.source_path = source_path
+        self._last_mtime = 0.0
+        self._last_size = 0
+        self._last_payload = None
 
+    def has_changed(self) -> bool:
+        try:
+            st = self.source_path.stat()
+            return st.st_mtime != self._last_mtime or st.st_size != self._last_size
+        except FileNotFoundError:
+            return False
+
+    def load_b64(self) -> Optional[str]:
+        try:
+            scaled_bytes = _scale_frame(self.source_path, CARDPUTER_FRAME_WIDTH, CARDPUTER_FRAME_HEIGHT, CARDPUTER_FRAME_MODE)
+            if not scaled_bytes:
+                return None
+            b64 = base64.b64encode(scaled_bytes).decode()
+            st = self.source_path.stat()
+            self._last_mtime = st.st_mtime
+            self._last_size = st.st_size
+            self._last_payload = b64
+            return b64
+        except Exception:
+            return None
+
+    @property
+    def last_payload(self) -> Optional[str]:
+        return self._last_payload
+
+
+async def broadcast_frames(cache: FrameCache, cardputer_cache: Optional[CardputerFrameCache] = None):
+    delay = max(0.001, 1.0 / max(1.0, FPS))
+    cardputer_delay = max(0.001, 1.0 / max(1.0, CARDPUTER_FPS)) if cardputer_cache else None
+    log.info("Frame broadcaster started at ~%.1f FPS", 1.0 / delay)
+    if cardputer_cache:
+        log.info("M5Cardputer frame broadcaster enabled at ~%.1f FPS", 1.0 / cardputer_delay)
+
+    cardputer_next = 0.0
     while True:
         try:
             payload = cache.load_b64() if cache.has_changed() else cache.last_payload
@@ -335,6 +429,21 @@ async def broadcast_frames(cache: FrameCache):
                         *[asyncio.wait_for(c.send(msg), SEND_TIMEOUT) for c in list(clients)],
                         return_exceptions=True,
                     )
+
+            if cardputer_cache and CARDPUTER_ENABLED:
+                import time as time_module
+                now = time_module.time()
+                if now >= cardputer_next:
+                    m5_payload = cardputer_cache.load_b64() if cardputer_cache.has_changed() else cardputer_cache.last_payload
+                    if m5_payload:
+                        msg = json.dumps({"type": "frame_m5", "data": m5_payload})
+                        async with clients_lock:
+                            await asyncio.gather(
+                                *[asyncio.wait_for(c.send(msg), SEND_TIMEOUT) for c in list(clients)],
+                                return_exceptions=True,
+                            )
+                    cardputer_next = now + cardputer_delay
+
             await asyncio.sleep(delay)
         except Exception as e:
             log.warning("Broadcaster error: %s", e)
@@ -541,6 +650,7 @@ async def handle_client(ws):
 # ----------------------------- Main -------------------------------------------
 async def main():
     cache = FrameCache(FRAME_PATH)
+    cardputer_cache = CardputerFrameCache(FRAME_PATH) if (CARDPUTER_ENABLED and HAS_PIL) else None
 
     # If a specific host was set via env var, honour it (single bind)
     if HOST != "0.0.0.0":
@@ -549,7 +659,7 @@ async def main():
             ping_interval=PING_INTERVAL, max_size=2 * 1024 * 1024,
         ):
             log.info("WebSocket server listening on %s:%d", HOST, PORT)
-            await broadcast_frames(cache)
+            await broadcast_frames(cache, cardputer_cache)
         return
 
     # Default: bind only to eth0 + wlan0 (+ localhost).  wlan1+ stay untouched.
@@ -575,11 +685,11 @@ async def main():
             ping_interval=PING_INTERVAL, max_size=2 * 1024 * 1024,
         ):
             log.info("WebSocket server listening on 0.0.0.0:%d", PORT)
-            await broadcast_frames(cache)
+            await broadcast_frames(cache, cardputer_cache)
         return
 
     try:
-        await broadcast_frames(cache)
+        await broadcast_frames(cache, cardputer_cache)
     finally:
         for srv in servers:
             srv.close()
