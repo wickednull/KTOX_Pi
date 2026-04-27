@@ -51,19 +51,19 @@ export RJ_FRAME_FPS=6              # Update rate (6 FPS = ~167ms per frame)
 Use the provided startup script:
 
 ```bash
-sudo /root/KTOX_Pi/run_with_m5_support.sh [FPS]
+sudo /root/KTOX_Pi/scripts/run_with_m5_support.sh [FPS]
 ```
 
 Examples:
 ```bash
 # Default (6 FPS)
-sudo /root/KTOX_Pi/run_with_m5_support.sh
+sudo /root/KTOX_Pi/scripts/run_with_m5_support.sh
 
 # Higher responsiveness (10 FPS)
-sudo /root/KTOX_Pi/run_with_m5_support.sh 10
+sudo /root/KTOX_Pi/scripts/run_with_m5_support.sh 10
 
 # Lower bandwidth (3 FPS)
-sudo /root/KTOX_Pi/run_with_m5_support.sh 3
+sudo /root/KTOX_Pi/scripts/run_with_m5_support.sh 3
 ```
 
 ### 3. Verify Frame Capture
@@ -155,7 +155,7 @@ python3 -c "import socket; s = socket.create_connection(('localhost', 8765), tim
 **Solution**:
 ```bash
 # Reduce frame rate if on slower network
-sudo /root/KTOX_Pi/run_with_m5_support.sh 3
+sudo /root/KTOX_Pi/scripts/run_with_m5_support.sh 3
 
 # Check network
 ping 192.168.x.x  # Should be <50ms

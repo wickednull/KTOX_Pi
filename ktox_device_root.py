@@ -28,8 +28,9 @@ from pathlib import Path
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
+# Use script location for INSTALL_PATH (allows running from any directory)
+INSTALL_PATH = str(Path(__file__).resolve().parent) + "/"
 KTOX_DIR     = "/root/KTOx"
-INSTALL_PATH = KTOX_DIR + "/"
 LOOT_DIR     = KTOX_DIR + "/loot"
 PAYLOAD_DIR  = KTOX_DIR + "/payloads"
 PAYLOAD_LOG  = LOOT_DIR + "/payload.log"
@@ -49,6 +50,12 @@ try:
 except ImportError as _ie:
     print(f"[WARN] Hardware libs missing ({_ie}) — headless mode")
     HAS_HW = False
+    # Still need PIL for headless mode
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+    except ImportError:
+        print("[ERROR] PIL (Pillow) is required even in headless mode")
+        sys.exit(1)
 
 # ── GPIO pin map ───────────────────────────────────────────────────────────────
 
@@ -290,13 +297,16 @@ def _display_loop():
     last_save = 0.0
 
     while not _stop_evt.is_set():
-        if not screen_lock.is_set() and HAS_HW and LCD and image:
+        if not screen_lock.is_set() and image:
             mirror = None
             with draw_lock:
-                try:
-                    LCD.LCD_ShowImage(image, 0, 0)
-                except Exception:
-                    pass
+                # Display to physical LCD if hardware available
+                if HAS_HW and LCD:
+                    try:
+                        LCD.LCD_ShowImage(image, 0, 0)
+                    except Exception:
+                        pass
+                # Always capture frames if enabled (works in headless mode too)
                 if _FRAME_ENABLED:
                     now = time.monotonic()
                     if now - last_save >= _FRAME_INTERVAL:
@@ -1902,10 +1912,12 @@ def boot():
                 subprocess.Popen(
                     ["python3", str(spath)],
                     cwd=INSTALL_PATH,
+                    env=os.environ.copy(),
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"[WARN] Failed to start {script}: {e}")
+
 
     with draw_lock:
         draw.rectangle([(0,0),(128,128)], fill="#000000")

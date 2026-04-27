@@ -12,7 +12,7 @@ Environment="RJ_FRAME_PATH=/dev/shm/ktox_last.jpg"
 Environment="RJ_FRAME_FPS=6"
 Environment="RJ_WS_HOST=0.0.0.0"
 Environment="RJ_WS_PORT=8765"
-ExecStart=/usr/bin/python3 /root/KTOX_Pi/ktox_device_root.py
+ExecStart=/usr/bin/python3 ktox_device_root.py
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal
