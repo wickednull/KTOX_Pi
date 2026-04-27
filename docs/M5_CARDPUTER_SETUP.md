@@ -13,20 +13,22 @@ The M5Cardputer connects to KTOX_Pi via WebSocket to:
 ```
 KTOX_Pi Device
 ├── LCD Display (128x128 ST7735S)
-│   └── Frame Mirror → /dev/shm/ktox_last.jpg (6 FPS)
+│   ├── Frame Mirror → /dev/shm/ktox_last.jpg (standard 128x128 @6 FPS)
+│   └── M5 Optimizer → /dev/shm/ktox_m5.jpg (240x135 scaled @6 FPS)
 │
 ├── device_server.py (WebSocket @ :8765)
-│   └── Reads frames from /dev/shm/ktox_last.jpg
-│   └── Broadcasts to connected M5Cardputer clients
+│   ├── Standard profile: 128x128 JPEG frames for web UI
+│   └── M5Cardputer profile: 240x135 optimized JPEG for M5 display
+│   └── Broadcasts both profiles to connected clients
 │
 └── web_server.py (HTTP @ :8080)
     └── Web UI (optional)
 
          ↓ WebSocket Connection
          
-M5Cardputer
-├── Receives frame stream (6 FPS)
-├── Displays on local screen
+M5Cardputer (240x135 LCD)
+├── Receives optimized frame stream (240x135 @6 FPS)
+├── Displays on local screen  
 └── Sends button input events back
 ```
 
@@ -90,6 +92,28 @@ const char* KTOX_HOST = "192.168.1.100";  // KTOX_Pi IP
 const int KTOX_WS_PORT = 8765;
 const char* WS_PATH = "/";  // device_server.py path
 ```
+
+### 5. Configure M5 Frame Optimization (Optional)
+
+The M5Cardputer has a 240x135 display, much smaller than KTOX's 128x128. KTOX_Pi automatically generates optimized frames for M5:
+
+Edit `.env.frame_capture` to customize M5 frame settings:
+
+```bash
+# M5 frame optimization
+export RJ_CARDPUTER_ENABLED=1              # Enable M5 optimization
+export RJ_CARDPUTER_FRAME_WIDTH=240        # M5 display width
+export RJ_CARDPUTER_FRAME_HEIGHT=135       # M5 display height
+export RJ_CARDPUTER_FRAME_MODE=contain     # Scale mode: stretch|contain|fit
+export RJ_CARDPUTER_FPS=6                  # M5 frame rate (can differ from LCD)
+export RJ_CARDPUTER_FRAME_QUALITY=75       # JPEG quality (1-95, higher = better)
+export RJ_CARDPUTER_FRAME_SUBSAMPLING=4:2:0  # JPEG subsampling for bandwidth
+```
+
+**Scale Modes:**
+- **stretch**: Fill display (may distort aspect ratio) - fastest
+- **contain**: Fit entire frame with letterboxing - preserves aspect - recommended
+- **fit**: Crop to aspect ratio then scale - no letterbox - best for full display
 
 ## Performance Tuning
 

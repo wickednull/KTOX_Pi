@@ -57,6 +57,15 @@ except Exception:
 	_FRAME_MIRROR_INTERVAL = 0.1
 _last_frame_save = 0.0
 
+# M5Cardputer frame streaming (optional optimization for 240x135 display)
+_M5_FRAME_ENABLED = os.environ.get("RJ_CARDPUTER_ENABLED", "1") != "0"
+_M5_FRAME_PATH = os.environ.get("RJ_CARDPUTER_FRAME_PATH", "/dev/shm/ktox_m5.jpg")
+_M5_FRAME_WIDTH = int(os.environ.get("RJ_CARDPUTER_FRAME_WIDTH", "240"))
+_M5_FRAME_HEIGHT = int(os.environ.get("RJ_CARDPUTER_FRAME_HEIGHT", "135"))
+_M5_FRAME_QUALITY = int(os.environ.get("RJ_CARDPUTER_FRAME_QUALITY", "75"))
+_M5_FRAME_MODE = os.environ.get("RJ_CARDPUTER_FRAME_MODE", "contain")
+_last_m5_frame_save = 0.0
+
 #scanning method
 L2R_U2D = 1
 L2R_D2U = 2
@@ -67,6 +76,48 @@ U2D_R2L = 6
 D2U_L2R = 7
 D2U_R2L = 8
 SCAN_DIR_DFT = U2D_R2L
+
+
+def _save_m5_frame(pil_image):
+	"""Save M5Cardputer-optimized frame (240x135). Called from LCD_ShowImage."""
+	if not _M5_FRAME_ENABLED:
+		return
+	try:
+		from PIL import Image
+		global _last_m5_frame_save
+		now = time.monotonic()
+		if (now - _last_m5_frame_save) < (1.0 / 30.0):
+			return
+
+		orig_w, orig_h = pil_image.size
+		ratio_orig = orig_w / orig_h
+		ratio_target = _M5_FRAME_WIDTH / _M5_FRAME_HEIGHT
+
+		if _M5_FRAME_MODE == "stretch":
+			scaled = pil_image.resize((_M5_FRAME_WIDTH, _M5_FRAME_HEIGHT), Image.LANCZOS)
+		elif _M5_FRAME_MODE == "contain":
+			thumb = pil_image.copy()
+			thumb.thumbnail((_M5_FRAME_WIDTH, _M5_FRAME_HEIGHT), Image.LANCZOS)
+			new_img = Image.new('RGB', (_M5_FRAME_WIDTH, _M5_FRAME_HEIGHT), (0, 0, 0))
+			offset_x = (_M5_FRAME_WIDTH - thumb.width) // 2
+			offset_y = (_M5_FRAME_HEIGHT - thumb.height) // 2
+			new_img.paste(thumb, (offset_x, offset_y))
+			scaled = new_img
+		elif _M5_FRAME_MODE == "fit":
+			if ratio_orig > ratio_target:
+				new_w = int(orig_h * ratio_target)
+				crop_img = pil_image.crop(((orig_w - new_w) // 2, 0, (orig_w + new_w) // 2, orig_h))
+			else:
+				new_h = int(orig_w / ratio_target)
+				crop_img = pil_image.crop((0, (orig_h - new_h) // 2, orig_w, (orig_h + new_h) // 2))
+			scaled = crop_img.resize((_M5_FRAME_WIDTH, _M5_FRAME_HEIGHT), Image.LANCZOS)
+		else:
+			scaled = pil_image.resize((_M5_FRAME_WIDTH, _M5_FRAME_HEIGHT), Image.LANCZOS)
+
+		scaled.save(_M5_FRAME_PATH, "JPEG", quality=_M5_FRAME_QUALITY)
+		_last_m5_frame_save = now
+	except Exception:
+		pass
 
 
 class LCD:
@@ -334,3 +385,5 @@ class LCD:
 					_last_frame_save = now
 			except Exception:
 				pass
+		# Save M5Cardputer-optimized frame if enabled
+		_save_m5_frame(Image)

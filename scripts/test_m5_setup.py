@@ -56,6 +56,19 @@ def main():
     all_pass &= test(f"WebSocket port configured", bool(ws_port),
                      f"RJ_WS_PORT={ws_port}")
 
+    # M5Cardputer-specific settings
+    m5_enabled = os.environ.get("RJ_CARDPUTER_ENABLED", "1") != "0"
+    m5_frame_path = os.environ.get("RJ_CARDPUTER_FRAME_PATH", "/dev/shm/ktox_m5.jpg")
+    m5_width = os.environ.get("RJ_CARDPUTER_FRAME_WIDTH", "240")
+    m5_height = os.environ.get("RJ_CARDPUTER_FRAME_HEIGHT", "135")
+
+    all_pass &= test("M5Cardputer optimization enabled", m5_enabled,
+                     f"RJ_CARDPUTER_ENABLED={os.environ.get('RJ_CARDPUTER_ENABLED', '1')}")
+    all_pass &= test("M5 frame path configured", bool(m5_frame_path),
+                     f"RJ_CARDPUTER_FRAME_PATH={m5_frame_path}")
+    all_pass &= test("M5 display dimensions", bool(m5_width and m5_height),
+                     f"Resolution: {m5_width}x{m5_height}")
+
     # 2. System resources
     section("2. System Resources")
 
@@ -75,7 +88,7 @@ def main():
 
     frame_file = Path(frame_path)
     frame_exists = frame_file.exists()
-    all_pass &= test("Frame file exists", frame_exists,
+    all_pass &= test("Standard frame file exists", frame_exists,
                      f"{frame_path}")
 
     if frame_exists:
@@ -102,6 +115,26 @@ def main():
                 all_pass &= test("JPEG is valid", False, str(e))
         except Exception as e:
             all_pass &= test("Frame file readable", False, str(e))
+
+    # M5Cardputer frame file
+    m5_file = Path(m5_frame_path)
+    m5_exists = m5_file.exists()
+    all_pass &= test("M5 frame file exists", m5_exists,
+                     f"{m5_frame_path}")
+
+    if m5_exists:
+        try:
+            stat = m5_file.stat()
+            size_kb = stat.st_size / 1024
+            all_pass &= test("M5 frame has content", stat.st_size > 0,
+                             f"Size: {size_kb:.1f} KB")
+            # Check if recent
+            age_s = time.time() - stat.st_mtime
+            is_recent = age_s < 5.0
+            all_pass &= test("M5 frame being updated", is_recent,
+                             f"Age: {age_s:.1f}s")
+        except Exception as e:
+            all_pass &= test("M5 frame readable", False, str(e))
 
     # 4. Network ports
     section("4. Network Connectivity")
