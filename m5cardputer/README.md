@@ -4,16 +4,13 @@ Full-featured remote control application for KTOX_Pi running on M5Stack Cardpute
 
 ## Features
 
-- **Live Video Streaming**: View KTOX_Pi LCD display on M5Cardputer (240x135)
-- **Full Control**: Complete menu system for all KTOX operations:
-  - Reconnaissance (ARP scan, host discovery, port scan, fingerprinting)
-  - Offensive attacks (packet injection, DoS, ARP poisoning)
-  - Defensive/MITM operations (SSL stripping, DNS spoofing, ARP hardening)
-  - WiFi attacks (deauth, handshake capture, evil twin)
-  - System tools (status, logs, loot management)
+- **Live Video Streaming**: View KTOX_Pi LCD display on M5Cardputer (240x135 optimized frames)
+- **Simple Control Interface**: Keyboard-based input for KTOX device control
 - **Settings Persistence**: WiFi credentials and KTOX connection settings saved to SPIFFS
-- **Real-time Input**: Keyboard input handling for navigation and command execution
-- **Status Display**: Connection status, frame count, and FPS display
+- **Setup Wizard**: First-time WiFi and KTOX host configuration via on-screen prompts
+- **Auto-Reconnect**: Automatic reconnection with exponential backoff if connection drops
+- **Status Display**: Connection indicator (● connected, ○ disconnected), frame count, uptime
+- **Optional Authentication**: Support for auth token if KTOX_Pi requires it
 
 ## Hardware Requirements
 
@@ -83,19 +80,13 @@ platformio run -e m5stack-cardputer --target upload --target monitor
 
 ## Keyboard Controls
 
-### Stream View
-- `M` - Open main menu
-- `H` - Open configuration/settings
-- `T` - Set target IP address
-- `?` - Show help screen
-- Arrow keys/WASD - Navigation (when in menu)
-- Space/Enter - Select menu item
-- Q/Esc - Go back
+**Keyboard input is sent directly to KTOX_Pi. The M5Cardputer just relays button presses.**
 
-### Menu Navigation
-- Up/Down (or W/S, I/K) - Navigate menu items
-- Enter (or Space) - Select operation
-- Q/Esc (or Back button) - Return to previous menu or stream
+- **Arrow Keys / WASD / IJKL**: Send UP/DOWN/LEFT/RIGHT button presses (navigation)
+- **Space / Enter**: Send OK button press (confirm/select)
+- **H**: Open settings menu (reconfigure WiFi, save settings, exit)
+
+All other key presses are ignored. Control mapping depends on what payloads are running on KTOX_Pi.
 
 ## Configuration
 
@@ -115,28 +106,50 @@ Change settings via the in-device configuration menu (press 'H' on stream view).
 
 ## Connection Flow
 
-1. **WiFi Connection** → M5Cardputer connects to configured WiFi network
-2. **WebSocket Connection** → Establishes connection to KTOX_Pi device_server (port 8765)
-3. **Authentication** → Sends optional auth token if configured
-4. **Frame Streaming** → Receives base64-encoded JPEG frames
-5. **Input Handling** → Sends keyboard and button events back to KTOX_Pi
+```
+1. WiFi Setup
+   └─ WiFi SSID + password stored in SPIFFS (/settings.json)
+
+2. WebSocket Connect
+   └─ ws://<ktox_host>:8765
+
+3. Authentication (optional)
+   └─ If auth_token configured, send: {"type": "auth", "token": "<token>"}
+   └─ Wait for: {"type": "auth_ok"} or connection drop
+
+4. Frame Reception (starts immediately after auth or connection)
+   └─ Receive: {"type": "frame_m5", "data": "<base64-jpeg>"}
+   └─ Decode base64 → JPEG binary
+   └─ Use TJpg_Decoder to render 240x135 image to M5 display
+
+5. Input Events (user presses keyboard)
+   └─ Send: {"type": "input", "button": "UP|DOWN|LEFT|RIGHT|OK", "state": "press|release"}
+   └─ KTOX_Pi queues input for running payload
+```
 
 ## Frame Format
 
-Frames are received as JSON messages:
+Frames are received as JSON messages from device_server.py:
 
 ```json
 {
-  "type": "frame",
+  "type": "frame_m5",
   "data": "<base64-encoded JPEG>"
 }
 ```
 
-The application automatically:
-- Decodes base64 data
-- Decompresses JPEG
-- Scales to fit 240x135 display
-- Updates display at received frame rate
+The M5Cardputer firmware:
+1. Parses JSON message
+2. Extracts base64 data field
+3. Decodes base64 to binary JPEG
+4. Passes JPEG binary to TJpg_Decoder.drawJpg()
+5. JPEG decoder renders directly to M5 display
+
+**Frame Properties:**
+- Size: 240×135 pixels (M5Cardputer native resolution)
+- Format: JPEG (base64-encoded for JSON transport)
+- Rate: ~6 FPS (configurable on KTOX_Pi via RJ_CARDPUTER_FPS env var)
+- Pre-scaled on KTOX_Pi server, no scaling needed on client
 
 ## Troubleshooting
 
@@ -153,15 +166,24 @@ The application automatically:
 - Test locally: `netstat -tlnp | grep 8765`
 
 ### Frames Not Displaying
-- Check KTOX_Pi frame capture is enabled: `env | grep RJ_FRAME`
-- Verify frames exist: `ls -lh /dev/shm/ktox_*.jpg`
-- Monitor frame timestamps: `watch -n 0.5 ls -lh /dev/shm/ktox_*.jpg`
-- Check M5Cardputer USB connection during upload
+- Check KTOX_Pi frame capture is enabled: `env | grep RJ_CARDPUTER`
+- Verify M5 frames are being generated: `ls -lh /dev/shm/ktox_m5.jpg`
+- Monitor frame file updates: `watch -n 0.5 stat /dev/shm/ktox_m5.jpg | grep Modify`
+- Verify JPEG validity: `file /dev/shm/ktox_m5.jpg` (should show "JPEG image data")
+- Check device_server.py is running: `ps aux | grep device_server.py`
+- Monitor server frame output: Search for "M5Cardputer frame broadcaster" in logs
 
-### Menu Hangs or Freezes
-- Press reset button on M5Cardputer
-- Check serial monitor for errors: `platformio run -e m5stack-cardputer --target monitor`
-- Reduce frame rate in KTOX_Pi: `export RJ_FRAME_FPS=3`
+### Display Shows "Connected!" but No Frames
+- Frame broadcaster might not be enabled on device_server.py
+- Check: `env | grep CARDPUTER_ENABLED`
+- Verify PIL/Pillow is installed on KTOX_Pi (needed for frame scaling)
+- Test KTOX_Pi frame capture directly: `python3 -c "from PIL import Image; Image.open('/dev/shm/ktox_m5.jpg')"`
+
+### M5 Display Hangs or Crashes
+- Press reset button on M5Cardputer (back of device)
+- Check serial monitor for exceptions: `platformio run -e m5stack-cardputer --target monitor`
+- Look for out-of-memory (OOM) errors - may need to increase buffer sizes
+- Check JPEG quality isn't too high (causing large frames): `env | grep FRAME_QUALITY`
 
 ### Compilation Errors
 - Update PlatformIO: `platformio update`
