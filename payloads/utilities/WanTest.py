@@ -19,7 +19,7 @@ Logging:
 import os, sys, time, signal, json, subprocess, shutil
 
 # Ensure local imports when launched from payloads/
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
 import RPi.GPIO as GPIO
 import LCD_1in44, LCD_Config
@@ -230,7 +230,7 @@ def summary(single: bool, res: dict | None = None) -> None:
 
 # ---------------------------- Logging ----------------------------------------
 
-BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 CSV_PATH = os.path.join(BASE_DIR, 'loot', 'speedtest_wan.csv')
 os.makedirs(os.path.dirname(CSV_PATH), exist_ok=True)
 if not os.path.exists(CSV_PATH):
