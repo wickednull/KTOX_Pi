@@ -69,6 +69,7 @@ f9 = font(9)
 # Web API constants
 # ----------------------------------------------------------------------
 WEB_API_URL = "https://darksec.uk/api/chat"
+WEB_API_KEY = os.environ.get("DARKSEC_API_KEY", "")  # Optional API key for authentication
 
 # ----------------------------------------------------------------------
 # LCD helpers
@@ -340,13 +341,18 @@ last_seen_ids = set()
 
 def fetch_web_messages():
     try:
-        r = requests.get(WEB_API_URL, timeout=5, verify=False)
+        headers = {"Content-Type": "application/json"}
+        if WEB_API_KEY:
+            headers["Authorization"] = f"Bearer {WEB_API_KEY}"
+        r = requests.get(WEB_API_URL, headers=headers, timeout=5, verify=False)
         if r.status_code == 200:
             data = r.json()
             if isinstance(data, list):
                 return data
             elif isinstance(data, dict) and "messages" in data:
                 return data["messages"]
+        elif r.status_code != 200:
+            print(f"[WEB] GET {r.status_code}: {r.text[:100]}")
         return []
     except Exception as e:
         print(f"[WEB] Fetch error: {e}")
@@ -355,7 +361,10 @@ def fetch_web_messages():
 def post_to_web(message):
     payload = {"username": mesh_username, "message": message}
     try:
-        r = requests.post(WEB_API_URL, json=payload, headers={"Content-Type": "application/json"}, timeout=5, verify=False)
+        headers = {"Content-Type": "application/json"}
+        if WEB_API_KEY:
+            headers["Authorization"] = f"Bearer {WEB_API_KEY}"
+        r = requests.post(WEB_API_URL, json=payload, headers=headers, timeout=5, verify=False)
         if r.status_code not in (200, 201):
             print(f"[WEB] POST failed: {r.status_code} - {r.text[:100]}")
         return r.status_code in (200, 201)
