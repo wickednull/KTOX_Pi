@@ -57,6 +57,7 @@ _PIN_NAME_TO_NUM = {
 _HOLD_SECS = 0.35
 
 _q: "queue.Queue[str]" = queue.Queue()
+_text_q: "queue.Queue[dict]" = queue.Queue()
 _sock: Optional[socket.socket] = None
 _listener_thread: Optional[threading.Thread] = None
 
@@ -131,29 +132,45 @@ def _listen():
             msg = json.loads(data.decode("utf-8", "ignore"))
         except Exception:
             continue
-        if msg.get("type") != "input":
-            continue
-        button = str(msg.get("button", ""))
-        state = str(msg.get("state", ""))
-        mapped = _BTN_MAP.get(button)
-        if not mapped:
+        msg_type = str(msg.get("type", ""))
+        if msg_type == "input":
+            button = str(msg.get("button", ""))
+            state = str(msg.get("state", ""))
+            mapped = _BTN_MAP.get(button)
+            if not mapped:
+                continue
+
+            if state == "press":
+                # Queue for UI navigation
+                try:
+                    _q.put_nowait(mapped)
+                except Exception:
+                    pass
+                # Mark as held with a timer-based expiry (fallback if release is missed)
+                with _held_lock:
+                    _held[mapped] = time.monotonic() + _HOLD_SECS
+                _write_held_file()
+
+            elif state == "release":
+                with _held_lock:
+                    _held.pop(mapped, None)
+                _write_held_file()
             continue
 
-        if state == "press":
-            # Queue for UI navigation
+        if msg_type == "text_key":
+            event = {
+                "type": "text_key",
+                "session_id": str(msg.get("session_id", "")),
+            }
+            if msg.get("special"):
+                event["special"] = str(msg.get("special", ""))
+            else:
+                event["key"] = str(msg.get("key", ""))
             try:
-                _q.put_nowait(mapped)
+                _text_q.put_nowait(event)
             except Exception:
                 pass
-            # Mark as held with a timer-based expiry (fallback if release is missed)
-            with _held_lock:
-                _held[mapped] = time.monotonic() + _HOLD_SECS
-            _write_held_file()
-
-        elif state == "release":
-            with _held_lock:
-                _held.pop(mapped, None)
-            _write_held_file()
+            continue
 
 
 def get_virtual_button() -> Optional[str]:
@@ -194,11 +211,29 @@ def get_held_buttons() -> set:
     return held
 
 
+def get_text_event() -> Optional[dict]:
+    """Return next queued remote text event or None."""
+    try:
+        return _text_q.get_nowait()
+    except queue.Empty:
+        return None
+
+
+def flush_text_events():
+    """Clear queued remote text events."""
+    try:
+        while not _text_q.empty():
+            _text_q.get_nowait()
+    except Exception:
+        pass
+
+
 def flush():
     """Clear all queued and held button state."""
     with _held_lock:
         _held.clear()
     _write_held_file()
+    flush_text_events()
     try:
         while True:
             _q.get_nowait()
