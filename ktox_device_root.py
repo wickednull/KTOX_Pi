@@ -49,6 +49,12 @@ try:
 except ImportError as _ie:
     print(f"[WARN] Hardware libs missing ({_ie}) — headless mode")
     HAS_HW = False
+    # Still need PIL for headless mode
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+    except ImportError:
+        print("[ERROR] PIL (Pillow) is required even in headless mode")
+        sys.exit(1)
 
 # ── GPIO pin map ───────────────────────────────────────────────────────────────
 
