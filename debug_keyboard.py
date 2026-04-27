@@ -7,8 +7,13 @@ Run this to diagnose keyboard input issues.
 import sys
 import os
 
-sys.path.insert(0, '/home/user/KTOX_Pi')
-sys.path.insert(0, '/home/user/KTOX_Pi/ktox_pi')
+# Add ktox_pi to path (works on both dev and device)
+_ktox_dir = os.environ.get("KTOX_DIR", os.path.dirname(os.path.abspath(__file__)))
+_ktox_pi = os.path.join(_ktox_dir, "ktox_pi")
+if _ktox_dir not in sys.path:
+    sys.path.insert(0, _ktox_dir)
+if _ktox_pi not in sys.path:
+    sys.path.insert(0, _ktox_pi)
 
 print("=" * 70)
 print("KTOX Keyboard Debug Tool")
@@ -124,11 +129,15 @@ try:
     print("✓ keyboard_input module imported")
     print(f"  HAS_EVDEV: {keyboard_input.HAS_EVDEV}")
     print(f"  Key mappings: {len(keyboard_input._KEY_MAP)}")
-    print(f"  Active devices: {len(keyboard_input._active_devices)}")
+    if keyboard_input._keyboards:
+        print(f"  Active devices: {len(keyboard_input._keyboards)}")
+    else:
+        print(f"  Active devices: 0 (not initialized or no devices found)")
 
-    time.sleep(0.5)
-    btn = keyboard_input.get_keyboard_button()
-    print(f"  Test call get_keyboard_button(): {btn}")
+    if keyboard_input.HAS_EVDEV:
+        time.sleep(0.5)
+        btn = keyboard_input.get_keyboard_button()
+        print(f"  Test call get_keyboard_button(): {btn}")
 
 except Exception as e:
     print(f"✗ Error: {e}")
