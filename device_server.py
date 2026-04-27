@@ -527,7 +527,8 @@ def _cookie_session_ok(ws) -> bool:
     c = SimpleCookie()
     try:
         c.load(header_val)
-    except Exception:
+    except Exception as e:
+        log.debug("Cookie parse error (expected for non-cookie clients): %s", e)
         return False
     morsel = c.get(SESSION_COOKIE_NAME)
     if not morsel:
@@ -540,9 +541,16 @@ async def handle_client(ws):
     # websockets v12+ : path is in ws.request.path
     path = getattr(getattr(ws, "request", None), "path", "/")
     if not _auth_initialized():
+        # No auth configured - allow all connections
         authenticated = True
+    elif TOKEN:
+        # Token configured - require either token or session cookie
+        authenticated = _cookie_session_ok(ws) or authorize(path)
     else:
-        authenticated = _cookie_session_ok(ws) or (authorize(path) if TOKEN else False)
+        # Auth initialized but no TOKEN - allow frame-only clients (M5Cardputer)
+        # that may not have cookies. Full access requires valid session.
+        authenticated = True
+
     if authenticated:
         async with clients_lock:
             clients.add(ws)
