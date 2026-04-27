@@ -48,22 +48,24 @@ LCD_X_MAXPIXEL = 132  #LCD width maximum memory
 LCD_Y_MAXPIXEL = 162  #LCD height maximum memory
 
 # WebUI frame mirror (used by device_server.py)
-_FRAME_MIRROR_PATH = os.environ.get("RJ_FRAME_PATH", "/dev/shm/ktox_last.jpg")
-_FRAME_MIRROR_ENABLED = os.environ.get("RJ_FRAME_MIRROR", "1") != "0"
+# Support both KTOX and RaspyJack naming conventions
+_FRAME_MIRROR_PATH = os.environ.get("KTOX_FRAME_PATH") or os.environ.get("RJ_FRAME_PATH", "/dev/shm/ktox_last.jpg")
+_FRAME_MIRROR_ENABLED = (os.environ.get("KTOX_FRAME_MIRROR") or os.environ.get("RJ_FRAME_MIRROR", "1")) != "0"
 try:
-	_frame_fps = float(os.environ.get("RJ_FRAME_FPS", "10"))
+	_frame_fps = float(os.environ.get("KTOX_FRAME_FPS") or os.environ.get("RJ_FRAME_FPS", "10"))
 	_FRAME_MIRROR_INTERVAL = 1.0 / max(1.0, _frame_fps)
 except Exception:
 	_FRAME_MIRROR_INTERVAL = 0.1
 _last_frame_save = 0.0
 
 # M5Cardputer frame streaming (optional optimization for 240x135 display)
-_M5_FRAME_ENABLED = os.environ.get("RJ_CARDPUTER_ENABLED", "1") != "0"
-_M5_FRAME_PATH = os.environ.get("RJ_CARDPUTER_FRAME_PATH", "/dev/shm/ktox_m5.jpg")
-_M5_FRAME_WIDTH = int(os.environ.get("RJ_CARDPUTER_FRAME_WIDTH", "240"))
-_M5_FRAME_HEIGHT = int(os.environ.get("RJ_CARDPUTER_FRAME_HEIGHT", "135"))
-_M5_FRAME_QUALITY = int(os.environ.get("RJ_CARDPUTER_FRAME_QUALITY", "75"))
-_M5_FRAME_MODE = os.environ.get("RJ_CARDPUTER_FRAME_MODE", "contain")
+# Support both KTOX and RaspyJack naming conventions
+_M5_FRAME_ENABLED = (os.environ.get("KTOX_CARDPUTER_ENABLED") or os.environ.get("RJ_CARDPUTER_ENABLED", "1")) != "0"
+_M5_FRAME_PATH = os.environ.get("KTOX_CARDPUTER_FRAME_PATH") or os.environ.get("RJ_CARDPUTER_FRAME_PATH", "/dev/shm/ktox_m5.jpg")
+_M5_FRAME_WIDTH = int(os.environ.get("KTOX_CARDPUTER_FRAME_WIDTH") or os.environ.get("RJ_CARDPUTER_FRAME_WIDTH", "240"))
+_M5_FRAME_HEIGHT = int(os.environ.get("KTOX_CARDPUTER_FRAME_HEIGHT") or os.environ.get("RJ_CARDPUTER_FRAME_HEIGHT", "135"))
+_M5_FRAME_QUALITY = int(os.environ.get("KTOX_CARDPUTER_FRAME_QUALITY") or os.environ.get("RJ_CARDPUTER_FRAME_QUALITY", "75"))
+_M5_FRAME_MODE = os.environ.get("KTOX_CARDPUTER_FRAME_MODE") or os.environ.get("RJ_CARDPUTER_FRAME_MODE", "contain")
 _last_m5_frame_save = 0.0
 
 #scanning method

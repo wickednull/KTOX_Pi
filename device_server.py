@@ -33,28 +33,30 @@ except ImportError:
 
 
 # ------------------------------ Config ---------------------------------------
-FRAME_PATH = Path(os.environ.get("RJ_FRAME_PATH", "/dev/shm/ktox_last.jpg"))
-HOST = os.environ.get("RJ_WS_HOST", "0.0.0.0")
-PORT = int(os.environ.get("RJ_WS_PORT", "8765"))
-FPS = float(os.environ.get("RJ_FPS", "10"))
+# Support both KTOX and RaspyJack naming conventions
+FRAME_PATH = Path(os.environ.get("KTOX_FRAME_PATH") or os.environ.get("RJ_FRAME_PATH", "/dev/shm/ktox_last.jpg"))
+HOST = os.environ.get("KTOX_WS_HOST") or os.environ.get("RJ_WS_HOST", "0.0.0.0")
+PORT = int(os.environ.get("KTOX_WS_PORT") or os.environ.get("RJ_WS_PORT", "8765"))
+FPS = float(os.environ.get("KTOX_FRAME_FPS") or os.environ.get("RJ_FRAME_FPS", "6"))
 ROOT_DIR = Path(__file__).resolve().parent
-TOKEN_FILE = Path(os.environ.get("RJ_WS_TOKEN_FILE", str(ROOT_DIR / ".webui_token")))
-AUTH_FILE = Path(os.environ.get("RJ_WEB_AUTH_FILE", "/root/KTOx/.webui_auth.json"))
-AUTH_SECRET_FILE = Path(os.environ.get("RJ_WEB_AUTH_SECRET_FILE", "/root/KTOx/.webui_session_secret"))
-SESSION_COOKIE_NAME = os.environ.get("RJ_WEB_SESSION_COOKIE", "ktox_session")
-INPUT_SOCK = os.environ.get("RJ_INPUT_SOCK", "/dev/shm/ktox_input.sock")
-SHELL_CMD = os.environ.get("RJ_SHELL_CMD", "/bin/bash")
-SHELL_CWD = os.environ.get("RJ_SHELL_CWD", "/")
+TOKEN_FILE = Path(os.environ.get("KTOX_WS_TOKEN_FILE") or os.environ.get("RJ_WS_TOKEN_FILE", str(ROOT_DIR / ".webui_token")))
+AUTH_FILE = Path(os.environ.get("KTOX_WEB_AUTH_FILE") or os.environ.get("RJ_WEB_AUTH_FILE", "/root/KTOx/.webui_auth.json"))
+AUTH_SECRET_FILE = Path(os.environ.get("KTOX_WEB_AUTH_SECRET_FILE") or os.environ.get("RJ_WEB_AUTH_SECRET_FILE", "/root/KTOx/.webui_session_secret"))
+SESSION_COOKIE_NAME = os.environ.get("KTOX_WEB_SESSION_COOKIE") or os.environ.get("RJ_WEB_SESSION_COOKIE", "ktox_session")
+INPUT_SOCK = os.environ.get("KTOX_INPUT_SOCK") or os.environ.get("RJ_INPUT_SOCK", "/dev/shm/ktox_input.sock")
+SHELL_CMD = os.environ.get("KTOX_SHELL_CMD") or os.environ.get("RJ_SHELL_CMD", "/bin/bash")
+SHELL_CWD = os.environ.get("KTOX_SHELL_CWD") or os.environ.get("RJ_SHELL_CWD", "/")
 
 # M5Cardputer-specific frame configuration
-CARDPUTER_ENABLED = os.environ.get("RJ_CARDPUTER_ENABLED", "1") != "0"
-CARDPUTER_FRAME_PATH = Path(os.environ.get("RJ_CARDPUTER_FRAME_PATH", "/dev/shm/ktox_m5.jpg"))
-CARDPUTER_FRAME_WIDTH = int(os.environ.get("RJ_CARDPUTER_FRAME_WIDTH", "240"))
-CARDPUTER_FRAME_HEIGHT = int(os.environ.get("RJ_CARDPUTER_FRAME_HEIGHT", "135"))
-CARDPUTER_FPS = float(os.environ.get("RJ_CARDPUTER_FPS", "6"))
-CARDPUTER_FRAME_MODE = os.environ.get("RJ_CARDPUTER_FRAME_MODE", "contain")
-CARDPUTER_FRAME_QUALITY = int(os.environ.get("RJ_CARDPUTER_FRAME_QUALITY", "75"))
-CARDPUTER_FRAME_SUBSAMPLING = os.environ.get("RJ_CARDPUTER_FRAME_SUBSAMPLING", "4:2:0")
+# Support both KTOX and RaspyJack naming conventions
+CARDPUTER_ENABLED = (os.environ.get("KTOX_CARDPUTER_ENABLED") or os.environ.get("RJ_CARDPUTER_ENABLED", "1")) != "0"
+CARDPUTER_FRAME_PATH = Path(os.environ.get("KTOX_CARDPUTER_FRAME_PATH") or os.environ.get("RJ_CARDPUTER_FRAME_PATH", "/dev/shm/ktox_m5.jpg"))
+CARDPUTER_FRAME_WIDTH = int(os.environ.get("KTOX_CARDPUTER_FRAME_WIDTH") or os.environ.get("RJ_CARDPUTER_FRAME_WIDTH", "240"))
+CARDPUTER_FRAME_HEIGHT = int(os.environ.get("KTOX_CARDPUTER_FRAME_HEIGHT") or os.environ.get("RJ_CARDPUTER_FRAME_HEIGHT", "135"))
+CARDPUTER_FPS = float(os.environ.get("KTOX_CARDPUTER_FPS") or os.environ.get("RJ_CARDPUTER_FPS", "6"))
+CARDPUTER_FRAME_MODE = os.environ.get("KTOX_CARDPUTER_FRAME_MODE") or os.environ.get("RJ_CARDPUTER_FRAME_MODE", "contain")
+CARDPUTER_FRAME_QUALITY = int(os.environ.get("KTOX_CARDPUTER_FRAME_QUALITY") or os.environ.get("RJ_CARDPUTER_FRAME_QUALITY", "75"))
+CARDPUTER_FRAME_SUBSAMPLING = os.environ.get("KTOX_CARDPUTER_FRAME_SUBSAMPLING") or os.environ.get("RJ_CARDPUTER_FRAME_SUBSAMPLING", "4:2:0")
 
 SEND_TIMEOUT = 0.5
 PING_INTERVAL = 15
