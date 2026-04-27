@@ -4,8 +4,12 @@ from __future__ import annotations
 
 import argparse
 import sys
+import os
 
-from api import RUN_PAYLOAD
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from EXTENSIONS.api import RUN_PAYLOAD
 
 
 def main() -> int:
