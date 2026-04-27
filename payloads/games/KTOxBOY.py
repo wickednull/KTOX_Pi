@@ -41,6 +41,7 @@ try:
     from pyboy import PyBoy
     PYBOY_OK = True
 except ImportError:
+    PyBoy = None
     PYBOY_OK = False
 
 # ── Hardware ──────────────────────────────────────────────────────────────────
@@ -350,7 +351,7 @@ def _auto_install():
 # MAIN
 # ══════════════════════════════════════════════════════════════════════════════
 def main():
-    global PYBOY_OK
+    global PYBOY_OK, PyBoy
 
     if not PYBOY_OK:
         if not _auto_install():
