@@ -9,7 +9,7 @@ cd /root/KTOX_Pi
 sudo ./run_with_m5_support.sh
 ```
 
-That's it. Frame capture is already built in.
+That's it. Frame capture and WebSocket server start automatically.
 
 ### On M5Cardputer:
 
