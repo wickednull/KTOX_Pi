@@ -18,7 +18,6 @@ import termios
 import fcntl
 import struct
 import pty
-from http.cookies import SimpleCookie
 from pathlib import Path
 from typing import Set, Optional
 from urllib.parse import urlparse, parse_qs
