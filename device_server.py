@@ -507,6 +507,7 @@ def _session_token_ok(token: str) -> bool:
 
 
 def _cookie_session_ok(ws) -> bool:
+    """Check if WebSocket has valid session cookie. Gracefully handles malformed cookies."""
     header_val = ""
     try:
         req_headers = getattr(ws, "request_headers", None)
@@ -514,6 +515,7 @@ def _cookie_session_ok(ws) -> bool:
             header_val = str(req_headers.get("Cookie", "") or "")
     except Exception:
         header_val = ""
+
     if not header_val:
         try:
             req = getattr(ws, "request", None)
@@ -522,18 +524,22 @@ def _cookie_session_ok(ws) -> bool:
                 header_val = str(hdrs.get("Cookie", "") or "")
         except Exception:
             header_val = ""
+
     if not header_val:
         return False
-    c = SimpleCookie()
+
+    # Try to parse cookie - if it fails, client doesn't have valid session
     try:
+        c = SimpleCookie()
         c.load(header_val)
+        morsel = c.get(SESSION_COOKIE_NAME)
+        if not morsel:
+            return False
+        return _session_token_ok(morsel.value)
     except Exception as e:
-        log.debug("Cookie parse error (expected for non-cookie clients): %s", e)
+        # Cookie parsing failed - this is expected for M5/non-browser clients
+        log.debug("Cookie parse failed (expected for non-browser clients like M5): %s", type(e).__name__)
         return False
-    morsel = c.get(SESSION_COOKIE_NAME)
-    if not morsel:
-        return False
-    return _session_token_ok(morsel.value)
 
 
 # ----------------------------- WS Handler -------------------------------------
