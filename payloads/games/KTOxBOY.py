@@ -190,14 +190,14 @@ def _rom_browser():
         except Exception as e:
             logger.error(f"Error drawing browser: {e}")
             logger.error(traceback.format_exc())
-            raise
+            continue
 
         try:
             btn = get_button(PINS, GPIO)
         except Exception as e:
             logger.error(f"Error getting button: {e}")
             logger.error(traceback.format_exc())
-            raise
+            btn = None
 
         if btn == "KEY3":
             return None
