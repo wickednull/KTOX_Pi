@@ -34,7 +34,7 @@ import threading
 from datetime import datetime
 from collections import OrderedDict
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
 import RPi.GPIO as GPIO
 import LCD_1in44

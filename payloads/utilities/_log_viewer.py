@@ -134,7 +134,7 @@ def get_common_log_files():
             found_logs[name] = path
     
     # Add KTOx specific logs if they exist and are readable
-    ktox_log_path = os.path.join(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')), 'KTOx', 'ktox.log')
+    ktox_log_path = os.path.join(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')), 'KTOx', 'ktox.log')
     if os.path.exists(ktox_log_path) and os.access(ktox_log_path, os.R_OK):
         found_logs["KTOx Log"] = ktox_log_path
 
