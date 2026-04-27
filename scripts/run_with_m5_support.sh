@@ -10,6 +10,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(dirname "$SCRIPT_DIR")"
 FPS="${1:-6}"
 
 # Validate root
@@ -18,10 +19,10 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
-# Load frame capture configuration
-if [ -f "$SCRIPT_DIR/.env.frame_capture" ]; then
+# Load frame capture configuration from repository root
+if [ -f "$REPO_DIR/.env.frame_capture" ]; then
     set -a
-    source "$SCRIPT_DIR/.env.frame_capture"
+    source "$REPO_DIR/.env.frame_capture"
     set +a
 fi
 
@@ -43,6 +44,6 @@ echo "  RJ_WS_HOST=${RJ_WS_HOST:-0.0.0.0}"
 echo "  RJ_WS_PORT=${RJ_WS_PORT:-8765}"
 echo ""
 
-# Start KTOX_Pi
-cd "$SCRIPT_DIR"
-python3 ktox_device_root.py
+# Start KTOX_Pi from repository root
+cd "$REPO_DIR"
+exec python3 ktox_device_root.py
