@@ -568,20 +568,20 @@ def _cookie_session_ok(ws) -> bool:
         except Exception:
             header_val = ""
 
-    log.debug("[COOKIE_AUTH] Header value: %s", header_val[:50] if header_val else "(empty)")
+    log.info("[COOKIE_AUTH] Header value: %s", header_val[:50] if header_val else "(empty)")
     if not header_val:
-        log.debug("[COOKIE_AUTH] No cookie header found")
+        log.info("[COOKIE_AUTH] No cookie header found")
         return False
 
     # Parse cookie with lenient parser (handles M5 format)
     cookie_value = _parse_cookie_value(header_val, SESSION_COOKIE_NAME)
-    log.debug("[COOKIE_AUTH] Parsed cookie value: %s", cookie_value[:20] if cookie_value else "(not found)")
+    log.info("[COOKIE_AUTH] Parsed cookie value: %s", cookie_value[:20] if cookie_value else "(not found)")
     if not cookie_value:
-        log.debug("[COOKIE_AUTH] Failed to parse cookie or cookie name mismatch (looking for '%s')", SESSION_COOKIE_NAME)
+        log.info("[COOKIE_AUTH] Failed to parse cookie or cookie name mismatch (looking for '%s')", SESSION_COOKIE_NAME)
         return False
 
     result = _session_token_ok(cookie_value)
-    log.debug("[COOKIE_AUTH] Token validation result: %s", result)
+    log.info("[COOKIE_AUTH] Token validation result: %s", result)
     return result
 
 
