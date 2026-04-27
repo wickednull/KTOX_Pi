@@ -526,8 +526,32 @@ def _session_token_ok(token: str) -> bool:
         return False
 
 
+def _parse_cookie_value(header_val: str, cookie_name: str) -> Optional[str]:
+    """Parse a single cookie value from Cookie header (lenient, handles M5 format)."""
+    if not header_val:
+        return None
+
+    # Split by semicolon to get individual cookies
+    for cookie_part in header_val.split(';'):
+        cookie_part = cookie_part.strip()
+        if '=' not in cookie_part:
+            continue
+        name, _, value = cookie_part.partition('=')
+        name = name.strip()
+        value = value.strip()
+
+        # Handle quoted values (remove quotes if present)
+        if value.startswith('"') and value.endswith('"'):
+            value = value[1:-1]
+
+        if name == cookie_name:
+            return value if value else None
+
+    return None
+
+
 def _cookie_session_ok(ws) -> bool:
-    """Check if WebSocket has valid session cookie. Gracefully handles malformed cookies."""
+    """Check if WebSocket has valid session cookie. Gracefully handles M5 format."""
     header_val = ""
     try:
         req_headers = getattr(ws, "request_headers", None)
@@ -548,18 +572,12 @@ def _cookie_session_ok(ws) -> bool:
     if not header_val:
         return False
 
-    # Try to parse cookie - if it fails, client doesn't have valid session
-    try:
-        c = SimpleCookie()
-        c.load(header_val)
-        morsel = c.get(SESSION_COOKIE_NAME)
-        if not morsel:
-            return False
-        return _session_token_ok(morsel.value)
-    except Exception as e:
-        # Cookie parsing failed - this is expected for M5/non-browser clients
-        log.debug("Cookie parse failed (expected for non-browser clients like M5): %s", type(e).__name__)
+    # Parse cookie with lenient parser (handles M5 format)
+    cookie_value = _parse_cookie_value(header_val, SESSION_COOKIE_NAME)
+    if not cookie_value:
         return False
+
+    return _session_token_ok(cookie_value)
 
 
 # ----------------------------- WS Handler -------------------------------------
@@ -578,15 +596,14 @@ async def handle_client(ws):
         # Auth initialized but no TOKEN - allow all connections for frame access
         authenticated = True
 
-    # Always add to clients - allow unauthenticated for frame streaming only
-    # Protected operations will check authentication again
-    async with clients_lock:
-        clients.add(ws)
-
+    # Only add to clients if authenticated (or auth not required)
     if authenticated:
+        async with clients_lock:
+            clients.add(ws)
         log.info("Client connected - authenticated (%d online)", len(clients))
     else:
-        log.info("Client connected - frames only, no auth (%d online)", len(clients))
+        # Not authenticated - wait for auth message
+        log.info("Client connected - awaiting authentication (%d online)", len(clients))
 
     loop = asyncio.get_running_loop()
     shell = None
@@ -598,18 +615,9 @@ async def handle_client(ws):
             except Exception:
                 continue
 
-            # Check if operation requires authentication
             msg_type = data.get("type")
 
-            # Frame requests are always allowed (no auth needed for streaming)
-            if msg_type in ("frame", "frame_m5"):
-                continue
-
-            # Input and text events are allowed without auth (M5 remote)
-            if msg_type in ("input", "text_key"):
-                continue
-
-            # Protected operations require authentication
+            # Unauthenticated clients can only send auth messages
             if not authenticated:
                 if msg_type not in ("auth", "auth_session"):
                     continue
@@ -636,7 +644,8 @@ async def handle_client(ws):
                     break
                 continue
 
-            if data.get("type") == "input":
+            # Authenticated clients can access all operations
+            if msg_type == "input":
                 btn = data.get("button")
                 state = data.get("state")
                 if btn and state in ("press", "release"):
