@@ -27,7 +27,11 @@ import logging
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")))
 
-import RPi.GPIO as GPIO
+try:
+    import RPi.GPIO as GPIO
+except ImportError:
+    GPIO = None
+
 import LCD_1in44
 import LCD_Config
 from PIL import Image, ImageDraw, ImageFont
@@ -48,9 +52,10 @@ PINS = {
     "UP": 6, "DOWN": 19, "LEFT": 5, "RIGHT": 26,
     "OK": 13, "KEY1": 21, "KEY2": 20, "KEY3": 16,
 }
-GPIO.setmode(GPIO.BCM)
-for _p in PINS.values():
-    GPIO.setup(_p, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+if GPIO is not None:
+    GPIO.setmode(GPIO.BCM)
+    for _p in PINS.values():
+        GPIO.setup(_p, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
 LCD = LCD_1in44.LCD()
 LCD.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
@@ -233,9 +238,10 @@ def _run_emulator(rom_path):
     try:
         while running:
             pressed = set()
-            for name, pin in PINS.items():
-                if GPIO.input(pin) == 0:
-                    pressed.add(name)
+            if GPIO is not None:
+                for name, pin in PINS.items():
+                    if GPIO.input(pin) == 0:
+                        pressed.add(name)
 
             # KEY3 tap/hold logic
             if "KEY3" in pressed:
@@ -283,6 +289,8 @@ def _run_emulator(rom_path):
         flush_input()
         time.sleep(0.2)
         flush_input()
+        if GPIO is not None:
+            GPIO.cleanup()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -371,7 +379,8 @@ def main():
             _run_emulator(rom)
     finally:
         LCD.LCD_Clear()
-        GPIO.cleanup()
+        if GPIO is not None:
+            GPIO.cleanup()
 
     return 0
 
