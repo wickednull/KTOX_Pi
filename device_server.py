@@ -465,6 +465,26 @@ def send_input_event(button, state):
         pass
 
 
+def send_text_event(session_id, key=None, special=None):
+    """Send text input event to the input bridge."""
+    try:
+        payload_dict = {
+            "type": "text_key",
+            "session_id": session_id,
+        }
+        if special:
+            payload_dict["special"] = special
+        elif key:
+            payload_dict["key"] = key
+
+        payload = json.dumps(payload_dict).encode()
+        with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as s:
+            s.connect(INPUT_SOCK)
+            s.send(payload)
+    except Exception:
+        pass
+
+
 # ----------------------------- Auth -------------------------------------------
 def authorize(path: str) -> bool:
     if not TOKEN:
@@ -507,6 +527,7 @@ def _session_token_ok(token: str) -> bool:
 
 
 def _cookie_session_ok(ws) -> bool:
+    """Check if WebSocket has valid session cookie. Gracefully handles malformed cookies."""
     header_val = ""
     try:
         req_headers = getattr(ws, "request_headers", None)
@@ -514,6 +535,7 @@ def _cookie_session_ok(ws) -> bool:
             header_val = str(req_headers.get("Cookie", "") or "")
     except Exception:
         header_val = ""
+
     if not header_val:
         try:
             req = getattr(ws, "request", None)
@@ -522,17 +544,22 @@ def _cookie_session_ok(ws) -> bool:
                 header_val = str(hdrs.get("Cookie", "") or "")
         except Exception:
             header_val = ""
+
     if not header_val:
         return False
-    c = SimpleCookie()
+
+    # Try to parse cookie - if it fails, client doesn't have valid session
     try:
+        c = SimpleCookie()
         c.load(header_val)
-    except Exception:
+        morsel = c.get(SESSION_COOKIE_NAME)
+        if not morsel:
+            return False
+        return _session_token_ok(morsel.value)
+    except Exception as e:
+        # Cookie parsing failed - this is expected for M5/non-browser clients
+        log.debug("Cookie parse failed (expected for non-browser clients like M5): %s", type(e).__name__)
         return False
-    morsel = c.get(SESSION_COOKIE_NAME)
-    if not morsel:
-        return False
-    return _session_token_ok(morsel.value)
 
 
 # ----------------------------- WS Handler -------------------------------------
@@ -540,9 +567,16 @@ async def handle_client(ws):
     # websockets v12+ : path is in ws.request.path
     path = getattr(getattr(ws, "request", None), "path", "/")
     if not _auth_initialized():
+        # No auth configured - allow all connections
         authenticated = True
+    elif TOKEN:
+        # Token configured - require either token or session cookie
+        authenticated = _cookie_session_ok(ws) or authorize(path)
     else:
-        authenticated = _cookie_session_ok(ws) or (authorize(path) if TOKEN else False)
+        # Auth initialized but no TOKEN - allow frame-only clients (M5Cardputer)
+        # that may not have cookies. Full access requires valid session.
+        authenticated = True
+
     if authenticated:
         async with clients_lock:
             clients.add(ws)
@@ -595,6 +629,14 @@ async def handle_client(ws):
                 state = data.get("state")
                 if btn and state in ("press", "release"):
                     send_input_event(btn, state)
+                continue
+
+            if data.get("type") == "text_key":
+                session_id = str(data.get("session_id") or "")
+                key = str(data.get("key") or "")
+                special = str(data.get("special") or "")
+                if session_id and (key or special):
+                    send_text_event(session_id, key=key or None, special=special or None)
                 continue
 
             if data.get("type") == "stealth_exit":
