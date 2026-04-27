@@ -25,14 +25,23 @@ import time
 import signal
 import logging
 
-sys.path.append(os.path.abspath(os.path.join(__file__, "..", "..", "..")))
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_ROOT2 = os.path.abspath(os.path.join(_HERE, "..", ".."))
+_ROOT3 = os.path.abspath(os.path.join(_HERE, "..", "..", ".."))
+for _p in (_ROOT2, _ROOT3):
+    if _p not in sys.path:
+        sys.path.append(_p)
 
 import RPi.GPIO as GPIO
 import LCD_1in44
 import LCD_Config
 from PIL import Image, ImageDraw, ImageFont
-from payloads._display_helper import ScaledDraw, scaled_font
-from payloads._input_helper import get_button, flush_input
+if os.path.exists(os.path.join(_ROOT2, "_display_helper.py")):
+    from _display_helper import ScaledDraw, scaled_font
+    from _input_helper import get_button, flush_input
+else:
+    from payloads._display_helper import ScaledDraw, scaled_font
+    from payloads._input_helper import get_button, flush_input
 
 # Suppress PyBoy's verbose startup output
 logging.getLogger("pyboy").setLevel(logging.ERROR)
@@ -41,6 +50,7 @@ try:
     from pyboy import PyBoy
     PYBOY_OK = True
 except ImportError:
+    PyBoy = None
     PYBOY_OK = False
 
 # ── Hardware ──────────────────────────────────────────────────────────────────
@@ -203,8 +213,31 @@ def _run_emulator(rom_path):
     d.text((64, 78), "Please wait", font=small_font, fill=_DIM, anchor="mm")
     LCD.LCD_ShowImage(img, 0, 0)
 
+    def _create_pyboy_instance(path):
+        """
+        Create a PyBoy instance across API variants.
+        Different releases use different constructor kwargs.
+        """
+        attempts = (
+            {"window": "null"},
+            {"window_type": "null"},
+            {"window": "headless"},
+            {"window_type": "headless"},
+            {},
+        )
+        last_error = None
+        for kwargs in attempts:
+            try:
+                return PyBoy(path, **kwargs)
+            except Exception as e:
+                last_error = e
+                continue
+        if last_error:
+            raise last_error
+        return PyBoy(path)
+
     try:
-        pyboy = PyBoy(rom_path, window="null")
+        pyboy = _create_pyboy_instance(rom_path)
     except Exception as e:
         _show_message(["Load Error!", str(e)[:22], str(e)[22:44]], footer="KEY3 = Back")
         while running:
@@ -230,6 +263,32 @@ def _run_emulator(rom_path):
     key3_down_at = None
     key3_was_held = False
 
+    def _tap_select_button():
+        """Handle SELECT tap across PyBoy API variants."""
+        if hasattr(pyboy, "button"):
+            pyboy.button("select")
+            return
+        pyboy.button_press("select")
+        _pyboy_tick(False)
+        pyboy.button_release("select")
+
+    def _pyboy_tick(render_flag):
+        """
+        Tick across PyBoy API variants.
+        Returns True/False when provided by API, otherwise assumes running.
+        """
+        last_exc = None
+        for args in ((1, render_flag), (1,), ()):
+            try:
+                result = pyboy.tick(*args)
+                return True if result is None else bool(result)
+            except TypeError as e:
+                last_exc = e
+                continue
+        if last_exc:
+            raise last_exc
+        return True
+
     try:
         while running:
             pressed = set()
@@ -246,7 +305,7 @@ def _run_emulator(rom_path):
                     break
             else:
                 if key3_down_at is not None and not key3_was_held:
-                    pyboy.button("select")   # tap = select
+                    _tap_select_button()   # tap = select
                 key3_down_at = None
                 key3_was_held = False
 
@@ -259,14 +318,24 @@ def _run_emulator(rom_path):
 
             # Tick emulator – render only every RENDER_EVERY frames
             render_this = (frame_count % RENDER_EVERY == 0)
-            still_going = pyboy.tick(1, render_this)
+            still_going = _pyboy_tick(render_this)
             frame_count += 1
 
             if not still_going:
                 break
 
             if render_this:
-                gb_img = pyboy.screen.image
+                if hasattr(pyboy.screen, "image"):
+                    gb_img = pyboy.screen.image
+                elif hasattr(pyboy.screen, "screen_image"):
+                    gb_img = pyboy.screen.screen_image()
+                elif hasattr(pyboy.screen, "ndarray"):
+                    arr = pyboy.screen.ndarray
+                    arr = arr() if callable(arr) else arr
+                    gb_img = Image.fromarray(arr)
+                else:
+                    _show_message(["Screen API error", "Unsupported", "PyBoy screen"], footer="KEY3 = Back")
+                    break
                 scaled = gb_img.resize((sw, sh), resample)
                 draw_bg.rectangle((0, 0, WIDTH, HEIGHT), fill=_BG)
                 canvas.paste(scaled, (ox, oy))
@@ -278,6 +347,11 @@ def _run_emulator(rom_path):
     finally:
         try:
             pyboy.stop(save=True)
+        except TypeError:
+            try:
+                pyboy.stop()
+            except Exception:
+                pass
         except:
             pass
         flush_input()
@@ -350,7 +424,7 @@ def _auto_install():
 # MAIN
 # ══════════════════════════════════════════════════════════════════════════════
 def main():
-    global PYBOY_OK
+    global PYBOY_OK, PyBoy
 
     if not PYBOY_OK:
         if not _auto_install():
