@@ -21,7 +21,6 @@ import os
 import sys
 import subprocess
 import json
-import traceback
 import time
 from datetime import datetime
 
@@ -142,7 +141,7 @@ def get_available_interfaces():
                               capture_output=True, check=False)
         if result.returncode == 0:
             interfaces.append('eth0')
-    except:
+    except Exception:
         pass
     
     # Add WiFi interfaces
@@ -216,7 +215,7 @@ def get_best_interface(prefer_wifi=False, bypass_checks=False):
                 pref_file = "/root/KTOx/wifi/interface_preferences.json"
                 if os.path.exists(pref_file):
                     os.remove(pref_file)
-            except:
+            except Exception:
                 pass
     
     # Check current system default route
@@ -414,7 +413,7 @@ def get_nmap_target_network(interface=None):
         for line in result.stdout.split('\n'):
             if 'inet ' in line:
                 return line.split()[1]  # Return CIDR notation
-    except:
+    except Exception:
         pass
     
     return None
@@ -533,7 +532,7 @@ def backup_routing_config():
                                           capture_output=True, text=True, check=False)
                 if iface_info.returncode == 0:
                     backup_data["interfaces"][interface] = iface_info.stdout
-            except:
+            except Exception:
                 pass
         
         with open(backup_file, 'w') as f:
@@ -597,7 +596,7 @@ def set_interface_as_default(interface, force=False):
             
             return True
         else:
-            print(f"❌ Failed to verify default route change")
+            print("❌ Failed to verify default route change")
             return False
             
     except Exception as e:
@@ -620,7 +619,7 @@ def update_dns_for_interface(interface):
                 for line in resolved_result.stdout.split('\n'):
                     if 'DNS Servers:' in line:
                         dns_servers.extend(line.split(':')[1].strip().split())
-        except:
+        except Exception:
             pass
         
         # Fallback: use interface gateway as DNS
@@ -676,7 +675,7 @@ def restore_routing_from_backup():
         result = subprocess.run(cmd, capture_output=True, text=True, check=False)
         
         if result.returncode == 0:
-            print(f"✅ Successfully restored default route")
+            print("✅ Successfully restored default route")
             return True
         else:
             print(f"❌ Failed to restore default route: {result.stderr}")
@@ -769,14 +768,14 @@ def force_interface_as_default(interface):
             print(f"✅ Found gateway: {gateway}")
         
         # STEP 3: Show current route before change
-        print(f"🔍 Step 3: Current routing before change...")
+        print("🔍 Step 3: Current routing before change...")
         current_route = subprocess.run(['ip', 'route', 'show', 'default'], 
                                      capture_output=True, text=True, timeout=2)
         if current_route.returncode == 0:
             print(f"   Current default: {current_route.stdout.strip()}")
         
         # STEP 4: FORCE remove ALL default routes
-        print(f"🗑️  Step 4: Removing all default routes...")
+        print("🗑️  Step 4: Removing all default routes...")
         remove_result = subprocess.run(['ip', 'route', 'del', 'default'], 
                                      capture_output=True, text=True, check=False)
         print(f"   Remove result: return_code={remove_result.returncode}")
@@ -789,10 +788,10 @@ def force_interface_as_default(interface):
         if verify_remove.returncode == 0 and verify_remove.stdout.strip():
             print(f"⚠️  Still have default route after removal: {verify_remove.stdout.strip()}")
         else:
-            print(f"✅ Successfully removed default routes")
+            print("✅ Successfully removed default routes")
         
         # STEP 5: Add new default route
-        print(f"➕ Step 5: Adding new default route...")
+        print("➕ Step 5: Adding new default route...")
         add_cmd = ['ip', 'route', 'add', 'default', 'via', gateway, 'dev', interface, 'metric', '100']
         print(f"   Command: {' '.join(add_cmd)}")
         
@@ -800,13 +799,13 @@ def force_interface_as_default(interface):
         print(f"   Add result: return_code={add_result.returncode}")
         
         if add_result.returncode != 0:
-            print(f"❌ Failed to add route")
+            print("❌ Failed to add route")
             print(f"   Add stdout: {add_result.stdout}")
             print(f"   Add stderr: {add_result.stderr}")
             return False
         
         # STEP 6: VERIFY the route was actually added
-        print(f"🔍 Step 6: Verifying new route...")
+        print("🔍 Step 6: Verifying new route...")
         verify_result = subprocess.run(['ip', 'route', 'show', 'default'], 
                                      capture_output=True, text=True, timeout=2)
         
@@ -823,18 +822,18 @@ def force_interface_as_default(interface):
                 print(f"   Actual: {new_route}")
                 return False
         else:
-            print(f"❌ Could not verify new route")
+            print("❌ Could not verify new route")
             return False
         
         # STEP 7: Update DNS immediately  
-        print(f"🌐 Step 7: Updating DNS...")
+        print("🌐 Step 7: Updating DNS...")
         try:
             with open('/etc/resolv.conf', 'w') as f:
                 f.write(f"# KTOx forced DNS for {interface} - {datetime.now()}\n")
                 f.write(f"nameserver {gateway}\n")
                 f.write("nameserver 8.8.8.8\n")
                 f.write("nameserver 8.8.4.4\n")
-            print(f"✅ DNS updated")
+            print("✅ DNS updated")
         except Exception as dns_error:
             print(f"⚠️  DNS update failed: {dns_error}")
         
@@ -862,7 +861,7 @@ def ensure_interface_default(interface):
         if status_result.returncode != 0 or 'state UP' not in status_result.stdout:
             print(f"❌ Interface {interface} is not up")
             return False
-    except:
+    except Exception:
         print(f"❌ Interface {interface} check failed")
         return False
     
@@ -887,7 +886,7 @@ def ensure_interface_default(interface):
         if test_result.returncode == 0:
             print(f"✅ Internet connectivity confirmed via {interface}")
         else:
-            print(f"⚠️  Route set, connectivity test failed (may still work)")
+            print("⚠️  Route set, connectivity test failed (may still work)")
         
         # Save this as the preferred interface
         save_interface_preference("system_preferred", interface)
@@ -904,14 +903,14 @@ def show_routing_status():
     # Current default route
     default_route = get_current_default_route()
     if default_route:
-        print(f"🎯 Default Route:")
+        print("🎯 Default Route:")
         print(f"   Interface: {default_route.get('interface', 'unknown')}")
         print(f"   Gateway: {default_route.get('gateway', 'unknown')}")
         print(f"   Metric: {default_route.get('metric', 'unknown')}")
     else:
         print("❌ No default route found!")
     
-    print(f"\n📡 Interface Status:")
+    print("\n📡 Interface Status:")
     interfaces = get_available_interfaces()
     
     for interface in interfaces:
@@ -927,14 +926,14 @@ def show_routing_status():
                 print(f"      Gateway: {gateway}")
     
     # DNS status
-    print(f"\n🌐 DNS Configuration:")
+    print("\n🌐 DNS Configuration:")
     try:
         with open('/etc/resolv.conf', 'r') as f:
             dns_content = f.read()
             for line in dns_content.split('\n'):
                 if line.startswith('nameserver'):
                     print(f"   {line}")
-    except:
+    except Exception:
         print("   Unable to read DNS config")
     
     print("="*60)
@@ -959,7 +958,7 @@ def select_and_activate_interface(interface=None, interactive=False):
                 else:
                     print("❌ Invalid selection")
                     return False
-            except:
+            except Exception:
                 print("❌ Invalid input")
                 return False
         else:
@@ -1000,7 +999,7 @@ def auto_connect_to_same_network(target_interface, source_interface="wlan0", lcd
         
         if iwconfig_result.returncode != 0:
             print(f"❌ iwconfig failed for {source_interface}: {iwconfig_result.stderr}")
-            print(f"🔄 FALLBACK: Trying to find any available WiFi profile...")
+            print("🔄 FALLBACK: Trying to find any available WiFi profile...")
             lcd_update("Fallback mode...")
             return auto_connect_any_available_profile(target_interface, lcd_callback)
         
@@ -1029,7 +1028,7 @@ def auto_connect_to_same_network(target_interface, source_interface="wlan0", lcd
         
         if not current_ssid:
             print(f"❌ Could not determine {source_interface}'s SSID")
-            print(f"🔄 FALLBACK: Trying to find any available WiFi profile...")
+            print("🔄 FALLBACK: Trying to find any available WiFi profile...")
             lcd_update("No SSID found")
             return auto_connect_any_available_profile(target_interface, lcd_callback)
         
@@ -1042,7 +1041,7 @@ def auto_connect_to_same_network(target_interface, source_interface="wlan0", lcd
         
         if not os.path.exists(profiles_dir):
             print(f"❌ Profiles directory not found: {profiles_dir}")
-            print(f"🔄 FALLBACK: Creating example profile and trying generic connection...")
+            print("🔄 FALLBACK: Creating example profile and trying generic connection...")
             lcd_update("No profiles dir")
             return create_and_connect_profile(target_interface, current_ssid, lcd_callback)
         
@@ -1073,7 +1072,7 @@ def auto_connect_to_same_network(target_interface, source_interface="wlan0", lcd
         
         if not matching_profile:
             print(f"❌ No WiFi profile found for SSID: {current_ssid}")
-            print(f"🔄 FALLBACK: Trying generic connection without password...")
+            print("🔄 FALLBACK: Trying generic connection without password...")
             lcd_update("No profile match")
             return try_connect_without_profile(target_interface, current_ssid, lcd_callback)
         
@@ -1085,7 +1084,7 @@ def auto_connect_to_same_network(target_interface, source_interface="wlan0", lcd
         try:
             from wifi_manager import WiFiManager
             wifi_mgr = WiFiManager()
-            print(f"✅ WiFi manager loaded")
+            print("✅ WiFi manager loaded")
         except Exception as e:
             print(f"❌ Could not load WiFi manager: {e}")
             lcd_update("WiFi mgr failed")
@@ -1114,7 +1113,7 @@ def auto_connect_to_same_network(target_interface, source_interface="wlan0", lcd
         time.sleep(2)
         
         # Connect using WiFi manager with profile credentials
-        print(f"🔐 Connecting with credentials from profile...")
+        print("🔐 Connecting with credentials from profile...")
         lcd_update("Using creds...")
         ssid = matching_profile['ssid']
         password = matching_profile['password']
@@ -1141,10 +1140,10 @@ def auto_connect_to_same_network(target_interface, source_interface="wlan0", lcd
                         lcd_update(f"Got IP: {interface_ip[:8]}")
                         return True
             
-            print(f"⚠️  Connected but no IP assigned yet, trying DHCP...")
+            print("⚠️  Connected but no IP assigned yet, trying DHCP...")
             lcd_update("Getting DHCP...")
-            dhcp_result = subprocess.run(['dhclient', target_interface], 
-                                       capture_output=True, text=True, timeout=10)
+            subprocess.run(['dhclient', target_interface], 
+                          capture_output=True, text=True, timeout=10)
             time.sleep(3)
             
             # Check IP again
@@ -1159,7 +1158,7 @@ def auto_connect_to_same_network(target_interface, source_interface="wlan0", lcd
                         lcd_update(f"IP: {interface_ip[:8]}")
                         return True
             
-            print(f"❌ Connected but failed to get IP address")
+            print("❌ Connected but failed to get IP address")
             lcd_update("No IP received")
             return False
         else:
@@ -1189,7 +1188,7 @@ def auto_connect_any_available_profile(target_interface, lcd_callback=None):
         
         profiles = wifi_mgr.load_profiles()
         if not profiles:
-            print(f"❌ No WiFi profiles available for fallback")
+            print("❌ No WiFi profiles available for fallback")
             lcd_update("No profiles!")
             return False
         
@@ -1202,7 +1201,7 @@ def auto_connect_any_available_profile(target_interface, lcd_callback=None):
                 lcd_update("Fallback OK!")
                 return True
         
-        print(f"❌ All fallback profiles failed")
+        print("❌ All fallback profiles failed")
         lcd_update("All failed!")
         return False
         
@@ -1334,7 +1333,7 @@ def set_ktox_interface(interface, lcd_callback=None):
                             break
                 
                 if not wifi_connected:
-                    print(f"   WiFi status: No ESSID or off/any")
+                    print("   WiFi status: No ESSID or off/any")
         except Exception as e:
             print(f"   WiFi check error: {e}")
         
@@ -1420,7 +1419,7 @@ def set_ktox_interface(interface, lcd_callback=None):
             print(f"✅ VERIFIED: System default route is now {interface}")
             lcd_update(f"✅ Now {interface}")
         else:
-            print(f"⚠️  Warning: Route may not have changed properly")
+            print("⚠️  Warning: Route may not have changed properly")
             lcd_update("Route warning")
         
         return True
@@ -1506,7 +1505,7 @@ def main():
     
     show_interface_info()
     
-    print(f"\nTesting tool commands:")
+    print("\nTesting tool commands:")
     print(f"Best interface: {get_best_interface()}")
     print(f"Nmap target: {get_nmap_target_network()}")
     print(f"MITM interface: {get_mitm_interface()}")
