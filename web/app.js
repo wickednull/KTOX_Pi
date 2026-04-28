@@ -118,16 +118,37 @@
   const authModalCancel = document.getElementById('authModalCancel');
   const authModalClose = document.getElementById('authModalClose');
 
-  // Build WS URL from current page host.
-  function getWsUrl(){
-    if (shared.getWsUrl) return shared.getWsUrl(location);
+  let wsCandidates = [];
+  let wsCandidateIndex = 0;
+
+  function getWsCandidates(){
+    if (shared.getWsUrlCandidates){
+      const fromShared = shared.getWsUrlCandidates(location);
+      if (Array.isArray(fromShared) && fromShared.length){
+        return Array.from(new Set(fromShared.map(v => String(v || '').trim()).filter(Boolean)));
+      }
+    }
+    // Build WS URL from current page host.
+    if (shared.getWsUrl){
+      const single = String(shared.getWsUrl(location) || '').trim();
+      if (single) return [single];
+    }
     if (location.protocol === 'https:'){
-      return `${location.origin.replace(/^https:/, 'wss:')}/ws`;
+      return [`${location.origin.replace(/^https:/, 'wss:')}/ws`];
     }
     const p = new URLSearchParams(location.search);
+    const explicit = String(p.get('ws') || '').trim();
+    if (explicit) return [explicit];
     const host = location.hostname || 'raspberrypi.local';
-    const port = p.get('port') || '8765';
-    return `ws://${host}:${port}/`.replace(/\/\/\//,'//');
+    const explicitPort = String(p.get('port') || p.get('wsport') || '').trim();
+    const originPort = String(location.port || '').trim();
+    const port = explicitPort || originPort || '8765';
+    const primary = `ws://${host}:${port}/`.replace(/\/\/\//,'//');
+    const sameOrigin = `${location.origin.replace(/^https?:/, 'ws:')}/ws`;
+    if (!explicitPort && originPort){
+      return Array.from(new Set([sameOrigin, `ws://${host}:8765/`]));
+    }
+    return Array.from(new Set([primary, sameOrigin]));
   }
 
   function getApiUrl(path, params = {}){
@@ -702,11 +723,20 @@
 
   function connect(){
     if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
-    const url = getWsUrl();
+    wsCandidates = getWsCandidates();
+    if (!wsCandidates.length){
+      setStatus('No WebSocket URL candidates');
+      scheduleReconnect();
+      return;
+    }
+    if (wsCandidateIndex >= wsCandidates.length) wsCandidateIndex = 0;
+    const url = wsCandidates[wsCandidateIndex];
     try{
       ws = new WebSocket(url);
+      setStatus(`Connecting (${wsCandidateIndex + 1}/${wsCandidates.length})…`);
     } catch(e){
       setStatus('WebSocket failed to construct');
+      wsCandidateIndex = (wsCandidateIndex + 1) % wsCandidates.length;
       scheduleReconnect();
       return;
     }
@@ -812,6 +842,9 @@
       setStatus('Disconnected – reconnecting…');
       setShellStatus('Disconnected');
       shellOpen = false;
+      if (wsCandidates.length > 1){
+        wsCandidateIndex = (wsCandidateIndex + 1) % wsCandidates.length;
+      }
       scheduleReconnect();
     };
 
@@ -826,6 +859,14 @@
       reconnectTimer = null;
       connect();
     }, 1000);
+  }
+
+  function ensureSocketLive(reason = ''){
+    if (ws && ws.readyState === WebSocket.OPEN) return;
+    if (reason){
+      setStatus(`Reconnecting (${reason})…`);
+    }
+    connect();
   }
 
   function ensureTerminal(){
@@ -2023,9 +2064,18 @@
     if (!document.hidden){
       if (systemOpen) loadSystemStatus();
       pollPayloadStatus();
+      ensureSocketLive('visible');
     }
     schedulePayloadPoll();
     scheduleSystemPoll();
+  });
+
+  window.addEventListener('pageshow', () => {
+    ensureSocketLive('pageshow');
+  });
+
+  window.addEventListener('online', () => {
+    ensureSocketLive('online');
   });
 
   const startAfterAuth = () => {

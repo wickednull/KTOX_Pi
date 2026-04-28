@@ -29,7 +29,8 @@ if ROOT_DIR not in sys.path:
 sys.path.append('/root/KTOx/')
 
 try:
-    import LCD_1in44, LCD_Config
+    import LCD_1in44
+    import LCD_Config
     from PIL import Image, ImageDraw, ImageFont
     import RPi.GPIO as GPIO
     from wifi_manager import WiFiManager
@@ -61,7 +62,7 @@ if LCD_AVAILABLE:
     try:
         font_sm = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 8)
         font_md = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 9)
-    except:
+    except Exception:
         font_sm = font_md = ImageFont.load_default()
 
 
