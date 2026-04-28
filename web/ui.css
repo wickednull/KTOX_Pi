@@ -506,7 +506,7 @@ main > .flex.items-center.justify-between.mb-4.md\:mb-6 {
     gap: 0.5rem !important;
   }
 
-  /* Device shell: full width, no transform, enhanced styling */
+  /* Device shell: full width, no transform */
   #deviceShell {
     transform: none !important;
     width: 100% !important;
@@ -514,32 +514,13 @@ main > .flex.items-center.justify-between.mb-4.md\:mb-6 {
     margin: 0 auto;
     padding: 12px 10px !important;
     box-sizing: border-box;
-    box-shadow:
-      0 0 30px rgba(139, 0, 0, 0.3),
-      0 0 60px rgba(139, 0, 0, 0.15),
-      inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
-    border: 1px solid rgba(139, 0, 0, 0.3) !important;
   }
 
-  /* Screen frame enhancement */
-  .screen-frame {
-    box-shadow:
-      0 0 20px rgba(139, 0, 0, 0.2),
-      inset 0 0 10px rgba(0, 0, 0, 0.4) !important;
-    border: 2px solid rgba(139, 0, 0, 0.4) !important;
-  }
-
-  #screen, #screen-gb, #screen-pager {
-    filter: drop-shadow(0 0 2px rgba(139, 0, 0, 0.3));
-  }
-
-  /* Canvas: fill device shell width on mobile */
+  /* Canvas: fill device shell width */
   #screen, #screen-gb, #screen-pager {
     width: 100% !important;
     height: auto !important;
     aspect-ratio: 1 / 1;
-    image-rendering: crisp-edges;
-    image-rendering: pixelated;
   }
 
   /* Screen: full row */
