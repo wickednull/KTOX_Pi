@@ -519,41 +519,81 @@
       <div class="pager-speaker" aria-hidden="true">
         <span></span><span></span><span></span><span></span><span></span>
       </div>
-      <!-- Default layout (Neon / Pager) -->
-      <div class="layout-default grid grid-cols-2 md:grid-cols-[120px_auto_120px] gap-3 md:gap-4 md:justify-items-center items-center w-full">
-        <!-- Left pad -->
-        <div class="order-2 md:order-1 flex md:block justify-center">
-          <div class="grid grid-cols-3 grid-rows-3 gap-1.5 w-[120px]">
-            <div></div>
-            <button class="rj-btn dpad-btn rounded-xl bg-slate-800/70 hover:bg-slate-700/70 w-10 h-10 flex items-center justify-center backdrop-blur ring-1 ring-white/10 hover:ring-red-400/30 transition" data-btn="UP">▲</button>
-            <div></div>
-            <button class="rj-btn dpad-btn rounded-xl bg-slate-800/70 hover:bg-slate-700/70 w-10 h-10 flex items-center justify-center backdrop-blur ring-1 ring-white/10 hover:ring-red-400/30 transition" data-btn="LEFT">◄</button>
-            <button class="rj-btn ok-btn rounded-xl bg-red-900/80 hover:bg-red-800/80 w-10 h-10 flex items-center justify-center ring-1 ring-red-300/40 transition" data-btn="OK" aria-label="OK"></button>
-            <button class="rj-btn dpad-btn rounded-xl bg-slate-800/70 hover:bg-slate-700/70 w-10 h-10 flex items-center justify-center backdrop-blur ring-1 ring-white/10 hover:ring-red-400/30 transition" data-btn="RIGHT">►</button>
-            <div></div>
-            <button class="rj-btn dpad-btn rounded-xl bg-slate-800/70 hover:bg-slate-700/70 w-10 h-10 flex items-center justify-center backdrop-blur ring-1 ring-white/10 hover:ring-red-400/30 transition" data-btn="DOWN">▼</button>
-            <div></div>
-          </div>
-        </div>
-
-        <!-- Screen -->
-        <div class="order-1 md:order-2 col-span-2 md:col-span-1">
-          <div class="screen-frame rounded-2xl p-2">
-            <div class="flex items-center justify-center">
-              <canvas id="screen" width="128" height="128" class="w-full md:w-[300px] aspect-square"></canvas>
+      <!-- Default layout (Neon / Cyberpunk Cyberdeck) -->
+      <div class="layout-default neon-cyberdeck">
+        <!-- Cyberdeck outer frame -->
+        <div class="cyberdeck-frame">
+          <!-- Top bezel with status LEDs -->
+          <div class="cyberdeck-top-bezel">
+            <div class="led-indicators">
+              <span class="led led-active"></span>
+              <span class="led"></span>
+              <span class="led"></span>
+            </div>
+            <div class="cyberdeck-label">KTOX CYBERDECK V1</div>
+            <div class="led-indicators">
+              <span class="led"></span>
+              <span class="led"></span>
+              <span class="led led-active"></span>
             </div>
           </div>
-          <div class="pager-text mt-3 text-center text-xs text-slate-400">OK = Enter · KEY3 = Esc</div>
-          <div id="status" class="status-text pager-text mt-1 text-center text-[11px] text-slate-500">Connecting…</div>
-        </div>
 
-        <!-- Right buttons -->
-        <div class="order-3 md:order-3 flex flex-col items-stretch gap-2 md:items-stretch">
-          <button class="rj-btn key-btn rounded-xl bg-fuchsia-700/80 hover:bg-fuchsia-600/80 px-3 py-2 w-full md:w-24 ring-1 ring-white/10 transition" data-btn="KEY1">KEY1</button>
-          <button class="rj-btn key-btn rounded-xl bg-fuchsia-700/80 hover:bg-fuchsia-600/80 px-3 py-2 w-full md:w-24 ring-1 ring-white/10 transition" data-btn="KEY2">KEY2</button>
-          <button class="rj-btn key-btn rounded-xl bg-fuchsia-700/80 hover:bg-fuchsia-600/80 px-3 py-2 w-full md:w-24 ring-1 ring-white/10 transition" data-btn="KEY3">KEY3</button>
-          <button onclick="tapInput('MANUAL_LOCK')" class="rounded-xl bg-slate-700/70 hover:bg-slate-600/90 px-3 py-2 w-full md:w-24 ring-1 ring-slate-500/30 text-slate-300 hover:text-white text-xs font-bold transition" title="Lock screen">&#xf023;</button>
-          <button onclick="exitStealth()" class="rounded-xl bg-red-900/70 hover:bg-red-700/90 px-3 py-2 w-full md:w-24 ring-1 ring-red-500/30 text-red-300 hover:text-white text-xs font-bold transition" title="Exit stealth mode">EXIT<br>STEALTH</button>
+          <!-- Main display area with side controls -->
+          <div class="cyberdeck-main">
+            <!-- Left control panel -->
+            <div class="cyberdeck-panel left-panel">
+              <div class="panel-header">DPAD</div>
+              <div class="dpad-grid">
+                <div></div>
+                <button class="rj-btn dpad-btn cyber-btn" data-btn="UP">▲</button>
+                <div></div>
+                <button class="rj-btn dpad-btn cyber-btn" data-btn="LEFT">◄</button>
+                <button class="rj-btn ok-btn cyber-btn-center" data-btn="OK" aria-label="OK"></button>
+                <button class="rj-btn dpad-btn cyber-btn" data-btn="RIGHT">►</button>
+                <div></div>
+                <button class="rj-btn dpad-btn cyber-btn" data-btn="DOWN">▼</button>
+                <div></div>
+              </div>
+            </div>
+
+            <!-- Center display -->
+            <div class="cyberdeck-display">
+              <div class="display-inner">
+                <div class="screen-frame cyber-screen">
+                  <div class="screen-scanlines"></div>
+                  <div class="flex items-center justify-center h-full">
+                    <canvas id="screen" width="128" height="128" class="w-full aspect-square"></canvas>
+                  </div>
+                </div>
+                <div class="display-footer">
+                  <div id="status" class="status-text text-center text-[10px] text-cyan-400 font-mono">READY</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Right control panel -->
+            <div class="cyberdeck-panel right-panel">
+              <div class="panel-header">FUNC</div>
+              <div class="key-panel">
+                <button class="rj-btn key-btn cyber-key-btn key1" data-btn="KEY1">
+                  <span class="key-label">K1</span>
+                </button>
+                <button class="rj-btn key-btn cyber-key-btn key2" data-btn="KEY2">
+                  <span class="key-label">K2</span>
+                </button>
+                <button class="rj-btn key-btn cyber-key-btn key3" data-btn="KEY3">
+                  <span class="key-label">K3</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Bottom bezel with info -->
+          <div class="cyberdeck-bottom-bezel">
+            <div class="bezel-text">SYS ONLINE</div>
+            <div class="bezel-divider"></div>
+            <div class="bezel-text">NEURAL I/O</div>
+          </div>
         </div>
       </div>
 
