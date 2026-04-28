@@ -619,6 +619,16 @@ main > .flex.items-center.justify-between.mb-4.md\:mb-6 {
 #mobileNav { display: none; }
 #mobileTerminalDock { display: none; }
 
+/* System dropdown: fixed on mobile, inline on desktop */
+#systemDropdown {
+  position: static;
+  bottom: auto;
+  left: auto;
+  right: auto;
+  z-index: auto;
+  max-height: none;
+}
+
 @media (max-width: 768px) {
   #terminalQuickBar {
     display: none !important;
@@ -797,6 +807,19 @@ main > .flex.items-center.justify-between.mb-4.md\:mb-6 {
   /* ── Mobile payloads tab ─────────────────────────────────────── */
   #payloadsTab {
     padding-bottom: 1rem;
+  }
+
+  /* ── System dropdown on mobile (fixed overlay) ─────────────────── */
+  #systemDropdown {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: calc(62px + env(safe-area-inset-bottom, 0px));
+    z-index: 50;
+    margin: 0;
+    max-height: 60vh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
   }
 
 }
