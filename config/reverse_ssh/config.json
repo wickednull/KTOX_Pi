@@ -1,0 +1,7 @@
+{
+  "remote_host": "your.server.com",
+  "remote_port": 2222,
+  "remote_user": "tunnel",
+  "ssh_key_path": "/root/KTOx/config/reverse_ssh/keys/id_rsa_tunnel",
+  "local_forward_port": 22
+}
