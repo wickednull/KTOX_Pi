@@ -28,8 +28,8 @@
       }
       if (!explicitPort && originPort){
         return [
-          sameOriginWs,
           `ws://${host}:8765/`.replace(/\/\/\//, '//'),
+          sameOriginWs,
         ];
       }
       return [

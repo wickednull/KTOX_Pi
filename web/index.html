@@ -4,13 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="KTOx">
   <meta name="theme-color" content="#05060a">
   <meta name="application-name" content="KTOx WebUI">
   <title>KTOx WebUI</title>
   <link rel="manifest" href="./manifest.webmanifest">
-  <link rel="icon" type="image/jpeg" href="./ktox.png?v=2">
+  <link rel="icon" type="image/png" href="./ktox.png?v=2">
   <link rel="apple-touch-icon" href="./ktox.png?v=2">
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm/css/xterm.css">
@@ -496,7 +497,7 @@
                 </div>
               </div>
               <div id="terminal" class="terminal-body"></div>
-              <div class="flex flex-wrap items-center gap-1.5 px-3 py-2 border-t border-slate-800/70">
+              <div id="terminalQuickBar" class="flex flex-wrap items-center gap-1.5 px-3 py-2 border-t border-slate-800/70">
                 <button class="shell-key-btn" data-shell-key="&#x03;" title="Ctrl+C">^C</button>
                 <button class="shell-key-btn" data-shell-key="&#x04;" title="Ctrl+D">^D</button>
                 <button class="shell-key-btn" data-shell-key="&#x1a;" title="Ctrl+Z">^Z</button>
@@ -826,6 +827,10 @@
     <button class="mob-nav-btn mob-nav-active" data-mobnav="device" aria-label="Device">
       <i class="fa-solid fa-gamepad"></i>
       <span>Device</span>
+    </button>
+    <button class="mob-nav-btn" data-mobnav="system" aria-label="System">
+      <i class="fa-solid fa-microchip"></i>
+      <span>System</span>
     </button>
     <button class="mob-nav-btn" data-mobnav="terminal" aria-label="Terminal">
       <i class="fa-solid fa-terminal"></i>
