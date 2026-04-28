@@ -14,7 +14,6 @@ Usage:
 """
 
 import sys
-import os
 
 # Add required paths
 sys.path.append('/root/KTOx/wifi/')
@@ -26,7 +25,6 @@ try:
         get_current_default_route,
         show_routing_status,
         ensure_interface_default,
-        backup_routing_config,
         restore_routing_from_backup,
         select_and_activate_interface
     )
@@ -90,7 +88,7 @@ def cmd_list():
         if status["ip"]:
             print(f"     IP: {status['ip']}")
         else:
-            print(f"     IP: Not assigned")
+            print("     IP: Not assigned")
         
         print()
 
@@ -178,7 +176,7 @@ def cmd_test(interface):
             if wifi_status["ssid"]:
                 print(f"📶 WiFi SSID: {wifi_status['ssid']}")
                 print(f"💪 Signal: {wifi_status.get('signal', 'Unknown')}")
-        except:
+        except Exception:
             pass
     
     # Test readiness for switching

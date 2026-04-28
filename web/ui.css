@@ -617,8 +617,13 @@ main > .flex.items-center.justify-between.mb-4.md\:mb-6 {
 
 /* Hidden on desktop */
 #mobileNav { display: none; }
+#mobileTerminalDock { display: none; }
 
 @media (max-width: 768px) {
+  #terminalQuickBar {
+    display: none !important;
+  }
+
   /* ── Replace hamburger drawer with bottom nav ────────────────── */
   #sidebar,
   #sidebarBackdrop,
@@ -639,6 +644,38 @@ main > .flex.items-center.justify-between.mb-4.md\:mb-6 {
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
     padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  #mobileTerminalDock {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: calc(62px + env(safe-area-inset-bottom, 0px));
+    z-index: 57;
+    display: none;
+    gap: 6px;
+    padding: 8px 10px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    background: linear-gradient(180deg, rgba(2, 6, 23, 0.92), rgba(2, 6, 23, 0.98));
+    border-top: 1px solid rgba(148, 163, 184, 0.16);
+  }
+
+  body.mobile-terminal-dock #mobileTerminalDock {
+    display: flex;
+  }
+
+  #mobileTerminalDock .shell-key-btn {
+    min-width: 56px;
+    height: 36px;
+    border-radius: 10px;
+    font-size: 12px;
+    padding: 0 10px;
+    white-space: nowrap;
+  }
+
+  body.mobile-terminal-dock #terminalQuickBar {
+    display: none !important;
   }
 
   .mob-nav-btn {
@@ -700,6 +737,10 @@ main > .flex.items-center.justify-between.mb-4.md\:mb-6 {
     padding-bottom: calc(62px + env(safe-area-inset-bottom, 0px)) !important;
   }
 
+  body.mobile-terminal-dock {
+    padding-bottom: calc(112px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+
   /* ── Full-width layout since sidebar is gone ─────────────────── */
   .min-h-screen.md\:flex {
     display: block !important;
@@ -710,7 +751,7 @@ main > .flex.items-center.justify-between.mb-4.md\:mb-6 {
     padding-right: 1rem !important;
   }
 
-  /* ── Device tab: terminal full-width, device shell below ─────── */
+  /* ── Device tab defaults on mobile ────────────────────────────── */
   #deviceTab > .flex {
     flex-direction: column !important;
     gap: 0 !important;
@@ -723,7 +764,7 @@ main > .flex.items-center.justify-between.mb-4.md\:mb-6 {
     margin-bottom: 1rem;
   }
 
-  /* Terminal taller on mobile (no device shell competing for space) */
+  /* Terminal sizing for dedicated terminal mode on mobile */
   .terminal-body {
     height: min(52vh, 340px) !important;
   }
@@ -733,6 +774,24 @@ main > .flex.items-center.justify-between.mb-4.md\:mb-6 {
     width: 100%;
     display: flex;
     justify-content: center;
+  }
+
+  /* Mobile UX improvement:
+     - Device tab focuses on virtual device controls (hide terminal panel).
+     - Terminal tab focuses on shell only (existing terminal-mode rules still apply). */
+  #deviceTab.mobile-device-focus .terminal-col {
+    display: none !important;
+  }
+
+  #deviceTab.mobile-device-focus .device-shell-col {
+    order: 1 !important;
+    width: 100% !important;
+  }
+
+  #deviceTab.mobile-terminal-focus .terminal-col {
+    display: block !important;
+    order: 1 !important;
+    width: 100% !important;
   }
 
   /* ── Mobile payloads tab ─────────────────────────────────────── */

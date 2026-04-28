@@ -6,14 +6,53 @@
       return `${locationRef.origin}${path}${qs ? `?${qs}` : ''}`;
     },
 
+    getWsUrlCandidates(loc){
+      const locationRef = loc || window.location;
+      const p = new URLSearchParams(locationRef.search || '');
+      const explicit = String(p.get('ws') || '').trim();
+      if (explicit){
+        return [explicit];
+      }
+
+      const host = locationRef.hostname || 'raspberrypi.local';
+      const explicitPort = String(p.get('port') || p.get('wsport') || '').trim();
+      const originPort = String(locationRef.port || '').trim();
+      const port = explicitPort || originPort || '8765';
+      const sameOriginWs = `${locationRef.origin.replace(/^https?:/, locationRef.protocol === 'https:' ? 'wss:' : 'ws:')}/ws`;
+
+      if (locationRef.protocol === 'https:'){
+        return [
+          `${locationRef.origin.replace(/^https:/, 'wss:')}/ws`,
+          `wss://${host}:${port}/`,
+        ];
+      }
+      if (!explicitPort && originPort){
+        return [
+          `ws://${host}:8765/`.replace(/\/\/\//, '//'),
+          sameOriginWs,
+        ];
+      }
+      return [
+        `ws://${host}:${port}/`.replace(/\/\/\//, '//'),
+        sameOriginWs,
+      ];
+    },
+
     getWsUrl(loc){
       const locationRef = loc || window.location;
+      const p = new URLSearchParams(locationRef.search || '');
+      const explicit = String(p.get('ws') || '').trim();
+      if (explicit){
+        return explicit;
+      }
+
       if (locationRef.protocol === 'https:'){
         return `${locationRef.origin.replace(/^https:/, 'wss:')}/ws`;
       }
-      const p = new URLSearchParams(locationRef.search || '');
+
       const host = locationRef.hostname || 'raspberrypi.local';
-      const port = p.get('port') || '8765';
+      const explicitPort = String(p.get('port') || p.get('wsport') || '').trim();
+      const port = explicitPort || '8765';
       return `ws://${host}:${port}/`.replace(/\/\/\//, '//');
     },
 
