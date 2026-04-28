@@ -1027,11 +1027,15 @@
       console.log('[SystemMonitor] Fetching from:', url);
       const res = await apiFetch(url, { cache: 'no-store' });
       console.log('[SystemMonitor] Response status:', res.status);
+
+      if (!res.ok){
+        const data = await res.json();
+        console.error('[SystemMonitor] API error:', data);
+        throw new Error(data && data.error ? data.error : `HTTP ${res.status}`);
+      }
+
       const data = await res.json();
       console.log('[SystemMonitor] Response data:', data);
-      if (!res.ok){
-        throw new Error(data && data.error ? data.error : 'system_failed');
-      }
 
       const cpu = Number(data.cpu_percent || 0);
       const memUsed = Number(data.mem_used || 0);
