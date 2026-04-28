@@ -2102,6 +2102,8 @@
       if (tab === 'system'){
         setActiveTab('system');
         setTimeout(() => loadMobileSystemStatus(), 50);
+      } else if (tab === 'terminal'){
+        setActiveTab('device');
       } else if (tab === 'settings'){
         setActiveTab('settings');
         loadDiscordWebhook();
