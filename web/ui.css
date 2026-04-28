@@ -994,6 +994,10 @@ main > .flex.items-center.justify-between.mb-4.md\:mb-6 {
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
     padding-bottom: env(safe-area-inset-bottom, 0px);
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scroll-behavior: smooth;
   }
 
   #mobileTerminalDock {
@@ -1029,13 +1033,14 @@ main > .flex.items-center.justify-between.mb-4.md\:mb-6 {
   }
 
   .mob-nav-btn {
-    flex: 1;
+    flex: 0 0 auto;
+    min-width: 70px;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     gap: 2px;
-    padding: 10px 4px 8px;
+    padding: 10px 8px 8px;
     background: none;
     border: none;
     color: #475569;
