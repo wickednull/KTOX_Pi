@@ -44,7 +44,7 @@ except ImportError:
 PINS = {"OK": 13, "KEY3": 16}
 RUNNING = True
 INSTALL_THREAD = None
-UI_LOCK = threading.Lock()
+UI_LOCK = threading.RLock()
 INSTALL_OUTPUT_LINES = ["Scanning dependencies..."]
 
 # --- Complete Dependency List ---
@@ -162,6 +162,16 @@ def draw_ui(screen_state="confirm", missing_apt=None, missing_pip=None):
 
         LCD.LCD_ShowImage(image, 0, 0)
 
+
+def log_status(message):
+    """Append a status line in a lock-safe way.
+
+    Keep UI state updates isolated to prevent lock inversion/deadlocks if
+    rendering is triggered from other call sites.
+    """
+    with UI_LOCK:
+        INSTALL_OUTPUT_LINES.append(message)
+
 # --- Installation Logic ---
 def installation_worker(to_install_apt, to_install_pip):
     global INSTALL_OUTPUT_LINES
@@ -174,14 +184,15 @@ def installation_worker(to_install_apt, to_install_pip):
                 if not RUNNING:
                     process.terminate()
                     break
-                with UI_LOCK:
-                    INSTALL_OUTPUT_LINES.append(line.strip())
+                log_status(line.strip())
                 time.sleep(0.05)
             process.wait()
-            return process.returncode == 0
+            if process.returncode != 0:
+                log_status(f"Command failed ({process.returncode})")
+                return False
+            return True
         except Exception as e:
-            with UI_LOCK:
-                INSTALL_OUTPUT_LINES.append(f"Error: {e}")
+            log_status(f"Error: {e}")
             return False
 
     with UI_LOCK:
@@ -189,32 +200,29 @@ def installation_worker(to_install_apt, to_install_pip):
 
     if not run_command(["sudo", "apt-get", "update", "-qq"]):
         with UI_LOCK:
-            INSTALL_OUTPUT_LINES.append("APT update failed!")
-            INSTALL_OUTPUT_LINES.append("Finished.")
+            log_status("APT update failed!")
+            log_status("Finished.")
         return
 
     if to_install_apt:
         with UI_LOCK:
-            INSTALL_OUTPUT_LINES.append("Installing APT packages...")
+            log_status("Installing APT packages...")
         if not run_command(["sudo", "apt-get", "install", "-y", "--no-install-recommends"] + to_install_apt):
-            with UI_LOCK:
-                INSTALL_OUTPUT_LINES.append("APT install failed!")
-                INSTALL_OUTPUT_LINES.append("Finished.")
+            log_status("APT install failed!")
+            log_status("Finished.")
             return
 
     if to_install_pip:
         with UI_LOCK:
-            INSTALL_OUTPUT_LINES.append("Installing PIP packages...")
+            log_status("Installing PIP packages...")
         if not run_command(["sudo", "pip3", "install", "-q"] + to_install_pip):
-            with UI_LOCK:
-                INSTALL_OUTPUT_LINES.append("PIP install failed!")
-                INSTALL_OUTPUT_LINES.append("Finished.")
+            log_status("PIP install failed!")
+            log_status("Finished.")
             return
 
-    with UI_LOCK:
-        INSTALL_OUTPUT_LINES.append("--------------------")
-        INSTALL_OUTPUT_LINES.append("Installation complete!")
-        INSTALL_OUTPUT_LINES.append("Finished.")
+    log_status("--------------------")
+    log_status("Installation complete!")
+    log_status("Finished.")
 
 
 # --- Main Execution Block ---
