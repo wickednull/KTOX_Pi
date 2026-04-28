@@ -33,14 +33,18 @@ if os.path.isdir('/root/KTOx') and '/root/KTOx' not in sys.path:
     sys.path.insert(0, '/root/KTOx')
 
 # Hardware/UI imports
+HARDWARE_OK = True
 try:
     import RPi.GPIO as GPIO
     import LCD_Config
     import LCD_1in44
     from PIL import Image, ImageDraw, ImageFont
 except Exception as e:
-    print(f"[ERROR] LCD/GPIO deps missing: {e}", file=sys.stderr)
-    sys.exit(1)
+    HARDWARE_OK = False
+    GPIO = None
+    LCD_1in44 = None
+    Image = ImageDraw = ImageFont = None
+    print(f"[WARN] LCD/GPIO deps missing: {e}", file=sys.stderr)
 
 # WiFi utilities
 try:
@@ -97,19 +101,25 @@ try:
 except Exception:
     pass
 
-GPIO.setmode(GPIO.BCM)
-for p in PINS.values():
-    GPIO.setup(p, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+LCD = None
+IMG = None
+DRAW = None
+FONT_TITLE = None
+FONT = None
+if HARDWARE_OK:
+    GPIO.setmode(GPIO.BCM)
+    for p in PINS.values():
+        GPIO.setup(p, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
-LCD = LCD_1in44.LCD()
-LCD.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
-IMG = Image.new("RGB", (WIDTH, HEIGHT), (10, 0, 0))
-DRAW = ImageDraw.Draw(IMG)
-try:
-    FONT_TITLE = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', 12)
-except Exception:
-    FONT_TITLE = ImageFont.load_default()
-FONT = ImageFont.load_default()
+    LCD = LCD_1in44.LCD()
+    LCD.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
+    IMG = Image.new("RGB", (WIDTH, HEIGHT), (10, 0, 0))
+    DRAW = ImageDraw.Draw(IMG)
+    try:
+        FONT_TITLE = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', 12)
+    except Exception:
+        FONT_TITLE = ImageFont.load_default()
+    FONT = ImageFont.load_default()
 
 RUN = True
 
@@ -132,6 +142,8 @@ os.makedirs(LOOT_DIR, exist_ok=True)
 # ---------------- UI helpers ----------------
 
 def draw(lines_top, lines_bottom=None):
+    if not HARDWARE_OK or not LCD or not IMG or not DRAW:
+        return
     IMG.paste((0,0,0), [0,0,WIDTH,HEIGHT])
     y = 3
     for s in lines_top:
@@ -229,6 +241,9 @@ if __name__ == '__main__':
         if os.geteuid() != 0:
             draw(["Root required"], ["Run as sudo"])
             time.sleep(3); sys.exit(1)
+        if not HARDWARE_OK:
+            print("[ERROR] Missing LCD/GPIO dependencies (RPi.GPIO/LCD/PIL).")
+            sys.exit(1)
         if not SCAPY_OK or not WIFI_OK:
             draw(["Missing deps"], ["scapy/wifi helpers"])
             time.sleep(3); sys.exit(1)

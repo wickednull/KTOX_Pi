@@ -18,7 +18,7 @@ LOKI_PORT = 8000
 TIMEOUT = 5
 
 
-def test_port_open():
+def check_port_open():
     """Test if Loki port is open"""
     print("[*] Testing port connectivity...")
     try:
@@ -38,7 +38,7 @@ def test_port_open():
         return False
 
 
-def test_endpoint(path, description):
+def check_endpoint(path, description):
     """Test a specific endpoint"""
     url = f"http://{LOKI_HOST}:{LOKI_PORT}{path}"
     print(f"\n[*] Testing {description}")
@@ -100,7 +100,7 @@ def main():
     print("=" * 60)
 
     # Test connectivity
-    if not test_port_open():
+    if not check_port_open():
         print("\n[!] Cannot connect to Loki on port 8000")
         print("    Make sure Loki is running: python3 /root/KTOx/payloads/offensive/loki_engine.py")
         return
@@ -123,7 +123,7 @@ def main():
 
     results = []
     for path, desc in endpoints:
-        results.append((path, test_endpoint(path, desc)))
+        results.append((path, check_endpoint(path, desc)))
 
     # Summary
     print("\n" + "=" * 60)
