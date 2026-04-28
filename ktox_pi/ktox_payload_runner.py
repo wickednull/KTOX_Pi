@@ -73,6 +73,7 @@ def get_payloads(category):
     """
     Return list of (name, path, meta) for all .py files in a category.
     Reads optional metadata from first 5 lines of the payload file.
+    Excludes helper files (starting with _ or .)
     """
     cat_dir = Path(f"{PAYLOAD_DIR}/{category}")
     if not cat_dir.exists():
@@ -80,6 +81,9 @@ def get_payloads(category):
 
     payloads = []
     for f in sorted(cat_dir.glob("*.py")):
+        # Skip helper files and internal modules
+        if f.name.startswith("_") or f.name.startswith("."):
+            continue
         name = f.stem.replace("_", " ").title()
         desc = ""
         # Read first lines for metadata comments
