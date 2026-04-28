@@ -51,7 +51,9 @@ INSTALL_OUTPUT_LINES = ["Press OK to start..."]
 # --- Dependencies ---
 APT_PACKAGES = [
     "bluez", "hostapd", "dnsmasq",
-    "wifite", "hcxdumptool", "impacket-scripts", "w3m"
+    "aircrack-ng", "hcxtools", "hcxdumptool", "mdk4",
+    "wireless-tools", "wpasupplicant",
+    "wifite", "impacket-scripts", "w3m"
 ]
 PIP_PACKAGES = [
     "impacket"
