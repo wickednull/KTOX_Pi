@@ -15,7 +15,6 @@ Usage:
 """
 
 import sys
-import os
 
 # Add required paths
 sys.path.append('/root/KTOx/wifi/')
@@ -27,7 +26,6 @@ try:
         get_current_ktox_interface,
         list_wifi_interfaces_with_status,
         get_interface_status,
-        show_routing_status,
         get_available_interfaces
     )
     IMPORTS_OK = True
@@ -77,8 +75,6 @@ def cmd_list():
         return
     
     print(f"\n📋 Found {len(interfaces)} WiFi interfaces")
-    current = get_current_ktox_interface()
-    
     for iface_info in interfaces:
         name = iface_info['name']
         mark = "👉 CURRENT" if iface_info['current'] else ""
