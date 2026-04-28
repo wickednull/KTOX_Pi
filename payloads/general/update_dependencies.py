@@ -32,14 +32,27 @@ KTOX_ROOT = '/root/KTOx'
 if os.path.isdir(KTOX_ROOT) and KTOX_ROOT not in sys.path:
     sys.path.insert(0, KTOX_ROOT)
 
+# Try to import hardware libraries, fallback to headless mode
+HEADLESS_MODE = False
 try:
     import RPi.GPIO as GPIO
     import LCD_Config
     import LCD_1in44
     from PIL import Image, ImageDraw, ImageFont
+    HEADLESS_MODE = False
 except ImportError:
-    print("ERROR: Hardware libraries not found.", file=sys.stderr)
-    sys.exit(1)
+    # Headless mode - no hardware available (dev environment)
+    HEADLESS_MODE = True
+    class FakeImage:
+        def __init__(self, *args, **kwargs): pass
+    class FakeDraw:
+        def text(self, *args, **kwargs): pass
+        def line(self, *args, **kwargs): pass
+        def rectangle(self, *args, **kwargs): pass
+    Image = FakeImage
+    ImageDraw = type('ImageDraw', (), {'Draw': lambda x: FakeDraw()})()
+    ImageFont = type('ImageFont', (), {'load_default': lambda: None, 'truetype': lambda *a: None})()
+    GPIO = None
 
 # --- Global State ---
 PINS = {"OK": 13, "KEY3": 16}
@@ -76,8 +89,9 @@ def cleanup(*_):
     if not RUNNING:
         return
     RUNNING = False
-    print("Updater: Cleaning up GPIO...")
-    GPIO.cleanup()
+    if not HEADLESS_MODE and GPIO:
+        print("Updater: Cleaning up GPIO...")
+        GPIO.cleanup()
     print("Updater: Exiting.")
 
 # --- UI Drawing ---
@@ -170,35 +184,47 @@ if __name__ == "__main__":
     signal.signal(signal.SIGTERM, cleanup)
 
     try:
-        # --- Hardware Initialization ---
-        GPIO.setmode(GPIO.BCM)
-        for pin in PINS.values():
-            GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+        if not HEADLESS_MODE:
+            # --- Hardware Initialization ---
+            GPIO.setmode(GPIO.BCM)
+            for pin in PINS.values():
+                GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
-        LCD = LCD_1in44.LCD()
-        LCD.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
-        LCD.LCD_Clear()
+            LCD = LCD_1in44.LCD()
+            LCD.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
+            LCD.LCD_Clear()
+        else:
+            print("Updater: Running in headless mode (no hardware detected)")
+            LCD = None
 
         current_screen = "confirm"
 
         # --- Main Loop ---
         while RUNNING:
-            draw_ui(current_screen)
+            if not HEADLESS_MODE:
+                draw_ui(current_screen)
 
-            if current_screen == "confirm":
-                if GPIO.input(PINS["OK"]) == 0:
-                    current_screen = "installing"
-                    INSTALL_THREAD = threading.Thread(target=installation_worker, daemon=True)
-                    INSTALL_THREAD.start()
-                    time.sleep(0.3) 
+                if current_screen == "confirm":
+                    if GPIO.input(PINS["OK"]) == 0:
+                        current_screen = "installing"
+                        INSTALL_THREAD = threading.Thread(target=installation_worker, daemon=True)
+                        INSTALL_THREAD.start()
+                        time.sleep(0.3)
 
-                if GPIO.input(PINS["KEY3"]) == 0:
-                    break 
+                    if GPIO.input(PINS["KEY3"]) == 0:
+                        break
 
-            elif current_screen == "installing":
-                if GPIO.input(PINS["KEY3"]) == 0:
-                    break 
-            
+                elif current_screen == "installing":
+                    if GPIO.input(PINS["KEY3"]) == 0:
+                        break
+            else:
+                print("Updater: Starting installation in headless mode")
+                INSTALL_THREAD = threading.Thread(target=installation_worker, daemon=True)
+                INSTALL_THREAD.start()
+                while INSTALL_THREAD.is_alive():
+                    time.sleep(0.5)
+                break
+
             time.sleep(0.1)
 
     except (KeyboardInterrupt, SystemExit):
@@ -210,5 +236,6 @@ if __name__ == "__main__":
             import traceback
             traceback.print_exc(file=f)
     finally:
-        LCD.LCD_Clear()
+        if not HEADLESS_MODE and LCD:
+            LCD.LCD_Clear()
         cleanup()
