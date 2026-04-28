@@ -446,25 +446,23 @@ main > .flex.items-center.justify-between.mb-4.md\:mb-6 {
 
   /* D-pad buttons bigger fingers */
   .dpad-btn {
-    width: 42px !important;
-    height: 42px !important;
-    font-size: 0.85rem !important;
+    width: 46px !important;
+    height: 46px !important;
   }
 
   /* KEY1/KEY2/KEY3 — wider for thumb tap */
   .key-btn {
-    min-width: 76px !important;
-    height: 40px !important;
-    font-size: 12px !important;
+    min-width: 88px !important;
+    height: 44px !important;
+    font-size: 13px !important;
     letter-spacing: 0.04em;
-    padding: 0 8px !important;
   }
 
   /* Shell quick-key row: larger tap area, more spacing */
   .shell-key-btn {
-    padding: 4px 10px !important;
-    font-size: 10px !important;
-    min-height: 34px;
+    padding: 6px 12px !important;
+    font-size: 11px !important;
+    min-height: 36px;
   }
 
   /* Input fields: prevent iOS zoom on focus (needs ≥16px font) */
@@ -644,16 +642,13 @@ main > .flex.items-center.justify-between.mb-4.md\:mb-6 {
   }
 
   .key-btn {
-    min-width: 68px !important;
-    height: 36px !important;
-    font-size: 11px !important;
-    padding: 0 6px !important;
+    min-width: 76px !important;
+    font-size: 12px !important;
   }
 
   .dpad-btn {
-    width: 38px !important;
-    height: 38px !important;
-    font-size: 0.75rem !important;
+    width: 40px !important;
+    height: 40px !important;
   }
 
   .layout-default {
@@ -828,11 +823,11 @@ main > .flex.items-center.justify-between.mb-4.md\:mb-6 {
   }
 
   #mobileTerminalDock .shell-key-btn {
-    min-width: 50px;
-    height: 32px;
-    border-radius: 8px;
-    font-size: 10px;
-    padding: 0 8px;
+    min-width: 56px;
+    height: 36px;
+    border-radius: 10px;
+    font-size: 12px;
+    padding: 0 10px;
     white-space: nowrap;
   }
 
