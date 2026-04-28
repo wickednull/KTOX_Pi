@@ -61,8 +61,8 @@ APT_PACKAGES = [
     # Credential & Exploitation
     "hashcat", "john", "hydra", "sshpass",
     "enum4linux", "impacket-scripts", "smbclient",
-    # Reconnaissance
-    "snmp", "snmpd", "snmpwalk",
+    # Reconnaissance (snmp provides snmpwalk binary)
+    "snmp", "snmpd",
     # Utilities
     "wifite", "w3m"
 ]

@@ -61,7 +61,7 @@ apt-get install -y --no-install-recommends \
     aircrack-ng wireless-tools wpasupplicant iw \
     hcxtools hcxdumptool hostapd dnsmasq mdk4 \
     hashcat john hydra sshpass enum4linux \
-    impacket-scripts smbclient snmp snmpd snmpwalk \
+    impacket-scripts smbclient snmp snmpd \
     responder mitmproxy \
     bluez bluez-tools \
     openssh-server openssh-client autossh \
