@@ -303,14 +303,88 @@ main > .flex.items-center.justify-between.mb-4.md\:mb-6 {
   border-radius: 10px;
 }
 
+/* Syndicate Theme: Mini Cyberdeck Design */
 #deviceShell.theme-neon,
-#deviceShell[data-theme="neon"] {
-  background: linear-gradient(135deg, rgba(10, 12, 20, 0.95), rgba(5, 10, 15, 0.95));
-  border: 2px solid rgba(20, 50, 80, 0.6);
+#deviceShell[data-theme="neon"],
+#deviceShell.theme-syndicate,
+#deviceShell[data-theme="syndicate"] {
+  background:
+    /* Subtle scan-line effect */
+    repeating-linear-gradient(
+      0deg,
+      rgba(0, 0, 0, 0.15) 0px,
+      transparent 1px,
+      transparent 2px,
+      rgba(0, 0, 0, 0.15) 3px
+    ),
+    /* Base gradient */
+    linear-gradient(135deg, rgba(5, 8, 15, 0.98), rgba(2, 5, 12, 0.95));
+
+  border: 3px solid rgba(15, 35, 55, 0.8);
+  border-radius: 16px;
+  position: relative;
+  overflow: hidden;
+
   box-shadow:
-    0 0 30px rgba(0, 0, 0, 0.8),
-    inset 0 0 20px rgba(0, 0, 0, 0.4),
-    0 0 15px rgba(139, 0, 0, 0.2);
+    /* Outer glow */
+    0 0 40px rgba(0, 150, 200, 0.25),
+    /* Inner depth */
+    inset 0 1px 1px rgba(100, 150, 200, 0.3),
+    inset 0 -2px 4px rgba(0, 0, 0, 0.6),
+    /* Hard drop shadow */
+    0 15px 35px rgba(0, 0, 0, 0.5);
+
+  /* Bezel effect - pseudo-3D edges */
+  outline: 1px solid rgba(50, 100, 150, 0.4) inset;
+  outline-offset: -2px;
+}
+
+/* Syndicate: Glow animation for active state */
+#deviceShell.theme-neon:hover,
+#deviceShell[data-theme="neon"]:hover,
+#deviceShell.theme-syndicate:hover,
+#deviceShell[data-theme="syndicate"]:hover {
+  box-shadow:
+    0 0 50px rgba(0, 150, 200, 0.4),
+    inset 0 1px 1px rgba(100, 150, 200, 0.4),
+    inset 0 -2px 4px rgba(0, 0, 0, 0.6),
+    0 15px 35px rgba(0, 0, 0, 0.5);
+}
+
+/* Syndicate: Button styling for cyberdeck aesthetic */
+#deviceShell.theme-neon .dpad-btn,
+#deviceShell[data-theme="neon"] .dpad-btn,
+#deviceShell.theme-syndicate .dpad-btn,
+#deviceShell[data-theme="syndicate"] .dpad-btn,
+#deviceShell.theme-neon .key-btn,
+#deviceShell[data-theme="neon"] .key-btn,
+#deviceShell.theme-syndicate .key-btn,
+#deviceShell[data-theme="syndicate"] .key-btn {
+  background: linear-gradient(135deg, rgba(20, 40, 60, 0.9), rgba(10, 25, 40, 0.9));
+  border: 1.5px solid rgba(0, 150, 200, 0.6);
+  color: rgba(200, 220, 240, 0.95);
+  box-shadow:
+    inset 0 1px 2px rgba(100, 180, 220, 0.2),
+    0 4px 12px rgba(0, 0, 0, 0.4),
+    0 0 8px rgba(0, 150, 200, 0.15);
+  transition: all 150ms ease;
+}
+
+#deviceShell.theme-neon .dpad-btn:active,
+#deviceShell[data-theme="neon"] .dpad-btn:active,
+#deviceShell.theme-syndicate .dpad-btn:active,
+#deviceShell[data-theme="syndicate"] .dpad-btn:active,
+#deviceShell.theme-neon .key-btn:active,
+#deviceShell[data-theme="neon"] .key-btn:active,
+#deviceShell.theme-syndicate .key-btn:active,
+#deviceShell[data-theme="syndicate"] .key-btn:active {
+  background: linear-gradient(135deg, rgba(30, 60, 90, 0.95), rgba(20, 40, 60, 0.95));
+  box-shadow:
+    inset 0 2px 4px rgba(0, 0, 0, 0.4),
+    inset 0 -1px 2px rgba(100, 180, 220, 0.2),
+    0 2px 6px rgba(0, 0, 0, 0.3),
+    0 0 12px rgba(0, 150, 200, 0.25);
+  transform: scale(0.95);
 }
 
 /* ═══════════════════════════════════════════════════════════════
