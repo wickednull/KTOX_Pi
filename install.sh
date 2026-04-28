@@ -205,6 +205,18 @@ systemctl enable ssh 2>/dev/null || true
 systemctl restart ssh 2>/dev/null || true
 info "SSH configured and enabled"
 
+# ── Environment Variables ──────────────────────────────────────────────────────
+step "Setting up environment variables..."
+cat > /etc/profile.d/ktox.sh << 'ENVSCRIPT'
+# KTOx environment variables for all users and services
+export KTOX_DIR="/root/KTOx"
+export KTOX_ROOT="/root/KTOx"
+export KTOX_LOOT="/root/KTOx/loot"
+export PYTHONPATH="/root/KTOx:${PYTHONPATH}"
+ENVSCRIPT
+chmod 644 /etc/profile.d/ktox.sh
+info "Environment variables configured in /etc/profile.d/ktox.sh"
+
 # ── Systemd services ──────────────────────────────────────────────────────────
 step "Creating systemd services..."
 
