@@ -413,7 +413,7 @@ def main():
         print("LCD/driver stack unavailable")
         return
 
-    ui = NetworkManager()
+    ui = WiFiLCDInterface()
     ui.run()
 
 

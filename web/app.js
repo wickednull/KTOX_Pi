@@ -118,16 +118,37 @@
   const authModalCancel = document.getElementById('authModalCancel');
   const authModalClose = document.getElementById('authModalClose');
 
-  // Build WS URL from current page host.
-  function getWsUrl(){
-    if (shared.getWsUrl) return shared.getWsUrl(location);
+  let wsCandidates = [];
+  let wsCandidateIndex = 0;
+
+  function getWsCandidates(){
+    if (shared.getWsUrlCandidates){
+      const fromShared = shared.getWsUrlCandidates(location);
+      if (Array.isArray(fromShared) && fromShared.length){
+        return Array.from(new Set(fromShared.map(v => String(v || '').trim()).filter(Boolean)));
+      }
+    }
+    // Build WS URL from current page host.
+    if (shared.getWsUrl){
+      const single = String(shared.getWsUrl(location) || '').trim();
+      if (single) return [single];
+    }
     if (location.protocol === 'https:'){
-      return `${location.origin.replace(/^https:/, 'wss:')}/ws`;
+      return [`${location.origin.replace(/^https:/, 'wss:')}/ws`];
     }
     const p = new URLSearchParams(location.search);
+    const explicit = String(p.get('ws') || '').trim();
+    if (explicit) return [explicit];
     const host = location.hostname || 'raspberrypi.local';
-    const port = p.get('port') || '8765';
-    return `ws://${host}:${port}/`.replace(/\/\/\//,'//');
+    const explicitPort = String(p.get('port') || p.get('wsport') || '').trim();
+    const originPort = String(location.port || '').trim();
+    const port = explicitPort || originPort || '8765';
+    const primary = `ws://${host}:${port}/`.replace(/\/\/\//,'//');
+    const sameOrigin = `${location.origin.replace(/^https?:/, 'ws:')}/ws`;
+    if (!explicitPort && originPort){
+      return Array.from(new Set([sameOrigin, `ws://${host}:8765/`]));
+    }
+    return Array.from(new Set([primary, sameOrigin]));
   }
 
   function getApiUrl(path, params = {}){
@@ -656,12 +677,19 @@
   }
 
   function setActiveTab(tab){
+    if (systemOpen){
+      setSystemOpen(false);
+    }
     activeTab = tab;
     const isDevice = tab === 'device' || tab === 'terminal';
+    const isMobile = window.matchMedia('(max-width: 768px)').matches;
     if (deviceTab) {
       deviceTab.classList.toggle('hidden', !isDevice);
       deviceTab.classList.toggle('terminal-mode', tab === 'terminal');
+      deviceTab.classList.toggle('mobile-device-focus', isMobile && tab === 'device');
+      deviceTab.classList.toggle('mobile-terminal-focus', isMobile && tab === 'terminal');
     }
+    document.body.classList.toggle('mobile-terminal-dock', isMobile && tab === 'terminal');
     if (settingsTab) settingsTab.classList.toggle('hidden', tab !== 'settings');
     if (lootTab) lootTab.classList.toggle('hidden', tab !== 'loot');
     const payloadsTabEl = document.getElementById('payloadsTab');
@@ -678,6 +706,14 @@
     if (tab === 'terminal' && fitAddon) {
       requestAnimationFrame(() => { try { fitAddon.fit(); } catch{} });
     }
+    if (tab === 'terminal'){
+      shellWanted = true;
+      if (ws && ws.readyState === WebSocket.OPEN){
+        sendShellOpen();
+      } else {
+        connect();
+      }
+    }
   }
 
   function setSystemOpen(open){
@@ -686,6 +722,11 @@
       systemDropdown.classList.toggle('hidden', !systemOpen);
     }
     setNavActive(navSystem, systemOpen);
+    document.querySelectorAll('[data-mobnav]').forEach(btn => {
+      if (btn.dataset.mobnav === 'system'){
+        btn.classList.toggle('mob-nav-active', systemOpen);
+      }
+    });
     if (systemOpen){
       loadSystemStatus();
     }
@@ -702,16 +743,27 @@
 
   function connect(){
     if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
-    const url = getWsUrl();
+    wsCandidates = getWsCandidates();
+    if (!wsCandidates.length){
+      setStatus('No WebSocket URL candidates');
+      scheduleReconnect();
+      return;
+    }
+    if (wsCandidateIndex >= wsCandidates.length) wsCandidateIndex = 0;
+    const url = wsCandidates[wsCandidateIndex];
+    let opened = false;
     try{
       ws = new WebSocket(url);
+      setStatus(`Connecting (${wsCandidateIndex + 1}/${wsCandidates.length})…`);
     } catch(e){
       setStatus('WebSocket failed to construct');
+      wsCandidateIndex = (wsCandidateIndex + 1) % wsCandidates.length;
       scheduleReconnect();
       return;
     }
 
     ws.onopen = () => {
+      opened = true;
       setStatus('Connected');
       wsAuthenticated = true;
       if (wsTicket){
@@ -809,9 +861,17 @@
     };
 
     ws.onclose = () => {
+      const hadOpened = opened;
       setStatus('Disconnected – reconnecting…');
       setShellStatus('Disconnected');
       shellOpen = false;
+      if (wsCandidates.length > 1){
+        wsCandidateIndex = (wsCandidateIndex + 1) % wsCandidates.length;
+        if (!hadOpened){
+          connect();
+          return;
+        }
+      }
       scheduleReconnect();
     };
 
@@ -826,6 +886,14 @@
       reconnectTimer = null;
       connect();
     }, 1000);
+  }
+
+  function ensureSocketLive(reason = ''){
+    if (ws && ws.readyState === WebSocket.OPEN) return;
+    if (reason){
+      setStatus(`Reconnecting (${reason})…`);
+    }
+    connect();
   }
 
   function ensureTerminal(){
@@ -1912,7 +1980,9 @@
   document.querySelectorAll('[data-mobnav]').forEach(btn => {
     btn.addEventListener('click', () => {
       const tab = btn.dataset.mobnav;
-      if (tab === 'loot'){
+      if (tab === 'system'){
+        setSystemOpen(!systemOpen);
+      } else if (tab === 'loot'){
         setActiveTab('loot');
         if (lootList && !lootList.dataset.loaded){ loadLoot(''); lootList.dataset.loaded = '1'; }
       } else if (tab === 'settings'){
@@ -2023,9 +2093,23 @@
     if (!document.hidden){
       if (systemOpen) loadSystemStatus();
       pollPayloadStatus();
+      ensureSocketLive('visible');
     }
     schedulePayloadPoll();
     scheduleSystemPoll();
+  });
+
+  window.addEventListener('pageshow', () => {
+    ensureSocketLive('pageshow');
+  });
+
+  window.addEventListener('online', () => {
+    ensureSocketLive('online');
+  });
+
+  window.addEventListener('resize', () => {
+    // Re-apply responsive tab classes when crossing mobile/desktop breakpoints.
+    setActiveTab(activeTab);
   });
 
   const startAfterAuth = () => {
