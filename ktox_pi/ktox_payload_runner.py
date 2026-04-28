@@ -73,13 +73,24 @@ def get_payloads(category):
     """
     Return list of (name, path, meta) for all .py files in a category.
     Reads optional metadata from first 5 lines of the payload file.
+    Excludes helper files (starting with _ or .) and known utility modules.
     """
     cat_dir = Path(f"{PAYLOAD_DIR}/{category}")
     if not cat_dir.exists():
         return []
 
+    # Helper files that shouldn't be shown in menu
+    HIDDEN_FILES = {
+        "__init__.py", "__pycache__",
+        "hid_helper.py", "debug_keyboard.py", "monitor_mode_helper.py",
+        "payload_compat.py", "navarro_engine.py",
+    }
+
     payloads = []
     for f in sorted(cat_dir.glob("*.py")):
+        # Skip helper files and internal modules
+        if f.name.startswith("_") or f.name.startswith(".") or f.name in HIDDEN_FILES:
+            continue
         name = f.stem.replace("_", " ").title()
         desc = ""
         # Read first lines for metadata comments
@@ -102,6 +113,7 @@ def get_payload_env(payload_path):
     Build the environment dict for a payload subprocess.
     Injects the shim directory so LCD_1in44 / LCD_Config resolve correctly.
     Also sets KTOX_PAYLOAD=1 so payloads can detect they're running under KTOx.
+    Sets KTOX_DIR to the actual KTOx installation path for payload compatibility.
     """
     env = os.environ.copy()
     shim_dir = f"{KTOX_DIR}"   # LCD_1in44.py and LCD_Config.py live here
@@ -109,7 +121,8 @@ def get_payload_env(payload_path):
     env["PYTHONPATH"] = f"{shim_dir}:{KTOX_DIR}:{pythonpath}"
     env["KTOX_PAYLOAD"]    = "1"
     env["KTOX_LOOT_DIR"]   = f"{LOOT_DIR}/payloads"
-    env["KTOX_ROOT"]  = "/root/KTOx"
+    env["KTOX_ROOT"]       = KTOX_DIR  # Use actual directory, not hardcoded path
+    env["KTOX_DIR"]        = KTOX_DIR  # Set for payloads that expect this variable
     return env
 
 

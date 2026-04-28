@@ -54,6 +54,25 @@ sudo systemctl start ktox-with-m5     # Start service
 sudo journalctl -u ktox-with-m5 -f    # View logs
 ```
 
+## SSH Setup
+
+### `enable_ssh_root.sh`
+Enables password-based root SSH login on Kali Linux.
+
+**Usage:**
+```bash
+sudo bash enable_ssh_root.sh
+```
+
+**What it does:**
+- Installs openssh-server if not already installed
+- Enables `PermitRootLogin yes` in sshd_config
+- Enables `PasswordAuthentication yes` and `KbdInteractiveAuthentication yes`
+- Prompts to set root password
+- Enables and restarts SSH service
+
+**Note:** The main `install.sh` already configures SSH automatically, but this script can be used for quick re-configuration or on systems where SSH setup was skipped.
+
 ## Other Scripts
 
 - `check_webui_js.sh` — Verify web UI JavaScript files
@@ -61,5 +80,6 @@ sudo journalctl -u ktox-with-m5 -f    # View logs
 - `pin_wifi_names.sh` — Configure WiFi network pinning
 - `pboy.sh` — PyBoy launcher
 - `optimize_gifs.py` — GIF optimization utility
+- `install_ragnar.sh` — Install Ragnar agent for advanced recon
 
 See main [README.md](../README.md) for full documentation.
