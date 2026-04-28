@@ -5,8 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="KTOx">
   <meta name="theme-color" content="#05060a">
+  <meta name="application-name" content="KTOx WebUI">
   <title>KTOx WebUI</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" type="image/jpeg" href="./ktox.png?v=4">
+  <link rel="apple-touch-icon" href="./ktox.png?v=4">
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm/css/xterm.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
@@ -384,7 +389,7 @@
     <aside id="sidebar" class="fixed md:sticky md:top-0 md:h-screen inset-y-0 left-0 z-40 w-64 -translate-x-full md:translate-x-0 transform transition bg-slate-950/60 border-r border-slate-800/70 backdrop-blur flex flex-col">
       <div class="p-4 border-b border-slate-800/70">
         <div class="flex items-center gap-3 select-none">
-          <img src="./ktox.png" alt="KTOx" class="h-10 drop-shadow-[0_0_16px_rgba(139,0,0,0.35)]"/>
+          <img src="./ktox.png?v=4" alt="KTOx" class="h-10 drop-shadow-[0_0_16px_rgba(139,0,0,0.35)]"/>
           <div>
             <div class="text-lg font-black tracking-wide"><span class="text-red-400">K</span>TOx_<span class="text-rose-400">P</span>i</div>
             <div class="text-[11px] text-slate-400">Remote Control</div>
@@ -491,7 +496,7 @@
                 </div>
               </div>
               <div id="terminal" class="terminal-body"></div>
-              <div class="flex flex-wrap items-center gap-1.5 px-3 py-2 border-t border-slate-800/70">
+              <div id="terminalQuickBar" class="flex flex-wrap items-center gap-1.5 px-3 py-2 border-t border-slate-800/70">
                 <button class="shell-key-btn" data-shell-key="&#x03;" title="Ctrl+C">^C</button>
                 <button class="shell-key-btn" data-shell-key="&#x04;" title="Ctrl+D">^D</button>
                 <button class="shell-key-btn" data-shell-key="&#x1a;" title="Ctrl+Z">^Z</button>
@@ -804,11 +809,27 @@
     </div>
   </div>
 
+  <!-- Mobile terminal quick command dock -->
+  <div id="mobileTerminalDock" aria-label="Terminal quick controls">
+    <button class="shell-key-btn" data-shell-key="&#x03;" title="Ctrl+C">^C</button>
+    <button class="shell-key-btn" data-shell-key="&#x04;" title="Ctrl+D">^D</button>
+    <button class="shell-key-btn" data-shell-key="&#x1a;" title="Ctrl+Z">^Z</button>
+    <button class="shell-key-btn" data-shell-key="&#x0c;" title="Ctrl+L">^L</button>
+    <button class="shell-key-btn" data-shell-key="&#x1b;[A" title="Arrow Up">↑</button>
+    <button class="shell-key-btn" data-shell-key="&#x1b;[B" title="Arrow Down">↓</button>
+    <button class="shell-key-btn" data-shell-key="&#x09;" title="Tab">TAB</button>
+    <button class="shell-key-btn" data-shell-key="&#x1b;" title="Escape">ESC</button>
+  </div>
+
   <!-- Mobile bottom navigation (hidden on desktop via CSS) -->
   <nav id="mobileNav" aria-label="Mobile navigation">
     <button class="mob-nav-btn mob-nav-active" data-mobnav="device" aria-label="Device">
       <i class="fa-solid fa-gamepad"></i>
       <span>Device</span>
+    </button>
+    <button class="mob-nav-btn" data-mobnav="system" aria-label="System">
+      <i class="fa-solid fa-microchip"></i>
+      <span>System</span>
     </button>
     <button class="mob-nav-btn" data-mobnav="terminal" aria-label="Terminal">
       <i class="fa-solid fa-terminal"></i>
@@ -868,4 +889,3 @@
   </script>
 </body>
 </html>
-

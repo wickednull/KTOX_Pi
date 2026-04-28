@@ -15,23 +15,9 @@ Author: KTOx WiFi Integration
 """
 
 import os
-import sys
 import json
 import subprocess
-import time
-import threading
 from datetime import datetime
-from pathlib import Path
-
-# Try to import KTOx LCD modules
-try:
-    sys.path.append('/root/KTOx/')
-    import LCD_1in44, LCD_Config
-    from PIL import Image, ImageDraw, ImageFont
-    import RPi.GPIO as GPIO
-    LCD_AVAILABLE = True
-except:
-    LCD_AVAILABLE = False
 
 class WiFiManager:
     def __init__(self):
@@ -60,7 +46,7 @@ class WiFiManager:
         try:
             with open(self.log_file, 'a') as f:
                 f.write(log_msg + "\n")
-        except:
+        except Exception:
             pass
     
     def detect_wifi_interfaces(self):
@@ -176,7 +162,7 @@ class WiFiManager:
                     try:
                         quality = line.split('Quality=')[1].split()[0]
                         current_network['signal'] = quality
-                    except:
+                    except Exception:
                         pass
 
                 elif 'Encryption key:' in line:
