@@ -620,6 +620,10 @@ main > .flex.items-center.justify-between.mb-4.md\:mb-6 {
 #mobileTerminalDock { display: none; }
 
 @media (max-width: 768px) {
+  #terminalQuickBar {
+    display: none !important;
+  }
+
   /* ── Replace hamburger drawer with bottom nav ────────────────── */
   #sidebar,
   #sidebarBackdrop,

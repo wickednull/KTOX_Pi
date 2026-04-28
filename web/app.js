@@ -146,7 +146,7 @@
     const primary = `ws://${host}:${port}/`.replace(/\/\/\//,'//');
     const sameOrigin = `${location.origin.replace(/^https?:/, 'ws:')}/ws`;
     if (!explicitPort && originPort){
-      return Array.from(new Set([sameOrigin, `ws://${host}:8765/`]));
+      return Array.from(new Set([`ws://${host}:8765/`, sameOrigin]));
     }
     return Array.from(new Set([primary, sameOrigin]));
   }
