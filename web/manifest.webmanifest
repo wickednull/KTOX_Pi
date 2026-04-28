@@ -1,0 +1,17 @@
+{
+  "name": "KTOx WebUI",
+  "short_name": "KTOx",
+  "description": "KTOx Pi Network Control Suite web interface",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#05060a",
+  "theme_color": "#05060a",
+  "icons": [
+    {
+      "src": "./ktox.png?v=2",
+      "sizes": "1024x1024",
+      "type": "image/jpeg",
+      "purpose": "any maskable"
+    }
+  ]
+}
