@@ -615,7 +615,7 @@
 
   // Handheld themes (frontend-only)
   const themes = [
-    { id: 'neon', label: 'Neon' },
+    { id: 'neon', label: 'Syndicate' },
     { id: 'gameboy', label: 'Game Boy' },
     { id: 'pager', label: 'Pager' },
   ];

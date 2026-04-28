@@ -519,82 +519,31 @@
       <div class="pager-speaker" aria-hidden="true">
         <span></span><span></span><span></span><span></span><span></span>
       </div>
-      <!-- Default layout (Neon / Cyberpunk Cyberdeck) -->
-      <div class="layout-default neon-cyberdeck">
-        <!-- Cyberdeck outer frame -->
-        <div class="cyberdeck-frame">
-          <!-- Top bezel with status LEDs -->
-          <div class="cyberdeck-top-bezel">
-            <div class="led-indicators">
-              <span class="led led-active"></span>
-              <span class="led"></span>
-              <span class="led"></span>
-            </div>
-            <div class="cyberdeck-label">KTOX CYBERDECK V1</div>
-            <div class="led-indicators">
-              <span class="led"></span>
-              <span class="led"></span>
-              <span class="led led-active"></span>
-            </div>
+      <!-- Default layout (Syndicate / Dark Cyberdeck) -->
+      <div class="layout-default">
+        <div class="screen-frame">
+          <canvas id="screen" width="128" height="128" class="w-[240px] md:w-[300px] aspect-square"></canvas>
+        </div>
+        <div class="flex justify-between mb-4">
+          <div class="grid grid-cols-3 grid-rows-3 gap-2">
+            <div></div>
+            <button class="rj-btn" data-btn="UP">▲</button>
+            <div></div>
+            <button class="rj-btn" data-btn="LEFT">◄</button>
+            <button class="rj-btn" data-btn="OK" aria-label="OK"></button>
+            <button class="rj-btn" data-btn="RIGHT">►</button>
+            <div></div>
+            <button class="rj-btn" data-btn="DOWN">▼</button>
+            <div></div>
           </div>
-
-          <!-- Main display area with side controls -->
-          <div class="cyberdeck-main">
-            <!-- Left control panel -->
-            <div class="cyberdeck-panel left-panel">
-              <div class="panel-header">DPAD</div>
-              <div class="dpad-grid">
-                <div></div>
-                <button class="rj-btn dpad-btn cyber-btn" data-btn="UP">▲</button>
-                <div></div>
-                <button class="rj-btn dpad-btn cyber-btn" data-btn="LEFT">◄</button>
-                <button class="rj-btn ok-btn cyber-btn-center" data-btn="OK" aria-label="OK"></button>
-                <button class="rj-btn dpad-btn cyber-btn" data-btn="RIGHT">►</button>
-                <div></div>
-                <button class="rj-btn dpad-btn cyber-btn" data-btn="DOWN">▼</button>
-                <div></div>
-              </div>
-            </div>
-
-            <!-- Center display -->
-            <div class="cyberdeck-display">
-              <div class="display-inner">
-                <div class="screen-frame cyber-screen">
-                  <div class="screen-scanlines"></div>
-                  <div class="flex items-center justify-center h-full">
-                    <canvas id="screen" width="128" height="128" class="w-full aspect-square"></canvas>
-                  </div>
-                </div>
-                <div class="display-footer">
-                  <div id="status" class="status-text text-center text-[10px] text-cyan-400 font-mono">READY</div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Right control panel -->
-            <div class="cyberdeck-panel right-panel">
-              <div class="panel-header">FUNC</div>
-              <div class="key-panel">
-                <button class="rj-btn key-btn cyber-key-btn key1" data-btn="KEY1">
-                  <span class="key-label">K1</span>
-                </button>
-                <button class="rj-btn key-btn cyber-key-btn key2" data-btn="KEY2">
-                  <span class="key-label">K2</span>
-                </button>
-                <button class="rj-btn key-btn cyber-key-btn key3" data-btn="KEY3">
-                  <span class="key-label">K3</span>
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <!-- Bottom bezel with info -->
-          <div class="cyberdeck-bottom-bezel">
-            <div class="bezel-text">SYS ONLINE</div>
-            <div class="bezel-divider"></div>
-            <div class="bezel-text">NEURAL I/O</div>
+          <div class="flex flex-col gap-2 side-buttons">
+            <button class="rj-btn key-btn" data-btn="KEY1">KEY1</button>
+            <button class="rj-btn key-btn" data-btn="KEY2">KEY2</button>
+            <button class="rj-btn key-btn" data-btn="KEY3">KEY3</button>
           </div>
         </div>
+        <div class="text-center text-xs text-gray-300">OK = Enter · KEY3 = Esc</div>
+        <div id="status" class="status-text text-center text-[11px] text-gray-500 mt-1">Connecting…</div>
       </div>
 
       <!-- Game Boy layout -->
@@ -660,13 +609,13 @@
         <div class="rounded-3xl border border-slate-700/60 bg-slate-900/40 backdrop-blur p-4 md:p-5 max-w-3xl mx-auto shadow-[0_0_30px_rgba(15,23,42,0.35)] space-y-4">
           <div class="flex items-center justify-between">
             <div class="text-sm font-semibold text-red-400">Settings</div>
-            <div class="text-[11px] text-slate-400">Current theme: <span id="themeName">Neon</span></div>
+            <div class="text-[11px] text-slate-400">Current theme: <span id="themeName">Syndicate</span></div>
           </div>
 
           <div class="rounded-xl border border-slate-800/70 bg-slate-950/40 p-3">
             <div class="text-xs font-semibold text-slate-200 mb-2">Themes</div>
             <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              <button type="button" data-theme="neon" class="px-3 py-2 rounded-lg text-left text-xs font-semibold border border-slate-500/20 bg-slate-900/40 text-slate-300 hover:bg-slate-800/60 transition">Neon</button>
+              <button type="button" data-theme="neon" class="px-3 py-2 rounded-lg text-left text-xs font-semibold border border-slate-500/20 bg-slate-900/40 text-slate-300 hover:bg-slate-800/60 transition">Syndicate</button>
               <button type="button" data-theme="gameboy" class="px-3 py-2 rounded-lg text-left text-xs font-semibold border border-slate-500/20 bg-slate-900/40 text-slate-300 hover:bg-slate-800/60 transition">Game Boy</button>
               <button type="button" data-theme="pager" class="px-3 py-2 rounded-lg text-left text-xs font-semibold border border-slate-500/20 bg-slate-900/40 text-slate-300 hover:bg-slate-800/60 transition">Pager</button>
             </div>
