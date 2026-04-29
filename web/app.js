@@ -712,6 +712,8 @@
       deviceTab.classList.toggle('hidden', !isDevice);
     }
     applyResponsiveTabClasses(tab);
+    const systemTab = document.getElementById('systemTab');
+    if (systemTab) systemTab.classList.toggle('hidden', tab !== 'system');
     if (settingsTab) settingsTab.classList.toggle('hidden', tab !== 'settings');
     if (lootTab) lootTab.classList.toggle('hidden', tab !== 'loot');
     const payloadsTabEl = document.getElementById('payloadsTab');
