@@ -710,7 +710,7 @@ main > .flex.items-center.justify-between.mb-4.md\:mb-6 {
   }
 
   /* Canvas: fill device shell width */
-  #screen, #screen-gb, #screen-pager {
+  #screen, #screen-gb, #screen-pager, #screen-syndicate {
     width: 100% !important;
     height: auto !important;
     aspect-ratio: 1 / 1;
@@ -821,7 +821,7 @@ main > .flex.items-center.justify-between.mb-4.md\:mb-6 {
     padding-right: 0.375rem !important;
   }
 
-  #screen, #screen-gb, #screen-pager {
+  #screen, #screen-gb, #screen-pager, #screen-syndicate {
     width: 100% !important;
     min-width: 160px;
   }
@@ -931,7 +931,7 @@ main > .flex.items-center.justify-between.mb-4.md\:mb-6 {
     height: min(45vh, 200px) !important;
   }
 
-  #screen, #screen-gb, #screen-pager {
+  #screen, #screen-gb, #screen-pager, #screen-syndicate {
     width: min(38vw, 200px) !important;
   }
 
@@ -1168,22 +1168,63 @@ main > .flex.items-center.justify-between.mb-4.md\:mb-6 {
     width: 100% !important;
   }
 
+  /* Mobile system monitor should appear as an overlay card above bottom nav */
+  body.mobile-system-overlay #deviceTab {
+    position: relative;
+  }
+
+  body.mobile-system-overlay #systemTab {
+    position: fixed;
+    left: 0.5rem;
+    right: 0.5rem;
+    bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+    z-index: 55;
+    max-height: calc(100dvh - 170px);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 0 !important;
+  }
+
+  body.mobile-system-overlay #systemTab > div {
+    margin: 0 !important;
+    background: rgba(2, 6, 23, 0.95) !important;
+    border-color: rgba(71, 85, 105, 0.85) !important;
+    box-shadow: 0 18px 36px rgba(2, 6, 23, 0.72), 0 0 0 1px rgba(148, 163, 184, 0.16) inset;
+    backdrop-filter: blur(14px);
+  }
+
+  body.mobile-system-overlay #systemTab .text-xs {
+    font-size: 0.8rem !important;
+    line-height: 1.4 !important;
+  }
+
+  body.mobile-system-overlay #systemTab .text-lg {
+    font-size: 1.5rem !important;
+    line-height: 1.2 !important;
+    text-shadow: 0 1px 1px rgba(0, 0, 0, 0.45);
+  }
+
+  body.mobile-system-overlay #systemTab .rounded-xl {
+    background: rgba(15, 23, 42, 0.92) !important;
+    border-color: rgba(71, 85, 105, 0.78) !important;
+  }
+
+  body.mobile-system-overlay #systemTab .h-2.rounded.bg-slate-800 {
+    background: rgba(30, 41, 59, 0.95) !important;
+  }
+
+  body.mobile-system-overlay #mobileSystemStatus {
+    color: #cbd5e1 !important;
+    font-weight: 600;
+  }
   /* ── Mobile payloads tab ─────────────────────────────────────── */
   #payloadsTab {
     padding-bottom: 1rem;
   }
 
-  /* ── System dropdown on mobile (fixed overlay) ─────────────────── */
+  /* Mobile uses systemTab overlay; disable desktop dropdown panel */
   #systemDropdown {
-    position: fixed;
-    left: 0;
-    right: 0;
-    bottom: calc(62px + env(safe-area-inset-bottom, 0px));
-    z-index: 50;
-    margin: 0;
-    max-height: 60vh;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
+    display: none !important;
   }
 
 }

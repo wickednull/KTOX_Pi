@@ -21,9 +21,10 @@
       const sameOriginWs = `${locationRef.origin.replace(/^https?:/, locationRef.protocol === 'https:' ? 'wss:' : 'ws:')}/ws`;
 
       if (locationRef.protocol === 'https:'){
+        // iOS PWA/Safari can stall for a long time on unreachable fallback endpoints.
+        // Prefer the reverse-proxied same-origin websocket path only.
         return [
           `${locationRef.origin.replace(/^https:/, 'wss:')}/ws`,
-          `wss://${host}:${port}/`,
         ];
       }
       if (!explicitPort && originPort){

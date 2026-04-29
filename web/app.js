@@ -704,14 +704,21 @@
 
   function setActiveTab(tab){
     if (systemOpen){
-      setSystemOpen(false);
+      // Close desktop system dropdown without re-entering setSystemOpen(),
+      // which can recurse on viewport mode switches.
+      systemOpen = false;
+      if (systemDropdown) systemDropdown.classList.add('hidden');
+      setNavActive(navSystem, false);
     }
     activeTab = tab;
-    const isDevice = tab === 'device' || tab === 'terminal';
+    const isMobile = window.matchMedia('(max-width: 768px)').matches;
+    const isSystemOverlay = isMobile && tab === 'system';
+    const isDevice = tab === 'device' || tab === 'terminal' || isSystemOverlay;
     if (deviceTab) {
       deviceTab.classList.toggle('hidden', !isDevice);
     }
     applyResponsiveTabClasses(tab);
+    document.body.classList.toggle('mobile-system-overlay', isSystemOverlay);
     const systemTab = document.getElementById('systemTab');
     if (systemTab) systemTab.classList.toggle('hidden', tab !== 'system');
     if (settingsTab) settingsTab.classList.toggle('hidden', tab !== 'settings');
@@ -741,16 +748,25 @@
   }
 
   function setSystemOpen(open){
+    const isMobile = window.matchMedia('(max-width: 768px)').matches;
+    if (isMobile){
+      // Mobile uses the dedicated systemTab overlay, not the sidebar dropdown.
+      // Ensure dropdown state is reset and avoid recursive tab calls.
+      systemOpen = false;
+      if (systemDropdown) systemDropdown.classList.add('hidden');
+      if (open) {
+        if (activeTab !== 'system') setActiveTab('system');
+      } else if (activeTab === 'system') {
+        setActiveTab('device');
+      }
+      return;
+    }
+
     systemOpen = !!open;
     if (systemDropdown){
       systemDropdown.classList.toggle('hidden', !systemOpen);
     }
     setNavActive(navSystem, systemOpen);
-    document.querySelectorAll('[data-mobnav]').forEach(btn => {
-      if (btn.dataset.mobnav === 'system'){
-        btn.classList.toggle('mob-nav-active', systemOpen);
-      }
-    });
     if (systemOpen){
       loadSystemStatus();
     }
@@ -778,7 +794,7 @@
     let opened = false;
     try{
       ws = new WebSocket(url);
-      setStatus(`Connecting (${wsCandidateIndex + 1}/${wsCandidates.length})…`);
+      setStatus(`Connecting WS ${wsCandidateIndex + 1}/${wsCandidates.length}: ${url}`);
     } catch(e){
       setStatus('WebSocket failed to construct');
       wsCandidateIndex = (wsCandidateIndex + 1) % wsCandidates.length;
@@ -2114,8 +2130,12 @@
     btn.addEventListener('click', () => {
       const tab = btn.dataset.mobnav;
       if (tab === 'system'){
-        setActiveTab('system');
-        setTimeout(() => loadMobileSystemStatus(), 50);
+        if (activeTab === 'system') {
+          setActiveTab('device');
+        } else {
+          setActiveTab('system');
+          setTimeout(() => loadMobileSystemStatus(), 50);
+        }
       } else if (tab === 'terminal'){
         setActiveTab('terminal');
       } else if (tab === 'settings'){
