@@ -565,6 +565,8 @@
   const MAX_RECONNECT_ATTEMPTS = 50;
   const SERVER_HEARTBEAT_TIMEOUT = 60000; // 60 seconds
   const WS_CONNECT_TIMEOUT = 3500;
+  const HEARTBEAT_CHECK_INTERVAL = 5000; // 5 seconds on mobile (aggressive)
+  const AUTH_TICKET_REFRESH_INTERVAL = 60000; // Refresh ticket every 60 seconds
 
   function applyStatusTone(el, txt){
     if (!el) return;
@@ -843,6 +845,16 @@
     }
     if (wsCandidateIndex >= wsCandidates.length) wsCandidateIndex = 0;
     const url = wsCandidates[wsCandidateIndex];
+
+    // Refresh auth ticket before connection attempt
+    if (!authToken && shared.refreshWsTicket){
+      shared.refreshWsTicket(getApiUrl, wsTicket)
+        .then(newTicket => {
+          if (newTicket) wsTicket = newTicket;
+        })
+        .catch(e => console.warn('[Mobile] Ticket refresh failed:', e));
+    }
+
     let opened = false;
     try{
       ws = new WebSocket(url);
@@ -850,7 +862,7 @@
       if (connectTimeoutTimer) clearTimeout(connectTimeoutTimer);
       connectTimeoutTimer = setTimeout(() => {
         if (ws && ws.readyState === WebSocket.CONNECTING){
-          console.warn('[iOS] WebSocket connect timeout - trying next candidate');
+          console.warn('[Mobile] WebSocket connect timeout - trying next candidate');
           try { ws.close(); } catch {}
         }
       }, WS_CONNECT_TIMEOUT);
@@ -871,7 +883,24 @@
       reconnectAttempts = 0; // Reset backoff on successful connection
       lastServerMessage = Date.now(); // Reset heartbeat timer
       wsAuthenticated = true;
-      console.log('[iOS] WebSocket connected - resetting reconnect backoff');
+      console.log('[Mobile] WebSocket connected - resetting reconnect backoff');
+
+      // Schedule ticket refresh to keep session alive
+      if (!authToken && shared.refreshWsTicket){
+        setTimeout(() => {
+          if (ws && ws.readyState === WebSocket.OPEN){
+            shared.refreshWsTicket(getApiUrl, wsTicket)
+              .then(newTicket => {
+                if (newTicket) {
+                  wsTicket = newTicket;
+                  try { ws.send(JSON.stringify({ type: 'auth_session', ticket: wsTicket })); } catch {}
+                }
+              })
+              .catch(e => console.warn('[Mobile] Ticket refresh failed:', e));
+          }
+        }, AUTH_TICKET_REFRESH_INTERVAL);
+      }
+
       if (wsTicket){
         try{
           ws.send(JSON.stringify({ type: 'auth_session', ticket: wsTicket }));
@@ -983,7 +1012,8 @@
       if (wsCandidates.length > 1){
         wsCandidateIndex = (wsCandidateIndex + 1) % wsCandidates.length;
         if (!hadOpened){
-          scheduleReconnect();
+          // Try next candidate quickly without backoff on failed connections
+          reconnectTimer = setTimeout(connect, 100);
           return;
         }
       }
@@ -1010,12 +1040,12 @@
 
     if (reconnectAttempts > MAX_RECONNECT_ATTEMPTS) {
       setStatus('Max reconnection attempts exceeded');
-      console.error('[iOS] Max reconnect attempts reached');
+      console.error('[Mobile] Max reconnect attempts reached');
       return;
     }
 
     const delayMs = Math.round(delay);
-    console.log(`[iOS] Reconnect attempt ${reconnectAttempts} in ${delayMs}ms${reason ? ' (' + reason + ')' : ''}`);
+    console.log(`[Mobile] Reconnect attempt ${reconnectAttempts} in ${delayMs}ms${reason ? ' (' + reason + ')' : ''}`);
     setStatus(`Reconnecting (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})…`);
 
     reconnectTimer = setTimeout(()=>{
@@ -2342,19 +2372,36 @@
     }
   });
 
-  // iOS heartbeat monitor - detect silent connection drops
+  // Mobile heartbeat monitor - detect silent connection drops and network changes
   function startHeartbeatMonitor(){
     setInterval(() => {
       if (ws && ws.readyState === WebSocket.OPEN) {
         const timeSinceLastMessage = Date.now() - lastServerMessage;
         if (timeSinceLastMessage > SERVER_HEARTBEAT_TIMEOUT) {
-          console.warn('[iOS] Server heartbeat timeout - connection is likely dead');
+          console.warn('[Mobile] Server heartbeat timeout - connection is likely dead');
           try { ws.close(); } catch(e) {}
           scheduleReconnect('heartbeat timeout');
         }
       }
-    }, 10000); // Check every 10 seconds
+    }, HEARTBEAT_CHECK_INTERVAL);
   }
+
+  // Network event listeners for mobile resilience
+  window.addEventListener('online', () => {
+    console.log('[Mobile] Network came online');
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    ensureSocketLive('network recovered');
+  });
+
+  window.addEventListener('offline', () => {
+    console.log('[Mobile] Network went offline');
+    if (ws) {
+      try { ws.close(); } catch(e) {}
+    }
+  });
 
   const startAfterAuth = () => {
     ensureAuthenticated('Log in to access KTOx WebUI.').then((ok) => {
