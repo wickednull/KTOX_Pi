@@ -648,17 +648,46 @@
     try{
       const saved = localStorage.getItem(THEME_STORAGE_KEY);
       if (!saved) return;
-      const idx = themes.findIndex(t => t.id === saved);
+      const normalized = saved === 'syndicate' ? 'neon' : saved;
+      const idx = themes.findIndex(t => t.id === normalized);
       if (idx >= 0) themeIndex = idx;
     }catch{}
+  }
+
+  function setLayoutVisible(el, visible){
+    if (!el) return;
+    el.classList.toggle('hidden', !visible);
+    el.style.display = visible ? '' : 'none';
+  }
+
+  function ensureDeviceShellChild(el){
+    if (!deviceShell || !el) return;
+    if (el.parentElement !== deviceShell){
+      deviceShell.appendChild(el);
+    }
   }
 
   function applyTheme(){
     const t = themes[themeIndex];
     if (!deviceShell) return;
-    deviceShell.classList.remove('theme-neon', 'theme-gameboy', 'theme-pager');
+    const layoutDefault = deviceShell.querySelector('.layout-default') || document.querySelector('.layout-default');
+    const layoutGameboy = deviceShell.querySelector('.layout-gameboy') || document.querySelector('.layout-gameboy');
+    const layoutPager = deviceShell.querySelector('.layout-pager') || document.querySelector('.layout-pager');
+    const layoutSyndicate = deviceShell.querySelector('.layout-syndicate') || document.querySelector('.layout-syndicate');
+
+    ensureDeviceShellChild(layoutDefault);
+    ensureDeviceShellChild(layoutSyndicate);
+    ensureDeviceShellChild(layoutGameboy);
+    ensureDeviceShellChild(layoutPager);
+
+    deviceShell.classList.remove('theme-neon', 'theme-gameboy', 'theme-pager', 'theme-syndicate');
     deviceShell.classList.add(`theme-${t.id}`);
     deviceShell.setAttribute('data-theme', t.id);
+    const isSyndicate = t.id === 'neon' || t.id === 'syndicate';
+    setLayoutVisible(layoutDefault, !isSyndicate && t.id !== 'gameboy' && t.id !== 'pager');
+    setLayoutVisible(layoutSyndicate, isSyndicate);
+    setLayoutVisible(layoutGameboy, t.id === 'gameboy');
+    setLayoutVisible(layoutPager, t.id === 'pager');
     if (themeNameEl) themeNameEl.textContent = t.label;
     themeButtons.forEach(btn => {
       const isActive = btn.getAttribute('data-theme') === t.id;
