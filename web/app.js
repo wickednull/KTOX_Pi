@@ -836,13 +836,19 @@
   }
 
   function connect(){
+    console.log('[Mobile] connect() called, ws state=' + (ws ? ws.readyState : 'null'));
     // Clean up any lingering WebSocket in bad state (common in PWA)
     if (ws && ws.readyState !== WebSocket.OPEN && ws.readyState !== WebSocket.CONNECTING) {
+      console.log('[Mobile] Closing bad websocket state ' + ws.readyState);
       try { ws.close(); } catch(e) {}
       ws = null;
     }
-    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+      console.log('[Mobile] WebSocket already connecting/open');
+      return;
+    }
     wsCandidates = getWsCandidates();
+    console.log('[Mobile] WS candidates: ' + wsCandidates.length);
     if (!wsCandidates.length){
       setStatus('No WebSocket URL candidates');
       scheduleReconnect();
@@ -850,6 +856,7 @@
     }
     if (wsCandidateIndex >= wsCandidates.length) wsCandidateIndex = 0;
     const url = wsCandidates[wsCandidateIndex];
+    console.log('[Mobile] Attempting connection to ' + url);
 
     // Refresh auth ticket before connection attempt
     if (!authToken && shared.refreshWsTicket){
@@ -879,6 +886,7 @@
     }
 
     ws.onopen = () => {
+      console.log('[Mobile] WebSocket onopen event fired');
       opened = true;
       if (connectTimeoutTimer) {
         clearTimeout(connectTimeoutTimer);
@@ -1025,7 +1033,8 @@
       scheduleReconnect();
     };
 
-    ws.onerror = () => {
+    ws.onerror = (ev) => {
+      console.log('[Mobile] WebSocket onerror event:', ev);
       try { ws.close(); } catch {}
     };
   }
@@ -2445,17 +2454,28 @@
   });
 
   const startAfterAuth = () => {
+    console.log('[Mobile] startAfterAuth: checking authentication, hidden=' + document.hidden);
     ensureAuthenticated('Log in to access KTOx WebUI.').then((ok) => {
       if (!ok){
+        console.log('[Mobile] Authentication required');
         setTimeout(startAfterAuth, 0);
         return;
       }
+      console.log('[Mobile] Authenticated - starting heartbeat and initial connection');
       startHeartbeatMonitor();
+
+      // Force immediate connection attempt regardless of visibility
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+      reconnectAttempts = 0;
+
       connect();
       loadPayloads();
       schedulePayloadPoll();
       scheduleSystemPoll();
     });
   };
+
+  console.log('[Mobile] Page loaded, starting initialization');
   startAfterAuth();
 })();
