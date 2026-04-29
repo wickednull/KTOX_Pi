@@ -703,11 +703,20 @@
   }
 
   function setActiveTab(tab){
+    const isMobile = window.matchMedia('(max-width: 768px)').matches;
     if (systemOpen){
-      setSystemOpen(false);
+      if (isMobile){
+        // Clear stale desktop dropdown state without re-entering setSystemOpen().
+        systemOpen = false;
+        if (systemDropdown){
+          systemDropdown.classList.add('hidden');
+        }
+        setNavActive(navSystem, false);
+      } else {
+        setSystemOpen(false);
+      }
     }
     activeTab = tab;
-    const isMobile = window.matchMedia('(max-width: 768px)').matches;
     const isSystemOverlay = isMobile && tab === 'system';
     const isDevice = tab === 'device' || tab === 'terminal' || isSystemOverlay;
     if (deviceTab) {
@@ -747,6 +756,11 @@
     const isMobile = window.matchMedia('(max-width: 768px)').matches;
     if (isMobile){
       // Mobile uses the dedicated systemTab overlay, not the sidebar dropdown.
+      systemOpen = false;
+      if (systemDropdown){
+        systemDropdown.classList.add('hidden');
+      }
+      setNavActive(navSystem, false);
       if (open) {
         setActiveTab('system');
       } else if (activeTab === 'system') {
