@@ -111,7 +111,7 @@
   const shellStatusEl = document.getElementById('shellStatus');
   const shellConnectBtn = document.getElementById('shellConnect');
   const shellDisconnectBtn = document.getElementById('shellDisconnect');
-  const logoutBtn = document.getElementById('logoutBtn');
+  const logoutBtn = document.getElementById('settingsLogoutBtn');
   const authModal = document.getElementById('authModal');
   const authModalTitle = document.getElementById('authModalTitle');
   const authModalMessage = document.getElementById('authModalMessage');
