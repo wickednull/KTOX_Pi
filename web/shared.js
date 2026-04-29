@@ -73,7 +73,8 @@
 
     loadToken(storageKey){
       try{
-        return String(sessionStorage.getItem(storageKey) || localStorage.getItem(storageKey) || '').trim();
+        // iOS PWA fix: localStorage first (survives PWA restart)
+        return String(localStorage.getItem(storageKey) || sessionStorage.getItem(storageKey) || '').trim();
       }catch{
         try{
           return String(localStorage.getItem(storageKey) || '').trim();

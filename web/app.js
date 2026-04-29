@@ -174,6 +174,12 @@
       }
     }
 
+    // iOS PWA fix: filter out insecure ws:// on HTTPS pages (mixed content block)
+    const isHttps = location.protocol === 'https:';
+    if (isHttps) {
+      return Array.from(new Set(candidates.filter(url => url.startsWith('wss://'))));
+    }
+
     return Array.from(new Set(candidates.filter(Boolean)));
   }
 
@@ -598,7 +604,7 @@
   const RECONNECT_MAX_DELAY = 30000; // 30 seconds
   const MAX_RECONNECT_ATTEMPTS = 50;
   const SERVER_HEARTBEAT_TIMEOUT = 60000; // 60 seconds
-  const WS_CONNECT_TIMEOUT = 10000; // 10 seconds (increased for iOS PWA startup)
+  const WS_CONNECT_TIMEOUT = 20000; // 20 seconds (iOS PWA needs more time to wake network stack)
   const HEARTBEAT_CHECK_INTERVAL = 10000; // 10 seconds (iOS PWA may suspend more aggressively)
   const AUTH_TICKET_REFRESH_INTERVAL = 60000; // Refresh ticket every 60 seconds
 
@@ -2397,6 +2403,13 @@
   loadThemePreference();
   applyTheme();
   setActiveTab('device');
+
+  // Register service worker for iOS PWA persistence (iOS 17.4+)
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js').then(reg => {
+      console.log('[Mobile] Service Worker registered:', reg);
+    }).catch(err => console.warn('[Mobile] Service Worker registration failed:', err));
+  }
 
   let payloadPollTimer = null;
   let systemPollTimer = null;
