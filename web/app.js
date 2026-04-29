@@ -94,6 +94,10 @@
   const payloadStatusDot = document.getElementById('payloadStatusDot');
   const payloadsRefresh = document.getElementById('payloadsRefresh');
   const settingsStatus = document.getElementById('settingsStatus');
+  const wsUrlOverrideInput = document.getElementById('wsUrlOverrideInput');
+  const wsUrlOverrideSave = document.getElementById('wsUrlOverrideSave');
+  const wsUrlOverrideClear = document.getElementById('wsUrlOverrideClear');
+  const wsUrlStatus = document.getElementById('wsUrlStatus');
   const discordWebhookInput = document.getElementById('discordWebhookInput');
   const discordWebhookSave = document.getElementById('discordWebhookSave');
   const discordWebhookClear = document.getElementById('discordWebhookClear');
@@ -130,33 +134,47 @@
   let wsCandidateIndex = 0;
 
   function getWsCandidates(){
+    const candidates = [];
+
+    // iOS PWA fix: try manually configured URL first (highest priority)
+    const manualUrl = getManualWsUrl();
+    if (manualUrl) candidates.push(manualUrl);
+
     if (shared.getWsUrlCandidates){
       const fromShared = shared.getWsUrlCandidates(location);
       if (Array.isArray(fromShared) && fromShared.length){
-        return Array.from(new Set(fromShared.map(v => String(v || '').trim()).filter(Boolean)));
+        candidates.push(...fromShared.map(v => String(v || '').trim()).filter(Boolean));
       }
     }
+
     // Build WS URL from current page host.
-    if (shared.getWsUrl){
+    if (candidates.length === 0 && shared.getWsUrl){
       const single = String(shared.getWsUrl(location) || '').trim();
-      if (single) return [single];
+      if (single) candidates.push(single);
     }
-    if (location.protocol === 'https:'){
-      return [`${location.origin.replace(/^https:/, 'wss:')}/ws`];
+
+    if (candidates.length === 0 && location.protocol === 'https:'){
+      candidates.push(`${location.origin.replace(/^https:/, 'wss:')}/ws`);
     }
-    const p = new URLSearchParams(location.search);
-    const explicit = String(p.get('ws') || '').trim();
-    if (explicit) return [explicit];
-    const host = location.hostname || 'raspberrypi.local';
-    const explicitPort = String(p.get('port') || p.get('wsport') || '').trim();
-    const originPort = String(location.port || '').trim();
-    const port = explicitPort || originPort || '8765';
-    const primary = `ws://${host}:${port}/`.replace(/\/\/\//,'//');
-    const sameOrigin = `${location.origin.replace(/^https?:/, 'ws:')}/ws`;
-    if (!explicitPort && originPort){
-      return Array.from(new Set([sameOrigin, `ws://${host}:8765/`]));
+
+    if (candidates.length === 0){
+      const p = new URLSearchParams(location.search);
+      const explicit = String(p.get('ws') || '').trim();
+      if (explicit) candidates.push(explicit);
+      const host = location.hostname || 'raspberrypi.local';
+      const explicitPort = String(p.get('port') || p.get('wsport') || '').trim();
+      const originPort = String(location.port || '').trim();
+      const port = explicitPort || originPort || '8765';
+      const primary = `ws://${host}:${port}/`.replace(/\/\/\//,'//');
+      const sameOrigin = `${location.origin.replace(/^https?:/, 'ws:')}/ws`;
+      if (!explicitPort && originPort){
+        candidates.push(sameOrigin, `ws://${host}:8765/`);
+      } else {
+        candidates.push(sameOrigin, primary);
+      }
     }
-    return Array.from(new Set([sameOrigin, primary]));
+
+    return Array.from(new Set(candidates.filter(Boolean)));
   }
 
   function getApiUrl(path, params = {}){
@@ -191,6 +209,7 @@
   }
 
   const AUTH_STORAGE_KEY = 'rj.authToken';
+  const WS_URL_OVERRIDE_KEY = 'ktox.wsUrlOverride';
   let authToken = '';
   let wsTicket = '';
   let authPromptResolver = null;
@@ -198,6 +217,21 @@
   let authMode = 'login';
   let authRecoveryMode = false;
   let tailscaleReauthMode = false;
+
+  function getManualWsUrl(){
+    try{
+      const stored = localStorage.getItem(WS_URL_OVERRIDE_KEY);
+      if (stored) return stored.trim();
+    }catch{}
+    return null;
+  }
+
+  function setManualWsUrl(url){
+    try{
+      if (url) localStorage.setItem(WS_URL_OVERRIDE_KEY, url.trim());
+      else localStorage.removeItem(WS_URL_OVERRIDE_KEY);
+    }catch{}
+  }
 
   function saveAuthToken(token){
     if (shared.saveToken){
@@ -559,13 +593,13 @@
   let systemOpen = false;
   let wsAuthenticated = true;
 
-  // iOS reconnection parameters
+  // iOS PWA reconnection parameters (increased for iOS WebView suspension)
   const RECONNECT_BASE_DELAY = 1000; // 1 second
   const RECONNECT_MAX_DELAY = 30000; // 30 seconds
   const MAX_RECONNECT_ATTEMPTS = 50;
   const SERVER_HEARTBEAT_TIMEOUT = 60000; // 60 seconds
-  const WS_CONNECT_TIMEOUT = 3500;
-  const HEARTBEAT_CHECK_INTERVAL = 5000; // 5 seconds on mobile (aggressive)
+  const WS_CONNECT_TIMEOUT = 10000; // 10 seconds (increased for iOS PWA startup)
+  const HEARTBEAT_CHECK_INTERVAL = 10000; // 10 seconds (iOS PWA may suspend more aggressively)
   const AUTH_TICKET_REFRESH_INTERVAL = 60000; // Refresh ticket every 60 seconds
 
   function applyStatusTone(el, txt){
@@ -2085,8 +2119,14 @@
       lootList.dataset.loaded = '1';
     }
   });
+  function loadWsUrlOverride(){
+    const saved = getManualWsUrl();
+    if (wsUrlOverrideInput) wsUrlOverrideInput.value = saved || '';
+  }
+
   if (navSettings) navSettings.addEventListener('click', () => {
     setActiveTab('settings');
+    loadWsUrlOverride();
     loadDiscordWebhook();
     loadTailscaleSettings();
   });
@@ -2266,6 +2306,27 @@
     });
   });
   if (payloadsRefresh) payloadsRefresh.addEventListener('click', () => loadPayloads());
+  if (wsUrlOverrideSave) wsUrlOverrideSave.addEventListener('click', () => {
+    const url = wsUrlOverrideInput ? wsUrlOverrideInput.value.trim() : '';
+    if (url && !url.match(/^(ws|wss):\/\//i)) {
+      if (wsUrlStatus) wsUrlStatus.textContent = 'URL must start with ws:// or wss://';
+      return;
+    }
+    setManualWsUrl(url);
+    if (wsUrlStatus) wsUrlStatus.textContent = url ? 'Saved' : 'Cleared';
+    if (wsUrlOverrideInput) wsUrlOverrideInput.value = url;
+    setTimeout(() => {
+      if (wsUrlStatus) wsUrlStatus.textContent = 'Ready';
+    }, 2000);
+  });
+  if (wsUrlOverrideClear) wsUrlOverrideClear.addEventListener('click', () => {
+    setManualWsUrl('');
+    if (wsUrlOverrideInput) wsUrlOverrideInput.value = '';
+    if (wsUrlStatus) wsUrlStatus.textContent = 'Cleared';
+    setTimeout(() => {
+      if (wsUrlStatus) wsUrlStatus.textContent = 'Ready';
+    }, 2000);
+  });
   if (discordWebhookSave) discordWebhookSave.addEventListener('click', () => {
     saveDiscordWebhook(discordWebhookInput ? discordWebhookInput.value : '');
   });
@@ -2380,8 +2441,8 @@
     scheduleSystemPoll();
   });
 
-  window.addEventListener('pageshow', () => {
-    console.log('[Mobile] pageshow fired - forcing reconnect');
+  window.addEventListener('pageshow', (event) => {
+    console.log('[Mobile] pageshow fired (persisted=' + (event && event.persisted) + ') - forcing reconnect');
     if (ws) {
       try { ws.close(); } catch(e) {}
     }
@@ -2389,6 +2450,9 @@
       clearTimeout(reconnectTimer);
       reconnectTimer = null;
     }
+    // Reset candidate index to try best one again
+    wsCandidateIndex = 0;
+    reconnectAttempts = 0;  // reset backoff
     setTimeout(() => ensureSocketLive('pageshow'), 100);
   });
 
