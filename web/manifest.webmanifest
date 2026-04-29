@@ -10,16 +10,17 @@
   "theme_color": "#05060a",
   "icons": [
     {
-      "src": "./ktox.png?v=4",
+      "src": "./ktox.png?v=5",
       "sizes": "any",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "./ktox.png?v=4",
+      "src": "./ktox.png?v=5",
       "sizes": "any",
       "type": "image/png",
       "purpose": "any maskable"
     }
   ]
 }
+
