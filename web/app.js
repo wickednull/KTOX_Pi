@@ -2436,19 +2436,25 @@
 
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden){
-      console.log('[Mobile] App became visible - forcing reconnect');
-      if (ws) {
-        try { ws.close(); } catch(e) {}
-      }
-      if (reconnectTimer) {
-        clearTimeout(reconnectTimer);
-        reconnectTimer = null;
-      }
-      setTimeout(() => {
+      console.log('[Mobile] App became visible');
+      // Only force-close stale WebSockets (not freshly connecting ones)
+      if (ws && ws.readyState === WebSocket.CLOSED) {
+        console.log('[Mobile] Reconnecting stale WebSocket');
+        ws = null;
+        if (reconnectTimer) {
+          clearTimeout(reconnectTimer);
+          reconnectTimer = null;
+        }
+        setTimeout(() => {
+          if (systemOpen) loadSystemStatus();
+          pollPayloadStatus();
+          ensureSocketLive('app-visible');
+        }, 100);
+      } else if (ws && ws.readyState === WebSocket.OPEN) {
+        // Already connected, just refresh data
         if (systemOpen) loadSystemStatus();
         pollPayloadStatus();
-        ensureSocketLive('app-visible');
-      }, 100);
+      }
     }
     schedulePayloadPoll();
     scheduleSystemPoll();
