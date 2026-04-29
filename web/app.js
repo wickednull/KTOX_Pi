@@ -135,40 +135,65 @@
 
   function getWsCandidates(){
     const candidates = [];
+    const isHttps = location.protocol === 'https:';
 
     // iOS PWA fix: try manually configured URL first (highest priority)
     const manualUrl = getManualWsUrl();
-    if (manualUrl) candidates.push(manualUrl);
+    if (manualUrl) {
+      // Mixed content fix: upgrade ws:// to wss:// if page is https://
+      const fixed = isHttps && manualUrl.startsWith('ws://')
+        ? manualUrl.replace(/^ws:/, 'wss:')
+        : manualUrl;
+      candidates.push(fixed);
+    }
 
     if (shared.getWsUrlCandidates){
       const fromShared = shared.getWsUrlCandidates(location);
       if (Array.isArray(fromShared) && fromShared.length){
-        candidates.push(...fromShared.map(v => String(v || '').trim()).filter(Boolean));
+        const fixed = fromShared.map(v => {
+          const url = String(v || '').trim();
+          // Mixed content fix: upgrade ws:// to wss:// if page is https://
+          return (isHttps && url.startsWith('ws://'))
+            ? url.replace(/^ws:/, 'wss:')
+            : url;
+        }).filter(Boolean);
+        candidates.push(...fixed);
       }
     }
 
     // Build WS URL from current page host.
     if (candidates.length === 0 && shared.getWsUrl){
       const single = String(shared.getWsUrl(location) || '').trim();
-      if (single) candidates.push(single);
-    }
-
-    if (candidates.length === 0 && location.protocol === 'https:'){
-      candidates.push(`${location.origin.replace(/^https:/, 'wss:')}/ws`);
+      if (single) {
+        const fixed = isHttps && single.startsWith('ws://')
+          ? single.replace(/^ws:/, 'wss:')
+          : single;
+        if (fixed) candidates.push(fixed);
+      }
     }
 
     if (candidates.length === 0){
       const p = new URLSearchParams(location.search);
       const explicit = String(p.get('ws') || '').trim();
-      if (explicit) candidates.push(explicit);
+      if (explicit) {
+        const fixed = isHttps && explicit.startsWith('ws://')
+          ? explicit.replace(/^ws:/, 'wss:')
+          : explicit;
+        if (fixed) candidates.push(fixed);
+      }
+
       const host = location.hostname || 'raspberrypi.local';
       const explicitPort = String(p.get('port') || p.get('wsport') || '').trim();
       const originPort = String(location.port || '').trim();
       const port = explicitPort || originPort || '8765';
-      const primary = `ws://${host}:${port}/`.replace(/\/\/\//,'//');
-      const sameOrigin = `${location.origin.replace(/^https?:/, 'ws:')}/ws`;
+
+      // Mixed content fix: use wss:// if page is https://
+      const wsScheme = isHttps ? 'wss:' : 'ws:';
+      const primary = `${wsScheme}//${host}:${port}/`.replace(/\/\/\//,'//');
+      const sameOrigin = `${location.origin.replace(/^https?:/, wsScheme)}/ws`;
+
       if (!explicitPort && originPort){
-        candidates.push(sameOrigin, `ws://${host}:8765/`);
+        candidates.push(sameOrigin, `${wsScheme}//${host}:8765/`.replace(/\/\/\//,'//'));
       } else {
         candidates.push(sameOrigin, primary);
       }
@@ -240,10 +265,13 @@
     }
     authToken = String(token || '').trim();
     try{
+      // iOS PWA fix: prioritize localStorage (sessionStorage dies on restart)
       if (authToken){
-        sessionStorage.setItem(AUTH_STORAGE_KEY, authToken);
+        try { localStorage.setItem(AUTH_STORAGE_KEY, authToken); } catch{}
+        try { sessionStorage.setItem(AUTH_STORAGE_KEY, authToken); } catch{}
       } else {
-        sessionStorage.removeItem(AUTH_STORAGE_KEY);
+        try { localStorage.removeItem(AUTH_STORAGE_KEY); } catch{}
+        try { sessionStorage.removeItem(AUTH_STORAGE_KEY); } catch{}
       }
     }catch{}
   }
@@ -254,9 +282,15 @@
       if (stored) authToken = stored;
     } else {
       try{
-        const stored = (sessionStorage.getItem(AUTH_STORAGE_KEY) || '').trim();
+        // iOS PWA fix: check localStorage first (survives PWA restart)
+        const stored = String(localStorage.getItem(AUTH_STORAGE_KEY) || sessionStorage.getItem(AUTH_STORAGE_KEY) || '').trim();
         if (stored) authToken = stored;
-      }catch{}
+      }catch{
+        try{
+          const stored = String(localStorage.getItem(AUTH_STORAGE_KEY) || '').trim();
+          if (stored) authToken = stored;
+        }catch{}
+      }
     }
 
     const migrated = shared.migrateTokenFromUrl ? shared.migrateTokenFromUrl(AUTH_STORAGE_KEY, 'token') : '';
@@ -871,15 +905,17 @@
 
   function connect(){
     console.log('[Mobile] connect() called, ws state=' + (ws ? ws.readyState : 'null'));
-    // Clean up any lingering WebSocket in bad state (common in PWA)
-    if (ws && ws.readyState !== WebSocket.OPEN && ws.readyState !== WebSocket.CONNECTING) {
-      console.log('[Mobile] Closing bad websocket state ' + ws.readyState);
+    // iOS PWA fix: kill ANY existing socket (including CONNECTING ones that may be stale)
+    if (ws) {
+      const state = ws.readyState;
+      if (state === WebSocket.OPEN) {
+        console.log('[Mobile] WebSocket already open');
+        return;
+      }
+      // Force close even CONNECTING sockets - they may be stale from PWA suspend
+      console.log('[Mobile] Force-closing stale websocket in state ' + state);
       try { ws.close(); } catch(e) {}
       ws = null;
-    }
-    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
-      console.log('[Mobile] WebSocket already connecting/open');
-      return;
     }
     wsCandidates = getWsCandidates();
     console.log('[Mobile] WS candidates: ' + wsCandidates.length);
