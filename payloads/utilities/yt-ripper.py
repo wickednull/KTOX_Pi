@@ -49,14 +49,33 @@ import subprocess
 from uuid import uuid4
 from datetime import datetime
 
-import RPi.GPIO as GPIO
-import LCD_1in44
-from PIL import Image, ImageDraw, ImageFont
+try:
+    import RPi.GPIO as GPIO
+except ImportError as e:
+    print(f"Failed to import RPi.GPIO: {e}", file=sys.stderr)
+    sys.exit(1)
+
+try:
+    import LCD_1in44
+except ImportError as e:
+    print(f"Failed to import LCD_1in44: {e}", file=sys.stderr)
+    sys.exit(1)
+
+try:
+    from PIL import Image, ImageDraw, ImageFont
+except ImportError as e:
+    print(f"Failed to import PIL: {e}", file=sys.stderr)
+    sys.exit(1)
 
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
-from _darksec_keyboard import DarkSecKeyboard
+
+try:
+    from _darksec_keyboard import DarkSecKeyboard
+except ImportError as e:
+    print(f"Failed to import _darksec_keyboard: {e}", file=sys.stderr)
+    sys.exit(1)
 
 # ----------------------------------------------------------------------
 # Directories
@@ -118,13 +137,23 @@ DEBOUNCE = 0.18
 # ----------------------------------------------------------------------
 # Hardware init
 # ----------------------------------------------------------------------
-GPIO.setmode(GPIO.BCM)
-GPIO.setwarnings(False)
-for pin in PINS.values():
-    GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+try:
+    GPIO.setmode(GPIO.BCM)
+    GPIO.setwarnings(False)
+    for pin in PINS.values():
+        GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+except Exception as e:
+    log(f"[ERR] GPIO setup failed: {e}")
+    print(f"GPIO initialization failed: {e}", file=sys.stderr)
+    sys.exit(1)
 
-LCD = LCD_1in44.LCD()
-LCD.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
+try:
+    LCD = LCD_1in44.LCD()
+    LCD.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
+except Exception as e:
+    log(f"[ERR] LCD init failed: {e}")
+    print(f"LCD initialization failed: {e}", file=sys.stderr)
+    sys.exit(1)
 
 def load_font(size):
     for path in (
@@ -134,13 +163,18 @@ def load_font(size):
         if os.path.exists(path):
             try:
                 return ImageFont.truetype(path, size)
-            except Exception:
-                pass
+            except Exception as e:
+                log(f"[WARN] Failed to load font {path}: {e}")
     return ImageFont.load_default()
 
-FONT = load_font(9)
-FONT_BOLD = load_font(10)
-FONT_SMALL = load_font(8)
+try:
+    FONT = load_font(9)
+    FONT_BOLD = load_font(10)
+    FONT_SMALL = load_font(8)
+except Exception as e:
+    log(f"[ERR] Font initialization failed: {e}")
+    print(f"Font initialization failed: {e}", file=sys.stderr)
+    sys.exit(1)
 
 _last_press = {k: 0.0 for k in PINS}
 _last_state = {k: False for k in PINS}
@@ -1656,3 +1690,10 @@ if __name__ == "__main__":
         main()
     except KeyboardInterrupt:
         cleanup()
+    except Exception as e:
+        import traceback
+        error_msg = f"Fatal error: {e}\n{traceback.format_exc()}"
+        print(error_msg, file=sys.stderr)
+        log(f"[FATAL] {error_msg}")
+        cleanup()
+        sys.exit(1)
