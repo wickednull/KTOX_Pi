@@ -141,6 +141,21 @@ AP_IP   = "192.168.4.1"
 AP_IFACE = "wlan0"
 PID_FILE = "/tmp/ktox_ap.pid"
 
+def _has_systemd():
+    """Check if system uses systemd as init."""
+    return os.path.exists("/run/systemd/system")
+
+def _stop_service(svc):
+    """Stop a service using available method."""
+    if _has_systemd():
+        subprocess.run(["systemctl", "stop", svc], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    # If no systemd, just continue (service may not exist anyway)
+
+def _start_service(svc):
+    """Start a service using available method."""
+    if _has_systemd():
+        subprocess.run(["systemctl", "start", svc], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
 def write_hostapd_conf():
     conf = f"""interface={AP_IFACE}
 driver=nl80211
@@ -169,7 +184,7 @@ def start_ap_services():
     """Start offline AP with DNAT routing."""
     print("[KTOXAP] Stopping conflicting services...")
     for svc in ("NetworkManager", "wpa_supplicant"):
-        subprocess.run(["systemctl", "stop", svc], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        _stop_service(svc)
     subprocess.run(["ip", "link", "set", AP_IFACE, "down"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     print("[KTOXAP] Configuring AP interface...")
@@ -211,8 +226,9 @@ def stop_ap_services():
     subprocess.run(["pkill", "-9", "dnsmasq"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     subprocess.run(["ip", "addr", "flush", "dev", AP_IFACE], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     subprocess.run(["ip", "link", "set", AP_IFACE, "down"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    subprocess.run(["systemctl", "start", "NetworkManager"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    subprocess.run(["systemctl", "start", "wpa_supplicant"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    print("[KTOXAP] Restoring network services...")
+    _start_service("NetworkManager")
+    _start_service("wpa_supplicant")
     for f in ("/tmp/ktox_hostapd.conf", "/tmp/ktox_dnsmasq.conf"):
         try: os.remove(f)
         except: pass
