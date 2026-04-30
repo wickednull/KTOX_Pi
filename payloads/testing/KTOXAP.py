@@ -1,22 +1,13 @@
 #!/usr/bin/env python3
 # NAME: KTOXAP
 # AUTHOR: wickednull
-# DESC:  Offline Access Point that ensures the WebUI is running.
-#        Connect to KTOx‑Control / ktox-payload → http://192.168.4.1:8080
+# DESC:  Offline AP that restarts the WebUI & WebSocket on 0.0.0.0
+#        LCD shows live service status – KEY3 to exit (AP stays)
 
-"""
-Start/stop a local Wi‑Fi AP with live LCD status.
-KEY3 – exit (AP stays alive)  … or stop if already running.
-KEY1 – exit without stopping (when AP is active).
-"""
-
-import os
-import time
-import signal
-import subprocess
+import os, time, signal, subprocess
 from pathlib import Path
 
-# ── Hardware ──────────────────────────────────────────────────────────────
+# ── Hardware ─────────────────────────────────────────────────────────
 try:
     import RPi.GPIO as GPIO
     from PIL import Image, ImageDraw, ImageFont
@@ -33,6 +24,7 @@ ACCENT   = (231, 76, 60)
 WHITE    = (255, 255, 255)
 FG       = (171, 178, 185)
 WARN     = (212, 172, 13)
+GOOD     = (46, 204, 113)   # green
 
 LCD = image = draw = None
 FONT = FONT_SM = None
@@ -48,12 +40,12 @@ def init_screen():
     LCD.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
     image = Image.new("RGB", (WIDTH, HEIGHT), BG)
     draw = ImageDraw.Draw(image)
-    for path in ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-                 "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"):
-        if os.path.exists(path):
+    for fpath in ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                  "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"):
+        if os.path.exists(fpath):
             try:
-                FONT = ImageFont.truetype(path, 10)
-                FONT_SM = ImageFont.truetype(path, 8)
+                FONT = ImageFont.truetype(fpath, 10)
+                FONT_SM = ImageFont.truetype(fpath, 8)
                 return
             except: pass
     FONT = ImageFont.load_default()
@@ -71,63 +63,41 @@ def is_button(pin_name):
     try: return GPIO.input(PINS[pin_name]) == 0
     except: return False
 
-def redraw(ssid, ip, clients, stop_mode=False):
-    img = Image.new("RGB", (WIDTH, HEIGHT), BG)
-    d = ImageDraw.Draw(img)
-    d.rectangle((0,0,WIDTH,13), fill=HEADER)
-    d.text((4,2), "KTOXAP", font=FONT, fill=ACCENT)
-    y = 20
-    d.text((4,y), f"SSID: {ssid}", font=FONT, fill=WHITE)
-    y += 14
-    d.text((4,y), f"IP:   {ip}", font=FONT, fill=WHITE)
-    y += 14
-    d.text((4,y), "WebUI: 8080", font=FONT_SM, fill=ACCENT)
-    y += 12
-    d.text((4,y), "WS:    8765", font=FONT_SM, fill=ACCENT)
-    y += 16
-    d.rectangle((4, y, 124, y+18), outline=ACCENT)
-    d.text((8, y+2), f"Clients: {clients}", font=FONT, fill=WARN)
-    y += 22
-    d.rectangle((0, HEIGHT-12, WIDTH, HEIGHT), fill=HEADER)
-    if stop_mode:
-        d.text((4, HEIGHT-10), "KEY3=Stop  KEY1=Exit", font=FONT_SM, fill=ACCENT)
-    else:
-        d.text((4, HEIGHT-10), "KEY3=Exit (AP stays)", font=FONT_SM, fill=ACCENT)
-    if HAS_HW: LCD.LCD_ShowImage(img, 0, 0)
+# ── Web service control ──────────────────────────────────────────────
+KTOX_PATH = "/root/KTOx"
 
-# ── Web service health check ──────────────────────────────────────────────
+def stop_web_services():
+    """Kill all existing web processes."""
+    for srv in ("web_server.py", "device_server.py", "shell_server.py"):
+        subprocess.run(["pkill", "-f", srv],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    time.sleep(0.8)
+
+def start_web_services():
+    """Launch fresh instances bound to 0.0.0.0."""
+    env = os.environ.copy()
+    env["KTOX_PAYLOAD"] = "0"
+    for script, port in [("web_server.py", 8080), ("device_server.py", 8765)]:
+        path = os.path.join(KTOX_PATH, script)
+        if os.path.exists(path):
+            subprocess.Popen(
+                ["python3", path],
+                cwd=KTOX_PATH,
+                env=env,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+            time.sleep(1)
+
 def is_port_listening(port):
-    """Return True if any process is listening on the given TCP port."""
+    """Return True if something is listening on given TCP port."""
     try:
-        # Simple check using ss
-        result = subprocess.run(
-            ["ss", "-tlnp", "sport", f"= :{port}"],
-            capture_output=True, text=True
-        )
-        return f":{port}" in result.stdout
+        out = subprocess.check_output(["ss", "-tlnp"], text=True)
+        return f":{port}" in out
     except:
         return False
 
-def ensure_web_services():
-    """Start the KTOx web servers if they're not already running."""
-    scripts = {
-        8080: "web_server.py",
-        8765: "device_server.py",
-    }
-    for port, script in scripts.items():
-        if not is_port_listening(port):
-            script_path = f"/root/KTOx/{script}"
-            if os.path.exists(script_path):
-                print(f"[KTOXAP] Starting {script} on port {port}")
-                subprocess.Popen(
-                    ["python3", script_path],
-                    cwd="/root/KTOx",
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL
-                )
-                time.sleep(0.5)   # give it a moment
-
-# ── AP management ─────────────────────────────────────────────────────────
+# ── AP management ─────────────────────────────────────────────────────
 AP_SSID = "KTOx‑Control"
 AP_PSK  = "ktox-payload"
 AP_IP   = "192.168.4.1"
@@ -159,7 +129,6 @@ dhcp-range=192.168.4.50,192.168.4.150,12h""".strip()
     Path("/tmp/ktox_dnsmasq.conf").write_text(conf)
 
 def start_ap_services():
-    """Launch hostapd + dnsmasq and write PID file."""
     for svc in ("NetworkManager", "wpa_supplicant"):
         subprocess.run(["systemctl", "stop", svc],
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -225,37 +194,75 @@ def is_ap_active():
         return True
     except: return False
 
-# ── Main toggle logic ─────────────────────────────────────────────────────
+def lcd_status_screen(ssid, ip, clients, web_ok, ws_ok, stop_mode=False):
+    """Show SSID, IP, connectivity, and service health on LCD."""
+    img = Image.new("RGB", (WIDTH, HEIGHT), BG)
+    d = ImageDraw.Draw(img)
+    # header
+    d.rectangle((0,0,WIDTH,13), fill=HEADER)
+    d.text((4,2), "KTOXAP", font=FONT, fill=ACCENT)
+    y = 18
+    d.text((4,y), f"SSID: {ssid}", font=FONT, fill=WHITE)
+    y += 14
+    d.text((4,y), f"IP:   {ip}", font=FONT, fill=WHITE)
+    y += 14
+    # WebUI status
+    d.text((4,y), "Web:", font=FONT, fill=FG)
+    color_web = GOOD if web_ok else ACCENT
+    d.text((36,y), "ACTIVE" if web_ok else "DOWN", font=FONT, fill=color_web)
+    y += 12
+    d.text((4,y), "WS: ", font=FONT, fill=FG)
+    color_ws = GOOD if ws_ok else ACCENT
+    d.text((36,y), "ACTIVE" if ws_ok else "DOWN", font=FONT, fill=color_ws)
+    y += 16
+    d.rectangle((4, y, 124, y+18), outline=ACCENT)
+    d.text((8, y+2), f"Clients: {clients}", font=FONT, fill=WARN)
+    y += 22
+    d.rectangle((0, HEIGHT-12, WIDTH, HEIGHT), fill=HEADER)
+    if stop_mode:
+        d.text((4, HEIGHT-10), "KEY3=Stop  KEY1=Exit", font=FONT_SM, fill=ACCENT)
+    else:
+        d.text((4, HEIGHT-10), "KEY3=Exit (AP stays)", font=FONT_SM, fill=ACCENT)
+    if HAS_HW: LCD.LCD_ShowImage(img, 0, 0)
+
+# ── Main toggle logic ─────────────────────────────────────────────────
 def main():
     init_screen()
 
     if is_ap_active():
         stop_mode = True
+        # Just show status
     else:
         stop_mode = False
-        # Ensure web servers are alive BEFORE starting AP
-        ensure_web_services()
+        # Fresh start: stop old services, bring up AP, restart services
+        stop_web_services()
         start_ap_services()
         time.sleep(2)
+        start_web_services()
+        # Give services a moment to bind
+        time.sleep(3)
 
     last_clients = -1
     try:
         while True:
+            # Check service health now
+            web_ok = is_port_listening(8080)
+            ws_ok  = is_port_listening(8765)
+            clients = get_client_count()
+            if clients != last_clients or True:   # refresh every cycle for health
+                lcd_status_screen(AP_SSID, AP_IP, clients, web_ok, ws_ok, stop_mode)
+                last_clients = clients
+
             if is_button("KEY3"):
                 if stop_mode:
                     stop_ap_services()
                     cleanup_screen()
                     return
                 else:
-                    break   # exit without stopping
+                    break   # leave AP running, exit payload
             if stop_mode and is_button("KEY1"):
-                break       # exit without stopping
-
-            clients = get_client_count()
-            if clients != last_clients:
-                redraw(AP_SSID, AP_IP, clients, stop_mode=stop_mode)
-                last_clients = clients
-            time.sleep(0.5)
+                break
+            time.sleep(0.6)
     finally:
         cleanup_screen()
 
