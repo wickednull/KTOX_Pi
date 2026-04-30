@@ -59,7 +59,8 @@ def redraw(ssid, ip, clients, stop_mode=False):
     d.text((4,y), f"SSID: {ssid}", font=FONT, fill=WHITE); y+=14
     d.text((4,y), f"IP:   {ip}",   font=FONT, fill=WHITE); y+=14
     d.text((4,y), "WebUI: 8080",  font=FONT_SM, fill=ACCENT); y+=12
-    d.text((4,y), "WS:    8765",  font=FONT_SM, fill=ACCENT); y+=16
+    d.text((4,y), "WS:    8765",  font=FONT_SM, fill=ACCENT); y+=12
+    d.text((4,y), "Shell: 4200",  font=FONT_SM, fill=ACCENT); y+=16
     d.rectangle((4, y, 124, y+18), outline=ACCENT)
     d.text((8, y+2), f"Clients: {clients}", font=FONT, fill=WARN); y+=22
     d.rectangle((0, HEIGHT-12, WIDTH, HEIGHT), fill=HEADER)
@@ -137,10 +138,12 @@ def start_ap_services():
 
     add_redirect(AP_IP, 8080)
     add_redirect(AP_IP, 8765)
+    add_redirect(AP_IP, 4200)
 
 def stop_ap_services():
     del_redirect(AP_IP, 8080)
     del_redirect(AP_IP, 8765)
+    del_redirect(AP_IP, 4200)
 
     if os.path.exists(PID_FILE):
         with open(PID_FILE) as f:
