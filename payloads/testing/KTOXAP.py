@@ -2,8 +2,17 @@
 # NAME: KTOXAP
 # AUTHOR: wickednull
 # DESC:  Safe Offline AP – never restarts web services; uses iptables DNAT.
+#
+# Connects to KTOx‑Control (192.168.4.1/ktox-payload) to access:
+#   • WebUI (8080) - Main dashboard
+#   • WebSocket (8765) - Real-time communication
+#   • WebShell (4200) - Terminal access
+#
+# Controls:
+#   KEY3 - Exit (AP stays active) or Stop (when active)
+#   KEY1 - Exit without stopping (when AP active)
 
-import os, time, signal, subprocess
+import os, time, signal, subprocess, sys
 from pathlib import Path
 
 try:
@@ -17,10 +26,12 @@ except ImportError:
 PINS = {"KEY3": 16, "KEY1": 21}
 WIDTH, HEIGHT = 128, 128
 BG = (10,0,0); HEADER = (139,0,0); ACCENT = (231,76,60)
-WHITE = (255,255,255); FG = (171,178,185); WARN = (212,172,13)
+WHITE = (255,255,255); FG = (171,178,185); WARN = (212,172,13); GOOD = (46, 204, 113)
 
 LCD = image = draw = None
 FONT = FONT_SM = None
+LAST_BTN = {"KEY3": 0, "KEY1": 0}
+DEBOUNCE_MS = 300
 
 def init_screen():
     global LCD, image, draw, FONT, FONT_SM
@@ -46,9 +57,26 @@ def cleanup_screen():
         except: pass
 
 def is_button(pin):
+    """Debounced button check (300ms debounce)."""
     if not HAS_HW: return False
-    try: return GPIO.input(PINS[pin]) == 0
-    except: return False
+    try:
+        now = int(time.time() * 1000)
+        if now - LAST_BTN.get(pin, 0) < DEBOUNCE_MS:
+            return False
+        if GPIO.input(PINS[pin]) == 0:
+            LAST_BTN[pin] = now
+            return True
+        return False
+    except:
+        return False
+
+def is_port_listening(port):
+    """Check if a port is actively listening."""
+    try:
+        out = subprocess.check_output(["ss", "-tlnp"], text=True, timeout=2)
+        return f":{port}" in out
+    except:
+        return False
 
 def redraw(ssid, ip, clients, stop_mode=False):
     img = Image.new("RGB", (WIDTH, HEIGHT), BG)
@@ -58,9 +86,19 @@ def redraw(ssid, ip, clients, stop_mode=False):
     y=20
     d.text((4,y), f"SSID: {ssid}", font=FONT, fill=WHITE); y+=14
     d.text((4,y), f"IP:   {ip}",   font=FONT, fill=WHITE); y+=14
-    d.text((4,y), "WebUI: 8080",  font=FONT_SM, fill=ACCENT); y+=12
-    d.text((4,y), "WS:    8765",  font=FONT_SM, fill=ACCENT); y+=12
-    d.text((4,y), "Shell: 4200",  font=FONT_SM, fill=ACCENT); y+=16
+
+    web_ok = is_port_listening(8080)
+    ws_ok = is_port_listening(8765)
+    shell_ok = is_port_listening(4200)
+
+    web_color = GOOD if web_ok else WARN
+    ws_color = GOOD if ws_ok else WARN
+    shell_color = GOOD if shell_ok else WARN
+
+    d.text((4,y), f"Web: {'✓' if web_ok else '✗'}", font=FONT_SM, fill=web_color); y+=12
+    d.text((4,y), f"WS:  {'✓' if ws_ok else '✗'}", font=FONT_SM, fill=ws_color); y+=12
+    d.text((4,y), f"Shell: {'✓' if shell_ok else '✗'}", font=FONT_SM, fill=shell_color); y+=14
+
     d.rectangle((4, y, 124, y+18), outline=ACCENT)
     d.text((8, y+2), f"Clients: {clients}", font=FONT, fill=WARN); y+=22
     d.rectangle((0, HEIGHT-12, WIDTH, HEIGHT), fill=HEADER)
@@ -72,19 +110,29 @@ def redraw(ssid, ip, clients, stop_mode=False):
 
 # ── iptables DNAT (no restart) ──────────────────────────────────
 def add_redirect(ap_ip, port):
-    rule = ["iptables", "-t", "nat", "-C", "PREROUTING",
-            "-d", ap_ip, "-p", "tcp", "--dport", str(port),
-            "-j", "DNAT", "--to-destination", f"127.0.0.1:{port}"]
-    if subprocess.run(rule, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode != 0:
-        subprocess.run(["iptables", "-t", "nat", "-A", "PREROUTING",
-                        "-d", ap_ip, "-p", "tcp", "--dport", str(port),
-                        "-j", "DNAT", "--to-destination", f"127.0.0.1:{port}"], check=True)
+    """Add DNAT rule and FORWARD rule for port redirection."""
+    try:
+        rule = ["iptables", "-t", "nat", "-C", "PREROUTING",
+                "-d", ap_ip, "-p", "tcp", "--dport", str(port),
+                "-j", "DNAT", "--to-destination", f"127.0.0.1:{port}"]
+        if subprocess.run(rule, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode != 0:
+            subprocess.run(["iptables", "-t", "nat", "-A", "PREROUTING",
+                            "-d", ap_ip, "-p", "tcp", "--dport", str(port),
+                            "-j", "DNAT", "--to-destination", f"127.0.0.1:{port}"], check=True)
+            print(f"[KTOXAP] Added DNAT rule for port {port}")
+    except Exception as e:
+        print(f"[KTOXAP] Warning: DNAT setup failed for {port}: {e}")
 
 def del_redirect(ap_ip, port):
-    subprocess.run(["iptables", "-t", "nat", "-D", "PREROUTING",
-                    "-d", ap_ip, "-p", "tcp", "--dport", str(port),
-                    "-j", "DNAT", "--to-destination", f"127.0.0.1:{port}"],
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    """Remove DNAT rule for port."""
+    try:
+        subprocess.run(["iptables", "-t", "nat", "-D", "PREROUTING",
+                        "-d", ap_ip, "-p", "tcp", "--dport", str(port),
+                        "-j", "DNAT", "--to-destination", f"127.0.0.1:{port}"],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
+        print(f"[KTOXAP] Removed DNAT rule for port {port}")
+    except:
+        pass
 
 # ── AP management (unchanged) ──────────────────────────────────
 AP_SSID = "KTOx‑Control"
@@ -118,17 +166,22 @@ dhcp-range=192.168.4.50,192.168.4.150,12h""".strip()
     Path("/tmp/ktox_dnsmasq.conf").write_text(conf)
 
 def start_ap_services():
+    """Start offline AP with DNAT routing."""
+    print("[KTOXAP] Stopping conflicting services...")
     for svc in ("NetworkManager", "wpa_supplicant"):
         subprocess.run(["systemctl", "stop", svc], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     subprocess.run(["ip", "link", "set", AP_IFACE, "down"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-    write_hostapd_conf(); write_dnsmasq_conf()
+    print("[KTOXAP] Configuring AP interface...")
+    write_hostapd_conf()
+    write_dnsmasq_conf()
 
     subprocess.run(["ip", "addr", "flush", "dev", AP_IFACE], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     subprocess.run(["ip", "addr", "add", f"{AP_IP}/24", "dev", AP_IFACE], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     subprocess.run(["ip", "link", "set", AP_IFACE, "up"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    subprocess.run(["sysctl", "net.ipv4.ip_forward=1"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(["sysctl", "-w", "net.ipv4.ip_forward=1"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
+    print("[KTOXAP] Starting hostapd and dnsmasq...")
     dns = subprocess.Popen(["dnsmasq", "--conf-file=/tmp/ktox_dnsmasq.conf", "--no-daemon"],
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     ap = subprocess.Popen(["hostapd", "/tmp/ktox_hostapd.conf"],
@@ -136,9 +189,11 @@ def start_ap_services():
     with open(PID_FILE, 'w') as f:
         f.write(f"{ap.pid}\n{dns.pid}")
 
+    print("[KTOXAP] Setting up port redirects (DNAT)...")
     add_redirect(AP_IP, 8080)
     add_redirect(AP_IP, 8765)
     add_redirect(AP_IP, 4200)
+    print("[KTOXAP] AP ready! SSID: {} | Password: {}".format(AP_SSID, AP_PSK))
 
 def stop_ap_services():
     del_redirect(AP_IP, 8080)
@@ -178,35 +233,54 @@ def is_ap_active():
     except: return False
 
 def main():
+    print("[KTOXAP] Starting Offline AP mode...")
     init_screen()
 
     if is_ap_active():
+        print("[KTOXAP] AP already active, entering stop mode...")
         stop_mode = True
     else:
         stop_mode = False
+        print("[KTOXAP] Starting AP services...")
         start_ap_services()
+        time.sleep(2)
+        print("[KTOXAP] Waiting for services to stabilize...")
         time.sleep(2)
 
     last_clients = -1
+    last_redraw = 0
     try:
         while True:
+            now = time.time()
+
             if is_button("KEY3"):
+                print("[KTOXAP] KEY3 pressed")
                 if stop_mode:
+                    print("[KTOXAP] Stopping AP...")
                     stop_ap_services()
                     cleanup_screen()
+                    print("[KTOXAP] AP stopped. Exiting.")
                     return
                 else:
+                    print("[KTOXAP] Exiting (AP stays active)")
                     break
+
             if stop_mode and is_button("KEY1"):
+                print("[KTOXAP] KEY1 pressed (exit without stop)")
                 break
 
             clients = get_client_count()
-            if clients != last_clients:
+            if clients != last_clients or (now - last_redraw) > 3:
                 redraw(AP_SSID, AP_IP, clients, stop_mode=stop_mode)
                 last_clients = clients
-            time.sleep(0.5)
+                last_redraw = now
+
+            time.sleep(0.3)
+    except KeyboardInterrupt:
+        print("\n[KTOXAP] Interrupted by user")
     finally:
         cleanup_screen()
+        print("[KTOXAP] Cleanup complete")
 
 if __name__ == "__main__":
     main()
