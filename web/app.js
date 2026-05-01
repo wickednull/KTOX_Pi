@@ -250,6 +250,7 @@
   let wsTicket = '';
   let wsAuthenticated = false;
   let authPromiseResolve = null;
+  let authInitialized = false;
 
   function saveAuthToken(token) {
     authToken = token;
@@ -1207,13 +1208,31 @@
   // Auth modal
   let authModalOpen = false;
   let authModalResolve = null;
+  let authMode = 'login'; // 'login' or 'bootstrap'
+
+  async function checkAuthInitialized() {
+    try {
+      const res = await fetch(getApiUrl('/api/auth/bootstrap-status'));
+      const data = await res.json();
+      authInitialized = data.initialized === true;
+      return authInitialized;
+    } catch(e) {
+      warn('Failed to check auth status:', e);
+      return false;
+    }
+  }
 
   async function ensureAuthenticated(message = 'Log in') {
     if (authToken) return true;
 
     return new Promise((resolve) => {
       authModalResolve = resolve;
-      showAuthModal('login', message);
+      // Show appropriate modal based on whether auth is initialized
+      if (authInitialized) {
+        showAuthModal('login', message);
+      } else {
+        showAuthModal('bootstrap', 'Create your WebUI account (first time setup)');
+      }
     });
   }
 
@@ -1223,11 +1242,23 @@
 
     modal.classList.remove('hidden');
     authModalOpen = true;
+    authMode = mode;
 
     const title = DOM.get('authModalTitle');
     const msg = DOM.get('authModalMessage');
-    if (title) title.textContent = mode === 'login' ? 'Login' : 'Create Account';
+    const rules = DOM.get('authModalRules');
+    const passwordConfirm = DOM.get('authModalPasswordConfirm');
+
+    if (title) title.textContent = mode === 'bootstrap' ? 'Setup Account' : 'Login';
     if (msg) msg.textContent = message || '';
+
+    // Show password confirmation only in bootstrap mode
+    if (passwordConfirm) {
+      passwordConfirm.classList.toggle('hidden', mode !== 'bootstrap');
+    }
+    if (rules) {
+      rules.classList.toggle('hidden', mode !== 'bootstrap');
+    }
 
     for (const id of ['authModalUsername', 'authModalPassword', 'authModalPasswordConfirm', 'authModalToken']) {
       const el = DOM.get(id);
@@ -1244,11 +1275,11 @@
   async function submitAuthForm() {
     const username = DOM.get('authModalUsername');
     const password = DOM.get('authModalPassword');
-    const token = DOM.get('authModalToken');
+    const passwordConfirm = DOM.get('authModalPasswordConfirm');
 
     const u = (username && username.value) || '';
     const p = (password && password.value) || '';
-    const t = (token && token.value) || '';
+    const pc = (passwordConfirm && passwordConfirm.value) || '';
 
     if (!u || !p) {
       const error = DOM.get('authModalError');
@@ -1256,8 +1287,16 @@
       return;
     }
 
+    // Bootstrap mode requires password confirmation
+    if (authMode === 'bootstrap' && p !== pc) {
+      const error = DOM.get('authModalError');
+      if (error) error.textContent = 'Passwords do not match';
+      return;
+    }
+
     try {
-      const res = await fetch(getApiUrl('/api/auth/login'), {
+      const endpoint = authMode === 'bootstrap' ? '/api/auth/bootstrap' : '/api/auth/login';
+      const res = await fetch(getApiUrl(endpoint), {
         method: 'POST',
         headers: authHeaders(),
         body: JSON.stringify({ username: u, password: p })
@@ -1266,13 +1305,14 @@
       const data = await res.json();
       if (!res.ok) {
         const error = DOM.get('authModalError');
-        if (error) error.textContent = data && data.error ? data.error : 'Login failed';
+        if (error) error.textContent = data && data.error ? data.error : 'Authentication failed';
         return;
       }
 
       if (data.token) {
         saveAuthToken(data.token);
         authToken = data.token;
+        authInitialized = true;
         closeAuthModal();
         if (authModalResolve) authModalResolve(true);
         return;
@@ -1280,6 +1320,7 @@
     } catch(e) {
       const error = DOM.get('authModalError');
       if (error) error.textContent = 'Network error';
+      warn('Auth error:', e);
     }
   }
 
@@ -1734,35 +1775,40 @@
   // Initialization
   function startAfterAuth() {
     log('startAfterAuth: checking authentication, hidden=' + document.hidden);
-    ensureAuthenticated('Log in to access KTOx WebUI').then((ok) => {
-      if (!ok) {
-        log('Authentication required');
-        setTimeout(startAfterAuth, 0);
-        return;
-      }
-      log('Authenticated - starting');
 
-      // iOS-specific initialization
-      if (Mobile.isIOS()) {
-        log('Detected iOS - applying compatibility fixes');
-        iOS.preventZoom();
-        iOS.fixInputZoom();
-        iOS.preventTopBar();
-      }
+    // First check if auth is initialized
+    checkAuthInitialized().then(() => {
+      // Then ensure user is authenticated
+      ensureAuthenticated('Log in to access KTOx WebUI').then((ok) => {
+        if (!ok) {
+          log('Authentication required');
+          setTimeout(startAfterAuth, 0);
+          return;
+        }
+        log('Authenticated - starting');
 
-      setupEventListeners();
-      applyResponsiveTabClasses(activeTab);
-      startHeartbeatMonitor();
+        // iOS-specific initialization
+        if (Mobile.isIOS()) {
+          log('Detected iOS - applying compatibility fixes');
+          iOS.preventZoom();
+          iOS.fixInputZoom();
+          iOS.preventTopBar();
+        }
 
-      if (reconnectTimer) clearTimeout(reconnectTimer);
-      reconnectTimer = null;
-      reconnectAttempts = 0;
+        setupEventListeners();
+        applyResponsiveTabClasses(activeTab);
+        startHeartbeatMonitor();
 
-      connect();
-      ensureTerminal();
-      loadPayloads();
-      schedulePayloadPoll();
-      scheduleSystemPoll();
+        if (reconnectTimer) clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+        reconnectAttempts = 0;
+
+        connect();
+        ensureTerminal();
+        loadPayloads();
+        schedulePayloadPoll();
+        scheduleSystemPoll();
+      });
     });
   }
 
