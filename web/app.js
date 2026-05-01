@@ -138,35 +138,49 @@
 
     // iOS PWA fix: try manually configured URL first (highest priority)
     const manualUrl = getManualWsUrl();
-    if (manualUrl) candidates.push(manualUrl);
+    if (manualUrl) {
+      console.log('[WSCandidates] Found manual URL:', manualUrl);
+      candidates.push(manualUrl);
+    }
 
     if (shared.getWsUrlCandidates){
       const fromShared = shared.getWsUrlCandidates(location);
       if (Array.isArray(fromShared) && fromShared.length){
-        candidates.push(...fromShared.map(v => String(v || '').trim()).filter(Boolean));
+        const validCandidates = fromShared.map(v => String(v || '').trim()).filter(Boolean);
+        console.log('[WSCandidates] From shared.js:', validCandidates);
+        candidates.push(...validCandidates);
       }
     }
 
     // Build WS URL from current page host.
     if (candidates.length === 0 && shared.getWsUrl){
       const single = String(shared.getWsUrl(location) || '').trim();
-      if (single) candidates.push(single);
+      if (single) {
+        console.log('[WSCandidates] From shared.getWsUrl:', single);
+        candidates.push(single);
+      }
     }
 
     if (candidates.length === 0 && location.protocol === 'https:'){
-      candidates.push(`${location.origin.replace(/^https:/, 'wss:')}/ws`);
+      const wssUrl = `${location.origin.replace(/^https:/, 'wss:')}/ws`;
+      console.log('[WSCandidates] Generated WSS URL from HTTPS:', wssUrl);
+      candidates.push(wssUrl);
     }
 
     if (candidates.length === 0){
       const p = new URLSearchParams(location.search);
       const explicit = String(p.get('ws') || '').trim();
-      if (explicit) candidates.push(explicit);
+      if (explicit) {
+        console.log('[WSCandidates] From URL param:', explicit);
+        candidates.push(explicit);
+      }
       const host = location.hostname || 'raspberrypi.local';
       const explicitPort = String(p.get('port') || p.get('wsport') || '').trim();
       const originPort = String(location.port || '').trim();
       const port = explicitPort || originPort || '8765';
       const primary = `ws://${host}:${port}/`.replace(/\/\/\//,'//');
       const sameOrigin = `${location.origin.replace(/^https?:/, 'ws:')}/ws`;
+      console.log('[WSCandidates] Generated fallback URLs:', { sameOrigin, primary });
       if (!explicitPort && originPort){
         candidates.push(sameOrigin, `ws://${host}:8765/`);
       } else {
@@ -176,11 +190,12 @@
 
     // iOS PWA fix: filter out insecure ws:// on HTTPS pages (mixed content block)
     const isHttps = location.protocol === 'https:';
-    if (isHttps) {
-      return Array.from(new Set(candidates.filter(url => url.startsWith('wss://'))));
-    }
+    const filtered = isHttps
+      ? Array.from(new Set(candidates.filter(url => url.startsWith('wss://'))))
+      : Array.from(new Set(candidates.filter(Boolean)));
 
-    return Array.from(new Set(candidates.filter(Boolean)));
+    console.log('[WSCandidates] Final candidates:', filtered, { protocol: location.protocol });
+    return filtered;
   }
 
   function getApiUrl(path, params = {}){
@@ -878,22 +893,32 @@
   }
 
   function connect(){
-    console.log('[Mobile] connect() called, ws state=' + (ws ? ws.readyState : 'null'));
+    console.log('[WebSocket] connect() called', {
+      wsState: ws ? ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'][ws.readyState] : 'null',
+      location: location.href,
+      protocol: location.protocol,
+      hostname: location.hostname
+    });
+
     // Clean up any lingering WebSocket in bad state (common in PWA)
     if (ws && ws.readyState !== WebSocket.OPEN && ws.readyState !== WebSocket.CONNECTING) {
-      console.log('[Mobile] Closing bad websocket state ' + ws.readyState);
+      console.log('[WebSocket] Closing bad websocket state', ws.readyState);
       try { ws.close(); } catch(e) {}
       ws = null;
     }
     if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
-      console.log('[Mobile] WebSocket already connecting/open');
+      console.log('[WebSocket] Already connecting/open');
       return;
     }
     wsCandidates = getWsCandidates();
-    console.log('[Mobile] WS candidates (' + wsCandidates.length + '):', wsCandidates);
+    console.log('[WebSocket] Generated candidates (' + wsCandidates.length + '):', wsCandidates);
     if (!wsCandidates.length){
-      setStatus('ERROR: No WebSocket URL candidates generated!');
-      console.error('[Mobile] No candidates - location.protocol=' + location.protocol + ', hostname=' + location.hostname);
+      setStatus('ERROR: No WebSocket URL candidates');
+      console.error('[WebSocket] No candidates - check network and location:', {
+        protocol: location.protocol,
+        hostname: location.hostname,
+        origin: location.origin
+      });
       scheduleReconnect();
       return;
     }
@@ -912,34 +937,36 @@
 
     let opened = false;
     try{
+      console.log('[WebSocket] Attempting to connect to:', url);
       ws = new WebSocket(url);
-      setStatus(`Connecting WS ${wsCandidateIndex + 1}/${wsCandidates.length}: ${url}`);
+      setStatus(`Connecting ${wsCandidateIndex + 1}/${wsCandidates.length}...`);
       if (connectTimeoutTimer) clearTimeout(connectTimeoutTimer);
       connectTimeoutTimer = setTimeout(() => {
         if (ws && ws.readyState === WebSocket.CONNECTING){
-          console.warn('[Mobile] WebSocket connect timeout - trying next candidate');
+          console.warn('[WebSocket] Connection timeout after', WS_CONNECT_TIMEOUT, 'ms - trying next candidate');
           try { ws.close(); } catch {}
         }
       }, WS_CONNECT_TIMEOUT);
     } catch(e){
-      setStatus('WebSocket failed to construct');
+      console.error('[WebSocket] Failed to construct:', e);
+      setStatus('WebSocket error: ' + (e.message || 'unknown'));
       wsCandidateIndex = (wsCandidateIndex + 1) % wsCandidates.length;
       scheduleReconnect();
       return;
     }
 
     ws.onopen = () => {
-      console.log('[Mobile] WebSocket onopen event fired');
+      console.log('[WebSocket] Connected successfully to:', url);
       opened = true;
       if (connectTimeoutTimer) {
         clearTimeout(connectTimeoutTimer);
         connectTimeoutTimer = null;
       }
       setStatus('Connected');
-      reconnectAttempts = 0; // Reset backoff on successful connection
-      lastServerMessage = Date.now(); // Reset heartbeat timer
+      reconnectAttempts = 0;
+      lastServerMessage = Date.now();
       wsAuthenticated = true;
-      console.log('[Mobile] WebSocket connected - resetting reconnect backoff');
+      console.log('[WebSocket] Connection established - resetting reconnect backoff');
 
       // Schedule ticket refresh to keep session alive
       if (!authToken && shared.refreshWsTicket){
@@ -1062,13 +1089,14 @@
         connectTimeoutTimer = null;
       }
       const hadOpened = opened;
-      setStatus('Disconnected – reconnecting…');
+      console.log('[WebSocket] Closed', { hadOpened, candidateIndex: wsCandidateIndex });
+      setStatus('Reconnecting...');
       setShellStatus('Disconnected');
       shellOpen = false;
       if (wsCandidates.length > 1){
         wsCandidateIndex = (wsCandidateIndex + 1) % wsCandidates.length;
         if (!hadOpened){
-          // Try next candidate quickly without backoff on failed connections
+          console.log('[WebSocket] Trying next candidate immediately:', wsCandidates[wsCandidateIndex]);
           reconnectTimer = setTimeout(connect, 100);
           return;
         }
@@ -1077,7 +1105,12 @@
     };
 
     ws.onerror = (ev) => {
-      console.log('[Mobile] WebSocket onerror event:', ev);
+      console.error('[WebSocket] Error event:', {
+        code: ev.code,
+        reason: ev.reason,
+        message: ev.message,
+        type: ev.type
+      });
       try { ws.close(); } catch {}
     };
   }
