@@ -42,6 +42,7 @@
   const deviceShell = document.getElementById('deviceShell');
   const themeNameEl = document.getElementById('themeName');
   const navDevice = document.getElementById('navDevice');
+  const navTerminal = document.getElementById('navTerminal');
   const navSystem = document.getElementById('navSystem');
   const navLoot = document.getElementById('navLoot');
   const navSettings = document.getElementById('navSettings');
@@ -51,8 +52,11 @@
   const sidebarBackdrop = document.getElementById('sidebarBackdrop');
   const menuToggle = document.getElementById('menuToggle');
   const deviceTab = document.getElementById('deviceTab');
+  const terminalTab = document.getElementById('terminalTab');
   const systemDropdown = document.getElementById('systemDropdown');
   const settingsTab = document.getElementById('settingsTab');
+  const settingsDropdown = document.getElementById('settingsDropdown');
+  const settingsToggle = document.getElementById('settingsToggle');
   const lootTab = document.getElementById('lootTab');
   const systemStatus = document.getElementById('systemStatus');
   const sysCpuValue = document.getElementById('sysCpuValue');
@@ -2178,6 +2182,7 @@
     if (shellOpen) sendShellResize();
   });
   if (navDevice) navDevice.addEventListener('click', () => setActiveTab('device'));
+  if (navTerminal) navTerminal.addEventListener('click', () => setActiveTab('terminal'));
   if (navSystem) navSystem.addEventListener('click', () => {
     setSystemOpen(!systemOpen);
   });
@@ -2207,6 +2212,23 @@
     });
   });
   if (menuToggle) menuToggle.addEventListener('click', () => setSidebarOpen(true));
+
+  // Settings dropdown toggle
+  if (settingsToggle) {
+    settingsToggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (settingsDropdown) {
+        settingsDropdown.classList.toggle('hidden');
+      }
+    });
+  }
+
+  // Close settings dropdown when clicking outside
+  document.addEventListener('click', () => {
+    if (settingsDropdown && !settingsDropdown.classList.contains('hidden')) {
+      settingsDropdown.classList.add('hidden');
+    }
+  });
   if (sidebarBackdrop) sidebarBackdrop.addEventListener('click', () => setSidebarOpen(false));
   if (lootUpBtn) lootUpBtn.addEventListener('click', () => {
     if (lootState.parent !== undefined){

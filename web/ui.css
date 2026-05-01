@@ -2024,3 +2024,32 @@ select:focus {
   color: #fca5a5;
   box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.2), 0 4px 12px rgba(239, 68, 68, 0.1);
 }
+
+/* Hide Settings tab on mobile - use dropdown instead */
+@media (max-width: 768px) {
+  #settingsTab {
+    display: none !important;
+  }
+
+  #navSettings {
+    display: none !important;
+  }
+
+  /* Settings dropdown styling */
+  #settingsDropdown {
+    z-index: 50;
+  }
+
+  #settingsDropdown input {
+    font-size: 14px !important;
+  }
+}
+
+/* Settings dropdown show/hide */
+#settingsDropdown:not(.hidden) {
+  display: block;
+}
+
+#settingsDropdown.hidden {
+  display: none;
+}
