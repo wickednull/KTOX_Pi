@@ -2319,16 +2319,6 @@
   const payloadsMobRefresh = document.getElementById('payloadsMobRefresh');
   if (payloadsMobRefresh) payloadsMobRefresh.addEventListener('click', () => loadPayloads());
 
-  // Settings button in header (mobile and desktop)
-  const settingsToggle = document.getElementById('settingsToggle');
-  if (settingsToggle) {
-    settingsToggle.addEventListener('click', () => {
-      setActiveTab('settings');
-      loadDiscordWebhook();
-      loadTailscaleSettings();
-    });
-  }
-
   // ── Mobile system stats loader ────────────────────────────────────────────
   window.loadMobileSystemStatus = async function(){
     const status = document.getElementById('mobileSystemStatus');
