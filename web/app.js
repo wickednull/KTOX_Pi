@@ -2430,7 +2430,10 @@
     if (systemPollTimer) clearTimeout(systemPollTimer);
     const delay = document.hidden ? 10000 : 3000;
     systemPollTimer = setTimeout(async () => {
-      if (systemOpen){
+      const isMobile = window.matchMedia('(max-width: 768px)').matches;
+      if (isMobile && activeTab === 'system'){
+        await loadMobileSystemStatus();
+      } else if (!isMobile && systemOpen){
         await loadSystemStatus();
       }
       scheduleSystemPoll();
@@ -2449,13 +2452,23 @@
           reconnectTimer = null;
         }
         setTimeout(() => {
-          if (systemOpen) loadSystemStatus();
+          const isMobile = window.matchMedia('(max-width: 768px)').matches;
+          if (isMobile && activeTab === 'system'){
+            loadMobileSystemStatus();
+          } else if (!isMobile && systemOpen){
+            loadSystemStatus();
+          }
           pollPayloadStatus();
           ensureSocketLive('app-visible');
         }, 100);
       } else if (ws && ws.readyState === WebSocket.OPEN) {
         // Already connected, just refresh data
-        if (systemOpen) loadSystemStatus();
+        const isMobile = window.matchMedia('(max-width: 768px)').matches;
+        if (isMobile && activeTab === 'system'){
+          loadMobileSystemStatus();
+        } else if (!isMobile && systemOpen){
+          loadSystemStatus();
+        }
         pollPayloadStatus();
       }
     }
