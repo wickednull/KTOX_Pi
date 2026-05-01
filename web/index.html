@@ -415,6 +415,7 @@
 
       <nav class="p-3 space-y-2 flex-1 min-h-0 overflow-y-auto overscroll-contain">
         <button id="navDevice" type="button" class="w-full px-3 py-2 rounded-xl text-left text-sm font-semibold border border-red-400/30 bg-red-800/10 text-red-400 shadow-[0_0_16px_rgba(16,185,129,0.15)]"><i class="fa-solid fa-gamepad mr-2"></i>Device</button>
+        <button id="navTerminal" type="button" class="w-full px-3 py-2 rounded-xl text-left text-sm font-semibold border border-slate-400/20 bg-slate-800/40 text-slate-300 hover:text-white hover:bg-slate-700/50 transition"><i class="fa-solid fa-terminal mr-2"></i>Terminal</button>
         <button id="navSystem" type="button" class="w-full px-3 py-2 rounded-xl text-left text-sm font-semibold border border-slate-400/20 bg-slate-800/40 text-slate-300 hover:text-white hover:bg-slate-700/50 transition"><i class="fa-solid fa-microchip mr-2"></i>System</button>
         <!-- System Monitor Dropdown -->
         <div id="systemDropdown" class="hidden rounded-xl border border-slate-800/80 bg-slate-950/40 p-2 space-y-2 mt-1">
@@ -500,36 +501,8 @@
       </div>
 
       <!-- Device card -->
-      <div id="deviceTab" class="block overflow-y-hidden">
-        <div class="flex flex-col md:flex-row md:items-start md:gap-6">
-          <div class="terminal-col md:order-1 order-2 flex-1 min-w-0">
-            <div class="terminal-wrap terminal-divider md:pr-6">
-              <div class="flex items-center justify-between px-4 py-3 border-b border-slate-800/70">
-                <div class="text-sm font-semibold text-red-400">Terminal</div>
-                <div class="flex items-center gap-2">
-                  <div id="shellStatus" class="text-[11px] text-slate-400">Disconnected</div>
-                  <button id="shellConnect" type="button" class="px-3 py-1.5 text-xs rounded-lg bg-red-900/80 border border-red-300/30 text-white hover:bg-red-800/80 transition">Open</button>
-                  <button id="shellDisconnect" type="button" class="px-3 py-1.5 text-xs rounded-lg bg-slate-800/80 border border-slate-600/40 text-slate-200 hover:bg-slate-700/80 transition">Close</button>
-                </div>
-              </div>
-              <div id="terminal" class="terminal-body"></div>
-              <div id="terminalQuickBar" class="flex flex-wrap items-center gap-1.5 px-3 py-2 border-t border-slate-800/70">
-                <button class="shell-key-btn" data-shell-key="&#x03;" title="Ctrl+C">^C</button>
-                <button class="shell-key-btn" data-shell-key="&#x04;" title="Ctrl+D">^D</button>
-                <button class="shell-key-btn" data-shell-key="&#x1a;" title="Ctrl+Z">^Z</button>
-                <button class="shell-key-btn" data-shell-key="&#x0c;" title="Ctrl+L (clear)">^L</button>
-                <button class="shell-key-btn" data-shell-key="&#x01;" title="Ctrl+A (start of line)">^A</button>
-                <button class="shell-key-btn" data-shell-key="&#x05;" title="Ctrl+E (end of line)">^E</button>
-                <button class="shell-key-btn" data-shell-key="&#x0b;" title="Ctrl+K (kill to end)">^K</button>
-                <button class="shell-key-btn" data-shell-key="&#x1b;" title="Escape">ESC</button>
-                <button class="shell-key-btn" data-shell-key="&#x1b;[A" title="Arrow Up">↑</button>
-                <button class="shell-key-btn" data-shell-key="&#x1b;[B" title="Arrow Down">↓</button>
-                <button class="shell-key-btn" data-shell-key="&#x09;" title="Tab">TAB</button>
-              </div>
-            </div>
-          </div>
-
-          <div class="device-shell-col md:order-2 order-1 flex justify-center md:justify-end md:pl-6">
+      <div id="deviceTab" class="block overflow-hidden h-screen flex items-center justify-center">
+          <div class="device-shell-col flex justify-center">
             <div id="deviceShell" data-theme="neon" class="device-shell theme-neon rounded-3xl p-4 md:p-5 w-full md:w-fit mx-auto md:mx-0">
       <div class="pager-clip" aria-hidden="true"></div>
       <div class="pager-brand">KTOx_Pi</div>
@@ -648,6 +621,34 @@
         <div class="text-center text-xs text-gray-300">OK = Enter · KEY3 = Esc</div>
         <div id="status-syndicate" class="status-text text-center text-[11px] text-gray-500 mt-1">Connecting…</div>
       </div>
+            </div>
+      </div>
+
+      <!-- Terminal Tab -->
+      <div id="terminalTab" class="hidden block overflow-y-auto">
+        <div class="flex flex-col h-full">
+          <div class="terminal-wrap terminal-divider flex-1 flex flex-col min-h-0">
+            <div class="flex items-center justify-between px-4 py-3 border-b border-slate-800/70">
+              <div class="text-sm font-semibold text-red-400">Terminal</div>
+              <div class="flex items-center gap-2">
+                <div id="shellStatus" class="text-[11px] text-slate-400">Disconnected</div>
+                <button id="shellConnect" type="button" class="px-3 py-1.5 text-xs rounded-lg bg-red-900/80 border border-red-300/30 text-white hover:bg-red-800/80 transition">Open</button>
+                <button id="shellDisconnect" type="button" class="px-3 py-1.5 text-xs rounded-lg bg-slate-800/80 border border-slate-600/40 text-slate-200 hover:bg-slate-700/80 transition">Close</button>
+              </div>
+            </div>
+            <div id="terminal" class="terminal-body flex-1"></div>
+            <div id="terminalQuickBar" class="flex flex-wrap items-center gap-1.5 px-3 py-2 border-t border-slate-800/70">
+              <button class="shell-key-btn" data-shell-key="&#x03;" title="Ctrl+C">^C</button>
+              <button class="shell-key-btn" data-shell-key="&#x04;" title="Ctrl+D">^D</button>
+              <button class="shell-key-btn" data-shell-key="&#x1a;" title="Ctrl+Z">^Z</button>
+              <button class="shell-key-btn" data-shell-key="&#x0c;" title="Ctrl+L (clear)">^L</button>
+              <button class="shell-key-btn" data-shell-key="&#x01;" title="Ctrl+A (start of line)">^A</button>
+              <button class="shell-key-btn" data-shell-key="&#x05;" title="Ctrl+E (end of line)">^E</button>
+              <button class="shell-key-btn" data-shell-key="&#x0b;" title="Ctrl+K (kill to end)">^K</button>
+              <button class="shell-key-btn" data-shell-key="&#x1b;" title="Escape">ESC</button>
+              <button class="shell-key-btn" data-shell-key="&#x1b;[A" title="Arrow Up">↑</button>
+              <button class="shell-key-btn" data-shell-key="&#x1b;[B" title="Arrow Down">↓</button>
+              <button class="shell-key-btn" data-shell-key="&#x09;" title="Tab">TAB</button>
             </div>
           </div>
         </div>

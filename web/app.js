@@ -42,6 +42,7 @@
   const deviceShell = document.getElementById('deviceShell');
   const themeNameEl = document.getElementById('themeName');
   const navDevice = document.getElementById('navDevice');
+  const navTerminal = document.getElementById('navTerminal');
   const navSystem = document.getElementById('navSystem');
   const navLoot = document.getElementById('navLoot');
   const navSettings = document.getElementById('navSettings');
@@ -51,6 +52,7 @@
   const sidebarBackdrop = document.getElementById('sidebarBackdrop');
   const menuToggle = document.getElementById('menuToggle');
   const deviceTab = document.getElementById('deviceTab');
+  const terminalTab = document.getElementById('terminalTab');
   const systemDropdown = document.getElementById('systemDropdown');
   const settingsTab = document.getElementById('settingsTab');
   const lootTab = document.getElementById('lootTab');
@@ -2178,6 +2180,7 @@
     if (shellOpen) sendShellResize();
   });
   if (navDevice) navDevice.addEventListener('click', () => setActiveTab('device'));
+  if (navTerminal) navTerminal.addEventListener('click', () => setActiveTab('terminal'));
   if (navSystem) navSystem.addEventListener('click', () => {
     setSystemOpen(!systemOpen);
   });
