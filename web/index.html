@@ -2,15 +2,13 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, maximum-scale=1, minimum-scale=1, shrink-to-fit=no">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, maximum-scale=1, minimum-scale=1">
 
   <!-- iOS PWA Support -->
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="KTOx">
-  <meta name="apple-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
 
   <!-- PWA & Mobile Support -->
   <meta name="mobile-web-app-capable" content="yes">
@@ -25,57 +23,15 @@
   <meta name="format-detection" content="telephone=no">
   <meta name="format-detection" content="email=no">
 
-  <!-- iOS-specific styling and app appearance -->
+  <!-- Prevent iOS font scaling -->
   <style>
     input { font-size: 16px !important; }
-
-    /* iOS PWA support - prevent pinch zoom and improve responsiveness */
-    html, body {
-      width: 100%;
-      height: 100%;
-      -webkit-touch-callout: none;
-    }
-
-    body {
-      -webkit-user-select: none;
-      user-select: none;
-      overflow: hidden;
-    }
-
-    /* Allow text selection in content areas */
-    main, #deviceTab, #systemTab, #settingsTab, #lootTab, #payloadsTab {
-      -webkit-user-select: text;
-      user-select: text;
-    }
-
-    /* Improve tap responsiveness */
-    button, a, [role="button"] {
-      -webkit-tap-highlight-color: transparent;
-    }
-
-    /* Fix iOS input styling */
-    input, textarea, select {
-      -webkit-appearance: none;
-      appearance: none;
-      border-radius: 8px;
-      font-size: 16px;
-    }
-
-    /* iOS notch support */
-    @supports (padding: max(0px)) {
-      body {
-        padding-left: max(0px, env(safe-area-inset-left));
-        padding-right: max(0px, env(safe-area-inset-right));
-        padding-top: max(0px, env(safe-area-inset-top));
-      }
-    }
   </style>
 
   <title>KTOx WebUI</title>
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" type="image/png" href="./ktox.png?v=4">
   <link rel="apple-touch-icon" href="./ktox.png?v=4">
-  <link rel="apple-touch-startup-image" href="./ktox.png?v=4">
   <link rel="shortcut icon" href="./ktox.png?v=4">
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm/css/xterm.css">
@@ -540,6 +496,47 @@
         <div class="flex items-center gap-2">
           <button id="menuToggle" type="button" class="md:hidden px-3 py-2 rounded-lg bg-slate-800/60 border border-slate-600/40 text-slate-200"><i class="fa-solid fa-bars"></i></button>
           <button id="settingsToggle" type="button" class="px-3 py-1.5 text-xs rounded-lg bg-slate-800/80 border border-slate-600/40 text-slate-200 hover:bg-slate-700/80 transition"><i class="fa-solid fa-sliders"></i></button>
+        </div>
+      </div>
+
+      <!-- Dashboard Status Header -->
+      <div id="dashboardStatus" class="mb-6 grid grid-cols-1 md:grid-cols-4 gap-4">
+        <!-- Connection Status Card -->
+        <div class="rounded-2xl border border-slate-800/60 bg-gradient-to-br from-slate-900/80 to-slate-950/80 backdrop-blur p-4 shadow-lg hover:border-slate-700/80 transition">
+          <div class="flex items-center justify-between mb-2">
+            <div class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Connection</div>
+            <div id="connectionDot" class="w-2.5 h-2.5 rounded-full bg-amber-500/60 animate-pulse"></div>
+          </div>
+          <div id="connectionStatus" class="text-lg font-bold text-slate-100">Connecting...</div>
+          <div id="connectionType" class="text-xs text-slate-500 mt-1">WebSocket</div>
+        </div>
+
+        <!-- Device Info Card -->
+        <div class="rounded-2xl border border-slate-800/60 bg-gradient-to-br from-slate-900/80 to-slate-950/80 backdrop-blur p-4 shadow-lg hover:border-slate-700/80 transition">
+          <div class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Device</div>
+          <div id="deviceName" class="text-lg font-bold text-slate-100">KTOx Pi</div>
+          <div id="deviceIp" class="text-xs text-slate-500 mt-1">0.0.0.0</div>
+        </div>
+
+        <!-- System Health Card -->
+        <div class="rounded-2xl border border-slate-800/60 bg-gradient-to-br from-slate-900/80 to-slate-950/80 backdrop-blur p-4 shadow-lg hover:border-slate-700/80 transition">
+          <div class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Health</div>
+          <div class="flex items-baseline gap-2">
+            <div id="healthScore" class="text-lg font-bold text-emerald-400">--</div>
+            <div class="text-xs text-slate-500">/ 100</div>
+          </div>
+          <div class="flex gap-1 mt-2 h-1 rounded-full overflow-hidden bg-slate-800/50">
+            <div id="healthBar" class="bg-gradient-to-r from-emerald-500 to-emerald-400 rounded-full" style="width: 0%"></div>
+          </div>
+        </div>
+
+        <!-- Network Card -->
+        <div class="rounded-2xl border border-slate-800/60 bg-gradient-to-br from-slate-900/80 to-slate-950/80 backdrop-blur p-4 shadow-lg hover:border-slate-700/80 transition">
+          <div class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Network</div>
+          <div class="text-xs text-slate-300 space-y-1">
+            <div><span class="text-slate-500">Uptime:</span> <span id="quickUptime">--</span></div>
+            <div><span class="text-slate-500">Payload:</span> <span id="quickPayload" class="text-amber-400">Idle</span></div>
+          </div>
         </div>
       </div>
 

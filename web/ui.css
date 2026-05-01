@@ -1488,3 +1488,539 @@ main > .flex.items-center.justify-between.mb-4.md\:mb-6 {
   }
 
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   DASHBOARD & CARDS STYLING
+   ═══════════════════════════════════════════════════════════════ */
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes glow {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(139, 0, 0, 0.1), 0 14px 30px rgba(2, 6, 23, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(139, 0, 0, 0.15), 0 14px 30px rgba(2, 6, 23, 0.35);
+  }
+}
+
+#dashboardStatus {
+  animation: fadeInUp 0.6s ease-out;
+}
+
+#dashboardStatus > div {
+  animation: fadeInUp 0.6s ease-out;
+  animation-fill-mode: both;
+}
+
+#dashboardStatus > div:nth-child(1) { animation-delay: 0.1s; }
+#dashboardStatus > div:nth-child(2) { animation-delay: 0.15s; }
+#dashboardStatus > div:nth-child(3) { animation-delay: 0.2s; }
+#dashboardStatus > div:nth-child(4) { animation-delay: 0.25s; }
+
+/* Status Card Improvements */
+#dashboardStatus > div {
+  border-radius: 16px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+#dashboardStatus > div::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0) 100%);
+  pointer-events: none;
+  border-radius: 16px;
+}
+
+#dashboardStatus > div:hover {
+  transform: translateY(-2px);
+  border-color: rgba(148, 163, 184, 0.4);
+  box-shadow: 0 12px 24px rgba(2, 6, 23, 0.5);
+}
+
+/* Connection Status Indicator */
+#connectionDot {
+  transition: all 0.3s ease;
+}
+
+#connectionDot.connected {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  box-shadow: 0 0 12px rgba(16, 185, 129, 0.5);
+  animation: none;
+}
+
+#connectionDot.error {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.5);
+  animation: pulse 1s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+#connectionDot.connecting {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  box-shadow: 0 0 12px rgba(245, 158, 11, 0.5);
+  animation: pulse 1s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Improved Button Styling */
+button {
+  position: relative;
+  overflow: hidden;
+}
+
+button::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+  transform: translate(-50%, -50%);
+  transition: width 0.6s, height 0.6s;
+}
+
+button:active::before {
+  width: 300px;
+  height: 300px;
+}
+
+/* Enhanced Text Styling */
+.text-xs {
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+.font-bold {
+  font-weight: 700;
+}
+
+/* Better Terminal Styling */
+.terminal-wrap {
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 20px 40px rgba(2, 6, 23, 0.4);
+  animation: fadeInUp 0.6s ease-out 0.3s backwards;
+}
+
+/* Card Shadow Enhancement */
+.rounded-xl, .rounded-2xl, .rounded-3xl {
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.05), 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ADVANCED CARD & COMPONENT STYLING
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Enhanced Terminal Card */
+#deviceTab .terminal-wrap,
+#settingsTab > div,
+#lootTab > div {
+  border-radius: 20px;
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.4) 0%, rgba(15, 23, 42, 0.2) 100%);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.05), 0 8px 24px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+  backdrop-filter: blur(10px);
+}
+
+#deviceTab .terminal-wrap:hover {
+  border-color: rgba(148, 163, 184, 0.25);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 12px 32px rgba(0, 0, 0, 0.25);
+}
+
+/* Terminal Header Improvements */
+.terminal-wrap .flex.items-center.justify-between {
+  background: linear-gradient(90deg, rgba(0, 0, 0, 0.1) 0%, rgba(0, 0, 0, 0) 100%);
+  padding: 12px 16px !important;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+}
+
+/* Terminal Body */
+.terminal-body {
+  background: radial-gradient(600px 800px at 50% -10%, rgba(15, 23, 42, 0.3) 0%, rgba(5, 6, 10, 0.8) 100%) !important;
+}
+
+/* Button Styling - All Buttons */
+button {
+  position: relative;
+  border-radius: 10px;
+  font-weight: 600;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+button:not(:disabled):hover {
+  transform: translateY(-1px);
+}
+
+button:not(:disabled):active {
+  transform: translateY(0);
+}
+
+/* Primary Action Buttons */
+.bg-red-900\/80 {
+  background: linear-gradient(135deg, #991b1b 0%, #7f1d1d 100%) !important;
+  border-color: rgba(239, 68, 68, 0.3) !important;
+}
+
+.bg-red-900\/80:hover {
+  background: linear-gradient(135deg, #a71e1e 0%, #8b2121 100%) !important;
+  box-shadow: 0 8px 16px rgba(239, 68, 68, 0.2) !important;
+}
+
+/* Secondary Action Buttons */
+.bg-slate-800\/80 {
+  background: linear-gradient(135deg, rgba(30, 41, 59, 0.8) 0%, rgba(15, 23, 42, 0.8) 100%) !important;
+  border-color: rgba(148, 163, 184, 0.2) !important;
+}
+
+.bg-slate-800\/80:hover {
+  background: linear-gradient(135deg, rgba(51, 65, 85, 0.9) 0%, rgba(30, 41, 59, 0.9) 100%) !important;
+  box-shadow: 0 8px 16px rgba(15, 23, 42, 0.3) !important;
+}
+
+/* Input Fields Enhancement */
+input[type="text"],
+input[type="password"],
+input[type="email"],
+textarea,
+select {
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(15, 23, 42, 0.6);
+  color: #e2e8f0;
+  padding: 10px 14px;
+  font-size: 14px;
+  transition: all 0.2s ease;
+}
+
+input[type="text"]:focus,
+input[type="password"]:focus,
+input[type="email"]:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  border-color: rgba(239, 68, 68, 0.4);
+  background: rgba(15, 23, 42, 0.8);
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1), 0 0 12px rgba(239, 68, 68, 0.15);
+}
+
+/* Tab Content Cards */
+#systemTab > .rounded-3xl,
+#settingsTab > .rounded-3xl,
+#lootTab > .rounded-3xl {
+  border-radius: 24px;
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.4) 0%, rgba(15, 23, 42, 0.2) 100%);
+  backdrop-filter: blur(10px);
+  animation: fadeInUp 0.5s ease-out;
+}
+
+/* Grid Cards */
+.rounded-xl {
+  border-radius: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  transition: all 0.3s ease;
+}
+
+.rounded-xl:hover {
+  border-color: rgba(148, 163, 184, 0.25);
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.5) 0%, rgba(15, 23, 42, 0.3) 100%);
+  transform: translateY(-2px);
+}
+
+/* Shell Key Buttons */
+.shell-key-btn {
+  font-family: 'JetBrains Mono', monospace !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.05em !important;
+  border-radius: 8px !important;
+  padding: 4px 10px !important;
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.8) 0%, rgba(5, 6, 10, 0.9) 100%) !important;
+  border: 1px solid rgba(148, 163, 184, 0.2) !important;
+  color: #cbd5e1 !important;
+  transition: all 0.2s ease !important;
+}
+
+.shell-key-btn:hover {
+  background: linear-gradient(135deg, rgba(51, 65, 85, 0.9) 0%, rgba(30, 41, 59, 0.9) 100%) !important;
+  border-color: rgba(239, 68, 68, 0.3) !important;
+  color: #f1f5f9 !important;
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.1) !important;
+}
+
+.shell-key-btn:active {
+  transform: scale(0.95) !important;
+}
+
+/* Status Indicators */
+.payload-status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #64748b;
+  box-shadow: 0 0 8px rgba(100, 116, 139, 0.3);
+  transition: all 0.3s ease;
+}
+
+.payload-status-dot.ready {
+  background: #10b981;
+  box-shadow: 0 0 12px rgba(16, 185, 129, 0.4);
+}
+
+.payload-status-dot.running {
+  background: #ef4444;
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.4);
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Smooth Page Transitions */
+@keyframes pageSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+#deviceTab, #systemTab, #settingsTab, #lootTab, #payloadsTab {
+  animation: pageSlideIn 0.3s ease-out;
+}
+
+/* Mobile Optimizations */
+@media (max-width: 768px) {
+  button {
+    font-size: 12px;
+    padding: 8px 12px !important;
+  }
+
+  .rounded-xl {
+    border-radius: 14px;
+  }
+
+  .rounded-2xl {
+    border-radius: 16px;
+  }
+
+  #dashboardStatus {
+    grid-template-columns: 1fr;
+    gap: 3px;
+  }
+
+  #dashboardStatus > div {
+    padding: 12px !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   SIDEBAR & NAVIGATION ENHANCEMENTS
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Sidebar Improvements */
+#sidebar {
+  background: linear-gradient(180deg, rgba(2, 6, 23, 0.9) 0%, rgba(5, 6, 10, 0.95) 100%);
+  border-right: 1px solid rgba(148, 163, 184, 0.1);
+  box-shadow: inset -20px 0 40px rgba(0, 0, 0, 0.2);
+}
+
+/* Sidebar Header */
+#sidebar > div:first-child {
+  background: linear-gradient(135deg, rgba(0, 0, 0, 0.1) 0%, rgba(0, 0, 0, 0) 100%);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.08);
+  padding: 16px !important;
+}
+
+/* Sidebar Logo */
+#sidebar img {
+  transition: all 0.3s ease;
+  filter: drop-shadow(0 0 12px rgba(139, 0, 0, 0.25));
+}
+
+#sidebar:hover img {
+  filter: drop-shadow(0 0 16px rgba(139, 0, 0, 0.35));
+  transform: scale(1.05);
+}
+
+/* Navigation Buttons */
+#sidebar nav > button,
+#sidebar nav > a {
+  position: relative;
+  border-radius: 14px;
+  font-weight: 600;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+}
+
+/* Default Nav Button State */
+#sidebar nav > button,
+#sidebar nav > a {
+  background: rgba(15, 23, 42, 0.3);
+  border: 1px solid rgba(148, 163, 184, 0.1);
+  color: #cbd5e1;
+}
+
+#sidebar nav > button:hover,
+#sidebar nav > a:hover {
+  background: rgba(51, 65, 85, 0.4);
+  border-color: rgba(148, 163, 184, 0.2);
+  color: #f1f5f9;
+  transform: translateX(2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+/* Active Device Button */
+#navDevice {
+  background: linear-gradient(135deg, rgba(127, 29, 29, 0.3) 0%, rgba(159, 18, 57, 0.2) 100%) !important;
+  border-color: rgba(239, 68, 68, 0.3) !important;
+  color: #fca5a5 !important;
+  box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.2), 0 4px 12px rgba(239, 68, 68, 0.1) !important;
+}
+
+#navDevice:hover {
+  background: linear-gradient(135deg, rgba(143, 32, 32, 0.4) 0%, rgba(177, 24, 65, 0.3) 100%) !important;
+  box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.3), 0 6px 16px rgba(239, 68, 68, 0.15) !important;
+}
+
+/* Nav Button with Active Indicator */
+#sidebar nav > button.nav-active::before,
+#sidebar nav > a.nav-active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #ef4444 0%, #dc2626 100%);
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.5);
+}
+
+/* System Dropdown Styling */
+#systemDropdown {
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.6) 0%, rgba(15, 23, 42, 0.4) 100%) !important;
+  border: 1px solid rgba(148, 163, 184, 0.15) !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2) !important;
+  backdrop-filter: blur(12px);
+}
+
+#systemDropdown > div:first-child {
+  background: linear-gradient(135deg, rgba(0, 0, 0, 0.1) 0%, rgba(0, 0, 0, 0) 100%);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.08);
+  padding: 10px 8px !important;
+}
+
+#systemDropdown .rounded-lg {
+  background: linear-gradient(135deg, rgba(30, 41, 59, 0.4) 0%, rgba(15, 23, 42, 0.4) 100%) !important;
+  border: 1px solid rgba(148, 163, 184, 0.1) !important;
+  transition: all 0.2s ease;
+}
+
+#systemDropdown .rounded-lg:hover {
+  background: linear-gradient(135deg, rgba(51, 65, 85, 0.5) 0%, rgba(30, 41, 59, 0.5) 100%) !important;
+  border-color: rgba(148, 163, 184, 0.2) !important;
+}
+
+/* Progress Bars in System Dropdown */
+#systemDropdown .h-1\.5 {
+  background: rgba(30, 41, 59, 0.4) !important;
+}
+
+/* Payloads Section */
+#payloadSidebar {
+  padding: 8px !important;
+}
+
+#payloadSidebar > div {
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.1);
+  background: rgba(15, 23, 42, 0.3);
+  padding: 10px 12px !important;
+  font-size: 12px;
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+#payloadSidebar > div:hover {
+  background: rgba(15, 23, 42, 0.5);
+  border-color: rgba(148, 163, 184, 0.2);
+  transform: translateX(1px);
+}
+
+#payloadSidebar > div.selected {
+  background: linear-gradient(135deg, rgba(127, 29, 29, 0.2) 0%, rgba(159, 18, 57, 0.15) 100%);
+  border-color: rgba(239, 68, 68, 0.25);
+  color: #fca5a5;
+}
+
+/* Top Bar - Mobile */
+#mobileTopBar {
+  background: linear-gradient(90deg, rgba(5, 6, 10, 0.95) 0%, rgba(5, 6, 10, 0.85) 100%);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+  backdrop-filter: blur(12px);
+}
+
+/* Bottom Navigation - Mobile */
+#mobileNav {
+  background: linear-gradient(0deg, rgba(5, 6, 10, 0.98) 0%, rgba(5, 6, 10, 0.95) 100%);
+  border-top: 1px solid rgba(148, 163, 184, 0.1);
+  backdrop-filter: blur(12px);
+}
+
+.mob-nav-btn {
+  position: relative;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 8px 12px !important;
+  border-radius: 12px;
+  transition: all 0.25s ease;
+  color: #94a3b8;
+  font-size: 11px;
+}
+
+.mob-nav-btn:hover {
+  background: rgba(51, 65, 85, 0.4);
+  color: #cbd5e1;
+}
+
+.mob-nav-btn.mob-nav-active {
+  background: linear-gradient(135deg, rgba(127, 29, 29, 0.3) 0%, rgba(159, 18, 57, 0.2) 100%);
+  color: #fca5a5;
+  box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.2), 0 4px 12px rgba(239, 68, 68, 0.1);
+}
