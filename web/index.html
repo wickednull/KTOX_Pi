@@ -2,13 +2,15 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, maximum-scale=1, minimum-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, maximum-scale=1, minimum-scale=1, shrink-to-fit=no">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 
   <!-- iOS PWA Support -->
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="KTOx">
-  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
 
   <!-- PWA & Mobile Support -->
   <meta name="mobile-web-app-capable" content="yes">
@@ -23,9 +25,50 @@
   <meta name="format-detection" content="telephone=no">
   <meta name="format-detection" content="email=no">
 
-  <!-- Prevent iOS font scaling -->
+  <!-- iOS-specific styling and app appearance -->
   <style>
     input { font-size: 16px !important; }
+
+    /* iOS PWA support - prevent pinch zoom and improve responsiveness */
+    html, body {
+      width: 100%;
+      height: 100%;
+      -webkit-touch-callout: none;
+    }
+
+    body {
+      -webkit-user-select: none;
+      user-select: none;
+      overflow: hidden;
+    }
+
+    /* Allow text selection in content areas */
+    main, #deviceTab, #systemTab, #settingsTab, #lootTab, #payloadsTab {
+      -webkit-user-select: text;
+      user-select: text;
+    }
+
+    /* Improve tap responsiveness */
+    button, a, [role="button"] {
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    /* Fix iOS input styling */
+    input, textarea, select {
+      -webkit-appearance: none;
+      appearance: none;
+      border-radius: 8px;
+      font-size: 16px;
+    }
+
+    /* iOS notch support */
+    @supports (padding: max(0px)) {
+      body {
+        padding-left: max(0px, env(safe-area-inset-left));
+        padding-right: max(0px, env(safe-area-inset-right));
+        padding-top: max(0px, env(safe-area-inset-top));
+      }
+    }
   </style>
 
   <title>KTOx WebUI</title>

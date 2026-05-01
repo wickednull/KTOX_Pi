@@ -2568,13 +2568,32 @@
       reconnectTimer = null;
       reconnectAttempts = 0;
 
-      connect();
-      loadPayloads();
-      schedulePayloadPoll();
-      scheduleSystemPoll();
+      // iOS PWA fix: small delay ensures browser is ready for WebSocket
+      // (on first launch, connection establishment needs proper initialization)
+      setTimeout(() => {
+        connect();
+        loadPayloads();
+        schedulePayloadPoll();
+        scheduleSystemPoll();
+      }, 100);
     });
   };
 
   console.log('[Mobile] Page loaded, starting initialization');
+
+  // Register service worker for iOS PWA caching and offline support
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js')
+      .then((reg) => {
+        console.log('[ServiceWorker] Registered successfully:', reg.scope);
+        if (reg.waiting) {
+          console.log('[ServiceWorker] Update available');
+        }
+      })
+      .catch((err) => {
+        console.warn('[ServiceWorker] Registration failed:', err);
+      });
+  }
+
   startAfterAuth();
 })();
