@@ -327,8 +327,11 @@
   }
 
   function getApiUrl(path, params = {}) {
+    const normalized = String(path || '').startsWith('/api/')
+      ? String(path || '')
+      : `/api${String(path || '').startsWith('/') ? '' : '/'}${String(path || '')}`;
     const p = new URLSearchParams(params);
-    return `/api${path}${p.size > 0 ? '?' + p : ''}`;
+    return `${normalized}${p.size > 0 ? '?' + p : ''}`;
   }
 
   function getForwardSearch() {
@@ -1207,13 +1210,21 @@
   // Auth modal
   let authModalOpen = false;
   let authModalResolve = null;
+  let authModalMode = 'login';
 
   async function ensureAuthenticated(message = 'Log in') {
     if (authToken) return true;
 
+    let mode = 'login';
+    try {
+      const res = await fetch(getApiUrl('/api/auth/bootstrap-status'), { cache: 'no-store' });
+      const data = await res.json();
+      if (res.ok && data && data.initialized === false) mode = 'bootstrap';
+    } catch (e) {}
+
     return new Promise((resolve) => {
       authModalResolve = resolve;
-      showAuthModal('login', message);
+      showAuthModal(mode, mode === 'bootstrap' ? 'Set the first admin account for this device.' : message);
     });
   }
 
@@ -1221,13 +1232,17 @@
     const modal = DOM.get('authModal');
     if (!modal) return;
 
+    authModalMode = mode === 'bootstrap' ? 'bootstrap' : 'login';
     modal.classList.remove('hidden');
     authModalOpen = true;
 
     const title = DOM.get('authModalTitle');
     const msg = DOM.get('authModalMessage');
-    if (title) title.textContent = mode === 'login' ? 'Login' : 'Create Account';
+    if (title) title.textContent = authModalMode === 'login' ? 'Login' : 'Create Account';
     if (msg) msg.textContent = message || '';
+
+    const error = DOM.get('authModalError');
+    if (error) error.textContent = '';
 
     for (const id of ['authModalUsername', 'authModalPassword', 'authModalPasswordConfirm', 'authModalToken']) {
       const el = DOM.get(id);
@@ -1244,39 +1259,46 @@
   async function submitAuthForm() {
     const username = DOM.get('authModalUsername');
     const password = DOM.get('authModalPassword');
-    const token = DOM.get('authModalToken');
+    const confirm = DOM.get('authModalPasswordConfirm');
 
-    const u = (username && username.value) || '';
+    const u = ((username && username.value) || '').trim();
     const p = (password && password.value) || '';
-    const t = (token && token.value) || '';
+    const c = (confirm && confirm.value) || '';
 
     if (!u || !p) {
       const error = DOM.get('authModalError');
       if (error) error.textContent = 'Username and password required';
       return;
     }
+    if (authModalMode === 'bootstrap' && p !== c) {
+      const error = DOM.get('authModalError');
+      if (error) error.textContent = 'Passwords do not match';
+      return;
+    }
 
     try {
-      const res = await fetch(getApiUrl('/api/auth/login'), {
+      const endpoint = authModalMode === 'bootstrap' ? '/api/auth/bootstrap' : '/api/auth/login';
+      const res = await fetch(getApiUrl(endpoint), {
         method: 'POST',
         headers: authHeaders(),
+        credentials: 'include',
         body: JSON.stringify({ username: u, password: p })
       });
 
       const data = await res.json();
       if (!res.ok) {
         const error = DOM.get('authModalError');
-        if (error) error.textContent = data && data.error ? data.error : 'Login failed';
+        if (error) error.textContent = data && data.error ? data.error : (authModalMode === 'bootstrap' ? 'Bootstrap failed' : 'Login failed');
         return;
       }
 
       if (data.token) {
         saveAuthToken(data.token);
         authToken = data.token;
-        closeAuthModal();
-        if (authModalResolve) authModalResolve(true);
-        return;
       }
+      closeAuthModal();
+      if (authModalResolve) authModalResolve(true);
+      return;
     } catch(e) {
       const error = DOM.get('authModalError');
       if (error) error.textContent = 'Network error';
