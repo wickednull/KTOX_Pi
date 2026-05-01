@@ -1423,6 +1423,29 @@
     }
   }
 
+  // Setup auth modal listeners early (needed before showing modal)
+  function setupAuthListeners() {
+    const authModal = DOM.get('authModal');
+    DOM.on(authModal, 'click', (e) => {
+      if (e.target === authModal) closeAuthModal();
+    });
+    DOM.on(DOM.get('authModalConfirm'), 'click', submitAuthForm);
+    DOM.on(DOM.get('authModalCancel'), 'click', () => {
+      closeAuthModal();
+      if (authModalResolve) authModalResolve(false);
+    });
+    DOM.on(DOM.get('authModalClose'), 'click', () => {
+      closeAuthModal();
+      if (authModalResolve) authModalResolve(false);
+    });
+
+    for (const id of ['authModalUsername', 'authModalPassword', 'authModalPasswordConfirm', 'authModalToken']) {
+      DOM.on(DOM.get(id), 'keydown', (e) => {
+        if (e.key === 'Enter') submitAuthForm();
+      });
+    }
+  }
+
   // Event listeners setup
   function setupEventListeners() {
     // Navigation
@@ -1634,27 +1657,6 @@
       // Re-render visualization with filter
     });
 
-    // Auth modal
-    const authModal = DOM.get('authModal');
-    DOM.on(authModal, 'click', (e) => {
-      if (e.target === authModal) closeAuthModal();
-    });
-    DOM.on(DOM.get('authModalConfirm'), 'click', submitAuthForm);
-    DOM.on(DOM.get('authModalCancel'), 'click', () => {
-      closeAuthModal();
-      if (authModalResolve) authModalResolve(false);
-    });
-    DOM.on(DOM.get('authModalClose'), 'click', () => {
-      closeAuthModal();
-      if (authModalResolve) authModalResolve(false);
-    });
-
-    for (const id of ['authModalUsername', 'authModalPassword', 'authModalPasswordConfirm', 'authModalToken']) {
-      DOM.on(DOM.get(id), 'keydown', (e) => {
-        if (e.key === 'Enter') submitAuthForm();
-      });
-    }
-
     // Shell
     DOM.on(DOM.get('shellConnectBtn'), 'click', sendShellOpen);
     DOM.on(DOM.get('shellDisconnectBtn'), 'click', sendShellClose);
@@ -1775,6 +1777,9 @@
   // Initialization
   function startAfterAuth() {
     log('startAfterAuth: checking authentication, hidden=' + document.hidden);
+
+    // Setup auth listeners early (before showing modal)
+    setupAuthListeners();
 
     // First check if auth is initialized
     checkAuthInitialized().then(() => {
