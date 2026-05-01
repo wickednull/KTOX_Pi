@@ -150,6 +150,7 @@
 
   function getWsCandidates(){
     const candidates = [];
+    const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent);
 
     // iOS PWA fix: try manually configured URL first (highest priority)
     const manualUrl = getManualWsUrl();
@@ -192,10 +193,14 @@
     // iOS PWA fix: filter out insecure ws:// on HTTPS pages (mixed content block)
     const isHttps = location.protocol === 'https:';
     if (isHttps) {
-      return Array.from(new Set(candidates.filter(url => url.startsWith('wss://'))));
+      const filtered = Array.from(new Set(candidates.filter(url => url.startsWith('wss://'))));
+      if (isIos) console.log('[iOS] HTTPS detected, filtered to wss:// only:', filtered);
+      return filtered;
     }
 
-    return Array.from(new Set(candidates.filter(Boolean)));
+    const result = Array.from(new Set(candidates.filter(Boolean)));
+    if (isIos) console.log('[iOS] WS candidates generated:', result, { protocol: location.protocol, hostname: location.hostname });
+    return result;
   }
 
   function getApiUrl(path, params = {}){
@@ -1139,7 +1144,12 @@
     };
 
     ws.onerror = (ev) => {
-      console.log('[Mobile] WebSocket onerror event:', ev);
+      const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent);
+      const isSafari = /Safari/.test(navigator.userAgent) && !/Chrome/.test(navigator.userAgent);
+      console.error('[Mobile] WebSocket onerror event:', ev, { url, isIos, isSafari });
+      if (isIos && isSafari) {
+        console.warn('[Mobile] iOS Safari detected - connection issues may be due to PWA/private mode limitations');
+      }
       try { ws.close(); } catch {}
     };
   }
@@ -1218,6 +1228,10 @@
         try { fitAddon.fit(); } catch {}
       }
       term.write('KTOx shell ready.\r\n');
+      // Ensure WebSocket is live when terminal is set up
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        ensureSocketLive('terminal-setup');
+      }
     }
     return term;
   }
