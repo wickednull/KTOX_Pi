@@ -1844,3 +1844,183 @@ select:focus {
     padding: 12px !important;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   SIDEBAR & NAVIGATION ENHANCEMENTS
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Sidebar Improvements */
+#sidebar {
+  background: linear-gradient(180deg, rgba(2, 6, 23, 0.9) 0%, rgba(5, 6, 10, 0.95) 100%);
+  border-right: 1px solid rgba(148, 163, 184, 0.1);
+  box-shadow: inset -20px 0 40px rgba(0, 0, 0, 0.2);
+}
+
+/* Sidebar Header */
+#sidebar > div:first-child {
+  background: linear-gradient(135deg, rgba(0, 0, 0, 0.1) 0%, rgba(0, 0, 0, 0) 100%);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.08);
+  padding: 16px !important;
+}
+
+/* Sidebar Logo */
+#sidebar img {
+  transition: all 0.3s ease;
+  filter: drop-shadow(0 0 12px rgba(139, 0, 0, 0.25));
+}
+
+#sidebar:hover img {
+  filter: drop-shadow(0 0 16px rgba(139, 0, 0, 0.35));
+  transform: scale(1.05);
+}
+
+/* Navigation Buttons */
+#sidebar nav > button,
+#sidebar nav > a {
+  position: relative;
+  border-radius: 14px;
+  font-weight: 600;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+}
+
+/* Default Nav Button State */
+#sidebar nav > button,
+#sidebar nav > a {
+  background: rgba(15, 23, 42, 0.3);
+  border: 1px solid rgba(148, 163, 184, 0.1);
+  color: #cbd5e1;
+}
+
+#sidebar nav > button:hover,
+#sidebar nav > a:hover {
+  background: rgba(51, 65, 85, 0.4);
+  border-color: rgba(148, 163, 184, 0.2);
+  color: #f1f5f9;
+  transform: translateX(2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+/* Active Device Button */
+#navDevice {
+  background: linear-gradient(135deg, rgba(127, 29, 29, 0.3) 0%, rgba(159, 18, 57, 0.2) 100%) !important;
+  border-color: rgba(239, 68, 68, 0.3) !important;
+  color: #fca5a5 !important;
+  box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.2), 0 4px 12px rgba(239, 68, 68, 0.1) !important;
+}
+
+#navDevice:hover {
+  background: linear-gradient(135deg, rgba(143, 32, 32, 0.4) 0%, rgba(177, 24, 65, 0.3) 100%) !important;
+  box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.3), 0 6px 16px rgba(239, 68, 68, 0.15) !important;
+}
+
+/* Nav Button with Active Indicator */
+#sidebar nav > button.nav-active::before,
+#sidebar nav > a.nav-active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #ef4444 0%, #dc2626 100%);
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.5);
+}
+
+/* System Dropdown Styling */
+#systemDropdown {
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.6) 0%, rgba(15, 23, 42, 0.4) 100%) !important;
+  border: 1px solid rgba(148, 163, 184, 0.15) !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2) !important;
+  backdrop-filter: blur(12px);
+}
+
+#systemDropdown > div:first-child {
+  background: linear-gradient(135deg, rgba(0, 0, 0, 0.1) 0%, rgba(0, 0, 0, 0) 100%);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.08);
+  padding: 10px 8px !important;
+}
+
+#systemDropdown .rounded-lg {
+  background: linear-gradient(135deg, rgba(30, 41, 59, 0.4) 0%, rgba(15, 23, 42, 0.4) 100%) !important;
+  border: 1px solid rgba(148, 163, 184, 0.1) !important;
+  transition: all 0.2s ease;
+}
+
+#systemDropdown .rounded-lg:hover {
+  background: linear-gradient(135deg, rgba(51, 65, 85, 0.5) 0%, rgba(30, 41, 59, 0.5) 100%) !important;
+  border-color: rgba(148, 163, 184, 0.2) !important;
+}
+
+/* Progress Bars in System Dropdown */
+#systemDropdown .h-1\.5 {
+  background: rgba(30, 41, 59, 0.4) !important;
+}
+
+/* Payloads Section */
+#payloadSidebar {
+  padding: 8px !important;
+}
+
+#payloadSidebar > div {
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.1);
+  background: rgba(15, 23, 42, 0.3);
+  padding: 10px 12px !important;
+  font-size: 12px;
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+#payloadSidebar > div:hover {
+  background: rgba(15, 23, 42, 0.5);
+  border-color: rgba(148, 163, 184, 0.2);
+  transform: translateX(1px);
+}
+
+#payloadSidebar > div.selected {
+  background: linear-gradient(135deg, rgba(127, 29, 29, 0.2) 0%, rgba(159, 18, 57, 0.15) 100%);
+  border-color: rgba(239, 68, 68, 0.25);
+  color: #fca5a5;
+}
+
+/* Top Bar - Mobile */
+#mobileTopBar {
+  background: linear-gradient(90deg, rgba(5, 6, 10, 0.95) 0%, rgba(5, 6, 10, 0.85) 100%);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+  backdrop-filter: blur(12px);
+}
+
+/* Bottom Navigation - Mobile */
+#mobileNav {
+  background: linear-gradient(0deg, rgba(5, 6, 10, 0.98) 0%, rgba(5, 6, 10, 0.95) 100%);
+  border-top: 1px solid rgba(148, 163, 184, 0.1);
+  backdrop-filter: blur(12px);
+}
+
+.mob-nav-btn {
+  position: relative;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 8px 12px !important;
+  border-radius: 12px;
+  transition: all 0.25s ease;
+  color: #94a3b8;
+  font-size: 11px;
+}
+
+.mob-nav-btn:hover {
+  background: rgba(51, 65, 85, 0.4);
+  color: #cbd5e1;
+}
+
+.mob-nav-btn.mob-nav-active {
+  background: linear-gradient(135deg, rgba(127, 29, 29, 0.3) 0%, rgba(159, 18, 57, 0.2) 100%);
+  color: #fca5a5;
+  box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.2), 0 4px 12px rgba(239, 68, 68, 0.1);
+}
