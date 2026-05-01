@@ -862,9 +862,13 @@
     }
     activeTab = tab;
     const isSystemOverlay = isMobile && tab === 'system';
-    const isDevice = tab === 'device' || tab === 'terminal' || isSystemOverlay;
+    // Show/hide device tab (desktop and mobile device view only)
     if (deviceTab) {
-      deviceTab.classList.toggle('hidden', !isDevice);
+      deviceTab.classList.toggle('hidden', tab !== 'device' && isSystemOverlay === false);
+    }
+    // Show/hide terminal tab
+    if (terminalTab) {
+      terminalTab.classList.toggle('hidden', tab !== 'terminal');
     }
     applyResponsiveTabClasses(tab);
     document.body.classList.toggle('mobile-system-overlay', isSystemOverlay);
@@ -875,6 +879,7 @@
     const payloadsTabEl = document.getElementById('payloadsTab');
     if (payloadsTabEl) payloadsTabEl.classList.toggle('hidden', tab !== 'payloads');
     setNavActive(navDevice, tab === 'device');
+    setNavActive(navTerminal, tab === 'terminal');
     setNavActive(navLoot, tab === 'loot');
     setNavActive(navSettings, tab === 'settings');
     setSidebarOpen(false);
@@ -2384,13 +2389,12 @@
         }
       } else if (tab === 'terminal'){
         setActiveTab('terminal');
-      } else if (tab === 'settings'){
-        setActiveTab('settings');
-        loadDiscordWebhook();
-        loadTailscaleSettings();
+        ensureTerminal();
       } else if (tab === 'loot'){
         setActiveTab('loot');
         if (lootList && !lootList.dataset.loaded){ loadLoot(''); lootList.dataset.loaded = '1'; }
+      } else if (tab === 'payloads'){
+        setActiveTab('payloads');
       } else {
         setActiveTab(tab);
       }
