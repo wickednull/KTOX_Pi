@@ -36,6 +36,7 @@ import mimetypes
 import os
 import secrets
 import shutil
+import socket
 import subprocess
 import textwrap
 import threading
@@ -935,6 +936,15 @@ def _is_text_file(path: Path) -> bool:
     if ext in TEXT_EXTS:
         return True
     return False
+
+
+class KTOxServer(ThreadingHTTPServer):
+    """HTTP server with properly configured socket options to prevent SYN floods."""
+    def server_bind(self) -> None:
+        self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        if hasattr(socket, 'SO_REUSEPORT'):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+        super().server_bind()
 
 
 class KTOxHandler(SimpleHTTPRequestHandler):
@@ -1850,7 +1860,7 @@ def main() -> None:
 
     # If a specific host was set via env var, honour it as-is (single bind)
     if HOST != "0.0.0.0":
-        server = ThreadingHTTPServer((HOST, PORT), KTOxHandler)
+        server = KTOxServer((HOST, PORT), KTOxHandler)
         print(f"[WebUI] Serving on http://{HOST}:{PORT}")
         try:
             server.serve_forever()
@@ -1862,11 +1872,11 @@ def main() -> None:
 
     # Default: bind only to eth0 + wlan0 (+ localhost).  wlan1+ stay untouched.
     bind_addrs = _get_webui_bind_addrs()
-    servers: list[ThreadingHTTPServer] = []
+    servers: list[KTOxServer] = []
 
     for addr, iface in bind_addrs:
         try:
-            srv = ThreadingHTTPServer((addr, PORT), KTOxHandler)
+            srv = KTOxServer((addr, PORT), KTOxHandler)
             servers.append(srv)
             threading.Thread(target=srv.serve_forever, daemon=True).start()
             print(f"[WebUI] Serving on http://{addr}:{PORT} ({iface})")
@@ -1876,7 +1886,7 @@ def main() -> None:
     if not servers:
         # Last resort — fall back to all interfaces so the WebUI is not dead
         print("[WebUI] WARNING: No WebUI interfaces available, falling back to 0.0.0.0")
-        srv = ThreadingHTTPServer(("0.0.0.0", PORT), KTOxHandler)
+        srv = KTOxServer(("0.0.0.0", PORT), KTOxHandler)
         print(f"[WebUI] Serving on http://0.0.0.0:{PORT}")
         try:
             srv.serve_forever()
