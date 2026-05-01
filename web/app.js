@@ -150,6 +150,7 @@
 
   function getWsCandidates(){
     const candidates = [];
+    const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent);
 
     // iOS PWA fix: try manually configured URL first (highest priority)
     const manualUrl = getManualWsUrl();
@@ -192,10 +193,14 @@
     // iOS PWA fix: filter out insecure ws:// on HTTPS pages (mixed content block)
     const isHttps = location.protocol === 'https:';
     if (isHttps) {
-      return Array.from(new Set(candidates.filter(url => url.startsWith('wss://'))));
+      const filtered = Array.from(new Set(candidates.filter(url => url.startsWith('wss://'))));
+      if (isIos) console.log('[iOS] HTTPS detected, filtered to wss:// only:', filtered);
+      return filtered;
     }
 
-    return Array.from(new Set(candidates.filter(Boolean)));
+    const result = Array.from(new Set(candidates.filter(Boolean)));
+    if (isIos) console.log('[iOS] WS candidates generated:', result, { protocol: location.protocol, hostname: location.hostname });
+    return result;
   }
 
   function getApiUrl(path, params = {}){
@@ -862,9 +867,13 @@
     }
     activeTab = tab;
     const isSystemOverlay = isMobile && tab === 'system';
-    const isDevice = tab === 'device' || tab === 'terminal' || isSystemOverlay;
+    // Show/hide device tab (desktop and mobile device view only)
     if (deviceTab) {
-      deviceTab.classList.toggle('hidden', !isDevice);
+      deviceTab.classList.toggle('hidden', tab !== 'device' && isSystemOverlay === false);
+    }
+    // Show/hide terminal tab
+    if (terminalTab) {
+      terminalTab.classList.toggle('hidden', tab !== 'terminal');
     }
     applyResponsiveTabClasses(tab);
     document.body.classList.toggle('mobile-system-overlay', isSystemOverlay);
@@ -875,6 +884,7 @@
     const payloadsTabEl = document.getElementById('payloadsTab');
     if (payloadsTabEl) payloadsTabEl.classList.toggle('hidden', tab !== 'payloads');
     setNavActive(navDevice, tab === 'device');
+    setNavActive(navTerminal, tab === 'terminal');
     setNavActive(navLoot, tab === 'loot');
     setNavActive(navSettings, tab === 'settings');
     setSidebarOpen(false);
@@ -1134,7 +1144,12 @@
     };
 
     ws.onerror = (ev) => {
-      console.log('[Mobile] WebSocket onerror event:', ev);
+      const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent);
+      const isSafari = /Safari/.test(navigator.userAgent) && !/Chrome/.test(navigator.userAgent);
+      console.error('[Mobile] WebSocket onerror event:', ev, { url, isIos, isSafari });
+      if (isIos && isSafari) {
+        console.warn('[Mobile] iOS Safari detected - connection issues may be due to PWA/private mode limitations');
+      }
       try { ws.close(); } catch {}
     };
   }
@@ -1213,6 +1228,10 @@
         try { fitAddon.fit(); } catch {}
       }
       term.write('KTOx shell ready.\r\n');
+      // Ensure WebSocket is live when terminal is set up
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        ensureSocketLive('terminal-setup');
+      }
     }
     return term;
   }
@@ -2300,16 +2319,6 @@
   const payloadsMobRefresh = document.getElementById('payloadsMobRefresh');
   if (payloadsMobRefresh) payloadsMobRefresh.addEventListener('click', () => loadPayloads());
 
-  // Settings button in header (mobile and desktop)
-  const settingsToggle = document.getElementById('settingsToggle');
-  if (settingsToggle) {
-    settingsToggle.addEventListener('click', () => {
-      setActiveTab('settings');
-      loadDiscordWebhook();
-      loadTailscaleSettings();
-    });
-  }
-
   // ── Mobile system stats loader ────────────────────────────────────────────
   window.loadMobileSystemStatus = async function(){
     const status = document.getElementById('mobileSystemStatus');
@@ -2384,13 +2393,12 @@
         }
       } else if (tab === 'terminal'){
         setActiveTab('terminal');
-      } else if (tab === 'settings'){
-        setActiveTab('settings');
-        loadDiscordWebhook();
-        loadTailscaleSettings();
+        ensureTerminal();
       } else if (tab === 'loot'){
         setActiveTab('loot');
         if (lootList && !lootList.dataset.loaded){ loadLoot(''); lootList.dataset.loaded = '1'; }
+      } else if (tab === 'payloads'){
+        setActiveTab('payloads');
       } else {
         setActiveTab(tab);
       }
