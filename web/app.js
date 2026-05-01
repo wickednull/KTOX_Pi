@@ -2568,14 +2568,14 @@
       reconnectTimer = null;
       reconnectAttempts = 0;
 
-      // iOS PWA fix: small delay ensures browser is ready for WebSocket
-      // (on first launch, connection establishment needs proper initialization)
+      // iOS PWA fix: ensure browser is fully ready before connecting
+      // Safari needs proper initialization time on first launch
       setTimeout(() => {
         connect();
         loadPayloads();
         schedulePayloadPoll();
         scheduleSystemPoll();
-      }, 100);
+      }, 500);
     });
   };
 

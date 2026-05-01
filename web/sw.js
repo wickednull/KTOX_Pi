@@ -1,15 +1,12 @@
 const CACHE_NAME = 'ktox-v5';
 const RUNTIME_CACHE = 'ktox-runtime-v5';
 
-const ASSETS_TO_CACHE = [
-  './',
+const STATIC_ASSETS = [
   './index.html',
   './app.js',
   './shared.js',
   './ui.css',
   './device-shell.css',
-  './manifest.webmanifest',
-  './ktox.png',
 ];
 
 self.addEventListener('install', (event) => {
@@ -17,8 +14,10 @@ self.addEventListener('install', (event) => {
   self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      console.log('[SW] Caching assets');
-      return cache.addAll(ASSETS_TO_CACHE);
+      console.log('[SW] Caching static assets');
+      return cache.addAll(STATIC_ASSETS).catch(err => {
+        console.warn('[SW] Failed to cache some assets:', err);
+      });
     })
   );
 });
@@ -43,11 +42,14 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
-  if (url.pathname === '/api/system/status' || url.pathname.startsWith('/api/')) {
+  // Don't intercept API requests - always try network first
+  if (url.pathname.startsWith('/api/')) {
     return event.respondWith(
       fetch(event.request).then((response) => {
-        const cache = caches.open(RUNTIME_CACHE);
-        cache.then((c) => c.put(event.request, response.clone()));
+        if (response && response.status === 200) {
+          const cache = caches.open(RUNTIME_CACHE);
+          cache.then((c) => c.put(event.request, response.clone()));
+        }
         return response;
       }).catch(() => {
         return caches.match(event.request);
@@ -55,7 +57,8 @@ self.addEventListener('fetch', (event) => {
     );
   }
 
-  if (event.request.method === 'GET') {
+  // For static assets, use cache-first strategy
+  if (event.request.method === 'GET' && !url.pathname.includes('manifest')) {
     event.respondWith(
       caches.match(event.request).then((response) => {
         if (response) {
@@ -70,8 +73,6 @@ self.addEventListener('fetch', (event) => {
             cache.put(event.request, responseToCache);
           });
           return response;
-        }).catch(() => {
-          return caches.match(event.request);
         });
       })
     );
