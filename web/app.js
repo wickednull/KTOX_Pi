@@ -49,10 +49,71 @@
     isSmallPhone: () => window.matchMedia('(max-width: 480px)').matches,
     isPortrait: () => window.matchMedia('(orientation: portrait)').matches,
     isLandscape: () => window.matchMedia('(orientation: landscape)').matches,
+    isIOS: () => /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream,
+    isSafari: () => /^((?!chrome|android).)*safari/i.test(navigator.userAgent),
 
     onOrientationChange(callback) {
       window.addEventListener('orientationchange', callback);
       window.matchMedia('(orientation: portrait)').addEventListener('change', callback);
+    }
+  };
+
+  // iOS-specific fixes and optimizations
+  const iOS = {
+    isRunningAsWebApp: () => (window.navigator.standalone === true) || window.matchMedia('(display-mode: standalone)').matches,
+
+    preventZoom() {
+      document.addEventListener('touchmove', (e) => {
+        if (e.touches.length > 1) e.preventDefault();
+      }, { passive: false });
+
+      let lastTouchEnd = 0;
+      document.addEventListener('touchend', (e) => {
+        const now = Date.now();
+        if (now - lastTouchEnd <= 300 && e.changedTouches.length === 1) {
+          e.preventDefault();
+        }
+        lastTouchEnd = now;
+      }, { passive: false });
+    },
+
+    fixInputZoom() {
+      const inputs = document.querySelectorAll('input, textarea, select');
+      inputs.forEach(input => {
+        input.addEventListener('focus', () => {
+          if (Mobile.isIOS()) {
+            document.body.style.zoom = 1;
+            setTimeout(() => {
+              window.scrollTo(0, 0);
+            }, 100);
+          }
+        });
+      });
+    },
+
+    fixScrolling() {
+      document.body.style.position = 'fixed';
+      document.body.style.width = '100%';
+      document.body.style.height = '100%';
+      document.body.style.overflow = 'hidden';
+    },
+
+    restoreScrolling() {
+      document.body.style.position = '';
+      document.body.style.width = '';
+      document.body.style.height = '';
+      document.body.style.overflow = '';
+    },
+
+    preventTopBar() {
+      let lastScrollPos = 0;
+      window.addEventListener('scroll', () => {
+        window.scrollTo(0, lastScrollPos);
+      });
+
+      document.addEventListener('touchmove', (e) => {
+        lastScrollPos = window.scrollY;
+      }, { passive: true });
     }
   };
 
@@ -237,11 +298,13 @@
   let reconnectTimer = null;
   let reconnectAttempts = 0;
   let lastServerMessage = Date.now();
+  let lastActivityTime = Date.now();
+  let appWasHidden = false;
 
-  const WS_CONNECT_TIMEOUT = 5000;
+  const WS_CONNECT_TIMEOUT = Mobile.isIOS() ? 8000 : 5000;
   const AUTH_TICKET_REFRESH_INTERVAL = 4 * 60 * 1000;
-  const SERVER_HEARTBEAT_TIMEOUT = 45000;
-  const HEARTBEAT_CHECK_INTERVAL = 15000;
+  const SERVER_HEARTBEAT_TIMEOUT = Mobile.isIOS() ? 60000 : 45000;
+  const HEARTBEAT_CHECK_INTERVAL = Mobile.isIOS() ? 20000 : 15000;
   const REQUEST_MAX_BYTES = 10 * 1024 * 1024;
 
   function getWsCandidates() {
@@ -1279,21 +1342,43 @@
     }
   };
 
-  // Heartbeat monitor
+  // Heartbeat monitor with iOS-specific handling
   function startHeartbeatMonitor() {
     setInterval(() => {
+      const now = Date.now();
+      lastActivityTime = now;
+
       if (ws && ws.readyState === WebSocket.OPEN) {
-        const timeSinceLastMessage = Date.now() - lastServerMessage;
+        const timeSinceLastMessage = now - lastServerMessage;
         if (timeSinceLastMessage > SERVER_HEARTBEAT_TIMEOUT) {
           warn('Server heartbeat timeout');
           try { ws.close(); } catch(e) {}
           scheduleReconnect('heartbeat timeout');
         }
       } else if (!document.hidden && (!ws || ws.readyState !== WebSocket.OPEN)) {
-        warn('PWA: Disconnected while visible');
-        ensureSocketLive('heartbeat-check-pwa');
+        warn('Disconnected while visible - reconnecting');
+        ensureSocketLive('heartbeat-check');
       }
     }, HEARTBEAT_CHECK_INTERVAL);
+
+    // iOS-specific: detect app wake from sleep
+    if (Mobile.isIOS()) {
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden && appWasHidden) {
+          const timeSinceLastCheck = Date.now() - lastActivityTime;
+          if (timeSinceLastCheck > 30000) {
+            log('iOS: App woke from sleep - forcing reconnect');
+            appWasHidden = false;
+            if (ws) {
+              try { ws.close(); } catch(e) {}
+              ws = null;
+            }
+            scheduleReconnect('ios-wake');
+          }
+        }
+        appWasHidden = document.hidden;
+      });
+    }
   }
 
   // Event listeners setup
@@ -1594,15 +1679,26 @@
       }
     });
 
-    // PWA page lifecycle
+    // PWA page lifecycle with iOS-specific handling
     DOM.on(window, 'pageshow', (e) => {
       log('Pageshow fired (persisted=' + (e && e.persisted) + ')');
+      appWasHidden = false;
+      // On iOS, always reconnect on pageshow to handle sleep/wake
+      if (Mobile.isIOS() && (e && e.persisted)) {
+        log('iOS: App restored from background - forcing fresh connection');
+        if (ws) {
+          try { ws.close(); } catch(e) {}
+          ws = null;
+        }
+      }
       ensureSocketLive('pageshow');
     });
 
     DOM.on(window, 'pagehide', () => {
       log('Pagehide fired');
-      if (ws) try { ws.close(); } catch(e) {}
+      appWasHidden = true;
+      // Don't immediately close on iOS, let heartbeat monitor handle it
+      if (!Mobile.isIOS() && ws) try { ws.close(); } catch(e) {}
     });
 
     DOM.on(window, 'focus', () => {
@@ -1644,6 +1740,19 @@
         return;
       }
       log('Authenticated - starting');
+
+      // iOS-specific initialization
+      if (Mobile.isIOS()) {
+        log('Detected iOS - applying compatibility fixes');
+        iOS.preventZoom();
+        iOS.fixInputZoom();
+        iOS.preventTopBar();
+        if (iOS.isRunningAsWebApp()) {
+          log('Running as standalone web app');
+          iOS.fixScrolling();
+        }
+      }
+
       setupEventListeners();
       applyResponsiveTabClasses(activeTab);
       startHeartbeatMonitor();

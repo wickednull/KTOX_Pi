@@ -2,17 +2,37 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, maximum-scale=1, minimum-scale=1">
+
+  <!-- iOS PWA Support -->
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="KTOx">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+
+  <!-- PWA & Mobile Support -->
+  <meta name="mobile-web-app-capable" content="yes">
   <meta name="theme-color" content="#05060a">
   <meta name="application-name" content="KTOx WebUI">
+
+  <!-- Safe Area Support for Notched Devices -->
+  <meta name="viewport-fit" content="cover">
+
+  <!-- iOS Specific Behaviors -->
+  <meta name="apple-itunes-app" content="app-id=none">
+  <meta name="format-detection" content="telephone=no">
+  <meta name="format-detection" content="email=no">
+
+  <!-- Prevent iOS font scaling -->
+  <style>
+    input { font-size: 16px !important; }
+  </style>
+
   <title>KTOx WebUI</title>
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" type="image/png" href="./ktox.png?v=4">
   <link rel="apple-touch-icon" href="./ktox.png?v=4">
+  <link rel="shortcut icon" href="./ktox.png?v=4">
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm/css/xterm.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
@@ -39,6 +59,27 @@
       --rj-radius: 12px;
       --rj-shadow: 0 12px 30px rgba(2, 6, 23, 0.35);
       --rj-glow: 0 0 24px rgba(139, 0, 0, 0.18);
+
+      /* Safe area insets for notched devices */
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+      --safe-left: env(safe-area-inset-left, 0px);
+      --safe-right: env(safe-area-inset-right, 0px);
+    }
+
+    /* iOS Safe Area Support */
+    html, body {
+      width: 100%;
+      height: 100%;
+      position: fixed;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+      -webkit-text-size-adjust: 100%;
+    }
+
+    /* Prevent zoom on input focus in iOS Safari */
+    input, textarea, select {
+      font-size: 16px !important;
     }
     body {
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;

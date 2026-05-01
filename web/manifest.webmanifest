@@ -3,24 +3,94 @@
   "short_name": "KTOx",
   "description": "KTOx Pi Network Control Suite web interface",
   "id": "./index.html",
-  "start_url": "./index.html",
+  "start_url": "./index.html?launcher=pwa",
   "scope": "./",
   "display": "standalone",
+  "orientation": "any",
   "background_color": "#05060a",
   "theme_color": "#05060a",
-  "icons": [
+
+  "categories": ["utilities", "productivity"],
+  "screenshots": [
     {
       "src": "./ktox.png?v=5",
       "sizes": "any",
       "type": "image/png",
-      "purpose": "any"
+      "form_factor": "narrow"
     },
     {
       "src": "./ktox.png?v=5",
       "sizes": "any",
       "type": "image/png",
-      "purpose": "any maskable"
+      "form_factor": "wide"
     }
-  ]
+  ],
+
+  "icons": [
+    {
+      "src": "./ktox.png?v=5",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./ktox.png?v=5",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./ktox.png?v=5",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "./ktox.png?v=5",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+
+  "shortcuts": [
+    {
+      "name": "Device View",
+      "short_name": "Device",
+      "description": "View connected device",
+      "url": "./index.html?tab=device",
+      "icons": [
+        {
+          "src": "./ktox.png?v=5",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "System Monitor",
+      "short_name": "System",
+      "description": "System status and monitoring",
+      "url": "./index.html?tab=system",
+      "icons": [
+        {
+          "src": "./ktox.png?v=5",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    }
+  ],
+
+  "share_target": {
+    "action": "/share",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url"
+    }
+  }
 }
 
