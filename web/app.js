@@ -327,7 +327,11 @@
   }
 
   function getApiUrl(path, params = {}) {
-    const normalized = String(path || '').startsWith('/api/')
+    const raw = String(path || '');
+    const normalized = raw.startsWith('/api/')
+      ? raw
+      : `/api${raw.startsWith('/') ? '' : '/'}${raw}`;
+    return `${normalized}${p.size > 0 ? '?' + p : ''}`;
       ? String(path || '')
       : `/api${String(path || '').startsWith('/') ? '' : '/'}${String(path || '')}`;
     const p = new URLSearchParams(params);
@@ -1182,18 +1186,66 @@
   }
 
   function scheduleReconnect(reason = '') {
-    if (reconnectTimer) clearTimeout(reconnectTimer);
+  let authModalMode = 'login';
+    let mode = 'login';
+    try {
+      const res = await fetch(getApiUrl('/api/auth/bootstrap-status'), { cache: 'no-store' });
+      const data = await res.json();
+      if (res.ok && data && data.initialized === false) mode = 'bootstrap';
+    } catch (e) {}
 
-    const baseDelay = 1000;
-    const maxDelay = 30000;
-    const delayMs = Math.min(baseDelay * Math.pow(2, reconnectAttempts), maxDelay);
-    reconnectAttempts++;
+      showAuthModal(mode, mode === 'bootstrap' ? 'Set the first admin account for this device.' : message);
 
-    log(`Reconnect attempt ${reconnectAttempts} in ${delayMs}ms${reason ? ' (' + reason + ')' : ''}`);
+    authModalMode = mode === 'bootstrap' ? 'bootstrap' : 'login';
+    if (title) title.textContent = authModalMode === 'login' ? 'Login' : 'Create Account';
+    const error = DOM.get('authModalError');
+    if (error) error.textContent = '';
 
-    reconnectTimer = setTimeout(() => {
-      reconnectTimer = null;
-      if (!document.hidden) {
+    const confirm = DOM.get('authModalPasswordConfirm');
+    const u = ((username && username.value) || '').trim();
+    const c = (confirm && confirm.value) || '';
+    const t = ((token && token.value) || '').trim();
+
+    if (t) {
+      saveAuthToken(t);
+      authToken = t;
+      try {
+        const meRes = await fetch(getApiUrl('/api/auth/me'), {
+          cache: 'no-store',
+          credentials: 'include',
+          headers: authHeaders({}),
+        });
+        if (meRes.ok) {
+          closeAuthModal();
+          if (authModalResolve) authModalResolve(true);
+          return;
+        }
+      } catch (e) {}
+      const error = DOM.get('authModalError');
+      if (error) error.textContent = 'Invalid recovery token';
+      authToken = '';
+      saveAuthToken('');
+      return;
+    }
+    if (authModalMode === 'bootstrap' && p !== c) {
+      const error = DOM.get('authModalError');
+      if (error) error.textContent = 'Passwords do not match';
+      return;
+    }
+      const endpoint = authModalMode === 'bootstrap' ? '/api/auth/bootstrap' : '/api/auth/login';
+      const res = await fetch(getApiUrl(endpoint), {
+        credentials: 'include',
+
+        if (res.status === 409 && authModalMode === 'bootstrap') {
+          showAuthModal('login', 'Admin already exists. Log in to continue.');
+          if (error) error.textContent = '';
+          return;
+        }
+        if (error) error.textContent = data && data.error ? data.error : (authModalMode === 'bootstrap' ? 'Bootstrap failed' : 'Login failed');
+
+      closeAuthModal();
+      if (authModalResolve) authModalResolve(true);
+      return;
         connect();
       }
     }, delayMs);
