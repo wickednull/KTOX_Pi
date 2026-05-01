@@ -1488,3 +1488,148 @@ main > .flex.items-center.justify-between.mb-4.md\:mb-6 {
   }
 
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   DASHBOARD & CARDS STYLING
+   ═══════════════════════════════════════════════════════════════ */
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes glow {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(139, 0, 0, 0.1), 0 14px 30px rgba(2, 6, 23, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(139, 0, 0, 0.15), 0 14px 30px rgba(2, 6, 23, 0.35);
+  }
+}
+
+#dashboardStatus {
+  animation: fadeInUp 0.6s ease-out;
+}
+
+#dashboardStatus > div {
+  animation: fadeInUp 0.6s ease-out;
+  animation-fill-mode: both;
+}
+
+#dashboardStatus > div:nth-child(1) { animation-delay: 0.1s; }
+#dashboardStatus > div:nth-child(2) { animation-delay: 0.15s; }
+#dashboardStatus > div:nth-child(3) { animation-delay: 0.2s; }
+#dashboardStatus > div:nth-child(4) { animation-delay: 0.25s; }
+
+/* Status Card Improvements */
+#dashboardStatus > div {
+  border-radius: 16px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+#dashboardStatus > div::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0) 100%);
+  pointer-events: none;
+  border-radius: 16px;
+}
+
+#dashboardStatus > div:hover {
+  transform: translateY(-2px);
+  border-color: rgba(148, 163, 184, 0.4);
+  box-shadow: 0 12px 24px rgba(2, 6, 23, 0.5);
+}
+
+/* Connection Status Indicator */
+#connectionDot {
+  transition: all 0.3s ease;
+}
+
+#connectionDot.connected {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  box-shadow: 0 0 12px rgba(16, 185, 129, 0.5);
+  animation: none;
+}
+
+#connectionDot.error {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.5);
+  animation: pulse 1s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+#connectionDot.connecting {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  box-shadow: 0 0 12px rgba(245, 158, 11, 0.5);
+  animation: pulse 1s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Improved Button Styling */
+button {
+  position: relative;
+  overflow: hidden;
+}
+
+button::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+  transform: translate(-50%, -50%);
+  transition: width 0.6s, height 0.6s;
+}
+
+button:active::before {
+  width: 300px;
+  height: 300px;
+}
+
+/* Enhanced Text Styling */
+.text-xs {
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+.font-bold {
+  font-weight: 700;
+}
+
+/* Better Terminal Styling */
+.terminal-wrap {
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 20px 40px rgba(2, 6, 23, 0.4);
+  animation: fadeInUp 0.6s ease-out 0.3s backwards;
+}
+
+/* Card Shadow Enhancement */
+.rounded-xl, .rounded-2xl, .rounded-3xl {
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.05), 0 4px 12px rgba(0, 0, 0, 0.15);
+}

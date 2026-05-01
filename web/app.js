@@ -130,6 +130,17 @@
   const authModalCancel = document.getElementById('authModalCancel');
   const authModalClose = document.getElementById('authModalClose');
 
+  // Dashboard status elements
+  const connectionDot = document.getElementById('connectionDot');
+  const connectionStatus = document.getElementById('connectionStatus');
+  const connectionType = document.getElementById('connectionType');
+  const deviceName = document.getElementById('deviceName');
+  const deviceIp = document.getElementById('deviceIp');
+  const healthScore = document.getElementById('healthScore');
+  const healthBar = document.getElementById('healthBar');
+  const quickUptime = document.getElementById('quickUptime');
+  const quickPayload = document.getElementById('quickPayload');
+
   let wsCandidates = [];
   let wsCandidateIndex = 0;
 
@@ -689,6 +700,46 @@
     }
   }
 
+  function updateConnectionStatus(status){
+    if (connectionStatus) connectionStatus.textContent = status;
+    if (connectionDot) {
+      connectionDot.classList.remove('connected', 'error', 'connecting');
+      if (status === 'Connected') {
+        connectionDot.classList.add('connected');
+      } else if (status.includes('Error') || status.includes('Unavailable')) {
+        connectionDot.classList.add('error');
+      } else {
+        connectionDot.classList.add('connecting');
+      }
+    }
+  }
+
+  function updateDeviceInfo(name, ip){
+    if (deviceName && name) deviceName.textContent = name || 'KTOx Pi';
+    if (deviceIp && ip) deviceIp.textContent = ip || '0.0.0.0';
+  }
+
+  function updateHealthScore(cpu, mem, disk){
+    const scores = [cpu, mem, disk].filter(v => v !== undefined);
+    const avgHealth = scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
+    const health = 100 - avgHealth;
+    if (healthScore) healthScore.textContent = Math.max(0, Math.min(100, health)).toFixed(0);
+    if (healthBar) healthBar.style.width = Math.max(0, Math.min(100, health)) + '%';
+  }
+
+  function updateQuickStats(uptime, payloadRunning){
+    if (quickUptime && uptime) quickUptime.textContent = uptime;
+    if (quickPayload) {
+      if (payloadRunning) {
+        quickPayload.textContent = 'Running';
+        quickPayload.className = 'text-emerald-400';
+      } else {
+        quickPayload.textContent = 'Idle';
+        quickPayload.className = 'text-amber-400';
+      }
+    }
+  }
+
   // Handheld themes (frontend-only)
   const themes = [
     { id: 'neon', label: 'Syndicate' },
@@ -936,6 +987,7 @@
         connectTimeoutTimer = null;
       }
       setStatus('Connected');
+      updateConnectionStatus('Connected');
       reconnectAttempts = 0; // Reset backoff on successful connection
       lastServerMessage = Date.now(); // Reset heartbeat timer
       wsAuthenticated = true;
@@ -1063,6 +1115,7 @@
       }
       const hadOpened = opened;
       setStatus('Disconnected – reconnecting…');
+      updateConnectionStatus('Reconnecting...');
       setShellStatus('Disconnected');
       shellOpen = false;
       if (wsCandidates.length > 1){
@@ -1285,6 +1338,13 @@
             .map(i => `<div><span class="text-red-400">${escapeHtml(String(i.name || '-'))}</span>: ${escapeHtml(String(i.ipv4 || '-'))}</div>`)
             .join('');
         }
+      }
+
+      // Update dashboard status
+      updateHealthScore(cpu, memPct, diskPct);
+      updateQuickStats(formatDuration(data.uptime_s), data.payload_running);
+      if (Array.isArray(data.interfaces) && data.interfaces.length > 0) {
+        updateDeviceInfo('KTOx Pi', data.interfaces[0].ipv4);
       }
 
       setSystemStatus('Live');
