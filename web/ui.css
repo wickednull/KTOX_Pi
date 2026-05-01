@@ -1078,15 +1078,11 @@ main > .flex.items-center.justify-between.mb-4.md\:mb-6 {
 @media (min-width: 769px) {
   #systemDropdown {
     position: static !important;
-    bottom: auto !important;
-    left: auto !important;
-    right: auto !important;
-    z-index: auto !important;
-    max-height: none !important;
     margin-top: 0.5rem !important;
     margin-left: 0 !important;
     margin-right: 0 !important;
     width: auto !important;
+    max-height: none !important;
   }
 }
 
@@ -1374,19 +1370,22 @@ main > .flex.items-center.justify-between.mb-4.md\:mb-6 {
     padding-bottom: 1rem;
   }
 
-  /* Mobile system dropdown positioning */
+  /* Mobile system dropdown as sliding panel */
   #systemDropdown {
     position: fixed !important;
-    top: auto !important;
-    bottom: 0 !important;
-    left: 0 !important;
-    right: 0 !important;
-    z-index: 30;
-    border-radius: 0 !important;
+    inset: auto 0 0 0 !important;
+    z-index: 50;
+    border-radius: 12px 12px 0 0 !important;
     max-height: 60vh;
     width: 100% !important;
     overflow-y: auto;
     margin: 0 !important;
+    transition: transform 0.3s ease, opacity 0.3s ease !important;
+    transform: translateY(100%) !important;
+  }
+
+  #systemDropdown:not(.hidden) {
+    transform: translateY(0) !important;
   }
 
 }
