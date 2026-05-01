@@ -494,9 +494,39 @@
           <i class="fa-solid fa-terminal text-red-400"></i>
           <span class="tracking-wide">WEBUI CONTROL DECK</span>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-2 relative">
           <button id="menuToggle" type="button" class="md:hidden px-3 py-2 rounded-lg bg-slate-800/60 border border-slate-600/40 text-slate-200"><i class="fa-solid fa-bars"></i></button>
-          <button id="settingsToggle" type="button" class="px-3 py-1.5 text-xs rounded-lg bg-slate-800/80 border border-slate-600/40 text-slate-200 hover:bg-slate-700/80 transition"><i class="fa-solid fa-sliders"></i></button>
+          <div class="relative">
+            <button id="settingsToggle" type="button" class="px-3 py-1.5 text-xs rounded-lg bg-slate-800/80 border border-slate-600/40 text-slate-200 hover:bg-slate-700/80 transition"><i class="fa-solid fa-sliders"></i></button>
+            <!-- Settings Dropdown Menu -->
+            <div id="settingsDropdown" class="hidden absolute top-full right-0 mt-2 w-56 rounded-xl border border-slate-800/80 bg-slate-950/95 backdrop-blur shadow-lg">
+              <div class="p-3 border-b border-slate-800/70">
+                <div class="text-xs font-semibold text-red-400 uppercase tracking-wider">Settings</div>
+              </div>
+              <div class="p-3 space-y-2 max-h-96 overflow-y-auto">
+                <!-- Themes -->
+                <div>
+                  <div class="text-xs font-semibold text-slate-200 mb-2">Themes</div>
+                  <div class="flex gap-1">
+                    <button type="button" data-theme="neon" class="px-2 py-1 rounded-lg text-[10px] font-semibold border border-slate-500/20 bg-slate-900/40 text-slate-300 hover:bg-slate-800/60 transition">Syndicate</button>
+                    <button type="button" data-theme="gameboy" class="px-2 py-1 rounded-lg text-[10px] font-semibold border border-slate-500/20 bg-slate-900/40 text-slate-300 hover:bg-slate-800/60 transition">Game Boy</button>
+                    <button type="button" data-theme="pager" class="px-2 py-1 rounded-lg text-[10px] font-semibold border border-slate-500/20 bg-slate-900/40 text-slate-300 hover:bg-slate-800/60 transition">Pager</button>
+                  </div>
+                </div>
+                <!-- WebSocket URL -->
+                <div>
+                  <div class="text-xs font-semibold text-slate-200 mb-1">WebSocket URL</div>
+                  <input id="wsUrlOverrideInput" type="text" placeholder="ws://192.168.1.100:8765/" class="w-full px-2 py-1 rounded-lg bg-slate-900/70 border border-slate-700/60 text-slate-100 text-[11px] focus:outline-none focus:ring-1 focus:ring-red-400/50">
+                  <div class="flex gap-1 mt-2">
+                    <button id="wsUrlOverrideSave" type="button" class="px-2 py-1 text-[10px] rounded-lg bg-red-900/80 border border-red-300/30 text-white hover:bg-red-800/80 transition">Save</button>
+                    <button id="wsUrlOverrideClear" type="button" class="px-2 py-1 text-[10px] rounded-lg bg-slate-800/80 border border-slate-600/40 text-slate-200 hover:bg-slate-700/80 transition">Clear</button>
+                  </div>
+                </div>
+                <!-- Logout -->
+                <button id="settingsLogoutBtn" type="button" class="w-full px-3 py-2 mt-3 rounded-lg bg-red-900/80 border border-red-300/30 text-white hover:bg-red-800/80 transition text-xs font-semibold"><i class="fa-solid fa-right-from-bracket mr-1"></i>Logout</button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 

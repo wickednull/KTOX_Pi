@@ -55,6 +55,8 @@
   const terminalTab = document.getElementById('terminalTab');
   const systemDropdown = document.getElementById('systemDropdown');
   const settingsTab = document.getElementById('settingsTab');
+  const settingsDropdown = document.getElementById('settingsDropdown');
+  const settingsToggle = document.getElementById('settingsToggle');
   const lootTab = document.getElementById('lootTab');
   const systemStatus = document.getElementById('systemStatus');
   const sysCpuValue = document.getElementById('sysCpuValue');
@@ -2210,6 +2212,23 @@
     });
   });
   if (menuToggle) menuToggle.addEventListener('click', () => setSidebarOpen(true));
+
+  // Settings dropdown toggle
+  if (settingsToggle) {
+    settingsToggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (settingsDropdown) {
+        settingsDropdown.classList.toggle('hidden');
+      }
+    });
+  }
+
+  // Close settings dropdown when clicking outside
+  document.addEventListener('click', () => {
+    if (settingsDropdown && !settingsDropdown.classList.contains('hidden')) {
+      settingsDropdown.classList.add('hidden');
+    }
+  });
   if (sidebarBackdrop) sidebarBackdrop.addEventListener('click', () => setSidebarOpen(false));
   if (lootUpBtn) lootUpBtn.addEventListener('click', () => {
     if (lootState.parent !== undefined){
