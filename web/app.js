@@ -1,5 +1,5 @@
 (function(){
-  const DEBUG = false;
+  const DEBUG = true;
   const log = (...args) => { if (DEBUG) console.log('[KTOx]', ...args); };
   const warn = (...args) => { if (DEBUG) console.warn('[KTOx]', ...args); };
 
