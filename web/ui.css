@@ -1374,9 +1374,19 @@ main > .flex.items-center.justify-between.mb-4.md\:mb-6 {
     padding-bottom: 1rem;
   }
 
-  /* Mobile uses systemTab overlay; disable desktop dropdown panel */
+  /* Mobile system dropdown positioning */
   #systemDropdown {
-    display: none !important;
+    position: fixed !important;
+    top: auto !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    z-index: 30;
+    border-radius: 0 !important;
+    max-height: 60vh;
+    width: 100% !important;
+    overflow-y: auto;
+    margin: 0 !important;
   }
 
 }
