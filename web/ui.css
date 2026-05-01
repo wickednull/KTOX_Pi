@@ -1633,3 +1633,214 @@ button:active::before {
 .rounded-xl, .rounded-2xl, .rounded-3xl {
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.05), 0 4px 12px rgba(0, 0, 0, 0.15);
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   ADVANCED CARD & COMPONENT STYLING
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Enhanced Terminal Card */
+#deviceTab .terminal-wrap,
+#settingsTab > div,
+#lootTab > div {
+  border-radius: 20px;
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.4) 0%, rgba(15, 23, 42, 0.2) 100%);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.05), 0 8px 24px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+  backdrop-filter: blur(10px);
+}
+
+#deviceTab .terminal-wrap:hover {
+  border-color: rgba(148, 163, 184, 0.25);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 12px 32px rgba(0, 0, 0, 0.25);
+}
+
+/* Terminal Header Improvements */
+.terminal-wrap .flex.items-center.justify-between {
+  background: linear-gradient(90deg, rgba(0, 0, 0, 0.1) 0%, rgba(0, 0, 0, 0) 100%);
+  padding: 12px 16px !important;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+}
+
+/* Terminal Body */
+.terminal-body {
+  background: radial-gradient(600px 800px at 50% -10%, rgba(15, 23, 42, 0.3) 0%, rgba(5, 6, 10, 0.8) 100%) !important;
+}
+
+/* Button Styling - All Buttons */
+button {
+  position: relative;
+  border-radius: 10px;
+  font-weight: 600;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+button:not(:disabled):hover {
+  transform: translateY(-1px);
+}
+
+button:not(:disabled):active {
+  transform: translateY(0);
+}
+
+/* Primary Action Buttons */
+.bg-red-900\/80 {
+  background: linear-gradient(135deg, #991b1b 0%, #7f1d1d 100%) !important;
+  border-color: rgba(239, 68, 68, 0.3) !important;
+}
+
+.bg-red-900\/80:hover {
+  background: linear-gradient(135deg, #a71e1e 0%, #8b2121 100%) !important;
+  box-shadow: 0 8px 16px rgba(239, 68, 68, 0.2) !important;
+}
+
+/* Secondary Action Buttons */
+.bg-slate-800\/80 {
+  background: linear-gradient(135deg, rgba(30, 41, 59, 0.8) 0%, rgba(15, 23, 42, 0.8) 100%) !important;
+  border-color: rgba(148, 163, 184, 0.2) !important;
+}
+
+.bg-slate-800\/80:hover {
+  background: linear-gradient(135deg, rgba(51, 65, 85, 0.9) 0%, rgba(30, 41, 59, 0.9) 100%) !important;
+  box-shadow: 0 8px 16px rgba(15, 23, 42, 0.3) !important;
+}
+
+/* Input Fields Enhancement */
+input[type="text"],
+input[type="password"],
+input[type="email"],
+textarea,
+select {
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(15, 23, 42, 0.6);
+  color: #e2e8f0;
+  padding: 10px 14px;
+  font-size: 14px;
+  transition: all 0.2s ease;
+}
+
+input[type="text"]:focus,
+input[type="password"]:focus,
+input[type="email"]:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  border-color: rgba(239, 68, 68, 0.4);
+  background: rgba(15, 23, 42, 0.8);
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1), 0 0 12px rgba(239, 68, 68, 0.15);
+}
+
+/* Tab Content Cards */
+#systemTab > .rounded-3xl,
+#settingsTab > .rounded-3xl,
+#lootTab > .rounded-3xl {
+  border-radius: 24px;
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.4) 0%, rgba(15, 23, 42, 0.2) 100%);
+  backdrop-filter: blur(10px);
+  animation: fadeInUp 0.5s ease-out;
+}
+
+/* Grid Cards */
+.rounded-xl {
+  border-radius: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  transition: all 0.3s ease;
+}
+
+.rounded-xl:hover {
+  border-color: rgba(148, 163, 184, 0.25);
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.5) 0%, rgba(15, 23, 42, 0.3) 100%);
+  transform: translateY(-2px);
+}
+
+/* Shell Key Buttons */
+.shell-key-btn {
+  font-family: 'JetBrains Mono', monospace !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.05em !important;
+  border-radius: 8px !important;
+  padding: 4px 10px !important;
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.8) 0%, rgba(5, 6, 10, 0.9) 100%) !important;
+  border: 1px solid rgba(148, 163, 184, 0.2) !important;
+  color: #cbd5e1 !important;
+  transition: all 0.2s ease !important;
+}
+
+.shell-key-btn:hover {
+  background: linear-gradient(135deg, rgba(51, 65, 85, 0.9) 0%, rgba(30, 41, 59, 0.9) 100%) !important;
+  border-color: rgba(239, 68, 68, 0.3) !important;
+  color: #f1f5f9 !important;
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.1) !important;
+}
+
+.shell-key-btn:active {
+  transform: scale(0.95) !important;
+}
+
+/* Status Indicators */
+.payload-status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #64748b;
+  box-shadow: 0 0 8px rgba(100, 116, 139, 0.3);
+  transition: all 0.3s ease;
+}
+
+.payload-status-dot.ready {
+  background: #10b981;
+  box-shadow: 0 0 12px rgba(16, 185, 129, 0.4);
+}
+
+.payload-status-dot.running {
+  background: #ef4444;
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.4);
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Smooth Page Transitions */
+@keyframes pageSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+#deviceTab, #systemTab, #settingsTab, #lootTab, #payloadsTab {
+  animation: pageSlideIn 0.3s ease-out;
+}
+
+/* Mobile Optimizations */
+@media (max-width: 768px) {
+  button {
+    font-size: 12px;
+    padding: 8px 12px !important;
+  }
+
+  .rounded-xl {
+    border-radius: 14px;
+  }
+
+  .rounded-2xl {
+    border-radius: 16px;
+  }
+
+  #dashboardStatus {
+    grid-template-columns: 1fr;
+    gap: 3px;
+  }
+
+  #dashboardStatus > div {
+    padding: 12px !important;
+  }
+}
