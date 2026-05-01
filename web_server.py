@@ -241,13 +241,18 @@ def _get_webui_bind_addrs() -> list[tuple[str, str]]:
     return addrs
 PREVIEW_MAX_BYTES = int(os.environ.get("RJ_LOOT_PREVIEW_MAX", str(200 * 1024)))
 PAYLOAD_MAX_BYTES = int(os.environ.get("RJ_PAYLOAD_MAX", str(512 * 1024)))
+REQUEST_MAX_BYTES = int(os.environ.get("RJ_REQUEST_MAX", str(10 * 1024 * 1024)))
 TEXT_EXTS = {
     ".txt", ".log", ".md", ".json", ".csv", ".conf", ".ini", ".yaml", ".yml",
     ".pcapng.txt", ".xml", ".sqlite", ".db", ".out", ".py", ".sh"
 }
 
 _CPU_SNAPSHOT = None
+_CPU_LOCK = threading.Lock()
 _LOGIN_FAILS: dict[str, list[float]] = {}
+_LOGIN_FAILS_LOCK = threading.Lock()
+_TAILSCALE_INSTALLING = False
+_TAILSCALE_LOCK = threading.Lock()
 
 
 def _is_valid_discord_webhook(url: str) -> bool:
@@ -438,106 +443,134 @@ def _regenerate_caddyfile_and_reload() -> None:
             pass
 
 
+def _cleanup_login_failures() -> None:
+    """Periodically clean up old login failure records to prevent unbounded memory growth."""
+    global _LOGIN_FAILS
+    while True:
+        try:
+            time.sleep(600)
+            now = time.time()
+            with _LOGIN_FAILS_LOCK:
+                for ip in list(_LOGIN_FAILS.keys()):
+                    _LOGIN_FAILS[ip] = [ts for ts in _LOGIN_FAILS[ip] if now - ts < 600]
+                    if not _LOGIN_FAILS[ip]:
+                        del _LOGIN_FAILS[ip]
+        except Exception:
+            pass
+
+
 def _tailscale_run_install_and_up() -> None:
     """
     Run the official install script and bring Tailscale up using the stored auth key.
     This is executed in a background thread so HTTP handlers can return quickly.
     """
-    _tailscale_write_status({"installing": True, "ok": False, "error": None})
+    global _TAILSCALE_INSTALLING
+    with _TAILSCALE_LOCK:
+        if _TAILSCALE_INSTALLING:
+            _tailscale_write_status({
+                "installing": False,
+                "ok": False,
+                "error": "tailscale installation already in progress",
+            })
+            return
+        _TAILSCALE_INSTALLING = True
 
     try:
-        if not TAILSCALE_KEY_PATH.exists():
+        _tailscale_write_status({"installing": True, "ok": False, "error": None})
+
+        try:
+            if not TAILSCALE_KEY_PATH.exists():
+                _tailscale_write_status({
+                    "installing": False,
+                    "ok": False,
+                    "error": "auth key not found",
+                })
+                return
+        except Exception:
             _tailscale_write_status({
                 "installing": False,
                 "ok": False,
                 "error": "auth key not found",
             })
             return
-    except Exception:
-        _tailscale_write_status({
-            "installing": False,
-            "ok": False,
-            "error": "auth key not found",
-        })
-        return
 
-    # 1) Install Tailscale using the official script.
-    try:
-        install_res = subprocess.run(
-            ["sh", "-c", "curl -fsSL https://tailscale.com/install.sh | sh"],
-            capture_output=True,
-            text=True,
-            timeout=600,
-        )
-    except subprocess.TimeoutExpired:
-        _tailscale_write_status({
-            "installing": False,
-            "ok": False,
-            "error": "tailscale install timeout",
-        })
-        return
-    except Exception as exc:
-        _tailscale_write_status({
-            "installing": False,
-            "ok": False,
-            "error": str(exc),
-        })
-        return
+        try:
+            install_res = subprocess.run(
+                ["sh", "-c", "curl -fsSL https://tailscale.com/install.sh | sh"],
+                capture_output=True,
+                text=True,
+                timeout=600,
+            )
+        except subprocess.TimeoutExpired:
+            _tailscale_write_status({
+                "installing": False,
+                "ok": False,
+                "error": "tailscale install timeout",
+            })
+            return
+        except Exception as exc:
+            _tailscale_write_status({
+                "installing": False,
+                "ok": False,
+                "error": str(exc),
+            })
+            return
 
-    if install_res.returncode != 0:
-        msg = (install_res.stderr or install_res.stdout or "").strip()
-        if not msg:
-            msg = f"tailscale install failed (code {install_res.returncode})"
+        if install_res.returncode != 0:
+            msg = (install_res.stderr or install_res.stdout or "").strip()
+            if not msg:
+                msg = f"tailscale install failed (code {install_res.returncode})"
+            _tailscale_write_status({
+                "installing": False,
+                "ok": False,
+                "error": msg[:200],
+            })
+            return
+
+        try:
+            auth_arg = f"--auth-key=file:{TAILSCALE_KEY_PATH}"
+            up_res = subprocess.run(
+                ["tailscale", "up", auth_arg, "--ssh"],
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+        except subprocess.TimeoutExpired:
+            _tailscale_write_status({
+                "installing": False,
+                "ok": False,
+                "error": "tailscale up timeout",
+            })
+            return
+        except Exception as exc:
+            _tailscale_write_status({
+                "installing": False,
+                "ok": False,
+                "error": str(exc),
+            })
+            return
+
+        if up_res.returncode != 0:
+            msg = (up_res.stderr or up_res.stdout or "").strip()
+            if not msg:
+                msg = f"tailscale up failed (code {up_res.returncode})"
+            _tailscale_write_status({
+                "installing": False,
+                "ok": False,
+                "error": msg[:200],
+            })
+            return
+
+        _regenerate_caddyfile_and_reload()
+
         _tailscale_write_status({
             "installing": False,
-            "ok": False,
-            "error": msg[:200],
+            "ok": True,
+            "error": None,
         })
-        return
-
-    # 2) Bring the daemon up using the stored auth key (non-interactive).
-    try:
-        auth_arg = f"--auth-key=file:{TAILSCALE_KEY_PATH}"
-        up_res = subprocess.run(
-            ["tailscale", "up", auth_arg, "--ssh"],
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
-    except subprocess.TimeoutExpired:
-        _tailscale_write_status({
-            "installing": False,
-            "ok": False,
-            "error": "tailscale up timeout",
-        })
-        return
-    except Exception as exc:
-        _tailscale_write_status({
-            "installing": False,
-            "ok": False,
-            "error": str(exc),
-        })
-        return
-
-    if up_res.returncode != 0:
-        msg = (up_res.stderr or up_res.stdout or "").strip()
-        if not msg:
-            msg = f"tailscale up failed (code {up_res.returncode})"
-        _tailscale_write_status({
-            "installing": False,
-            "ok": False,
-            "error": msg[:200],
-        })
-        return
-
-    # Regenerate Caddyfile with tailscale0 IP and reload Caddy so HTTPS works over Tailscale.
-    _regenerate_caddyfile_and_reload()
-
-    _tailscale_write_status({
-        "installing": False,
-        "ok": True,
-        "error": None,
-    })
+    finally:
+        with _TAILSCALE_LOCK:
+            _TAILSCALE_INSTALLING = False
 
 
 def _tailscale_run_reauth() -> None:
@@ -545,65 +578,80 @@ def _tailscale_run_reauth() -> None:
     Re-authenticate an existing Tailscale install using the stored auth key.
     Does not re-run the install script, only `tailscale up --reset --auth-key=... --ssh`.
     """
-    _tailscale_write_status({"installing": True, "ok": False, "error": None})
+    global _TAILSCALE_INSTALLING
+    with _TAILSCALE_LOCK:
+        if _TAILSCALE_INSTALLING:
+            _tailscale_write_status({
+                "installing": False,
+                "ok": False,
+                "error": "tailscale installation already in progress",
+            })
+            return
+        _TAILSCALE_INSTALLING = True
 
     try:
-        if not TAILSCALE_KEY_PATH.exists():
+        _tailscale_write_status({"installing": True, "ok": False, "error": None})
+
+        try:
+            if not TAILSCALE_KEY_PATH.exists():
+                _tailscale_write_status({
+                    "installing": False,
+                    "ok": False,
+                    "error": "auth key not found",
+                })
+                return
+        except Exception:
             _tailscale_write_status({
                 "installing": False,
                 "ok": False,
                 "error": "auth key not found",
             })
             return
-    except Exception:
+
+        try:
+            auth_arg = f"--auth-key=file:{TAILSCALE_KEY_PATH}"
+            up_res = subprocess.run(
+                ["tailscale", "up", "--reset", auth_arg, "--ssh"],
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+        except subprocess.TimeoutExpired:
+            _tailscale_write_status({
+                "installing": False,
+                "ok": False,
+                "error": "tailscale up timeout",
+            })
+            return
+        except Exception as exc:
+            _tailscale_write_status({
+                "installing": False,
+                "ok": False,
+                "error": str(exc),
+            })
+            return
+
+        if up_res.returncode != 0:
+            msg = (up_res.stderr or up_res.stdout or "").strip()
+            if not msg:
+                msg = f"tailscale up failed (code {up_res.returncode})"
+            _tailscale_write_status({
+                "installing": False,
+                "ok": False,
+                "error": msg[:200],
+            })
+            return
+
+        _regenerate_caddyfile_and_reload()
+
         _tailscale_write_status({
             "installing": False,
-            "ok": False,
-            "error": "auth key not found",
+            "ok": True,
+            "error": None,
         })
-        return
-
-    try:
-        auth_arg = f"--auth-key=file:{TAILSCALE_KEY_PATH}"
-        up_res = subprocess.run(
-            ["tailscale", "up", "--reset", auth_arg, "--ssh"],
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
-    except subprocess.TimeoutExpired:
-        _tailscale_write_status({
-            "installing": False,
-            "ok": False,
-            "error": "tailscale up timeout",
-        })
-        return
-    except Exception as exc:
-        _tailscale_write_status({
-            "installing": False,
-            "ok": False,
-            "error": str(exc),
-        })
-        return
-
-    if up_res.returncode != 0:
-        msg = (up_res.stderr or up_res.stdout or "").strip()
-        if not msg:
-            msg = f"tailscale up failed (code {up_res.returncode})"
-        _tailscale_write_status({
-            "installing": False,
-            "ok": False,
-            "error": msg[:200],
-        })
-        return
-
-    _regenerate_caddyfile_and_reload()
-
-    _tailscale_write_status({
-        "installing": False,
-        "ok": True,
-        "error": None,
-    })
+    finally:
+        with _TAILSCALE_LOCK:
+            _TAILSCALE_INSTALLING = False
 
 
 def _read_cpu_percent() -> float:
@@ -617,11 +665,12 @@ def _read_cpu_percent() -> float:
         parts = [int(x) for x in line.split()[1:]]
         idle = parts[3] + (parts[4] if len(parts) > 4 else 0)
         total = sum(parts)
-        if _CPU_SNAPSHOT is None:
+        with _CPU_LOCK:
+            if _CPU_SNAPSHOT is None:
+                _CPU_SNAPSHOT = (idle, total)
+                return 0.0
+            prev_idle, prev_total = _CPU_SNAPSHOT
             _CPU_SNAPSHOT = (idle, total)
-            return 0.0
-        prev_idle, prev_total = _CPU_SNAPSHOT
-        _CPU_SNAPSHOT = (idle, total)
         idle_delta = idle - prev_idle
         total_delta = total - prev_total
         if total_delta <= 0:
@@ -905,7 +954,11 @@ def _json_response(
     status: int = 200,
     extra_headers: list[tuple[str, str]] | None = None,
 ) -> None:
-    body = json.dumps(payload).encode("utf-8")
+    try:
+        body = json.dumps(payload).encode("utf-8")
+    except (TypeError, ValueError) as exc:
+        body = json.dumps({"error": f"serialization error: {exc}"}).encode("utf-8")
+        status = HTTPStatus.INTERNAL_SERVER_ERROR
     handler.send_response(status)
     if extra_headers:
         for key, value in extra_headers:
@@ -921,6 +974,8 @@ def _read_json(handler: SimpleHTTPRequestHandler) -> dict | None:
         length = int(handler.headers.get("Content-Length", "0") or "0")
     except Exception:
         length = 0
+    if length > REQUEST_MAX_BYTES:
+        return None
     try:
         raw = handler.rfile.read(length) if length > 0 else b"{}"
         return json.loads(raw.decode("utf-8", "ignore")) if raw else {}
@@ -1485,6 +1540,12 @@ class KTOxHandler(SimpleHTTPRequestHandler):
     def _handle_payloads_convert(self) -> None:
         try:
             length = int(self.headers.get("Content-Length", 0))
+        except Exception:
+            length = 0
+        if length > REQUEST_MAX_BYTES:
+            _json_response(self, {"error": "request too large"}, status=HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
+            return
+        try:
             body = json.loads(self.rfile.read(length))
         except Exception:
             _json_response(self, {"error": "bad request"}, status=HTTPStatus.BAD_REQUEST)
@@ -1515,15 +1576,18 @@ class KTOxHandler(SimpleHTTPRequestHandler):
         converted = _compat_convert(source, target, ktox_root, rj_root)
         changed   = converted != source
 
-        # Build unified diff for display
-        diff_lines = list(difflib.unified_diff(
-            source.splitlines(keepends=True),
-            converted.splitlines(keepends=True),
-            fromfile="original",
-            tofile="converted",
-            n=2,
-        ))
-        diff_text = "".join(diff_lines)
+        diff_text = ""
+        if changed:
+            diff_lines = list(difflib.unified_diff(
+                source.splitlines(keepends=True),
+                converted.splitlines(keepends=True),
+                fromfile="original",
+                tofile="converted",
+                n=2,
+            ))
+            diff_text = "".join(diff_lines)
+            if len(diff_text) > 1024 * 1024:
+                diff_text = diff_text[:1024 * 1024] + "\n... (diff truncated)"
 
         saved_path: str | None = None
 
@@ -1725,23 +1789,25 @@ class KTOxHandler(SimpleHTTPRequestHandler):
         password = str(body.get("password", ""))
         now = time.time()
         ip = self._client_ip()
-        failures = [ts for ts in _LOGIN_FAILS.get(ip, []) if now - ts < 600]
-        _LOGIN_FAILS[ip] = failures
-        if len(failures) >= 6:
-            _json_response(self, {"error": "too many attempts"}, status=HTTPStatus.TOO_MANY_REQUESTS)
-            return
+        with _LOGIN_FAILS_LOCK:
+            failures = [ts for ts in _LOGIN_FAILS.get(ip, []) if now - ts < 600]
+            if len(failures) >= 6:
+                _LOGIN_FAILS[ip] = failures
+                _json_response(self, {"error": "too many attempts"}, status=HTTPStatus.TOO_MANY_REQUESTS)
+                return
 
-        cfg = _read_auth_config()
-        if not cfg:
-            _json_response(self, {"error": "auth not initialized"}, status=HTTPStatus.PRECONDITION_FAILED)
-            return
-        if username != str(cfg.get("username", "")) or not _verify_password(password, str(cfg.get("password_hash", ""))):
-            failures.append(now)
-            _LOGIN_FAILS[ip] = failures
-            _json_response(self, {"error": "invalid credentials"}, status=HTTPStatus.UNAUTHORIZED)
-            return
+            cfg = _read_auth_config()
+            if not cfg:
+                _json_response(self, {"error": "auth not initialized"}, status=HTTPStatus.PRECONDITION_FAILED)
+                return
+            if username != str(cfg.get("username", "")) or not _verify_password(password, str(cfg.get("password_hash", ""))):
+                failures.append(now)
+                _LOGIN_FAILS[ip] = failures
+                _json_response(self, {"error": "invalid credentials"}, status=HTTPStatus.UNAUTHORIZED)
+                return
 
-        _LOGIN_FAILS[ip] = []
+            _LOGIN_FAILS[ip] = []
+
         is_https = _request_is_https(self)
         cookie_hdr = _session_cookie_header(username, secure=is_https)
         now = int(time.time())
@@ -1857,6 +1923,8 @@ def main() -> None:
         print("[WebUI] Token auth enabled")
     else:
         print("[WebUI] WARNING: Token auth disabled (set RJ_WS_TOKEN or token file)")
+
+    threading.Thread(target=_cleanup_login_failures, daemon=True).start()
 
     # If a specific host was set via env var, honour it as-is (single bind)
     if HOST != "0.0.0.0":
