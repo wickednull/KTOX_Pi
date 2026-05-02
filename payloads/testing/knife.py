@@ -4,6 +4,8 @@ Designed for KTOx Pi hardware + 1.44" LCD + buttons.
 """
 import os
 import time
+import glob
+import subprocess
 import serial
 import serial.tools.list_ports
 import RPi.GPIO as GPIO
@@ -43,18 +45,41 @@ class USBArmyKnife:
         self.port = None
         self.last_error = None
 
+    def _try_load_usb_serial_modules(self):
+        for mod in ("cdc_acm", "cp210x", "ch341", "ftdi_sio", "usbserial"):
+            subprocess.run(["modprobe", mod], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
     def list_ports(self):
-        ports = list(serial.tools.list_ports.comports())
-        out = [p.device for p in ports]
-        for dev in ["/dev/ttyACM0", "/dev/ttyUSB0", "/dev/ttyUSB1"]:
-            if os.path.exists(dev) and dev not in out:
-                out.append(dev)
+        self._try_load_usb_serial_modules()
+        out = []
+
+        # 1) pyserial-discovered ports with descriptions
+        for p in serial.tools.list_ports.comports():
+            label = f"{p.device} | {(p.description or 'Unknown')[:32]}"
+            if label not in out:
+                out.append(label)
+
+        # 2) stable by-id symlinks are best if present
+        for dev in sorted(glob.glob("/dev/serial/by-id/*")):
+            if os.path.exists(dev):
+                label = f"{dev} | by-id"
+                if label not in out:
+                    out.append(label)
+
+        # 3) fallback patterns commonly used by ESP32 bridges on Linux
+        for pattern in ("/dev/ttyACM*", "/dev/ttyUSB*", "/dev/ttyAMA*", "/dev/ttyS*", "/dev/ttyGS0"):
+            for dev in sorted(glob.glob(pattern)):
+                if os.path.exists(dev):
+                    label = f"{dev} | detected"
+                    if label not in out:
+                        out.append(label)
         return out
 
     def connect(self, port):
-        self.port = port
+        # strip menu label suffix if present
+        self.port = port.split(" | ")[0].strip()
         try:
-            self.ser = serial.Serial(port, SERIAL_BAUD, timeout=1)
+            self.ser = serial.Serial(self.port, SERIAL_BAUD, timeout=1)
             time.sleep(1.2)
             self.ser.write(b"\r\n")
             self.ser.reset_input_buffer()
@@ -158,10 +183,15 @@ def run():
         GPIO.cleanup()
         return
 
-    port = ui.menu("Select Serial", ports)
+    port = ui.menu("Select Serial", ports + ["Refresh ports", "Exit"])
     if not port:
         GPIO.cleanup()
         return
+    if port == "Exit":
+        GPIO.cleanup()
+        return
+    if port == "Refresh ports":
+        return run()
 
     if not knife.connect(port):
         ui.message("Connect failed", knife.last_error or "unknown", 2)
