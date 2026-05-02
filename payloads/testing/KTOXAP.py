@@ -12,8 +12,32 @@
 #   KEY3 - Exit (AP stays active) or Stop (when active)
 #   KEY1 - Exit without stopping (when AP active)
 
-import os, time, signal, subprocess, sys
+import os, time, signal, subprocess, sys, shutil
 from pathlib import Path
+
+def find_command(cmd):
+    """Find command in PATH or standard locations."""
+    full_path = shutil.which(cmd)
+    if full_path:
+        return full_path
+    for path in [f"/usr/sbin/{cmd}", f"/sbin/{cmd}", f"/usr/bin/{cmd}", f"/bin/{cmd}"]:
+        if os.path.exists(path):
+            return path
+    raise FileNotFoundError(f"Required command '{cmd}' not found. Install iproute2 package on Raspberry Pi.")
+
+def check_requirements():
+    """Verify all required commands are available."""
+    required = ["ip", "hostapd", "dnsmasq", "sysctl", "pkill", "iw", "iptables", "ss"]
+    missing = []
+    for cmd in required:
+        try:
+            find_command(cmd)
+        except FileNotFoundError:
+            missing.append(cmd)
+    if missing:
+        print(f"[KTOXAP] ERROR: Missing required commands: {', '.join(missing)}")
+        print("[KTOXAP] On Kali Linux RPi, install: sudo apt update && sudo apt install -y iproute2 hostapd dnsmasq")
+        sys.exit(1)
 
 try:
     import RPi.GPIO as GPIO
@@ -185,16 +209,18 @@ def start_ap_services():
     print("[KTOXAP] Stopping conflicting services...")
     for svc in ("NetworkManager", "wpa_supplicant"):
         _stop_service(svc)
-    subprocess.run(["ip", "link", "set", AP_IFACE, "down"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    ip_cmd = find_command("ip")
+    subprocess.run([ip_cmd, "link", "set", AP_IFACE, "down"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     print("[KTOXAP] Configuring AP interface...")
     write_hostapd_conf()
     write_dnsmasq_conf()
 
-    subprocess.run(["ip", "addr", "flush", "dev", AP_IFACE], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    subprocess.run(["ip", "addr", "add", f"{AP_IP}/24", "dev", AP_IFACE], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    subprocess.run(["ip", "link", "set", AP_IFACE, "up"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    subprocess.run(["sysctl", "-w", "net.ipv4.ip_forward=1"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run([ip_cmd, "addr", "flush", "dev", AP_IFACE], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run([ip_cmd, "addr", "add", f"{AP_IP}/24", "dev", AP_IFACE], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run([ip_cmd, "link", "set", AP_IFACE, "up"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    sysctl_cmd = find_command("sysctl")
+    subprocess.run([sysctl_cmd, "-w", "net.ipv4.ip_forward=1"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     print("[KTOXAP] Starting hostapd and dnsmasq...")
     dns = subprocess.Popen(["dnsmasq", "--conf-file=/tmp/ktox_dnsmasq.conf", "--no-daemon"],
@@ -224,8 +250,9 @@ def stop_ap_services():
         os.remove(PID_FILE)
     subprocess.run(["pkill", "-9", "hostapd"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     subprocess.run(["pkill", "-9", "dnsmasq"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    subprocess.run(["ip", "addr", "flush", "dev", AP_IFACE], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    subprocess.run(["ip", "link", "set", AP_IFACE, "down"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    ip_cmd = find_command("ip")
+    subprocess.run([ip_cmd, "addr", "flush", "dev", AP_IFACE], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run([ip_cmd, "link", "set", AP_IFACE, "down"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     print("[KTOXAP] Restoring network services...")
     _start_service("NetworkManager")
     _start_service("wpa_supplicant")
@@ -250,6 +277,7 @@ def is_ap_active():
 
 def main():
     print("[KTOXAP] Starting Offline AP mode...")
+    check_requirements()
     init_screen()
 
     if is_ap_active():
