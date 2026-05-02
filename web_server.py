@@ -34,6 +34,7 @@ import hmac
 import hashlib
 import mimetypes
 import os
+import platform
 import secrets
 import shutil
 import socket
@@ -1260,6 +1261,8 @@ class KTOxHandler(SimpleHTTPRequestHandler):
             "evil_portal",
             "exfiltration",
             "remote_access",
+            "dos",
+            "network",
             "general",
             "examples",
             "games",
@@ -1312,11 +1315,21 @@ class KTOxHandler(SimpleHTTPRequestHandler):
             return
 
         try:
-            request_path = Path("/dev/shm/rj_payload_request.json")
-            request_path.write_text(json.dumps({
+            request_payload = json.dumps({
                 "action": "start",
                 "path": rel_path,
-            }))
+            })
+            errors = []
+            for request_path in (
+                Path("/dev/shm/ktox_payload_request.json"),
+                Path("/dev/shm/rj_payload_request.json"),
+            ):
+                try:
+                    request_path.write_text(request_payload, encoding="utf-8")
+                except Exception as exc:
+                    errors.append(f"{request_path}: {exc}")
+            if len(errors) == 2:
+                raise RuntimeError("; ".join(errors))
         except Exception as exc:
             _json_response(self, {"error": f"request failed: {exc}"}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
             return
@@ -1699,6 +1712,10 @@ class KTOxHandler(SimpleHTTPRequestHandler):
             uptime_s = _read_uptime_seconds()
             ifaces = _read_ipv4_interfaces()
             load1, load5, load15 = os.getloadavg()
+            hostname = socket.gethostname()
+            kernel = platform.release()
+            platform_name = platform.platform()
+            tailscale = _tailscale_status() if _tailscale_installed() else {"backend_state": None, "ip": None}
             payload_running = False
             payload_path = None
             try:
@@ -1720,6 +1737,10 @@ class KTOxHandler(SimpleHTTPRequestHandler):
                 "uptime_s": uptime_s,
                 "load": [round(load1, 2), round(load5, 2), round(load15, 2)],
                 "interfaces": ifaces,
+                "hostname": hostname,
+                "kernel": kernel,
+                "platform": platform_name,
+                "tailscale": tailscale,
                 "payload_running": payload_running,
                 "payload_path": payload_path,
             })

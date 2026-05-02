@@ -68,6 +68,24 @@
   const sysLoad = document.getElementById('sysLoad');
   const sysPayload = document.getElementById('sysPayload');
   const sysInterfaces = document.getElementById('sysInterfaces');
+  const mobileSystemStatus = document.getElementById('mobileSystemStatus');
+  const mobSysCpuValue = document.getElementById('mobSysCpuValue');
+  const mobSysCpuBar = document.getElementById('mobSysCpuBar');
+  const mobSysTempValue = document.getElementById('mobSysTempValue');
+  const mobSysMemValue = document.getElementById('mobSysMemValue');
+  const mobSysMemMeta = document.getElementById('mobSysMemMeta');
+  const mobSysMemBar = document.getElementById('mobSysMemBar');
+  const mobSysDiskValue = document.getElementById('mobSysDiskValue');
+  const mobSysDiskMeta = document.getElementById('mobSysDiskMeta');
+  const mobSysDiskBar = document.getElementById('mobSysDiskBar');
+  const mobSysUptime = document.getElementById('mobSysUptime');
+  const mobSysLoad = document.getElementById('mobSysLoad');
+  const mobSysPayload = document.getElementById('mobSysPayload');
+  const mobSysInterfaces = document.getElementById('mobSysInterfaces');
+  const mobSysHostname = document.getElementById('mobSysHostname');
+  const mobSysKernel = document.getElementById('mobSysKernel');
+  const mobSysTailscale = document.getElementById('mobSysTailscale');
+  const mobileSystemRefresh = document.getElementById('mobileSystemRefresh');
   const lootList = document.getElementById('lootList');
   const lootPathEl = document.getElementById('lootPath');
   const lootUpBtn = document.getElementById('lootUp');
@@ -730,6 +748,8 @@
     document.body.classList.toggle('mobile-system-overlay', tab === 'system');
     if (settingsTab) settingsTab.classList.toggle('hidden', tab !== 'settings');
     if (lootTab) lootTab.classList.toggle('hidden', tab !== 'loot');
+    const systemTabEl = document.getElementById('systemTab');
+    if (systemTabEl) systemTabEl.classList.toggle('hidden', tab !== 'system');
     const payloadsTabEl = document.getElementById('payloadsTab');
     if (payloadsTabEl) payloadsTabEl.classList.toggle('hidden', tab !== 'payloads');
     setNavActive(navDevice, tab === 'device');
@@ -1047,6 +1067,63 @@
     el.style.width = `${Math.max(0, Math.min(100, value)).toFixed(1)}%`;
   }
 
+  function applySystemData(data, target = 'desktop'){
+    const cpu = Number(data.cpu_percent || 0);
+    const memUsed = Number(data.mem_used || 0);
+    const memTotal = Number(data.mem_total || 0);
+    const diskUsed = Number(data.disk_used || 0);
+    const diskTotal = Number(data.disk_total || 0);
+    const memPercent = pct(memUsed, memTotal);
+    const diskPercent = pct(diskUsed, diskTotal);
+    const tempText = data.temp_c === null || data.temp_c === undefined
+      ? '--.- C'
+      : `${Number(data.temp_c).toFixed(1)} C`;
+    const loadText = Array.isArray(data.load) ? data.load.join(', ') : '-';
+    const payloadText = data.payload_running ? (data.payload_path || 'running') : 'none';
+    const ifaces = Array.isArray(data.interfaces) ? data.interfaces : [];
+    const interfacesHtml = ifaces.length
+      ? ifaces.map(i => `<div><span class="text-red-400">${escapeHtml(String(i.name || '-'))}</span>: ${escapeHtml(String(i.ipv4 || '-'))}</div>`).join('')
+      : '<div class="text-slate-500">No active interfaces</div>';
+
+    if (target === 'mobile'){
+      if (mobSysCpuValue) mobSysCpuValue.textContent = `${cpu.toFixed(1)}%`;
+      if (mobSysTempValue) mobSysTempValue.textContent = tempText;
+      bar(mobSysCpuBar, cpu);
+      if (mobSysMemValue) mobSysMemValue.textContent = `${memPercent.toFixed(1)}%`;
+      if (mobSysMemMeta) mobSysMemMeta.textContent = `${formatBytes(memUsed)} / ${formatBytes(memTotal)}`;
+      bar(mobSysMemBar, memPercent);
+      if (mobSysDiskValue) mobSysDiskValue.textContent = `${diskPercent.toFixed(1)}%`;
+      if (mobSysDiskMeta) mobSysDiskMeta.textContent = `${formatBytes(diskUsed)} / ${formatBytes(diskTotal)}`;
+      bar(mobSysDiskBar, diskPercent);
+      if (mobSysUptime) mobSysUptime.textContent = formatDuration(data.uptime_s);
+      if (mobSysLoad) mobSysLoad.textContent = loadText;
+      if (mobSysPayload) mobSysPayload.textContent = payloadText;
+      if (mobSysInterfaces) mobSysInterfaces.innerHTML = interfacesHtml;
+      if (mobSysHostname) mobSysHostname.textContent = String(data.hostname || '-');
+      if (mobSysKernel) mobSysKernel.textContent = String(data.kernel || data.platform || '-');
+      if (mobSysTailscale) {
+        const tailscale = data.tailscale || {};
+        const state = tailscale.backend_state || (tailscale.ip ? 'Online' : 'Not installed');
+        mobSysTailscale.textContent = tailscale.ip ? `${state} ${tailscale.ip}` : state;
+      }
+      return;
+    }
+
+    if (sysCpuValue) sysCpuValue.textContent = `${cpu.toFixed(1)}%`;
+    if (sysTempValue) sysTempValue.textContent = tempText;
+    bar(sysCpuBar, cpu);
+    if (sysMemValue) sysMemValue.textContent = `${memPercent.toFixed(1)}%`;
+    if (sysMemMeta) sysMemMeta.textContent = `${formatBytes(memUsed)} / ${formatBytes(memTotal)}`;
+    bar(sysMemBar, memPercent);
+    if (sysDiskValue) sysDiskValue.textContent = `${diskPercent.toFixed(1)}%`;
+    if (sysDiskMeta) sysDiskMeta.textContent = `${formatBytes(diskUsed)} / ${formatBytes(diskTotal)}`;
+    bar(sysDiskBar, diskPercent);
+    if (sysUptime) sysUptime.textContent = formatDuration(data.uptime_s);
+    if (sysLoad) sysLoad.textContent = loadText;
+    if (sysPayload) sysPayload.textContent = payloadText;
+    if (sysInterfaces) sysInterfaces.innerHTML = interfacesHtml;
+  }
+
   async function loadSystemStatus(){
     setSystemStatus('Loading...');
     try{
@@ -1057,52 +1134,29 @@
         throw new Error(data && data.error ? data.error : 'system_failed');
       }
 
-      const cpu = Number(data.cpu_percent || 0);
-      const memUsed = Number(data.mem_used || 0);
-      const memTotal = Number(data.mem_total || 0);
-      const diskUsed = Number(data.disk_used || 0);
-      const diskTotal = Number(data.disk_total || 0);
-      const memPct = pct(memUsed, memTotal);
-      const diskPct = pct(diskUsed, diskTotal);
-
-      if (sysCpuValue) sysCpuValue.textContent = `${cpu.toFixed(1)}%`;
-      if (sysTempValue) {
-        if (data.temp_c === null || data.temp_c === undefined){
-          sysTempValue.textContent = '--.- C';
-        } else {
-          sysTempValue.textContent = `${Number(data.temp_c).toFixed(1)} C`;
-        }
-      }
-      bar(sysCpuBar, cpu);
-
-      if (sysMemValue) sysMemValue.textContent = `${memPct.toFixed(1)}%`;
-      if (sysMemMeta) sysMemMeta.textContent = `${formatBytes(memUsed)} / ${formatBytes(memTotal)}`;
-      bar(sysMemBar, memPct);
-
-      if (sysDiskValue) sysDiskValue.textContent = `${diskPct.toFixed(1)}%`;
-      if (sysDiskMeta) sysDiskMeta.textContent = `${formatBytes(diskUsed)} / ${formatBytes(diskTotal)}`;
-      bar(sysDiskBar, diskPct);
-
-      if (sysUptime) sysUptime.textContent = formatDuration(data.uptime_s);
-      if (sysLoad) sysLoad.textContent = Array.isArray(data.load) ? data.load.join(', ') : '-';
-      if (sysPayload) sysPayload.textContent = data.payload_running ? (data.payload_path || 'running') : 'none';
-
-      if (sysInterfaces){
-        const ifaces = Array.isArray(data.interfaces) ? data.interfaces : [];
-        if (!ifaces.length){
-          sysInterfaces.innerHTML = '<div class="text-slate-500">No active interfaces</div>';
-        } else {
-          sysInterfaces.innerHTML = ifaces
-            .map(i => `<div><span class="text-red-400">${escapeHtml(String(i.name || '-'))}</span>: ${escapeHtml(String(i.ipv4 || '-'))}</div>`)
-            .join('');
-        }
-      }
-
+      applySystemData(data, 'desktop');
       setSystemStatus('Live');
     } catch (e){
       setSystemStatus('Unavailable');
     }
   }
+
+  async function loadMobileSystemStatus(){
+    if (mobileSystemStatus) mobileSystemStatus.textContent = 'Loading...';
+    try{
+      const url = getApiUrl('/api/system/status');
+      const res = await apiFetch(url, { cache: 'no-store' });
+      const data = await res.json();
+      if (!res.ok){
+        throw new Error(data && data.error ? data.error : 'system_failed');
+      }
+      applySystemData(data, 'mobile');
+      if (mobileSystemStatus) mobileSystemStatus.textContent = 'Live';
+    } catch (e){
+      if (mobileSystemStatus) mobileSystemStatus.textContent = 'Unavailable';
+    }
+  }
+  window.loadMobileSystemStatus = loadMobileSystemStatus;
 
   async function loadDiscordWebhook(){
     setSettingsStatus('Loading...');
@@ -2025,7 +2079,10 @@
   document.querySelectorAll('[data-mobnav]').forEach(btn => {
     btn.addEventListener('click', () => {
       const tab = btn.dataset.mobnav;
-      if (tab === 'loot'){
+      if (tab === 'system'){
+        setActiveTab('system');
+        setTimeout(() => loadMobileSystemStatus(), 50);
+      } else if (tab === 'loot'){
         setActiveTab('loot');
         if (lootList && !lootList.dataset.loaded){ loadLoot(''); lootList.dataset.loaded = '1'; }
       } else if (tab === 'settings'){
@@ -2038,6 +2095,7 @@
     });
   });
   if (payloadsRefresh) payloadsRefresh.addEventListener('click', () => loadPayloads());
+  if (mobileSystemRefresh) mobileSystemRefresh.addEventListener('click', () => loadMobileSystemStatus());
   if (discordWebhookSave) discordWebhookSave.addEventListener('click', () => {
     saveDiscordWebhook(discordWebhookInput ? discordWebhookInput.value : '');
   });

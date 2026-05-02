@@ -8,6 +8,9 @@
   <meta name="theme-color" content="#05060a">
   <title>KTOx WebUI</title>
   <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" type="image/png" href="./ktox.png?v=6">
+  <link rel="apple-touch-icon" href="./ktox.png?v=6">
+  <link rel="shortcut icon" href="./ktox.png?v=6">
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm/css/xterm.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
@@ -699,6 +702,70 @@
           <button id="payloadsMobRefresh" type="button" class="px-2 py-1 text-[10px] rounded-md bg-slate-800/70 border border-slate-600/40 text-slate-200 hover:bg-slate-700/70 transition"><i class="fa-solid fa-rotate-right mr-1"></i>Refresh</button>
         </div>
         <div id="payloadsMobileList" class="space-y-2"></div>
+      </div>
+
+      <!-- Mobile system monitor -->
+      <div id="systemTab" class="hidden">
+        <div class="rounded-3xl border border-slate-700/60 bg-slate-900/40 backdrop-blur p-4 md:p-5 max-w-3xl mx-auto shadow-[0_0_30px_rgba(15,23,42,0.35)] space-y-3">
+          <div class="flex items-center justify-between">
+            <div class="text-sm font-semibold text-red-400"><i class="fa-solid fa-microchip mr-2"></i>System Monitor</div>
+            <div id="mobileSystemStatus" class="text-[11px] text-slate-400">Ready</div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-2">
+            <div class="rounded-xl border border-slate-800/80 bg-slate-950/40 p-3">
+              <div class="text-[10px] text-slate-400">CPU</div>
+              <div class="mt-1 flex items-end justify-between gap-2">
+                <div id="mobSysCpuValue" class="text-lg font-bold text-slate-100">0%</div>
+                <div id="mobSysTempValue" class="text-[11px] text-slate-400">--.- C</div>
+              </div>
+              <div class="mt-2 h-2 rounded bg-slate-800 overflow-hidden">
+                <div id="mobSysCpuBar" class="h-2 bg-red-800/80" style="width: 0%"></div>
+              </div>
+            </div>
+
+            <div class="rounded-xl border border-slate-800/80 bg-slate-950/40 p-3">
+              <div class="text-[10px] text-slate-400">Memory</div>
+              <div id="mobSysMemValue" class="mt-1 text-lg font-bold text-slate-100">0%</div>
+              <div id="mobSysMemMeta" class="text-[11px] text-slate-400">0 / 0</div>
+              <div class="mt-2 h-2 rounded bg-slate-800 overflow-hidden">
+                <div id="mobSysMemBar" class="h-2 bg-cyan-500/80" style="width: 0%"></div>
+              </div>
+            </div>
+
+            <div class="rounded-xl border border-slate-800/80 bg-slate-950/40 p-3">
+              <div class="text-[10px] text-slate-400">Disk</div>
+              <div id="mobSysDiskValue" class="mt-1 text-lg font-bold text-slate-100">0%</div>
+              <div id="mobSysDiskMeta" class="text-[11px] text-slate-400">0 / 0</div>
+              <div class="mt-2 h-2 rounded bg-slate-800 overflow-hidden">
+                <div id="mobSysDiskBar" class="h-2 bg-fuchsia-500/80" style="width: 0%"></div>
+              </div>
+            </div>
+
+            <div class="rounded-xl border border-slate-800/80 bg-slate-950/40 p-3 space-y-1.5">
+              <div class="text-[10px] text-slate-400">Runtime</div>
+              <div class="text-xs text-slate-300">Uptime: <span id="mobSysUptime">-</span></div>
+              <div class="text-xs text-slate-300">Load: <span id="mobSysLoad">-</span></div>
+              <div class="text-xs text-slate-300">Payload: <span id="mobSysPayload">none</span></div>
+            </div>
+          </div>
+
+          <div class="rounded-xl border border-slate-800/80 bg-slate-950/40 p-3 space-y-1.5">
+            <div class="text-[10px] text-slate-400">Device</div>
+            <div class="text-xs text-slate-300">Host: <span id="mobSysHostname">-</span></div>
+            <div class="text-xs text-slate-300">Kernel: <span id="mobSysKernel">-</span></div>
+            <div class="text-xs text-slate-300">Tailscale: <span id="mobSysTailscale">-</span></div>
+          </div>
+
+          <div class="rounded-xl border border-slate-800/80 bg-slate-950/40 p-3">
+            <div class="text-[10px] text-slate-400 mb-2">Network Interfaces</div>
+            <div id="mobSysInterfaces" class="text-xs text-slate-300 space-y-1.5">
+              <div class="text-slate-500">No active interfaces</div>
+            </div>
+          </div>
+
+          <button type="button" id="mobileSystemRefresh" class="w-full px-4 py-2 rounded-lg bg-red-900/80 border border-red-300/30 text-white hover:bg-red-800/80 transition text-sm font-semibold">Refresh</button>
+        </div>
       </div>
 
       <!-- Loot browser -->
