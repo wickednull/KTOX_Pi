@@ -12,7 +12,7 @@ import RPi.GPIO as GPIO
 import LCD_1in44
 from PIL import Image, ImageDraw, ImageFont
 
-SERIAL_BAUD = 115200
+SERIAL_BAUD_CANDIDATES = (115200, 57600, 230400, 9600)
 PROMPT_PATTERNS = ("marauder>", "Marauder>")
 
 PINS = {
@@ -43,6 +43,7 @@ class USBArmyKnife:
     def __init__(self):
         self.ser = None
         self.port = None
+        self.baud = None
         self.last_error = None
 
     def _try_load_usb_serial_modules(self):
@@ -75,29 +76,63 @@ class USBArmyKnife:
                         out.append(label)
         return out
 
+    def _open(self, baud):
+        self.ser = serial.Serial(
+            self.port,
+            baud,
+            timeout=0.1,
+            write_timeout=1,
+            xonxoff=False,
+            rtscts=False,
+            dsrdtr=False,
+        )
+        time.sleep(1.2)
+        self.ser.write(b"\r\n")
+        self.ser.write(b"\n")
+        self.ser.flush()
+        time.sleep(0.25)
+        self.ser.reset_input_buffer()
+        self.ser.reset_output_buffer()
+
+    def _probe_cli(self):
+        self.ser.write(b"help\n")
+        self.ser.flush()
+        raw = ""
+        start = time.time()
+        while time.time() - start < 2.5:
+            waiting = self.ser.in_waiting
+            if waiting > 0:
+                raw += self.ser.read(waiting).decode(errors="ignore")
+            else:
+                time.sleep(0.03)
+        return raw
+
     def connect(self, port):
         # strip menu label suffix if present
         self.port = port.split(" | ")[0].strip()
-        try:
-            self.ser = serial.Serial(
-                self.port,
-                SERIAL_BAUD,
-                timeout=0.1,
-                write_timeout=1,
-                xonxoff=False,
-                rtscts=False,
-                dsrdtr=False,
-            )
-            time.sleep(1.2)
-            self.ser.write(b"\r\n")
-            self.ser.flush()
-            time.sleep(0.2)
-            self.ser.reset_input_buffer()
-            self.ser.reset_output_buffer()
-            return True
-        except Exception as e:
-            self.last_error = str(e)
-            return False
+        last_exc = None
+        for baud in SERIAL_BAUD_CANDIDATES:
+            try:
+                self._open(baud)
+                probe = self._probe_cli().lower()
+                if "help" in probe or "marauder" in probe or "scanap" in probe:
+                    self.baud = baud
+                    return True
+                # Some builds are quiet until first real command; keep candidate if port is open.
+                if self.ser and self.ser.is_open:
+                    self.baud = baud
+                    return True
+            except Exception as e:
+                last_exc = e
+            finally:
+                if self.ser:
+                    try:
+                        self.ser.close()
+                    except Exception:
+                        pass
+                    self.ser = None
+        self.last_error = f"No working baud on {self.port}. Last error: {last_exc}"
+        return False
 
     def send(self, cmd, timeout=20):
         if not self.ser or not self.ser.is_open:
@@ -207,7 +242,7 @@ def run():
         GPIO.cleanup()
         return
 
-    ui.message("Connected", port, 1)
+    ui.message("Connected", f"{knife.port}@{knife.baud}", 1)
 
     selected_ap = None
     selected_sta = None
