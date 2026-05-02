@@ -112,20 +112,23 @@ class USBArmyKnife:
         self.port = port.split(" | ")[0].strip()
         last_exc = None
         for baud in SERIAL_BAUD_CANDIDATES:
+            keep_open = False
             try:
                 self._open(baud)
                 probe = self._probe_cli().lower()
                 if "help" in probe or "marauder" in probe or "scanap" in probe:
                     self.baud = baud
+                    keep_open = True
                     return True
                 # Some builds are quiet until first real command; keep candidate if port is open.
                 if self.ser and self.ser.is_open:
                     self.baud = baud
+                    keep_open = True
                     return True
             except Exception as e:
                 last_exc = e
             finally:
-                if self.ser:
+                if self.ser and not keep_open:
                     try:
                         self.ser.close()
                     except Exception:
