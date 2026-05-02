@@ -102,9 +102,15 @@
   const wsUrlOverrideSave = document.getElementById('wsUrlOverrideSave');
   const wsUrlOverrideClear = document.getElementById('wsUrlOverrideClear');
   const wsUrlStatus = document.getElementById('wsUrlStatus');
+  const wsUrlDropdownInput = document.getElementById('wsUrlDropdownInput');
+  const wsUrlDropdownSave = document.getElementById('wsUrlDropdownSave');
+  const wsUrlDropdownClear = document.getElementById('wsUrlDropdownClear');
   const discordWebhookInput = document.getElementById('discordWebhookInput');
   const discordWebhookSave = document.getElementById('discordWebhookSave');
   const discordWebhookClear = document.getElementById('discordWebhookClear');
+  const discordWebhookDropdownInput = document.getElementById('discordWebhookDropdownInput');
+  const discordWebhookDropdownSave = document.getElementById('discordWebhookDropdownSave');
+  const discordWebhookDropdownClear = document.getElementById('discordWebhookDropdownClear');
   const tailscaleSettingsStatus = document.getElementById('tailscaleSettingsStatus');
   const tailscaleInstallBtn = document.getElementById('tailscaleInstallBtn');
   const tailscaleReauthBtn = document.getElementById('tailscaleReauthBtn');
@@ -150,7 +156,6 @@
 
   function getWsCandidates(){
     const candidates = [];
-    const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent);
 
     // iOS PWA fix: try manually configured URL first (highest priority)
     const manualUrl = getManualWsUrl();
@@ -193,14 +198,10 @@
     // iOS PWA fix: filter out insecure ws:// on HTTPS pages (mixed content block)
     const isHttps = location.protocol === 'https:';
     if (isHttps) {
-      const filtered = Array.from(new Set(candidates.filter(url => url.startsWith('wss://'))));
-      if (isIos) console.log('[iOS] HTTPS detected, filtered to wss:// only:', filtered);
-      return filtered;
+      return Array.from(new Set(candidates.filter(url => url.startsWith('wss://'))));
     }
 
-    const result = Array.from(new Set(candidates.filter(Boolean)));
-    if (isIos) console.log('[iOS] WS candidates generated:', result, { protocol: location.protocol, hostname: location.hostname });
-    return result;
+    return Array.from(new Set(candidates.filter(Boolean)));
   }
 
   function getApiUrl(path, params = {}){
@@ -867,11 +868,11 @@
     }
     activeTab = tab;
     const isSystemOverlay = isMobile && tab === 'system';
-    // Show/hide device tab (desktop and mobile device view only)
+    // Show/hide device tab (only when tab is 'device', hide for terminal and system)
     if (deviceTab) {
-      deviceTab.classList.toggle('hidden', tab !== 'device' && isSystemOverlay === false);
+      deviceTab.classList.toggle('hidden', tab !== 'device');
     }
-    // Show/hide terminal tab
+    // Show/hide terminal tab (when tab is 'terminal')
     if (terminalTab) {
       terminalTab.classList.toggle('hidden', tab !== 'terminal');
     }
@@ -883,6 +884,8 @@
     if (lootTab) lootTab.classList.toggle('hidden', tab !== 'loot');
     const payloadsTabEl = document.getElementById('payloadsTab');
     if (payloadsTabEl) payloadsTabEl.classList.toggle('hidden', tab !== 'payloads');
+
+    // Set nav button active states
     setNavActive(navDevice, tab === 'device');
     setNavActive(navTerminal, tab === 'terminal');
     setNavActive(navLoot, tab === 'loot');
@@ -898,6 +901,7 @@
     }
     if (tab === 'terminal'){
       shellWanted = true;
+      ensureTerminal();
       if (ws && ws.readyState === WebSocket.OPEN){
         sendShellOpen();
       } else {
@@ -1144,12 +1148,7 @@
     };
 
     ws.onerror = (ev) => {
-      const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent);
-      const isSafari = /Safari/.test(navigator.userAgent) && !/Chrome/.test(navigator.userAgent);
-      console.error('[Mobile] WebSocket onerror event:', ev, { url, isIos, isSafari });
-      if (isIos && isSafari) {
-        console.warn('[Mobile] iOS Safari detected - connection issues may be due to PWA/private mode limitations');
-      }
+      console.log('[Mobile] WebSocket onerror event:', ev);
       try { ws.close(); } catch {}
     };
   }
@@ -1228,10 +1227,6 @@
         try { fitAddon.fit(); } catch {}
       }
       term.write('KTOx shell ready.\r\n');
-      // Ensure WebSocket is live when terminal is set up
-      if (!ws || ws.readyState !== WebSocket.OPEN) {
-        ensureSocketLive('terminal-setup');
-      }
     }
     return term;
   }
@@ -1387,6 +1382,7 @@
         throw new Error(data && data.error ? data.error : 'settings_failed');
       }
       if (discordWebhookInput) discordWebhookInput.value = String(data.url || '');
+      if (discordWebhookDropdownInput) discordWebhookDropdownInput.value = String(data.url || '');
       setSettingsStatus(data.configured ? 'Webhook configured' : 'No webhook configured');
     } catch(e){
       setSettingsStatus('Failed to load settings');
@@ -2215,6 +2211,7 @@
   function loadWsUrlOverride(){
     const saved = getManualWsUrl();
     if (wsUrlOverrideInput) wsUrlOverrideInput.value = saved || '';
+    if (wsUrlDropdownInput) wsUrlDropdownInput.value = saved || '';
   }
 
   if (navSettings) navSettings.addEventListener('click', () => {
@@ -2393,12 +2390,20 @@
         }
       } else if (tab === 'terminal'){
         setActiveTab('terminal');
-        ensureTerminal();
+      } else if (tab === 'payloads'){
+        setActiveTab('payloads');
+        if (!payloadState.loaded) {
+          loadPayloads();
+          payloadState.loaded = true;
+        }
       } else if (tab === 'loot'){
         setActiveTab('loot');
         if (lootList && !lootList.dataset.loaded){ loadLoot(''); lootList.dataset.loaded = '1'; }
-      } else if (tab === 'payloads'){
-        setActiveTab('payloads');
+      } else if (tab === 'settings'){
+        setActiveTab('settings');
+        loadWsUrlOverride();
+        loadDiscordWebhook();
+        loadTailscaleSettings();
       } else {
         setActiveTab(tab);
       }
@@ -2431,6 +2436,27 @@
   });
   if (discordWebhookClear) discordWebhookClear.addEventListener('click', () => {
     if (discordWebhookInput) discordWebhookInput.value = '';
+    saveDiscordWebhook('');
+  });
+  // Dropdown WebSocket URL handlers
+  if (wsUrlDropdownSave) wsUrlDropdownSave.addEventListener('click', () => {
+    const url = wsUrlDropdownInput ? wsUrlDropdownInput.value.trim() : '';
+    if (url && !url.match(/^(ws|wss):\/\//i)) {
+      return;
+    }
+    setManualWsUrl(url);
+    if (wsUrlDropdownInput) wsUrlDropdownInput.value = url;
+  });
+  if (wsUrlDropdownClear) wsUrlDropdownClear.addEventListener('click', () => {
+    setManualWsUrl('');
+    if (wsUrlDropdownInput) wsUrlDropdownInput.value = '';
+  });
+  // Dropdown Discord Webhook handlers
+  if (discordWebhookDropdownSave) discordWebhookDropdownSave.addEventListener('click', () => {
+    saveDiscordWebhook(discordWebhookDropdownInput ? discordWebhookDropdownInput.value : '');
+  });
+  if (discordWebhookDropdownClear) discordWebhookDropdownClear.addEventListener('click', () => {
+    if (discordWebhookDropdownInput) discordWebhookDropdownInput.value = '';
     saveDiscordWebhook('');
   });
   if (tailscaleInstallBtn) tailscaleInstallBtn.addEventListener('click', () => {

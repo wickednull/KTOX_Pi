@@ -499,11 +499,11 @@
           <div class="relative">
             <button id="settingsToggle" type="button" class="px-3 py-1.5 text-xs rounded-lg bg-slate-800/80 border border-slate-600/40 text-slate-200 hover:bg-slate-700/80 transition"><i class="fa-solid fa-sliders"></i></button>
             <!-- Settings Dropdown Menu -->
-            <div id="settingsDropdown" class="hidden absolute top-full right-0 mt-2 w-56 rounded-xl border border-slate-800/80 bg-slate-950/95 backdrop-blur shadow-lg">
+            <div id="settingsDropdown" class="hidden absolute top-full right-0 mt-2 w-64 rounded-xl border border-slate-800/80 bg-slate-950/95 backdrop-blur shadow-lg">
               <div class="p-3 border-b border-slate-800/70">
                 <div class="text-xs font-semibold text-red-400 uppercase tracking-wider">Settings</div>
               </div>
-              <div class="p-3 space-y-2 max-h-96 overflow-y-auto">
+              <div class="p-3 space-y-3 max-h-96 overflow-y-auto">
                 <!-- Themes -->
                 <div>
                   <div class="text-xs font-semibold text-slate-200 mb-2">Themes</div>
@@ -515,14 +515,27 @@
                 </div>
                 <!-- WebSocket URL -->
                 <div>
-                  <div class="text-xs font-semibold text-slate-200 mb-1">WebSocket URL</div>
-                  <input type="text" placeholder="ws://192.168.1.100:8765/" class="w-full px-2 py-1 rounded-lg bg-slate-900/70 border border-slate-700/60 text-slate-100 text-[11px] focus:outline-none focus:ring-1 focus:ring-red-400/50">
+                  <div class="text-xs font-semibold text-slate-200 mb-1">WebSocket URL (iOS PWA)</div>
+                  <input type="text" id="wsUrlDropdownInput" placeholder="ws://192.168.1.100:8765/" class="w-full px-2 py-1 rounded-lg bg-slate-900/70 border border-slate-700/60 text-slate-100 text-[11px] focus:outline-none focus:ring-1 focus:ring-red-400/50">
                   <div class="flex gap-1 mt-2">
-                    <button type="button" class="px-2 py-1 text-[10px] rounded-lg bg-red-900/80 border border-red-300/30 text-white hover:bg-red-800/80 transition" onclick="document.getElementById('settingsToggle').click(); setTimeout(() => { const tab = document.getElementById('settingsTab'); if(tab) { tab.scrollIntoView(); tab.querySelector('#wsUrlOverrideInput')?.focus(); } }, 100)">Configure</button>
+                    <button type="button" class="px-2 py-1 text-[10px] rounded-lg bg-red-900/80 border border-red-300/30 text-white hover:bg-red-800/80 transition" id="wsUrlDropdownSave">Save</button>
+                    <button type="button" class="px-2 py-1 text-[10px] rounded-lg bg-slate-800/80 border border-slate-600/40 text-slate-200 hover:bg-slate-700/80 transition" id="wsUrlDropdownClear">Clear</button>
                   </div>
                 </div>
-                <!-- Logout -->
-                <button type="button" class="w-full px-3 py-2 mt-3 rounded-lg bg-red-900/80 border border-red-300/30 text-white hover:bg-red-800/80 transition text-xs font-semibold" onclick="document.getElementById('settingsToggle').click(); setTimeout(() => document.getElementById('settingsLogoutBtn')?.click(), 100)"><i class="fa-solid fa-right-from-bracket mr-1"></i>Logout</button>
+                <!-- Discord Webhook -->
+                <div>
+                  <div class="text-xs font-semibold text-slate-200 mb-1">Discord Webhook</div>
+                  <input type="password" id="discordWebhookDropdownInput" placeholder="https://discord.com/api/webhooks/..." class="w-full px-2 py-1 rounded-lg bg-slate-900/70 border border-slate-700/60 text-slate-100 text-[11px] focus:outline-none focus:ring-1 focus:ring-red-400/50">
+                  <div class="flex gap-1 mt-2">
+                    <button type="button" class="px-2 py-1 text-[10px] rounded-lg bg-red-900/80 border border-red-300/30 text-white hover:bg-red-800/80 transition" id="discordWebhookDropdownSave">Save</button>
+                    <button type="button" class="px-2 py-1 text-[10px] rounded-lg bg-slate-800/80 border border-slate-600/40 text-slate-200 hover:bg-slate-700/80 transition" id="discordWebhookDropdownClear">Clear</button>
+                  </div>
+                </div>
+                <!-- Full Settings & Logout -->
+                <div class="pt-2 border-t border-slate-800/70 space-y-2">
+                  <button type="button" class="w-full px-3 py-1.5 rounded-lg bg-slate-800/80 border border-slate-600/40 text-slate-200 hover:bg-slate-700/80 transition text-xs font-semibold" onclick="document.getElementById('settingsToggle').click(); setTimeout(() => { setActiveTab('settings'); }, 100)"><i class="fa-solid fa-sliders mr-1"></i>Full Settings</button>
+                  <button type="button" class="w-full px-3 py-1.5 rounded-lg bg-red-900/80 border border-red-300/30 text-white hover:bg-red-800/80 transition text-xs font-semibold" onclick="document.getElementById('settingsToggle').click(); setTimeout(() => document.getElementById('settingsLogoutBtn')?.click(), 100)"><i class="fa-solid fa-right-from-bracket mr-1"></i>Logout</button>
+                </div>
               </div>
             </div>
           </div>
@@ -1027,6 +1040,10 @@
     <button class="mob-nav-btn" data-mobnav="loot" aria-label="Loot">
       <i class="fa-solid fa-vault"></i>
       <span>Loot</span>
+    </button>
+    <button class="mob-nav-btn" data-mobnav="settings" aria-label="Settings">
+      <i class="fa-solid fa-sliders"></i>
+      <span>Settings</span>
     </button>
   </nav>
 
