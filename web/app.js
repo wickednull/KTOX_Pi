@@ -56,6 +56,8 @@
   const systemDropdown = document.getElementById('systemDropdown');
   const settingsTab = document.getElementById('settingsTab');
   const settingsDropdown = document.getElementById('settingsDropdown');
+  const settingsFullBtn = document.getElementById('settingsFullBtn');
+  const settingsDropdownLogoutBtn = document.getElementById('settingsDropdownLogoutBtn');
   const settingsToggle = document.getElementById('settingsToggle');
   const lootTab = document.getElementById('lootTab');
   const systemStatus = document.getElementById('systemStatus');
@@ -2219,6 +2221,17 @@
     loadWsUrlOverride();
     loadDiscordWebhook();
     loadTailscaleSettings();
+  });
+  if (settingsFullBtn) settingsFullBtn.addEventListener('click', () => {
+    if (settingsDropdown) settingsDropdown.classList.add('hidden');
+    setActiveTab('settings');
+    loadWsUrlOverride();
+    loadDiscordWebhook();
+    loadTailscaleSettings();
+  });
+  if (settingsDropdownLogoutBtn) settingsDropdownLogoutBtn.addEventListener('click', () => {
+    if (settingsDropdown) settingsDropdown.classList.add('hidden');
+    logoutUser();
   });
   if (navPayloadStudio) navPayloadStudio.href = './ide.html' + getForwardSearch();
   themeButtons.forEach(btn => {
