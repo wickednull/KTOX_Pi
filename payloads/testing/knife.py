@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# NAME: USB Army Knife Controller
 # USB Army Knife Marauder Controller for KTOx_Pi
 # Full command set – selects target APs/stations, runs attacks, displays output on LCD
 
