@@ -9,6 +9,11 @@
   --rj-parity-glow: 0 0 20px rgba(139, 0, 0, 0.12);
 }
 
+/* Hide mobile title bar on desktop */
+#mobileTopBar {
+  display: none !important;
+}
+
 /* Shared shell feel */
 #sidebar,
 header {
