@@ -86,9 +86,19 @@ class USBArmyKnife:
             rtscts=False,
             dsrdtr=False,
         )
+        # Kick CDC ACM endpoints that need DTR/RTS asserted.
+        try:
+            self.ser.setDTR(False)
+            self.ser.setRTS(False)
+            time.sleep(0.05)
+            self.ser.setDTR(True)
+            self.ser.setRTS(True)
+        except Exception:
+            pass
         time.sleep(1.2)
         self.ser.write(b"\r\n")
         self.ser.write(b"\n")
+        self.ser.write(b"help\r\n")
         self.ser.flush()
         time.sleep(0.25)
         self.ser.reset_input_buffer()
@@ -140,8 +150,9 @@ class USBArmyKnife:
     def send(self, cmd, timeout=20):
         if not self.ser or not self.ser.is_open:
             return ["[ERROR] serial not open"]
-        # Marauder builds are generally happier with LF command ending.
-        self.ser.write((cmd + "\n").encode())
+        # Different builds parse line-endings differently; send both.
+        for payload in (cmd + "\r\n", cmd + "\n"):
+            self.ser.write(payload.encode())
         self.ser.flush()
         raw = ""
         start = time.time()
@@ -160,7 +171,9 @@ class USBArmyKnife:
                     break
                 time.sleep(0.03)
         lines = [ln.strip() for ln in raw.replace("\r", "\n").split("\n") if ln.strip()]
-        return lines if lines else ["[TIMEOUT]"]
+        if lines:
+            return lines
+        return [f"[TIMEOUT] no data from {self.port}@{self.baud}"]
 
     def close(self):
         if self.ser and self.ser.is_open:
