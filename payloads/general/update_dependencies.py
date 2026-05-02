@@ -11,6 +11,10 @@ Features:
 - Streams the output of the `apt-get` and `pip` commands to the LCD in real-time.
 - Graceful exit via KEY3 or Ctrl-C.
 
+EXCLUDED PACKAGES (install separately if needed):
+- customtkinter  → Too resource-intensive for RPi Zero 2 W
+  Install with: pip3 install customtkinter
+
 Controls:
 - CONFIRMATION SCREEN:
     - OK: Start the installation.
@@ -67,7 +71,6 @@ PIP_PACKAGES = [
     "scapy",
     "python-nmap",
     "netifaces",
-    "customtkinter",
     "flask",
     "evdev",
     "Pillow",
@@ -76,6 +79,8 @@ PIP_PACKAGES = [
     "paramiko",
     "cryptography",
 ]
+# NOTE: customtkinter removed — too resource-intensive for RPi Zero 2 W
+# Install separately if needed: pip3 install customtkinter
 
 # --- Dependency Checker ---
 def get_missing_packages():
@@ -143,8 +148,10 @@ def draw_ui(screen_state="confirm", missing_apt=None, missing_pip=None):
                 draw.text((5, 25), f"Missing packages:", font=font_small, fill=(242, 243, 244))
                 draw.text((10, 40), f"APT: {apt_count}", font=font_small, fill=(212, 172, 13))
                 draw.text((10, 55), f"PIP: {pip_count}", font=font_small, fill=(212, 172, 13))
-                draw.text((5, 85), "OK=Install", font=font_small, fill=(52, 152, 219))
-                draw.text((5, 100), "KEY3=Cancel", font=font_small, fill=(231, 76, 60))
+                draw.text((5, 70), "Note: customtkinter", font=font_small, fill=(212, 172, 13))
+                draw.text((5, 80), "excluded (RPi Zero)", font=font_small, fill=(212, 172, 13))
+                draw.text((5, 95), "OK=Install", font=font_small, fill=(52, 152, 219))
+                draw.text((5, 110), "KEY3=Cancel", font=font_small, fill=(231, 76, 60))
             else:
                 draw.text((5, 40), "All dependencies", font=font_small, fill=(46, 204, 113))
                 draw.text((5, 55), "are installed!", font=font_small, fill=(46, 204, 113))
@@ -187,7 +194,7 @@ def installation_worker(to_install_apt, to_install_pip):
     with UI_LOCK:
         INSTALL_OUTPUT_LINES = ["Updating package list..."]
 
-    if not run_command(["sudo", "apt-get", "update", "-qq"]):
+    if not run_command(["apt-get", "update", "-qq"]):
         with UI_LOCK:
             INSTALL_OUTPUT_LINES.append("APT update failed!")
             INSTALL_OUTPUT_LINES.append("Finished.")
@@ -196,7 +203,7 @@ def installation_worker(to_install_apt, to_install_pip):
     if to_install_apt:
         with UI_LOCK:
             INSTALL_OUTPUT_LINES.append("Installing APT packages...")
-        if not run_command(["sudo", "apt-get", "install", "-y", "--no-install-recommends"] + to_install_apt):
+        if not run_command(["apt-get", "install", "-y", "--no-install-recommends"] + to_install_apt):
             with UI_LOCK:
                 INSTALL_OUTPUT_LINES.append("APT install failed!")
                 INSTALL_OUTPUT_LINES.append("Finished.")
@@ -205,7 +212,7 @@ def installation_worker(to_install_apt, to_install_pip):
     if to_install_pip:
         with UI_LOCK:
             INSTALL_OUTPUT_LINES.append("Installing PIP packages...")
-        if not run_command(["sudo", "pip3", "install", "-q"] + to_install_pip):
+        if not run_command(["pip3", "install", "-q"] + to_install_pip):
             with UI_LOCK:
                 INSTALL_OUTPUT_LINES.append("PIP install failed!")
                 INSTALL_OUTPUT_LINES.append("Finished.")
