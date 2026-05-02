@@ -13,7 +13,7 @@ import LCD_1in44
 from PIL import Image, ImageDraw, ImageFont
 
 SERIAL_BAUD = 115200
-PROMPT_PATTERNS = ("marauder>", "Marauder>", ">")
+PROMPT_PATTERNS = ("marauder>", "Marauder>")
 
 PINS = {
     "UP": 6, "DOWN": 19, "LEFT": 5, "RIGHT": 26,
@@ -23,7 +23,7 @@ PINS = {
 COMMAND_CATEGORIES = {
     "Scan / Sniff": ["scanap", "scansta", "scanall", "sniffbeacon", "sniffdeauth", "packetcount"],
     "Attacks": ["attack -t deauth -a", "attack -t deauth -s", "attack -t beacon -r", "attack -t probe"],
-    "Targets": ["list -a", "list -s", "list -c", "select -a 0", "clearlist -a", "clearlist -s"],
+    "Targets": ["list -a", "list -s", "list -c", "select -a 0", "select -s 0", "clearlist -a", "clearlist -s"],
     "System": ["help", "channel -s 6", "stopscan", "clear", "reboot"],
 }
 
@@ -79,41 +79,50 @@ class USBArmyKnife:
         # strip menu label suffix if present
         self.port = port.split(" | ")[0].strip()
         try:
-            self.ser = serial.Serial(self.port, SERIAL_BAUD, timeout=1)
+            self.ser = serial.Serial(
+                self.port,
+                SERIAL_BAUD,
+                timeout=0.1,
+                write_timeout=1,
+                xonxoff=False,
+                rtscts=False,
+                dsrdtr=False,
+            )
             time.sleep(1.2)
             self.ser.write(b"\r\n")
+            self.ser.flush()
+            time.sleep(0.2)
             self.ser.reset_input_buffer()
+            self.ser.reset_output_buffer()
             return True
         except Exception as e:
             self.last_error = str(e)
             return False
 
-    def send(self, cmd, timeout=12):
+    def send(self, cmd, timeout=20):
         if not self.ser or not self.ser.is_open:
             return ["[ERROR] serial not open"]
-        self.ser.write((cmd + "\r\n").encode())
-        out, buf = [], ""
+        # Marauder builds are generally happier with LF command ending.
+        self.ser.write((cmd + "\n").encode())
+        self.ser.flush()
+        raw = ""
         start = time.time()
-        last = time.time()
+        last = 0
         while time.time() - start < timeout:
-            chunk = self.ser.read(256).decode(errors="ignore")
-            if chunk:
-                last = time.time()
-                buf += chunk
-                while "\n" in buf:
-                    line, buf = buf.split("\n", 1)
-                    line = line.strip()
-                    if line:
-                        out.append(line)
-                        if any(p in line for p in PROMPT_PATTERNS):
-                            return out
+            waiting = self.ser.in_waiting
+            if waiting > 0:
+                chunk = self.ser.read(waiting).decode(errors="ignore")
+                if chunk:
+                    raw += chunk
+                    last = time.time()
+                    # Some firmware echoes prompt many times; don't stop immediately.
+                    # We stop on idle after receiving data so full output is captured.
             else:
-                if out and time.time() - last > 0.8:
-                    return out
+                if raw and last and time.time() - last > 2.5:
+                    break
                 time.sleep(0.03)
-        if buf.strip():
-            out.append(buf.strip())
-        return out if out else ["[TIMEOUT]"]
+        lines = [ln.strip() for ln in raw.replace("\r", "\n").split("\n") if ln.strip()]
+        return lines if lines else ["[TIMEOUT]"]
 
     def close(self):
         if self.ser and self.ser.is_open:
@@ -200,6 +209,9 @@ def run():
 
     ui.message("Connected", port, 1)
 
+    selected_ap = None
+    selected_sta = None
+
     while True:
         cat = ui.menu("USB Army Knife", list(COMMAND_CATEGORIES.keys()) + ["Exit"])
         if not cat or cat == "Exit":
@@ -207,8 +219,27 @@ def run():
         cmd = ui.menu(cat, COMMAND_CATEGORIES[cat])
         if not cmd:
             continue
+        if cmd == "select -a 0" and selected_ap is not None:
+            cmd = f"select -a {selected_ap}"
+        elif cmd == "select -s 0" and selected_sta is not None:
+            cmd = f"select -s {selected_sta}"
         ui.message("Sending", cmd[:20], 0.7)
         out = knife.send(cmd)
+        # Parse discovered indexes to make target selection easier later.
+        if cmd == "list -a":
+            ap_indices = [ln.split()[0] for ln in out if ln and ln[0].isdigit()]
+            if ap_indices:
+                choice = ui.menu("Select AP idx", ap_indices + ["Skip"])
+                if choice and choice != "Skip":
+                    selected_ap = choice
+                    knife.send(f"select -a {choice}")
+        elif cmd == "list -s":
+            sta_indices = [ln.split()[0] for ln in out if ln and ln[0].isdigit()]
+            if sta_indices:
+                choice = ui.menu("Select STA idx", sta_indices + ["Skip"])
+                if choice and choice != "Skip":
+                    selected_sta = choice
+                    knife.send(f"select -s {choice}")
         # output viewer
         idx = 0
         while True:
