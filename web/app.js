@@ -102,9 +102,15 @@
   const wsUrlOverrideSave = document.getElementById('wsUrlOverrideSave');
   const wsUrlOverrideClear = document.getElementById('wsUrlOverrideClear');
   const wsUrlStatus = document.getElementById('wsUrlStatus');
+  const wsUrlDropdownInput = document.getElementById('wsUrlDropdownInput');
+  const wsUrlDropdownSave = document.getElementById('wsUrlDropdownSave');
+  const wsUrlDropdownClear = document.getElementById('wsUrlDropdownClear');
   const discordWebhookInput = document.getElementById('discordWebhookInput');
   const discordWebhookSave = document.getElementById('discordWebhookSave');
   const discordWebhookClear = document.getElementById('discordWebhookClear');
+  const discordWebhookDropdownInput = document.getElementById('discordWebhookDropdownInput');
+  const discordWebhookDropdownSave = document.getElementById('discordWebhookDropdownSave');
+  const discordWebhookDropdownClear = document.getElementById('discordWebhookDropdownClear');
   const tailscaleSettingsStatus = document.getElementById('tailscaleSettingsStatus');
   const tailscaleInstallBtn = document.getElementById('tailscaleInstallBtn');
   const tailscaleReauthBtn = document.getElementById('tailscaleReauthBtn');
@@ -1376,6 +1382,7 @@
         throw new Error(data && data.error ? data.error : 'settings_failed');
       }
       if (discordWebhookInput) discordWebhookInput.value = String(data.url || '');
+      if (discordWebhookDropdownInput) discordWebhookDropdownInput.value = String(data.url || '');
       setSettingsStatus(data.configured ? 'Webhook configured' : 'No webhook configured');
     } catch(e){
       setSettingsStatus('Failed to load settings');
@@ -2204,6 +2211,7 @@
   function loadWsUrlOverride(){
     const saved = getManualWsUrl();
     if (wsUrlOverrideInput) wsUrlOverrideInput.value = saved || '';
+    if (wsUrlDropdownInput) wsUrlDropdownInput.value = saved || '';
   }
 
   if (navSettings) navSettings.addEventListener('click', () => {
@@ -2391,6 +2399,11 @@
       } else if (tab === 'loot'){
         setActiveTab('loot');
         if (lootList && !lootList.dataset.loaded){ loadLoot(''); lootList.dataset.loaded = '1'; }
+      } else if (tab === 'settings'){
+        setActiveTab('settings');
+        loadWsUrlOverride();
+        loadDiscordWebhook();
+        loadTailscaleSettings();
       } else {
         setActiveTab(tab);
       }
@@ -2423,6 +2436,27 @@
   });
   if (discordWebhookClear) discordWebhookClear.addEventListener('click', () => {
     if (discordWebhookInput) discordWebhookInput.value = '';
+    saveDiscordWebhook('');
+  });
+  // Dropdown WebSocket URL handlers
+  if (wsUrlDropdownSave) wsUrlDropdownSave.addEventListener('click', () => {
+    const url = wsUrlDropdownInput ? wsUrlDropdownInput.value.trim() : '';
+    if (url && !url.match(/^(ws|wss):\/\//i)) {
+      return;
+    }
+    setManualWsUrl(url);
+    if (wsUrlDropdownInput) wsUrlDropdownInput.value = url;
+  });
+  if (wsUrlDropdownClear) wsUrlDropdownClear.addEventListener('click', () => {
+    setManualWsUrl('');
+    if (wsUrlDropdownInput) wsUrlDropdownInput.value = '';
+  });
+  // Dropdown Discord Webhook handlers
+  if (discordWebhookDropdownSave) discordWebhookDropdownSave.addEventListener('click', () => {
+    saveDiscordWebhook(discordWebhookDropdownInput ? discordWebhookDropdownInput.value : '');
+  });
+  if (discordWebhookDropdownClear) discordWebhookDropdownClear.addEventListener('click', () => {
+    if (discordWebhookDropdownInput) discordWebhookDropdownInput.value = '';
     saveDiscordWebhook('');
   });
   if (tailscaleInstallBtn) tailscaleInstallBtn.addEventListener('click', () => {
