@@ -10,7 +10,7 @@ import serial.tools.list_ports
 from datetime import datetime
 
 # KTOx environment
-KTOX_DIR = "/root/KTOx"
+KTOX_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 sys.path.insert(0, KTOX_DIR)
 
 try:
@@ -21,7 +21,24 @@ try:
 except Exception:
     HAS_HW = False
 
-from ktox_device import draw_lock, LCD, image, draw, text_font, small_font, color, getButton, Dialog_info
+try:
+    from ktox_device import draw_lock, LCD, image, draw, text_font, small_font, color, getButton, Dialog_info
+    # Check if draw is actually available (None in headless mode)
+    HAS_LCD = draw is not None
+    if not HAS_LCD:
+        print("[WARN] LCD/UI unavailable (headless mode)")
+        Dialog_info = None
+        getButton = None
+except Exception as e:
+    print(f"[WARN] LCD/UI unavailable: {e}")
+    HAS_LCD = False
+    draw_lock = None
+    Dialog_info = None
+    getButton = None
+    color = None
+    draw = None
+    text_font = None
+    small_font = None
 
 # ------------------------------------------------------------
 # Serial connection to USB Army Knife
@@ -37,7 +54,10 @@ class USBArmyKnife:
     def _find_port(self):
         # Try to auto‑detect by VID/PID (CP210x is common)
         for port in serial.tools.list_ports.comports():
-            if "USB Army Knife" in port.description or "210x" in port.product or "0403" in port.vid_pid:
+            desc = port.description or ""
+            prod = port.product or ""
+            # Check for common patterns: USB Army Knife, CP210x, or FTDI chips
+            if any(x in desc for x in ["USB Army Knife", "CP210x", "FTDI"]) or "210x" in prod:
                 return port.device
         # Fallback to common TTY names
         for dev in ["/dev/ttyACM0", "/dev/ttyUSB0"]:
@@ -155,11 +175,50 @@ COMMAND_CATEGORIES = {
 }
 
 # ------------------------------------------------------------
+# UI helper functions (LCD or headless fallback)
+# ------------------------------------------------------------
+def show_message(text, wait=True, timeout=None):
+    """Display message on LCD if available, otherwise print to console."""
+    if HAS_LCD and Dialog_info:
+        Dialog_info(text, wait=wait, timeout=timeout)
+    else:
+        print(f"[INFO] {text.replace(chr(10), ' / ')}")
+        if wait and not timeout:
+            input("Press Enter to continue...")
+        elif timeout:
+            time.sleep(timeout)
+
+def get_menu_selection(items, title="Select"):
+    """Get menu selection from LCD or console."""
+    if HAS_LCD:
+        return _get_menu_string(items, title=title)
+    else:
+        print(f"\n{title}")
+        for i, item in enumerate(items):
+            print(f"  {i+1}. {item}")
+        try:
+            choice = int(input("Enter number (0 to cancel): ")) - 1
+            return items[choice] if 0 <= choice < len(items) else None
+        except (ValueError, IndexError):
+            return None
+
+# ------------------------------------------------------------
 # LCD scrolling text viewer
 # ------------------------------------------------------------
 def show_scrollable_text(title, lines):
     if not lines:
         lines = ["(no output)"]
+
+    if not HAS_LCD or draw is None:
+        # Headless mode: just print output
+        print(f"\n--- {title} ---")
+        for line in lines:
+            print(line)
+        print("\nPress Enter to continue...")
+        input()
+        return
+
+    # LCD mode: scrollable text viewer
     # Truncate long lines to fit 128px width
     max_len = 21
     display_lines = []
@@ -204,16 +263,16 @@ def _centered(text, y, font=small_font, fill="#c8c8c8"):
 # Main payload entry point
 # ------------------------------------------------------------
 def run():
-    Dialog_info("USB Army Knife\nInitialising...", wait=False, timeout=1)
+    show_message("USB Army Knife\nInitialising...", wait=False, timeout=1)
     knife = USBArmyKnife()
     if not knife.connect():
-        Dialog_info("Device not found!\nPlug in USB Army Knife", wait=True)
+        show_message("Device not found!\nPlug in USB Army Knife", wait=True)
         return
 
     # Test communication by asking for help
     test = knife.send_command("help", timeout=3)
     if not test or PROMPT not in str(test):
-        Dialog_info("Device not responding\nCheck connection", wait=True)
+        show_message("Device not responding\nCheck connection", wait=True)
         knife.close()
         return
 
@@ -221,15 +280,15 @@ def run():
     while True:
         # Build category list for menu
         cat_labels = list(COMMAND_CATEGORIES.keys())
-        # Use KTOx's built‑in menu selector
-        selected_cat = _get_menu_string(cat_labels, title="SELECT CATEGORY")
-        if not selected_cat or selected_cat == "":
+        # Use KTOx's built‑in menu selector or console fallback
+        selected_cat = get_menu_selection(cat_labels, title="SELECT CATEGORY")
+        if not selected_cat:
             break
 
         # Show commands in that category
         cmd_list = COMMAND_CATEGORIES[selected_cat]
         menu_items = [f"{cmd[0]}  ({cmd[1][:15]})" for cmd in cmd_list]
-        selected_cmd_desc = _get_menu_string(menu_items, title=selected_cat[:18])
+        selected_cmd_desc = get_menu_selection(menu_items, title=selected_cat[:18])
         if not selected_cmd_desc:
             continue
 
@@ -245,15 +304,20 @@ def run():
         # Sanity check before dangerous commands
         dangerous = ["reboot", "attack -t deauth", "attack -t beacon", "attack -t probe"]
         if any(d in chosen_cmd for d in dangerous):
-            if not _confirm(f"Send:\n{chosen_cmd[:18]}"):
+            if not _confirm_choice(f"Send:\n{chosen_cmd[:18]}"):
                 continue
 
         # Dispatch command and show output
-        with draw_lock:
-            draw.rectangle([0,12,128,128], fill=color.background)
-            color.DrawBorder()
-            _centered("Sending command...", 40)
-            _centered(chosen_cmd[:20], 60)
+        show_message(f"Sending: {chosen_cmd[:20]}...", wait=False, timeout=1)
+        if HAS_LCD and draw_lock and draw and color:
+            try:
+                with draw_lock:
+                    draw.rectangle([0,12,128,128], fill=color.background)
+                    color.DrawBorder()
+                    _centered("Sending command...", 40)
+                    _centered(chosen_cmd[:20], 60)
+            except Exception:
+                pass
         output = knife.send_command(chosen_cmd, wait_for_prompt=True, timeout=15)
         show_scrollable_text(chosen_cmd[:18], output)
 
@@ -268,23 +332,18 @@ def _get_menu_string(items, title="Select"):
         # Minimal fallback: just return first item
         return items[0] if items else ""
 
-def _confirm(msg):
-    try:
-        from ktox_device import YNDialog
-        return YNDialog(msg, y="Yes", n="No")
-    except ImportError:
-        # Fallback: left=Yes, right=No
-        with draw_lock:
-            draw.rectangle([0,12,128,128], fill=color.background)
-            color.DrawBorder()
-            _centered(msg, 40)
-            _centered("LEFT=Yes  RIGHT=No", 100)
-        while True:
-            btn = getButton()
-            if btn in ("KEY_LEFT_PIN", "KEY1_PIN"):
-                return True
-            elif btn in ("KEY_RIGHT_PIN", "KEY3_PIN"):
-                return False
+def _confirm_choice(msg):
+    """Confirm a dangerous action (headless or LCD)."""
+    if HAS_LCD:
+        try:
+            from ktox_device import YNDialog
+            return YNDialog(msg, y="Yes", n="No")
+        except Exception:
+            pass
+    # Headless fallback
+    print(f"\n{msg}")
+    response = input("Proceed? (yes/no): ").strip().lower()
+    return response in ("yes", "y", "true", "1")
 
 if __name__ == "__main__":
     run()
