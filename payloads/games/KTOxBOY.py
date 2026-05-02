@@ -379,7 +379,7 @@ def _auto_install():
     try:
         if install_script:
             result = subprocess.run(
-                ["sudo", "bash", install_script],
+                ["bash", install_script],
                 capture_output=True, text=True, timeout=360,
             )
             if result.returncode != 0:
