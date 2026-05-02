@@ -1,0 +1,290 @@
+#!/usr/bin/env python3
+# USB Army Knife Marauder Controller for KTOx_Pi
+# Full command set – selects target APs/stations, runs attacks, displays output on LCD
+
+import os
+import sys
+import time
+import serial
+import serial.tools.list_ports
+from datetime import datetime
+
+# KTOx environment
+KTOX_DIR = "/root/KTOx"
+sys.path.insert(0, KTOX_DIR)
+
+try:
+    import RPi.GPIO as GPIO
+    from PIL import Image, ImageDraw, ImageFont
+    import LCD_1in44
+    HAS_HW = True
+except Exception:
+    HAS_HW = False
+
+from ktox_device import draw_lock, LCD, image, draw, text_font, small_font, color, getButton, Dialog_info
+
+# ------------------------------------------------------------
+# Serial connection to USB Army Knife
+# ------------------------------------------------------------
+SERIAL_BAUD = 115200
+PROMPT = "marauder>"   # prompt string after each command
+
+class USBArmyKnife:
+    def __init__(self):
+        self.ser = None
+        self.port = self._find_port()
+
+    def _find_port(self):
+        # Try to auto‑detect by VID/PID (CP210x is common)
+        for port in serial.tools.list_ports.comports():
+            if "USB Army Knife" in port.description or "210x" in port.product or "0403" in port.vid_pid:
+                return port.device
+        # Fallback to common TTY names
+        for dev in ["/dev/ttyACM0", "/dev/ttyUSB0"]:
+            if os.path.exists(dev):
+                return dev
+        return None
+
+    def connect(self):
+        if not self.port:
+            return False
+        try:
+            self.ser = serial.Serial(self.port, SERIAL_BAUD, timeout=2)
+            time.sleep(1.5)
+            self.ser.write(b"\r\n")
+            time.sleep(0.5)
+            self.ser.reset_input_buffer()
+            return True
+        except Exception as e:
+            print(f"[Marauder] Connect error: {e}")
+            return False
+
+    def send_command(self, cmd, wait_for_prompt=True, timeout=15):
+        if not self.ser or not self.ser.is_open:
+            if not self.connect():
+                return ["[ERROR] Cannot connect to USB Army Knife"]
+        self.ser.write(f"{cmd}\r\n".encode())
+        if not wait_for_prompt:
+            return []
+        output = []
+        buffer = ""
+        start = time.time()
+        while (time.time() - start) < timeout:
+            try:
+                chunk = self.ser.read(1024).decode(errors='ignore')
+                if chunk:
+                    buffer += chunk
+                    while "\n" in buffer:
+                        line, buffer = buffer.split("\n", 1)
+                        line = line.strip()
+                        if line:
+                            output.append(line)
+                        if PROMPT in line:
+                            return output
+                else:
+                    time.sleep(0.05)
+            except Exception:
+                break
+        return output if output else ["[TIMEOUT] No response"]
+
+    def close(self):
+        if self.ser and self.ser.is_open:
+            self.ser.close()
+
+# ------------------------------------------------------------
+# Menu structure – full command set
+# ------------------------------------------------------------
+COMMAND_CATEGORIES = {
+    "📡 Scan / Sniff": [
+        ("scanap",              "Scan for access points"),
+        ("scansta",             "Scan for stations (clients)"),
+        ("scanall",             "Scan for both APs and stations"),
+        ("sniffbeacon",         "Capture beacon frames"),
+        ("sniffdeauth",         "Capture deauth packets"),
+        ("sniffpmkid -c 1",     "Capture PMKID on channel 1"),
+        ("packetcount",         "Show packet rate"),
+        ("sigmon",              "Signal strength monitor"),
+    ],
+    "⚔️ Attacks": [
+        ("attack -t deauth -a",     "Deauth attack (all clients)"),
+        ("attack -t deauth -s",     "Deauth attack (selected target)"),
+        ("attack -t beacon -r",     "Beacon flood (random SSIDs)"),
+        ("attack -t beacon -l",     "Beacon flood (from SSID list)"),
+        ("attack -t probe",         "Probe request flood"),
+        ("attack -t rickroll",      "Rick Roll beacon flood"),
+    ],
+    "🎯 Target Mgmt": [
+        ("list -a",                 "List all APs"),
+        ("list -s",                 "List all stations (clients)"),
+        ("list -c",                 "List all clients"),
+        ("select -a 0",             "Select AP index 0"),
+        ("select -s 0,1",           "Select stations 0 and 1"),
+        ("select -f 'contains Home'", "Select APs containing 'Home'"),
+        ("clearlist -a",            "Clear AP list"),
+        ("clearlist -s",            "Clear station list"),
+    ],
+    "📀 SSID Mgmt (beacon lists)": [
+        ("ssid -a -n 'FreeWiFi'",   "Add SSID 'FreeWiFi'"),
+        ("ssid -r 0",               "Remove first SSID"),
+        ("save -a",                 "Save AP list to SD"),
+        ("load -a",                 "Load AP list from SD"),
+        ("clearlist -s",            "Clear SSID list"),
+    ],
+    "🧠 Bluetooth": [
+        ("sniffbt -t airtag",       "Scan for AirTags"),
+        ("sniffbt -t flipper",      "Scan for Flipper Zero devices"),
+        ("blespam -t apple",        "Apple BLE spam"),
+        ("blespam -t samsung",      "Samsung BLE spam"),
+        ("blespam -t windows",      "Windows BLE spam"),
+        ("spoofat -t 0",            "Spoof AirTag #0"),
+    ],
+    "🖥️ System / LED / Logs": [
+        ("help",                    "Show command list"),
+        ("channel -s 6",            "Set WiFi channel 6"),
+        ("reboot",                  "Reboot USB Army Knife"),
+        ("settings -s SavePCAP enable", "Enable PCAP saving"),
+        ("led -s #FF0000",          "Set LED to red"),
+        ("stopscan",                "Stop any scan/attack"),
+        ("clear",                   "Clear device screen"),
+        ("ls /",                    "List files on SD card"),
+    ],
+    "✨ Advanced": [
+        ("evilportal -c start",     "Start Evil Portal"),
+        ("gps -g fix",              "Get GPS fix"),
+    ],
+}
+
+# ------------------------------------------------------------
+# LCD scrolling text viewer
+# ------------------------------------------------------------
+def show_scrollable_text(title, lines):
+    if not lines:
+        lines = ["(no output)"]
+    # Truncate long lines to fit 128px width
+    max_len = 21
+    display_lines = []
+    for l in lines:
+        if len(l) > max_len:
+            l = l[:max_len-3] + "..."
+        display_lines.append(l)
+
+    idx = 0
+    window = 5
+    total = len(display_lines)
+    while True:
+        offset = max(0, min(idx, total - window))
+        with draw_lock:
+            draw.rectangle([0, 12, 128, 128], fill=color.background)
+            color.DrawBorder()
+            draw.rectangle([3, 13, 125, 24], fill="#1a0000")
+            _centered(title[:18], 13, font=small_font, fill=color.border)
+            draw.line([(3,24),(125,24)], fill=color.border, width=1)
+            y = 28
+            for i in range(window):
+                line_idx = offset + i
+                if line_idx >= total: break
+                draw.text((5, y), display_lines[line_idx], font=text_font, fill=color.text)
+                y += 12
+            draw.line([3, 118, 125, 118], fill="#2a0505", width=1)
+            _centered("▲/▼ scroll  ●=back", 120, font=small_font, fill="#888888")
+        btn = getButton()
+        if btn == "KEY_UP_PIN":
+            idx = max(0, idx-1)
+        elif btn == "KEY_DOWN_PIN":
+            idx = min(total-1, idx+1)
+        elif btn in ("KEY_PRESS_PIN", "KEY_LEFT_PIN", "KEY1_PIN", "KEY2_PIN", "KEY3_PIN"):
+            break
+
+def _centered(text, y, font=small_font, fill="#c8c8c8"):
+    bbox = draw.textbbox((0,0), text, font=font)
+    w = bbox[2] - bbox[0]
+    draw.text(((128-w)//2, y), text, font=font, fill=fill)
+
+# ------------------------------------------------------------
+# Main payload entry point
+# ------------------------------------------------------------
+def run():
+    Dialog_info("USB Army Knife\nInitialising...", wait=False, timeout=1)
+    knife = USBArmyKnife()
+    if not knife.connect():
+        Dialog_info("Device not found!\nPlug in USB Army Knife", wait=True)
+        return
+
+    # Test communication by asking for help
+    test = knife.send_command("help", timeout=3)
+    if not test or PROMPT not in str(test):
+        Dialog_info("Device not responding\nCheck connection", wait=True)
+        knife.close()
+        return
+
+    # Main menu loop
+    while True:
+        # Build category list for menu
+        cat_labels = list(COMMAND_CATEGORIES.keys())
+        # Use KTOx's built‑in menu selector
+        selected_cat = _get_menu_string(cat_labels, title="SELECT CATEGORY")
+        if not selected_cat or selected_cat == "":
+            break
+
+        # Show commands in that category
+        cmd_list = COMMAND_CATEGORIES[selected_cat]
+        menu_items = [f"{cmd[0]}  ({cmd[1][:15]})" for cmd in cmd_list]
+        selected_cmd_desc = _get_menu_string(menu_items, title=selected_cat[:18])
+        if not selected_cmd_desc:
+            continue
+
+        # Extract pure command string
+        chosen_cmd = None
+        for cmd, desc in cmd_list:
+            if cmd in selected_cmd_desc:
+                chosen_cmd = cmd
+                break
+        if not chosen_cmd:
+            continue
+
+        # Sanity check before dangerous commands
+        dangerous = ["reboot", "attack -t deauth", "attack -t beacon", "attack -t probe"]
+        if any(d in chosen_cmd for d in dangerous):
+            if not _confirm(f"Send:\n{chosen_cmd[:18]}"):
+                continue
+
+        # Dispatch command and show output
+        with draw_lock:
+            draw.rectangle([0,12,128,128], fill=color.background)
+            color.DrawBorder()
+            _centered("Sending command...", 40)
+            _centered(chosen_cmd[:20], 60)
+        output = knife.send_command(chosen_cmd, wait_for_prompt=True, timeout=15)
+        show_scrollable_text(chosen_cmd[:18], output)
+
+    knife.close()
+
+def _get_menu_string(items, title="Select"):
+    """Use KTOx's GetMenuString if available, otherwise fallback."""
+    try:
+        from ktox_device import GetMenuString
+        return GetMenuString(items)
+    except ImportError:
+        # Minimal fallback: just return first item
+        return items[0] if items else ""
+
+def _confirm(msg):
+    try:
+        from ktox_device import YNDialog
+        return YNDialog(msg, y="Yes", n="No")
+    except ImportError:
+        # Fallback: left=Yes, right=No
+        with draw_lock:
+            draw.rectangle([0,12,128,128], fill=color.background)
+            color.DrawBorder()
+            _centered(msg, 40)
+            _centered("LEFT=Yes  RIGHT=No", 100)
+        while True:
+            btn = getButton()
+            if btn in ("KEY_LEFT_PIN", "KEY1_PIN"):
+                return True
+            elif btn in ("KEY_RIGHT_PIN", "KEY3_PIN"):
+                return False
+
+if __name__ == "__main__":
+    run()
