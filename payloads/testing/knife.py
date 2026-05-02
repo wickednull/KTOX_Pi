@@ -248,7 +248,7 @@ def get_menu_selection(items, title="Select"):
         try:
             choice = int(input("Enter number (0 to cancel): ")) - 1
             return items[choice] if 0 <= choice < len(items) else None
-        except (ValueError, IndexError):
+        except (ValueError, IndexError, EOFError):
             return None
 
 # ------------------------------------------------------------
@@ -384,13 +384,46 @@ def run():
     knife.close()
 
 def _get_menu_string(items, title="Select"):
-    """Use KTOx's GetMenuString if available, otherwise fallback."""
+    """Use KTOx's GetMenuString if available, otherwise use a button-driven fallback."""
     try:
         from ktox_device import GetMenuString
         return GetMenuString(items)
-    except ImportError:
-        # Minimal fallback: just return first item
-        return items[0] if items else ""
+    except Exception:
+        pass
+
+    if not items:
+        return None
+    if not (HAS_LCD and draw is not None and getButton is not None):
+        return items[0]
+
+    idx = 0
+    window = 5
+    while True:
+        start = max(0, min(idx, len(items) - window))
+        with draw_lock:
+            draw.rectangle([0, 12, 128, 128], fill=color.background)
+            color.DrawBorder()
+            draw.rectangle([3, 13, 125, 24], fill="#1a0000")
+            _centered(title[:18], 13, font=small_font, fill=color.border)
+            y = 28
+            for i in range(window):
+                item_idx = start + i
+                if item_idx >= len(items):
+                    break
+                prefix = ">" if item_idx == idx else " "
+                line = f"{prefix} {items[item_idx]}"[:20]
+                draw.text((5, y), line, font=text_font, fill=color.text)
+                y += 12
+
+        btn = getButton()
+        if btn == "KEY_UP_PIN":
+            idx = (idx - 1) % len(items)
+        elif btn == "KEY_DOWN_PIN":
+            idx = (idx + 1) % len(items)
+        elif btn in ("KEY_PRESS_PIN", "KEY_RIGHT_PIN", "KEY1_PIN"):
+            return items[idx]
+        elif btn in ("KEY_LEFT_PIN", "KEY3_PIN"):
+            return None
 
 def _confirm_choice(msg):
     """Confirm a dangerous action (headless or LCD)."""
@@ -402,7 +435,10 @@ def _confirm_choice(msg):
             pass
     # Headless fallback
     print(f"\n{msg}")
-    response = input("Proceed? (yes/no): ").strip().lower()
+    try:
+        response = input("Proceed? (yes/no): ").strip().lower()
+    except EOFError:
+        return False
     return response in ("yes", "y", "true", "1")
 
 if __name__ == "__main__":
