@@ -952,12 +952,20 @@ main > .flex.items-center.justify-between.mb-4.md\:mb-6 {
 
 @media (max-width: 768px) {
   #mobileTopBar {
-    position: sticky !important;
+    position: fixed !important;
     top: env(safe-area-inset-top, 0px) !important;
+    left: 0 !important;
+    right: 0 !important;
     z-index: 90 !important;
     min-height: 42px !important;
-    margin-bottom: 0.35rem !important;
-    border-radius: 0 0 14px 14px !important;
+    margin: 0.5rem !important;
+    margin-top: env(safe-area-inset-top, 0.5rem) !important;
+    border-radius: 14px !important;
+    width: calc(100% - 1rem) !important;
+  }
+
+  main {
+    margin-top: 60px !important;
   }
 
   #deviceTab.mobile-device-focus .terminal-col {
