@@ -88,6 +88,7 @@ class USBArmyKnife:
             self.ser = serial.Serial(self.port, SERIAL_BAUD, timeout=2)
             time.sleep(1.5)
             self.ser.write(b"\r\n")
+            self.ser.write(b"\n")
             time.sleep(0.5)
             self.ser.reset_input_buffer()
             return True
@@ -344,12 +345,10 @@ def run():
         show_message(f"Connection failed:\n{err[:70]}", wait=True)
         return
 
-    # Test communication by asking for help
+    # Soft communication test: warn, but still allow menu usage
     test = knife.send_command("help", timeout=6)
     if not test or any("[ERROR]" in x for x in test):
-        show_message("Device not responding\nCheck connection", wait=True)
-        knife.close()
-        return
+        show_message("Connected, but no help output.\nTry commands manually.", wait=False, timeout=2)
 
     # Main menu loop
     while True:
