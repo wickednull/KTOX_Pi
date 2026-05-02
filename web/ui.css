@@ -991,15 +991,46 @@ main > .flex.items-center.justify-between.mb-4.md\:mb-6 {
     width: 100% !important;
   }
 
-  body.mobile-system-overlay #systemTab {
-    position: fixed;
-    left: 0.5rem;
-    right: 0.5rem;
-    bottom: calc(72px + env(safe-area-inset-bottom, 0px));
-    top: calc(58px + env(safe-area-inset-top, 0px));
-    z-index: 70;
-    max-height: none;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
+  #systemTab.mobile-system-tab {
+    padding-bottom: 1rem;
+  }
+
+  #systemTab.mobile-system-tab .system-monitor-panel {
+    border: 1px solid rgba(51, 65, 85, 0.85);
+    border-radius: 16px;
+    background: rgba(2, 6, 23, 0.62);
+    box-shadow: 0 16px 34px rgba(2, 6, 23, 0.42);
+    padding: 0.875rem;
+    backdrop-filter: blur(10px);
+  }
+
+  #systemTab.mobile-system-tab .system-monitor-header {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    border-bottom: 1px solid rgba(51, 65, 85, 0.75);
+    padding-bottom: 0.65rem;
+  }
+
+  #systemTab.mobile-system-tab .mobile-system-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem;
+  }
+
+  #systemTab.mobile-system-tab .mobile-stat-card {
+    min-width: 0;
+    border: 1px solid rgba(30, 41, 59, 0.92);
+    border-radius: 12px;
+    background: rgba(15, 23, 42, 0.48);
+    padding: 0.75rem;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  }
+
+  #systemTab.mobile-system-tab .mobile-stat-card .text-lg {
+    font-size: 1.125rem !important;
+    line-height: 1.15 !important;
   }
 }

@@ -705,15 +705,15 @@
       </div>
 
       <!-- Mobile system monitor -->
-      <div id="systemTab" class="hidden">
-        <div class="rounded-3xl border border-slate-700/60 bg-slate-900/40 backdrop-blur p-4 md:p-5 max-w-3xl mx-auto shadow-[0_0_30px_rgba(15,23,42,0.35)] space-y-3">
-          <div class="flex items-center justify-between">
+      <div id="systemTab" class="mobile-system-tab hidden">
+        <div class="system-monitor-panel space-y-3">
+          <div class="system-monitor-header">
             <div class="text-sm font-semibold text-red-400"><i class="fa-solid fa-microchip mr-2"></i>System Monitor</div>
             <div id="mobileSystemStatus" class="text-[11px] text-slate-400">Ready</div>
           </div>
 
-          <div class="grid grid-cols-2 gap-2">
-            <div class="rounded-xl border border-slate-800/80 bg-slate-950/40 p-3">
+          <div class="mobile-system-grid">
+            <div class="mobile-stat-card">
               <div class="text-[10px] text-slate-400">CPU</div>
               <div class="mt-1 flex items-end justify-between gap-2">
                 <div id="mobSysCpuValue" class="text-lg font-bold text-slate-100">0%</div>
@@ -724,7 +724,7 @@
               </div>
             </div>
 
-            <div class="rounded-xl border border-slate-800/80 bg-slate-950/40 p-3">
+            <div class="mobile-stat-card">
               <div class="text-[10px] text-slate-400">Memory</div>
               <div id="mobSysMemValue" class="mt-1 text-lg font-bold text-slate-100">0%</div>
               <div id="mobSysMemMeta" class="text-[11px] text-slate-400">0 / 0</div>
@@ -733,7 +733,7 @@
               </div>
             </div>
 
-            <div class="rounded-xl border border-slate-800/80 bg-slate-950/40 p-3">
+            <div class="mobile-stat-card">
               <div class="text-[10px] text-slate-400">Disk</div>
               <div id="mobSysDiskValue" class="mt-1 text-lg font-bold text-slate-100">0%</div>
               <div id="mobSysDiskMeta" class="text-[11px] text-slate-400">0 / 0</div>
@@ -742,7 +742,7 @@
               </div>
             </div>
 
-            <div class="rounded-xl border border-slate-800/80 bg-slate-950/40 p-3 space-y-1.5">
+            <div class="mobile-stat-card space-y-1.5">
               <div class="text-[10px] text-slate-400">Runtime</div>
               <div class="text-xs text-slate-300">Uptime: <span id="mobSysUptime">-</span></div>
               <div class="text-xs text-slate-300">Load: <span id="mobSysLoad">-</span></div>
@@ -750,14 +750,14 @@
             </div>
           </div>
 
-          <div class="rounded-xl border border-slate-800/80 bg-slate-950/40 p-3 space-y-1.5">
+          <div class="mobile-stat-card space-y-1.5">
             <div class="text-[10px] text-slate-400">Device</div>
             <div class="text-xs text-slate-300">Host: <span id="mobSysHostname">-</span></div>
             <div class="text-xs text-slate-300">Kernel: <span id="mobSysKernel">-</span></div>
             <div class="text-xs text-slate-300">Tailscale: <span id="mobSysTailscale">-</span></div>
           </div>
 
-          <div class="rounded-xl border border-slate-800/80 bg-slate-950/40 p-3">
+          <div class="mobile-stat-card">
             <div class="text-[10px] text-slate-400 mb-2">Network Interfaces</div>
             <div id="mobSysInterfaces" class="text-xs text-slate-300 space-y-1.5">
               <div class="text-slate-500">No active interfaces</div>

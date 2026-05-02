@@ -738,14 +738,13 @@
 
   function setActiveTab(tab){
     activeTab = tab;
-    const isDevice = tab === 'device' || tab === 'terminal' || tab === 'system';
+    const isDevice = tab === 'device' || tab === 'terminal';
     if (deviceTab) {
       deviceTab.classList.toggle('hidden', !isDevice);
       deviceTab.classList.toggle('terminal-mode', tab === 'terminal');
       deviceTab.classList.toggle('mobile-device-focus', tab === 'device');
       deviceTab.classList.toggle('mobile-terminal-focus', tab === 'terminal');
     }
-    document.body.classList.toggle('mobile-system-overlay', tab === 'system');
     if (settingsTab) settingsTab.classList.toggle('hidden', tab !== 'settings');
     if (lootTab) lootTab.classList.toggle('hidden', tab !== 'loot');
     const systemTabEl = document.getElementById('systemTab');
