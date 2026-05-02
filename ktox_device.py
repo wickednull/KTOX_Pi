@@ -691,6 +691,7 @@ def _hw_init():
     if HAS_HW and logo.exists():
         try:
             img = Image.open(logo)
+            img = img.resize((128, 128), Image.Resampling.LANCZOS)
             LCD.LCD_ShowImage(img, 0, 0)
             time.sleep(0.8)
         except Exception:
