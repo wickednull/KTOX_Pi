@@ -51,7 +51,7 @@ except Exception as e:
 # Serial connection to USB Army Knife
 # ------------------------------------------------------------
 SERIAL_BAUD = 115200
-PROMPT = "marauder>"   # prompt string after each command
+PROMPT_PATTERNS = ("marauder>", "Marauder>", ">")
 
 class USBArmyKnife:
     def __init__(self):
@@ -103,25 +103,34 @@ class USBArmyKnife:
         self.ser.write(f"{cmd}\r\n".encode())
         if not wait_for_prompt:
             return []
+
         output = []
         buffer = ""
         start = time.time()
+        last_data = time.time()
         while (time.time() - start) < timeout:
             try:
-                chunk = self.ser.read(1024).decode(errors='ignore')
+                chunk = self.ser.read(256).decode(errors='ignore')
                 if chunk:
+                    last_data = time.time()
                     buffer += chunk
                     while "\n" in buffer:
                         line, buffer = buffer.split("\n", 1)
                         line = line.strip()
                         if line:
                             output.append(line)
-                        if PROMPT in line:
-                            return output
+                            if any(p in line for p in PROMPT_PATTERNS):
+                                return output
                 else:
+                    if output and (time.time() - last_data) > 1.0:
+                        return output
                     time.sleep(0.05)
-            except Exception:
+            except Exception as e:
+                self.last_error = f"Serial read error: {e}"
                 break
+
+        if buffer.strip():
+            output.append(buffer.strip())
         return output if output else ["[TIMEOUT] No response"]
 
     def close(self):
@@ -307,9 +316,15 @@ def show_scrollable_text(title, lines):
             break
 
 def _centered(text, y, font=small_font, fill="#c8c8c8"):
-    bbox = draw.textbbox((0,0), text, font=font)
-    w = bbox[2] - bbox[0]
-    draw.text(((128-w)//2, y), text, font=font, fill=fill)
+    try:
+        bbox = draw.textbbox((0, 0), text, font=font)
+        w = bbox[2] - bbox[0]
+    except Exception:
+        try:
+            w, _ = draw.textsize(text, font=font)
+        except Exception:
+            w = len(text) * 6
+    draw.text(((128 - w) // 2, y), text, font=font, fill=fill)
 
 # ------------------------------------------------------------
 # Main payload entry point
@@ -330,8 +345,8 @@ def run():
         return
 
     # Test communication by asking for help
-    test = knife.send_command("help", timeout=3)
-    if not test or PROMPT not in str(test):
+    test = knife.send_command("help", timeout=6)
+    if not test or any("[ERROR]" in x for x in test):
         show_message("Device not responding\nCheck connection", wait=True)
         knife.close()
         return
