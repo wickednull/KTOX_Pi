@@ -862,9 +862,9 @@
     }
     activeTab = tab;
     const isSystemOverlay = isMobile && tab === 'system';
-    // Show/hide device tab (only when tab is 'device')
+    // Show/hide device tab (only when tab is 'device', hide for terminal and system)
     if (deviceTab) {
-      deviceTab.classList.toggle('hidden', tab !== 'device' && isSystemOverlay === false);
+      deviceTab.classList.toggle('hidden', tab !== 'device');
     }
     // Show/hide terminal tab (when tab is 'terminal')
     if (terminalTab) {
