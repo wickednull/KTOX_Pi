@@ -21,8 +21,6 @@
       const sameOriginWs = `${locationRef.origin.replace(/^https?:/, locationRef.protocol === 'https:' ? 'wss:' : 'ws:')}/ws`;
 
       if (locationRef.protocol === 'https:'){
-        // iOS PWA/Safari can stall for a long time on unreachable fallback endpoints.
-        // Prefer the reverse-proxied same-origin websocket path only.
         return [
           `${locationRef.origin.replace(/^https:/, 'wss:')}/ws`,
         ];
@@ -34,7 +32,7 @@
         ];
       }
       return [
-        sameOriginWs,
+          sameOriginWs,
         `ws://${host}:${port}/`.replace(/\/\/\//, '//'),
       ];
     },
@@ -46,14 +44,11 @@
       if (explicit){
         return explicit;
       }
-
       if (locationRef.protocol === 'https:'){
         return `${locationRef.origin.replace(/^https:/, 'wss:')}/ws`;
       }
-
       const host = locationRef.hostname || 'raspberrypi.local';
-      const explicitPort = String(p.get('port') || p.get('wsport') || '').trim();
-      const port = explicitPort || '8765';
+      const port = p.get('port') || p.get('wsport') || '8765';
       return `ws://${host}:${port}/`.replace(/\/\/\//, '//');
     },
 
@@ -62,10 +57,8 @@
       try{
         if (value){
           sessionStorage.setItem(storageKey, value);
-          localStorage.setItem(storageKey, value);
         } else {
           sessionStorage.removeItem(storageKey);
-          localStorage.removeItem(storageKey);
         }
       }catch{}
       return value;
@@ -73,14 +66,9 @@
 
     loadToken(storageKey){
       try{
-        // iOS PWA fix: localStorage first (survives PWA restart)
-        return String(localStorage.getItem(storageKey) || sessionStorage.getItem(storageKey) || '').trim();
+        return String(sessionStorage.getItem(storageKey) || '').trim();
       }catch{
-        try{
-          return String(localStorage.getItem(storageKey) || '').trim();
-        }catch{
-          return '';
-        }
+        return '';
       }
     },
 

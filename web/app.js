@@ -42,7 +42,6 @@
   const deviceShell = document.getElementById('deviceShell');
   const themeNameEl = document.getElementById('themeName');
   const navDevice = document.getElementById('navDevice');
-  const navTerminal = document.getElementById('navTerminal');
   const navSystem = document.getElementById('navSystem');
   const navLoot = document.getElementById('navLoot');
   const navSettings = document.getElementById('navSettings');
@@ -52,13 +51,8 @@
   const sidebarBackdrop = document.getElementById('sidebarBackdrop');
   const menuToggle = document.getElementById('menuToggle');
   const deviceTab = document.getElementById('deviceTab');
-  const terminalTab = document.getElementById('terminalTab');
   const systemDropdown = document.getElementById('systemDropdown');
   const settingsTab = document.getElementById('settingsTab');
-  const settingsDropdown = document.getElementById('settingsDropdown');
-  const settingsFullBtn = document.getElementById('settingsFullBtn');
-  const settingsDropdownLogoutBtn = document.getElementById('settingsDropdownLogoutBtn');
-  const settingsToggle = document.getElementById('settingsToggle');
   const lootTab = document.getElementById('lootTab');
   const systemStatus = document.getElementById('systemStatus');
   const sysCpuValue = document.getElementById('sysCpuValue');
@@ -100,19 +94,9 @@
   const payloadStatusDot = document.getElementById('payloadStatusDot');
   const payloadsRefresh = document.getElementById('payloadsRefresh');
   const settingsStatus = document.getElementById('settingsStatus');
-  const wsUrlOverrideInput = document.getElementById('wsUrlOverrideInput');
-  const wsUrlOverrideSave = document.getElementById('wsUrlOverrideSave');
-  const wsUrlOverrideClear = document.getElementById('wsUrlOverrideClear');
-  const wsUrlStatus = document.getElementById('wsUrlStatus');
-  const wsUrlDropdownInput = document.getElementById('wsUrlDropdownInput');
-  const wsUrlDropdownSave = document.getElementById('wsUrlDropdownSave');
-  const wsUrlDropdownClear = document.getElementById('wsUrlDropdownClear');
   const discordWebhookInput = document.getElementById('discordWebhookInput');
   const discordWebhookSave = document.getElementById('discordWebhookSave');
   const discordWebhookClear = document.getElementById('discordWebhookClear');
-  const discordWebhookDropdownInput = document.getElementById('discordWebhookDropdownInput');
-  const discordWebhookDropdownSave = document.getElementById('discordWebhookDropdownSave');
-  const discordWebhookDropdownClear = document.getElementById('discordWebhookDropdownClear');
   const tailscaleSettingsStatus = document.getElementById('tailscaleSettingsStatus');
   const tailscaleInstallBtn = document.getElementById('tailscaleInstallBtn');
   const tailscaleReauthBtn = document.getElementById('tailscaleReauthBtn');
@@ -127,7 +111,7 @@
   const shellStatusEl = document.getElementById('shellStatus');
   const shellConnectBtn = document.getElementById('shellConnect');
   const shellDisconnectBtn = document.getElementById('shellDisconnect');
-  const logoutBtn = document.getElementById('settingsLogoutBtn');
+  const logoutBtn = document.getElementById('logoutBtn');
   const authModal = document.getElementById('authModal');
   const authModalTitle = document.getElementById('authModalTitle');
   const authModalMessage = document.getElementById('authModalMessage');
@@ -142,68 +126,37 @@
   const authModalCancel = document.getElementById('authModalCancel');
   const authModalClose = document.getElementById('authModalClose');
 
-  // Dashboard status elements
-  const connectionDot = document.getElementById('connectionDot');
-  const connectionStatus = document.getElementById('connectionStatus');
-  const connectionType = document.getElementById('connectionType');
-  const deviceName = document.getElementById('deviceName');
-  const deviceIp = document.getElementById('deviceIp');
-  const healthScore = document.getElementById('healthScore');
-  const healthBar = document.getElementById('healthBar');
-  const quickUptime = document.getElementById('quickUptime');
-  const quickPayload = document.getElementById('quickPayload');
-
   let wsCandidates = [];
   let wsCandidateIndex = 0;
 
   function getWsCandidates(){
-    const candidates = [];
-
-    // iOS PWA fix: try manually configured URL first (highest priority)
-    const manualUrl = getManualWsUrl();
-    if (manualUrl) candidates.push(manualUrl);
-
     if (shared.getWsUrlCandidates){
-      const fromShared = shared.getWsUrlCandidates(location);
-      if (Array.isArray(fromShared) && fromShared.length){
-        candidates.push(...fromShared.map(v => String(v || '').trim()).filter(Boolean));
+      const candidates = shared.getWsUrlCandidates(location);
+      if (Array.isArray(candidates) && candidates.length){
+        return Array.from(new Set(candidates.map(v => String(v || '').trim()).filter(Boolean)));
       }
     }
-
-    // Build WS URL from current page host.
-    if (candidates.length === 0 && shared.getWsUrl){
-      const single = String(shared.getWsUrl(location) || '').trim();
-      if (single) candidates.push(single);
-    }
-
-    if (candidates.length === 0 && location.protocol === 'https:'){
+    const candidates = [];
+    const p = new URLSearchParams(location.search);
+    const explicit = String(p.get('ws') || '').trim();
+    if (explicit) candidates.push(explicit);
+    if (location.protocol === 'https:'){
       candidates.push(`${location.origin.replace(/^https:/, 'wss:')}/ws`);
+      return Array.from(new Set(candidates));
     }
+    const host = location.hostname || 'raspberrypi.local';
+    const explicitPort = String(p.get('port') || p.get('wsport') || '').trim();
+    const originPort = String(location.port || '').trim();
+    const sameOriginWs = `${location.origin.replace(/^https?:/, 'ws:')}/ws`;
+    candidates.push(sameOriginWs);
+    candidates.push(`ws://${host}:${explicitPort || originPort || '8765'}/`.replace(/\/\/\//,'//'));
+    return Array.from(new Set(candidates));
+  }
 
-    if (candidates.length === 0){
-      const p = new URLSearchParams(location.search);
-      const explicit = String(p.get('ws') || '').trim();
-      if (explicit) candidates.push(explicit);
-      const host = location.hostname || 'raspberrypi.local';
-      const explicitPort = String(p.get('port') || p.get('wsport') || '').trim();
-      const originPort = String(location.port || '').trim();
-      const port = explicitPort || originPort || '8765';
-      const primary = `ws://${host}:${port}/`.replace(/\/\/\//,'//');
-      const sameOrigin = `${location.origin.replace(/^https?:/, 'ws:')}/ws`;
-      if (!explicitPort && originPort){
-        candidates.push(sameOrigin, `ws://${host}:8765/`);
-      } else {
-        candidates.push(sameOrigin, primary);
-      }
-    }
-
-    // iOS PWA fix: filter out insecure ws:// on HTTPS pages (mixed content block)
-    const isHttps = location.protocol === 'https:';
-    if (isHttps) {
-      return Array.from(new Set(candidates.filter(url => url.startsWith('wss://'))));
-    }
-
-    return Array.from(new Set(candidates.filter(Boolean)));
+  function getWsUrl(){
+    wsCandidates = getWsCandidates();
+    if (!wsCandidates.length && shared.getWsUrl) return shared.getWsUrl(location);
+    return wsCandidates[Math.min(wsCandidateIndex, wsCandidates.length - 1)] || '';
   }
 
   function getApiUrl(path, params = {}){
@@ -238,7 +191,6 @@
   }
 
   const AUTH_STORAGE_KEY = 'rj.authToken';
-  const WS_URL_OVERRIDE_KEY = 'ktox.wsUrlOverride';
   let authToken = '';
   let wsTicket = '';
   let authPromptResolver = null;
@@ -246,21 +198,6 @@
   let authMode = 'login';
   let authRecoveryMode = false;
   let tailscaleReauthMode = false;
-
-  function getManualWsUrl(){
-    try{
-      const stored = localStorage.getItem(WS_URL_OVERRIDE_KEY);
-      if (stored) return stored.trim();
-    }catch{}
-    return null;
-  }
-
-  function setManualWsUrl(url){
-    try{
-      if (url) localStorage.setItem(WS_URL_OVERRIDE_KEY, url.trim());
-      else localStorage.removeItem(WS_URL_OVERRIDE_KEY);
-    }catch{}
-  }
 
   function saveAuthToken(token){
     if (shared.saveToken){
@@ -606,9 +543,12 @@
 
   let ws = null;
   let reconnectTimer = null;
-  let reconnectAttempts = 0;
+  let wsConnectTimer = null;
   let lastServerMessage = Date.now();
-  let connectTimeoutTimer = null;
+  let reconnectAttempts = 0;
+  const WS_CONNECT_TIMEOUT = 5000;
+  const SERVER_HEARTBEAT_TIMEOUT = 15000;
+  const HEARTBEAT_CHECK_INTERVAL = 5000;
   const pressed = new Set(); // keyboard pressed state
   let activeTab = 'device';
   let lootState = { path: '', parent: '' };
@@ -621,15 +561,6 @@
   let shellWanted = false;
   let systemOpen = false;
   let wsAuthenticated = true;
-
-  // iOS PWA reconnection parameters (increased for iOS WebView suspension)
-  const RECONNECT_BASE_DELAY = 1000; // 1 second
-  const RECONNECT_MAX_DELAY = 30000; // 30 seconds
-  const MAX_RECONNECT_ATTEMPTS = 50;
-  const SERVER_HEARTBEAT_TIMEOUT = 60000; // 60 seconds
-  const WS_CONNECT_TIMEOUT = 20000; // 20 seconds (iOS PWA needs more time to wake network stack)
-  const HEARTBEAT_CHECK_INTERVAL = 10000; // 10 seconds (iOS PWA may suspend more aggressively)
-  const AUTH_TICKET_REFRESH_INTERVAL = 60000; // Refresh ticket every 60 seconds
 
   function applyStatusTone(el, txt){
     if (!el) return;
@@ -645,32 +576,24 @@
   }
 
   function setStatus(txt){
-    const raw = String(txt || '');
-    const lower = raw.toLowerCase();
+    const s = String(txt || '').toLowerCase();
     let state = 'bad';
-    if (/connected|authenticated|ready|live/.test(lower)) {
-      state = 'ok';
-    } else if (/connecting|reconnecting|opening|loading/.test(lower)) {
-      state = 'connecting';
-    }
+    if (/connected|authenticated|ready|live/.test(s)) state = 'ok';
+    else if (/loading|connecting|opening|reconnecting|stopping/.test(s)) state = 'connecting';
     if (statusEl) {
       statusEl.textContent = '';
       statusEl.dataset.state = state;
-      statusEl.title = raw;
-      statusEl.setAttribute('aria-label', raw);
+      statusEl.title = txt;
       applyStatusTone(statusEl, txt);
     }
     if (statusEls && statusEls.length) {
       statusEls.forEach(el => {
         el.textContent = '';
         el.dataset.state = state;
-        el.title = raw;
-        el.setAttribute('aria-label', raw);
+        el.title = txt;
         applyStatusTone(el, txt);
       });
     }
-    // DEBUG: Log to console with visible timestamp
-    console.log('[Status] ' + new Date().toLocaleTimeString() + ': ' + raw);
   }
 
   function setPayloadStatus(txt){
@@ -712,49 +635,14 @@
     }
   }
 
-  function updateConnectionStatus(status){
-    if (connectionStatus) connectionStatus.textContent = status;
-    if (connectionDot) {
-      connectionDot.classList.remove('connected', 'error', 'connecting');
-      if (status === 'Connected') {
-        connectionDot.classList.add('connected');
-      } else if (status.includes('Error') || status.includes('Unavailable')) {
-        connectionDot.classList.add('error');
-      } else {
-        connectionDot.classList.add('connecting');
-      }
-    }
-  }
-
-  function updateDeviceInfo(name, ip){
-    if (deviceName && name) deviceName.textContent = name || 'KTOx Pi';
-    if (deviceIp && ip) deviceIp.textContent = ip || '0.0.0.0';
-  }
-
-  function updateHealthScore(cpu, mem, disk){
-    const scores = [cpu, mem, disk].filter(v => v !== undefined);
-    const avgHealth = scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
-    const health = 100 - avgHealth;
-    if (healthScore) healthScore.textContent = Math.max(0, Math.min(100, health)).toFixed(0);
-    if (healthBar) healthBar.style.width = Math.max(0, Math.min(100, health)) + '%';
-  }
-
-  function updateQuickStats(uptime, payloadRunning){
-    if (quickUptime && uptime) quickUptime.textContent = uptime;
-    if (quickPayload) {
-      if (payloadRunning) {
-        quickPayload.textContent = 'Running';
-        quickPayload.className = 'text-emerald-400';
-      } else {
-        quickPayload.textContent = 'Idle';
-        quickPayload.className = 'text-amber-400';
-      }
-    }
-  }
-
   // Handheld themes (frontend-only)
+  const layoutDefault = document.querySelector('.layout-default');
+  const layoutGameboy = document.querySelector('.layout-gameboy');
+  const layoutPager = document.querySelector('.layout-pager');
+  const layoutSyndicate = document.querySelector('.layout-syndicate');
   const themes = [
-    { id: 'neon', label: 'Syndicate' },
+    { id: 'neon', label: 'Neon' },
+    { id: 'syndicate', label: 'Syndicate' },
     { id: 'gameboy', label: 'Game Boy' },
     { id: 'pager', label: 'Pager' },
   ];
@@ -771,44 +659,20 @@
     try{
       const saved = localStorage.getItem(THEME_STORAGE_KEY);
       if (!saved) return;
-      const normalized = saved === 'syndicate' ? 'neon' : saved;
-      const idx = themes.findIndex(t => t.id === normalized);
+      const idx = themes.findIndex(t => t.id === saved);
       if (idx >= 0) themeIndex = idx;
     }catch{}
-  }
-
-  function setLayoutVisible(el, visible){
-    if (!el) return;
-    el.classList.toggle('hidden', !visible);
-    el.style.display = visible ? '' : 'none';
-  }
-
-  function ensureDeviceShellChild(el){
-    if (!deviceShell || !el) return;
-    if (el.parentElement !== deviceShell){
-      deviceShell.appendChild(el);
-    }
   }
 
   function applyTheme(){
     const t = themes[themeIndex];
     if (!deviceShell) return;
-    const layoutDefault = deviceShell.querySelector('.layout-default') || document.querySelector('.layout-default');
-    const layoutGameboy = deviceShell.querySelector('.layout-gameboy') || document.querySelector('.layout-gameboy');
-    const layoutPager = deviceShell.querySelector('.layout-pager') || document.querySelector('.layout-pager');
-    const layoutSyndicate = deviceShell.querySelector('.layout-syndicate') || document.querySelector('.layout-syndicate');
-
-    ensureDeviceShellChild(layoutDefault);
     ensureDeviceShellChild(layoutSyndicate);
-    ensureDeviceShellChild(layoutGameboy);
-    ensureDeviceShellChild(layoutPager);
-
-    deviceShell.classList.remove('theme-neon', 'theme-gameboy', 'theme-pager', 'theme-syndicate');
+    deviceShell.classList.remove('theme-neon', 'theme-syndicate', 'theme-gameboy', 'theme-pager');
     deviceShell.classList.add(`theme-${t.id}`);
     deviceShell.setAttribute('data-theme', t.id);
-    const isSyndicate = t.id === 'neon' || t.id === 'syndicate';
-    setLayoutVisible(layoutDefault, !isSyndicate && t.id !== 'gameboy' && t.id !== 'pager');
-    setLayoutVisible(layoutSyndicate, isSyndicate);
+    setLayoutVisible(layoutDefault, t.id === 'neon');
+    setLayoutVisible(layoutSyndicate, t.id === 'syndicate');
     setLayoutVisible(layoutGameboy, t.id === 'gameboy');
     setLayoutVisible(layoutPager, t.id === 'pager');
     if (themeNameEl) themeNameEl.textContent = t.label;
@@ -821,6 +685,16 @@
       btn.classList.toggle('text-slate-300', !isActive);
       btn.classList.toggle('border-slate-500/20', !isActive);
     });
+  }
+
+  function setLayoutVisible(layout, visible){
+    if (!layout) return;
+    layout.classList.toggle('hidden', !visible);
+  }
+
+  function ensureDeviceShellChild(node){
+    if (!deviceShell || !node || node.parentElement === deviceShell) return;
+    deviceShell.appendChild(node);
   }
 
   function setSidebarOpen(open){
@@ -844,52 +718,21 @@
     btn.classList.toggle('border-slate-400/20', !active);
   }
 
-  function applyResponsiveTabClasses(tab){
-    const isMobile = window.matchMedia('(max-width: 768px)').matches;
-    if (deviceTab) {
-      deviceTab.classList.toggle('terminal-mode', tab === 'terminal');
-      deviceTab.classList.toggle('mobile-device-focus', isMobile && tab === 'device');
-      deviceTab.classList.toggle('mobile-terminal-focus', isMobile && tab === 'terminal');
-    }
-    document.body.classList.toggle('mobile-terminal-dock', isMobile && tab === 'terminal');
-  }
-
   function setActiveTab(tab){
-    const isMobile = window.matchMedia('(max-width: 768px)').matches;
-    if (systemOpen){
-      if (isMobile){
-        // Clear stale desktop dropdown state without re-entering setSystemOpen().
-        systemOpen = false;
-        if (systemDropdown){
-          systemDropdown.classList.add('hidden');
-        }
-        setNavActive(navSystem, false);
-      } else {
-        setSystemOpen(false);
-      }
-    }
     activeTab = tab;
-    const isSystemOverlay = isMobile && tab === 'system';
-    // Show/hide device tab (only when tab is 'device', hide for terminal and system)
+    const isDevice = tab === 'device' || tab === 'terminal' || tab === 'system';
     if (deviceTab) {
-      deviceTab.classList.toggle('hidden', tab !== 'device');
+      deviceTab.classList.toggle('hidden', !isDevice);
+      deviceTab.classList.toggle('terminal-mode', tab === 'terminal');
+      deviceTab.classList.toggle('mobile-device-focus', tab === 'device');
+      deviceTab.classList.toggle('mobile-terminal-focus', tab === 'terminal');
     }
-    // Show/hide terminal tab (when tab is 'terminal')
-    if (terminalTab) {
-      terminalTab.classList.toggle('hidden', tab !== 'terminal');
-    }
-    applyResponsiveTabClasses(tab);
-    document.body.classList.toggle('mobile-system-overlay', isSystemOverlay);
-    const systemTab = document.getElementById('systemTab');
-    if (systemTab) systemTab.classList.toggle('hidden', tab !== 'system');
+    document.body.classList.toggle('mobile-system-overlay', tab === 'system');
     if (settingsTab) settingsTab.classList.toggle('hidden', tab !== 'settings');
     if (lootTab) lootTab.classList.toggle('hidden', tab !== 'loot');
     const payloadsTabEl = document.getElementById('payloadsTab');
     if (payloadsTabEl) payloadsTabEl.classList.toggle('hidden', tab !== 'payloads');
-
-    // Set nav button active states
     setNavActive(navDevice, tab === 'device');
-    setNavActive(navTerminal, tab === 'terminal');
     setNavActive(navLoot, tab === 'loot');
     setNavActive(navSettings, tab === 'settings');
     setSidebarOpen(false);
@@ -901,34 +744,9 @@
     if (tab === 'terminal' && fitAddon) {
       requestAnimationFrame(() => { try { fitAddon.fit(); } catch{} });
     }
-    if (tab === 'terminal'){
-      shellWanted = true;
-      ensureTerminal();
-      if (ws && ws.readyState === WebSocket.OPEN){
-        sendShellOpen();
-      } else {
-        connect();
-      }
-    }
   }
 
   function setSystemOpen(open){
-    const isMobile = window.matchMedia('(max-width: 768px)').matches;
-    if (isMobile){
-      // Mobile uses the dedicated systemTab overlay, not the sidebar dropdown.
-      systemOpen = false;
-      if (systemDropdown){
-        systemDropdown.classList.add('hidden');
-      }
-      setNavActive(navSystem, false);
-      if (open) {
-        setActiveTab('system');
-      } else if (activeTab === 'system') {
-        setActiveTab('device');
-      }
-      return;
-    }
-
     systemOpen = !!open;
     if (systemDropdown){
       systemDropdown.classList.toggle('hidden', !systemOpen);
@@ -949,86 +767,30 @@
   }
 
   function connect(){
-    console.log('[Mobile] connect() called, ws state=' + (ws ? ws.readyState : 'null'));
-    // Clean up any lingering WebSocket in bad state (common in PWA)
-    if (ws && ws.readyState !== WebSocket.OPEN && ws.readyState !== WebSocket.CONNECTING) {
-      console.log('[Mobile] Closing bad websocket state ' + ws.readyState);
-      try { ws.close(); } catch(e) {}
-      ws = null;
-    }
-    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
-      console.log('[Mobile] WebSocket already connecting/open');
-      return;
-    }
-    wsCandidates = getWsCandidates();
-    console.log('[Mobile] WS candidates (' + wsCandidates.length + '):', wsCandidates);
-    if (!wsCandidates.length){
-      setStatus('ERROR: No WebSocket URL candidates generated!');
-      console.error('[Mobile] No candidates - location.protocol=' + location.protocol + ', hostname=' + location.hostname);
+    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+    const url = getWsUrl();
+    if (!url){
+      setStatus('Disconnected');
       scheduleReconnect();
       return;
     }
-    if (wsCandidateIndex >= wsCandidates.length) wsCandidateIndex = 0;
-    const url = wsCandidates[wsCandidateIndex];
-    console.log('[Mobile] [' + (wsCandidateIndex + 1) + '/' + wsCandidates.length + '] Attempting: ' + url);
-
-    // Refresh auth ticket before connection attempt
-    if (!authToken && shared.refreshWsTicket){
-      shared.refreshWsTicket(getApiUrl, wsTicket)
-        .then(newTicket => {
-          if (newTicket) wsTicket = newTicket;
-        })
-        .catch(e => console.warn('[Mobile] Ticket refresh failed:', e));
-    }
-
-    let opened = false;
+    setStatus('Connecting');
     try{
       ws = new WebSocket(url);
-      setStatus(`Connecting WS ${wsCandidateIndex + 1}/${wsCandidates.length}: ${url}`);
-      if (connectTimeoutTimer) clearTimeout(connectTimeoutTimer);
-      connectTimeoutTimer = setTimeout(() => {
-        if (ws && ws.readyState === WebSocket.CONNECTING){
-          console.warn('[Mobile] WebSocket connect timeout - trying next candidate');
-          try { ws.close(); } catch {}
-        }
-      }, WS_CONNECT_TIMEOUT);
     } catch(e){
       setStatus('WebSocket failed to construct');
-      wsCandidateIndex = (wsCandidateIndex + 1) % wsCandidates.length;
       scheduleReconnect();
       return;
     }
 
     ws.onopen = () => {
-      console.log('[Mobile] WebSocket onopen event fired');
-      opened = true;
-      if (connectTimeoutTimer) {
-        clearTimeout(connectTimeoutTimer);
-        connectTimeoutTimer = null;
-      }
+      if (wsConnectTimer) clearTimeout(wsConnectTimer);
+      wsConnectTimer = null;
+      lastServerMessage = Date.now();
+      reconnectAttempts = 0;
+      wsCandidateIndex = 0;
       setStatus('Connected');
-      updateConnectionStatus('Connected');
-      reconnectAttempts = 0; // Reset backoff on successful connection
-      lastServerMessage = Date.now(); // Reset heartbeat timer
       wsAuthenticated = true;
-      console.log('[Mobile] WebSocket connected - resetting reconnect backoff');
-
-      // Schedule ticket refresh to keep session alive
-      if (!authToken && shared.refreshWsTicket){
-        setTimeout(() => {
-          if (ws && ws.readyState === WebSocket.OPEN){
-            shared.refreshWsTicket(getApiUrl, wsTicket)
-              .then(newTicket => {
-                if (newTicket) {
-                  wsTicket = newTicket;
-                  try { ws.send(JSON.stringify({ type: 'auth_session', ticket: wsTicket })); } catch {}
-                }
-              })
-              .catch(e => console.warn('[Mobile] Ticket refresh failed:', e));
-          }
-        }, AUTH_TICKET_REFRESH_INTERVAL);
-      }
-
       if (wsTicket){
         try{
           ws.send(JSON.stringify({ type: 'auth_session', ticket: wsTicket }));
@@ -1043,9 +805,15 @@
       }
     };
 
+    wsConnectTimer = setTimeout(() => {
+      if (ws && ws.readyState === WebSocket.CONNECTING){
+        try { ws.close(); } catch {}
+      }
+    }, WS_CONNECT_TIMEOUT);
+
     ws.onmessage = (ev) => {
+      lastServerMessage = Date.now();
       try{
-        lastServerMessage = Date.now(); // Track heartbeat
         const msg = JSON.parse(ev.data);
         if (msg.type === 'frame' && msg.data){
           const img = new Image();
@@ -1129,71 +897,48 @@
     };
 
     ws.onclose = () => {
-      if (connectTimeoutTimer) {
-        clearTimeout(connectTimeoutTimer);
-        connectTimeoutTimer = null;
-      }
-      const hadOpened = opened;
+      if (wsConnectTimer) clearTimeout(wsConnectTimer);
+      wsConnectTimer = null;
       setStatus('Disconnected – reconnecting…');
-      updateConnectionStatus('Reconnecting...');
       setShellStatus('Disconnected');
       shellOpen = false;
-      if (wsCandidates.length > 1){
-        wsCandidateIndex = (wsCandidateIndex + 1) % wsCandidates.length;
-        if (!hadOpened){
-          // Try next candidate quickly without backoff on failed connections
-          reconnectTimer = setTimeout(connect, 100);
-          return;
-        }
-      }
       scheduleReconnect();
     };
 
-    ws.onerror = (ev) => {
-      console.log('[Mobile] WebSocket onerror event:', ev);
+    ws.onerror = () => {
       try { ws.close(); } catch {}
     };
   }
 
-  function scheduleReconnect(reason = ''){
+  function scheduleReconnect(){
     if (reconnectTimer) return;
-
-    // Exponential backoff with jitter for iOS resilience
-    const exponentialDelay = Math.min(
-      RECONNECT_BASE_DELAY * Math.pow(2, reconnectAttempts),
-      RECONNECT_MAX_DELAY
-    );
-    const jitter = exponentialDelay * 0.1 * Math.random();
-    const delay = exponentialDelay + jitter;
-
-    reconnectAttempts++;
-
-    if (reconnectAttempts > MAX_RECONNECT_ATTEMPTS) {
-      setStatus('Max reconnection attempts exceeded');
-      console.error('[Mobile] Max reconnect attempts reached');
-      return;
+    if (wsCandidates.length > 1){
+      wsCandidateIndex = (wsCandidateIndex + 1) % wsCandidates.length;
     }
-
-    const delayMs = Math.round(delay);
-    console.log(`[Mobile] Reconnect attempt ${reconnectAttempts} in ${delayMs}ms${reason ? ' (' + reason + ')' : ''}`);
-    setStatus(`Reconnecting (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})…`);
-
+    reconnectAttempts += 1;
+    const delay = Math.min(6000, 1000 + reconnectAttempts * 500);
     reconnectTimer = setTimeout(()=>{
       reconnectTimer = null;
       connect();
     }, delay);
   }
 
-  function ensureSocketLive(reason = ''){
-    if (ws && ws.readyState === WebSocket.OPEN) return;
-    if (reconnectTimer){
-      clearTimeout(reconnectTimer);
-      reconnectTimer = null;
+  function ensureSocketLive(){
+    if (!ws || ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING){
+      ws = null;
+      connect();
     }
-    if (reason){
-      setStatus(`Reconnecting (${reason})…`);
-    }
-    connect();
+  }
+
+  function startHeartbeatMonitor(){
+    setInterval(() => {
+      if (ws && ws.readyState === WebSocket.OPEN && Date.now() - lastServerMessage > SERVER_HEARTBEAT_TIMEOUT){
+        try { ws.close(); } catch {}
+        scheduleReconnect();
+      } else if (!document.hidden && (!ws || ws.readyState !== WebSocket.OPEN)) {
+        ensureSocketLive();
+      }
+    }, HEARTBEAT_CHECK_INTERVAL);
   }
 
   function ensureTerminal(){
@@ -1306,18 +1051,11 @@
     setSystemStatus('Loading...');
     try{
       const url = getApiUrl('/api/system/status');
-      console.log('[SystemMonitor] Fetching from:', url);
       const res = await apiFetch(url, { cache: 'no-store' });
-      console.log('[SystemMonitor] Response status:', res.status);
-
-      if (!res.ok){
-        const data = await res.json();
-        console.error('[SystemMonitor] API error:', data);
-        throw new Error(data && data.error ? data.error : `HTTP ${res.status}`);
-      }
-
       const data = await res.json();
-      console.log('[SystemMonitor] Response data:', data);
+      if (!res.ok){
+        throw new Error(data && data.error ? data.error : 'system_failed');
+      }
 
       const cpu = Number(data.cpu_percent || 0);
       const memUsed = Number(data.mem_used || 0);
@@ -1360,16 +1098,8 @@
         }
       }
 
-      // Update dashboard status
-      updateHealthScore(cpu, memPct, diskPct);
-      updateQuickStats(formatDuration(data.uptime_s), data.payload_running);
-      if (Array.isArray(data.interfaces) && data.interfaces.length > 0) {
-        updateDeviceInfo('KTOx Pi', data.interfaces[0].ipv4);
-      }
-
       setSystemStatus('Live');
     } catch (e){
-      console.error('[SystemMonitor] Failed to load system status:', e);
       setSystemStatus('Unavailable');
     }
   }
@@ -1384,7 +1114,6 @@
         throw new Error(data && data.error ? data.error : 'settings_failed');
       }
       if (discordWebhookInput) discordWebhookInput.value = String(data.url || '');
-      if (discordWebhookDropdownInput) discordWebhookDropdownInput.value = String(data.url || '');
       setSettingsStatus(data.configured ? 'Webhook configured' : 'No webhook configured');
     } catch(e){
       setSettingsStatus('Failed to load settings');
@@ -2199,7 +1928,6 @@
     if (shellOpen) sendShellResize();
   });
   if (navDevice) navDevice.addEventListener('click', () => setActiveTab('device'));
-  if (navTerminal) navTerminal.addEventListener('click', () => setActiveTab('terminal'));
   if (navSystem) navSystem.addEventListener('click', () => {
     setSystemOpen(!systemOpen);
   });
@@ -2210,28 +1938,10 @@
       lootList.dataset.loaded = '1';
     }
   });
-  function loadWsUrlOverride(){
-    const saved = getManualWsUrl();
-    if (wsUrlOverrideInput) wsUrlOverrideInput.value = saved || '';
-    if (wsUrlDropdownInput) wsUrlDropdownInput.value = saved || '';
-  }
-
   if (navSettings) navSettings.addEventListener('click', () => {
     setActiveTab('settings');
-    loadWsUrlOverride();
     loadDiscordWebhook();
     loadTailscaleSettings();
-  });
-  if (settingsFullBtn) settingsFullBtn.addEventListener('click', () => {
-    if (settingsDropdown) settingsDropdown.classList.add('hidden');
-    setActiveTab('settings');
-    loadWsUrlOverride();
-    loadDiscordWebhook();
-    loadTailscaleSettings();
-  });
-  if (settingsDropdownLogoutBtn) settingsDropdownLogoutBtn.addEventListener('click', () => {
-    if (settingsDropdown) settingsDropdown.classList.add('hidden');
-    logoutUser();
   });
   if (navPayloadStudio) navPayloadStudio.href = './ide.html' + getForwardSearch();
   themeButtons.forEach(btn => {
@@ -2241,23 +1951,6 @@
     });
   });
   if (menuToggle) menuToggle.addEventListener('click', () => setSidebarOpen(true));
-
-  // Settings dropdown toggle
-  if (settingsToggle) {
-    settingsToggle.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (settingsDropdown) {
-        settingsDropdown.classList.toggle('hidden');
-      }
-    });
-  }
-
-  // Close settings dropdown when clicking outside
-  document.addEventListener('click', () => {
-    if (settingsDropdown && !settingsDropdown.classList.contains('hidden')) {
-      settingsDropdown.classList.add('hidden');
-    }
-  });
   if (sidebarBackdrop) sidebarBackdrop.addEventListener('click', () => setSidebarOpen(false));
   if (lootUpBtn) lootUpBtn.addEventListener('click', () => {
     if (lootState.parent !== undefined){
@@ -2328,93 +2021,15 @@
   });
   const payloadsMobRefresh = document.getElementById('payloadsMobRefresh');
   if (payloadsMobRefresh) payloadsMobRefresh.addEventListener('click', () => loadPayloads());
-
-  // ── Mobile system stats loader ────────────────────────────────────────────
-  window.loadMobileSystemStatus = async function(){
-    const status = document.getElementById('mobileSystemStatus');
-    if (status) status.textContent = 'Loading...';
-    try{
-      const url = getApiUrl('/api/system/status');
-      const res = await apiFetch(url, { cache: 'no-store' });
-      if (!res.ok){
-        const data = await res.json();
-        throw new Error(data && data.error ? data.error : `HTTP ${res.status}`);
-      }
-      const data = await res.json();
-
-      const cpu = Number(data.cpu_percent || 0);
-      const memUsed = Number(data.mem_used || 0);
-      const memTotal = Number(data.mem_total || 0);
-      const diskUsed = Number(data.disk_used || 0);
-      const diskTotal = Number(data.disk_total || 0);
-      const memPct = pct(memUsed, memTotal);
-      const diskPct = pct(diskUsed, diskTotal);
-
-      const mobCpuVal = document.getElementById('mobSysCpuValue');
-      const mobTempVal = document.getElementById('mobSysTempValue');
-      const mobMemVal = document.getElementById('mobSysMemValue');
-      const mobMemMeta = document.getElementById('mobSysMemMeta');
-      const mobDiskVal = document.getElementById('mobSysDiskValue');
-      const mobDiskMeta = document.getElementById('mobSysDiskMeta');
-      const mobUptime = document.getElementById('mobSysUptime');
-      const mobLoad = document.getElementById('mobSysLoad');
-      const mobPayload = document.getElementById('mobSysPayload');
-      const mobInterfaces = document.getElementById('mobSysInterfaces');
-
-      if (mobCpuVal) mobCpuVal.textContent = `${cpu.toFixed(1)}%`;
-      if (mobTempVal) mobTempVal.textContent = data.temp_c === null || data.temp_c === undefined ? '--.- C' : `${Number(data.temp_c).toFixed(1)} C`;
-      if (mobMemVal) mobMemVal.textContent = `${memPct.toFixed(1)}%`;
-      if (mobMemMeta) mobMemMeta.textContent = `${formatBytes(memUsed)} / ${formatBytes(memTotal)}`;
-      if (mobDiskVal) mobDiskVal.textContent = `${diskPct.toFixed(1)}%`;
-      if (mobDiskMeta) mobDiskMeta.textContent = `${formatBytes(diskUsed)} / ${formatBytes(diskTotal)}`;
-      if (mobUptime) mobUptime.textContent = formatDuration(data.uptime_s);
-      if (mobLoad) mobLoad.textContent = Array.isArray(data.load) ? data.load.map(v => v.toFixed(2)).join(', ') : '-';
-      if (mobPayload) mobPayload.textContent = data.payload_running ? (data.payload_path || 'running') : 'none';
-
-      if (mobInterfaces){
-        const ifaces = Array.isArray(data.interfaces) ? data.interfaces : [];
-        if (!ifaces.length){
-          mobInterfaces.innerHTML = '<div class="text-slate-500">No active interfaces</div>';
-        } else {
-          mobInterfaces.innerHTML = ifaces.map(i => `<div><span class="text-red-400">${escapeHtml(String(i.name || '-'))}</span>: ${escapeHtml(String(i.ipv4 || '-'))}</div>`).join('');
-        }
-      }
-
-      document.getElementById('mobSysCpuBar').style.width = `${Math.max(0, Math.min(100, cpu)).toFixed(1)}%`;
-      document.getElementById('mobSysMemBar').style.width = `${Math.max(0, Math.min(100, memPct)).toFixed(1)}%`;
-      document.getElementById('mobSysDiskBar').style.width = `${Math.max(0, Math.min(100, diskPct)).toFixed(1)}%`;
-
-      if (status) status.textContent = 'Live';
-    } catch (e){
-      if (status) status.textContent = 'Unavailable';
-    }
-  };
-
   // ── Mobile bottom nav ──────────────────────────────────────────────────────
   document.querySelectorAll('[data-mobnav]').forEach(btn => {
     btn.addEventListener('click', () => {
       const tab = btn.dataset.mobnav;
-      if (tab === 'system'){
-        if (activeTab === 'system') {
-          setActiveTab('device');
-        } else {
-          setActiveTab('system');
-          setTimeout(() => loadMobileSystemStatus(), 50);
-        }
-      } else if (tab === 'terminal'){
-        setActiveTab('terminal');
-      } else if (tab === 'payloads'){
-        setActiveTab('payloads');
-        if (!payloadState.loaded) {
-          loadPayloads();
-          payloadState.loaded = true;
-        }
-      } else if (tab === 'loot'){
+      if (tab === 'loot'){
         setActiveTab('loot');
         if (lootList && !lootList.dataset.loaded){ loadLoot(''); lootList.dataset.loaded = '1'; }
       } else if (tab === 'settings'){
         setActiveTab('settings');
-        loadWsUrlOverride();
         loadDiscordWebhook();
         loadTailscaleSettings();
       } else {
@@ -2423,53 +2038,11 @@
     });
   });
   if (payloadsRefresh) payloadsRefresh.addEventListener('click', () => loadPayloads());
-  if (wsUrlOverrideSave) wsUrlOverrideSave.addEventListener('click', () => {
-    const url = wsUrlOverrideInput ? wsUrlOverrideInput.value.trim() : '';
-    if (url && !url.match(/^(ws|wss):\/\//i)) {
-      if (wsUrlStatus) wsUrlStatus.textContent = 'URL must start with ws:// or wss://';
-      return;
-    }
-    setManualWsUrl(url);
-    if (wsUrlStatus) wsUrlStatus.textContent = url ? 'Saved' : 'Cleared';
-    if (wsUrlOverrideInput) wsUrlOverrideInput.value = url;
-    setTimeout(() => {
-      if (wsUrlStatus) wsUrlStatus.textContent = 'Ready';
-    }, 2000);
-  });
-  if (wsUrlOverrideClear) wsUrlOverrideClear.addEventListener('click', () => {
-    setManualWsUrl('');
-    if (wsUrlOverrideInput) wsUrlOverrideInput.value = '';
-    if (wsUrlStatus) wsUrlStatus.textContent = 'Cleared';
-    setTimeout(() => {
-      if (wsUrlStatus) wsUrlStatus.textContent = 'Ready';
-    }, 2000);
-  });
   if (discordWebhookSave) discordWebhookSave.addEventListener('click', () => {
     saveDiscordWebhook(discordWebhookInput ? discordWebhookInput.value : '');
   });
   if (discordWebhookClear) discordWebhookClear.addEventListener('click', () => {
     if (discordWebhookInput) discordWebhookInput.value = '';
-    saveDiscordWebhook('');
-  });
-  // Dropdown WebSocket URL handlers
-  if (wsUrlDropdownSave) wsUrlDropdownSave.addEventListener('click', () => {
-    const url = wsUrlDropdownInput ? wsUrlDropdownInput.value.trim() : '';
-    if (url && !url.match(/^(ws|wss):\/\//i)) {
-      return;
-    }
-    setManualWsUrl(url);
-    if (wsUrlDropdownInput) wsUrlDropdownInput.value = url;
-  });
-  if (wsUrlDropdownClear) wsUrlDropdownClear.addEventListener('click', () => {
-    setManualWsUrl('');
-    if (wsUrlDropdownInput) wsUrlDropdownInput.value = '';
-  });
-  // Dropdown Discord Webhook handlers
-  if (discordWebhookDropdownSave) discordWebhookDropdownSave.addEventListener('click', () => {
-    saveDiscordWebhook(discordWebhookDropdownInput ? discordWebhookDropdownInput.value : '');
-  });
-  if (discordWebhookDropdownClear) discordWebhookDropdownClear.addEventListener('click', () => {
-    if (discordWebhookDropdownInput) discordWebhookDropdownInput.value = '';
     saveDiscordWebhook('');
   });
   if (tailscaleInstallBtn) tailscaleInstallBtn.addEventListener('click', () => {
@@ -2536,13 +2109,6 @@
   applyTheme();
   setActiveTab('device');
 
-  // TEMP: Disabled service worker to test if it's causing PWA issues
-  // if ('serviceWorker' in navigator) {
-  //   navigator.serviceWorker.register('./sw.js').then(reg => {
-  //     console.log('[Mobile] Service Worker registered:', reg);
-  //   }).catch(err => console.warn('[Mobile] Service Worker registration failed:', err));
-  // }
-
   let payloadPollTimer = null;
   let systemPollTimer = null;
 
@@ -2568,129 +2134,44 @@
 
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden){
-      console.log('[Mobile] App became visible');
-      // Only force-close stale WebSockets (not freshly connecting ones)
-      if (ws && ws.readyState === WebSocket.CLOSED) {
-        console.log('[Mobile] Reconnecting stale WebSocket');
-        ws = null;
-        if (reconnectTimer) {
-          clearTimeout(reconnectTimer);
-          reconnectTimer = null;
-        }
-        setTimeout(() => {
-          if (systemOpen) loadSystemStatus();
-          pollPayloadStatus();
-          ensureSocketLive('app-visible');
-        }, 100);
-      } else if (ws && ws.readyState === WebSocket.OPEN) {
-        // Already connected, just refresh data
-        if (systemOpen) loadSystemStatus();
-        pollPayloadStatus();
-      }
+      if (systemOpen) loadSystemStatus();
+      pollPayloadStatus();
+      ensureSocketLive();
     }
     schedulePayloadPoll();
     scheduleSystemPoll();
   });
 
-  window.addEventListener('pageshow', (event) => {
-    console.log('[Mobile] pageshow fired (persisted=' + (event && event.persisted) + ') - forcing reconnect');
-    if (ws) {
-      try { ws.close(); } catch(e) {}
-    }
+  window.addEventListener('pageshow', () => {
     if (reconnectTimer) {
       clearTimeout(reconnectTimer);
       reconnectTimer = null;
     }
-    // Reset candidate index to try best one again
     wsCandidateIndex = 0;
-    reconnectAttempts = 0;  // reset backoff
-    setTimeout(() => ensureSocketLive('pageshow'), 100);
+    reconnectAttempts = 0;
+    ensureSocketLive();
   });
 
-  window.addEventListener('pagehide', () => {
-    console.log('[Mobile] pagehide fired - closing connection');
-    if (ws) {
-      try { ws.close(); } catch(e) {}
-    }
-  });
-
-  window.addEventListener('focus', () => {
-    console.log('[Mobile] Window focus regained - checking connection');
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
-      ensureSocketLive('window-focus');
-    }
-  });
-
-  window.addEventListener('blur', () => {
-    console.log('[Mobile] Window lost focus');
-  });
-
-  window.addEventListener('resize', () => {
-    // Re-apply responsive tab classes when crossing mobile/desktop breakpoints.
-    applyResponsiveTabClasses(activeTab);
-    if (activeTab === 'terminal' && fitAddon) {
-      requestAnimationFrame(() => { try { fitAddon.fit(); } catch{} });
-    }
-  });
-
-  // Mobile heartbeat monitor - detect silent connection drops and network changes
-  function startHeartbeatMonitor(){
-    setInterval(() => {
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        const timeSinceLastMessage = Date.now() - lastServerMessage;
-        if (timeSinceLastMessage > SERVER_HEARTBEAT_TIMEOUT) {
-          console.warn('[Mobile] Server heartbeat timeout - connection is likely dead');
-          try { ws.close(); } catch(e) {}
-          scheduleReconnect('heartbeat timeout');
-        }
-      } else if (!document.hidden && (!ws || ws.readyState !== WebSocket.OPEN)) {
-        // PWA fix: if app is visible but no connection, force reconnect
-        console.warn('[Mobile] PWA: App visible but disconnected - reconnecting');
-        ensureSocketLive('heartbeat-check-pwa');
-      }
-    }, HEARTBEAT_CHECK_INTERVAL);
-  }
-
-  // Network event listeners for mobile resilience
   window.addEventListener('online', () => {
-    console.log('[Mobile] Network came online');
     if (reconnectTimer) {
       clearTimeout(reconnectTimer);
       reconnectTimer = null;
     }
-    ensureSocketLive('network recovered');
-  });
-
-  window.addEventListener('offline', () => {
-    console.log('[Mobile] Network went offline');
-    if (ws) {
-      try { ws.close(); } catch(e) {}
-    }
+    ensureSocketLive();
   });
 
   const startAfterAuth = () => {
-    console.log('[Mobile] startAfterAuth: checking authentication, hidden=' + document.hidden);
     ensureAuthenticated('Log in to access KTOx WebUI.').then((ok) => {
       if (!ok){
-        console.log('[Mobile] Authentication required');
         setTimeout(startAfterAuth, 0);
         return;
       }
-      console.log('[Mobile] Authenticated - starting heartbeat and initial connection');
       startHeartbeatMonitor();
-
-      // Force immediate connection attempt regardless of visibility
-      if (reconnectTimer) clearTimeout(reconnectTimer);
-      reconnectTimer = null;
-      reconnectAttempts = 0;
-
       connect();
       loadPayloads();
       schedulePayloadPoll();
       scheduleSystemPoll();
     });
   };
-
-  console.log('[Mobile] Page loaded, starting initialization');
   startAfterAuth();
 })();

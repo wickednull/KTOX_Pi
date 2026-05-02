@@ -2,37 +2,12 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, maximum-scale=1, minimum-scale=1">
-
-  <!-- iOS PWA Support -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="KTOx">
-  <meta name="apple-mobile-web-app-status-bar-style" content="default">
-
-  <!-- PWA & Mobile Support -->
-  <meta name="mobile-web-app-capable" content="yes">
   <meta name="theme-color" content="#05060a">
-  <meta name="application-name" content="KTOx WebUI">
-
-  <!-- Safe Area Support for Notched Devices -->
-  <meta name="viewport-fit" content="cover">
-
-  <!-- iOS Specific Behaviors -->
-  <meta name="apple-itunes-app" content="app-id=none">
-  <meta name="format-detection" content="telephone=no">
-  <meta name="format-detection" content="email=no">
-
-  <!-- Prevent iOS font scaling -->
-  <style>
-    input { font-size: 16px !important; }
-  </style>
-
   <title>KTOx WebUI</title>
   <link rel="manifest" href="./manifest.webmanifest">
-  <link rel="icon" type="image/png" href="./ktox.png?v=4">
-  <link rel="apple-touch-icon" href="./ktox.png?v=4">
-  <link rel="shortcut icon" href="./ktox.png?v=4">
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm/css/xterm.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
@@ -59,26 +34,6 @@
       --rj-radius: 12px;
       --rj-shadow: 0 12px 30px rgba(2, 6, 23, 0.35);
       --rj-glow: 0 0 24px rgba(139, 0, 0, 0.18);
-
-      /* Safe area insets for notched devices */
-      --safe-top: env(safe-area-inset-top, 0px);
-      --safe-bottom: env(safe-area-inset-bottom, 0px);
-      --safe-left: env(safe-area-inset-left, 0px);
-      --safe-right: env(safe-area-inset-right, 0px);
-    }
-
-    /* iOS Safe Area Support */
-    html, body {
-      width: 100%;
-      height: 100%;
-      -webkit-user-select: none;
-      -webkit-touch-callout: none;
-      -webkit-text-size-adjust: 100%;
-    }
-
-    /* Prevent zoom on input focus in iOS Safari */
-    input, textarea, select {
-      font-size: 16px !important;
     }
     body {
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
@@ -108,6 +63,31 @@
       box-shadow: var(--rj-shadow);
     }
     /* shared .device-shell base in device-shell.css */
+
+    /* Theme: Neon (default) */
+    .device-shell.theme-neon,
+    .device-shell[data-theme="neon"] {
+      box-shadow: 0 0 0 1px rgba(139,0,0,.3), 0 0 25px rgba(139,0,0,.12) inset, 0 0 40px rgba(139,0,0,.12);
+      background: linear-gradient(145deg, rgba(15,23,42,.65), rgba(15,23,42,.35));
+      border: 1px solid rgba(139,0,0,.25);
+      backdrop-filter: blur(8px);
+    }
+    .device-shell.theme-neon .rj-btn,
+    .device-shell[data-theme="neon"] .rj-btn {
+      box-shadow: 0 0 0 1px rgba(139,0,0,.25), 0 0 18px rgba(100,0,0,.18) inset;
+    }
+    .device-shell.theme-neon .rj-btn:active,
+    .device-shell.theme-neon .rj-btn.active,
+    .device-shell[data-theme="neon"] .rj-btn:active,
+    .device-shell[data-theme="neon"] .rj-btn.active {
+      filter: brightness(1.2);
+    }
+    .device-shell.theme-neon .screen-frame,
+    .device-shell[data-theme="neon"] .screen-frame {
+      border: 1px solid rgba(139,0,0,.3);
+      background: rgba(0,0,0,.8);
+      box-shadow: 0 0 40px rgba(139,0,0,0.2);
+    }
 
     /* Theme: Game Boy moved to device-shell.css */
 
@@ -405,7 +385,7 @@
     <aside id="sidebar" class="fixed md:sticky md:top-0 md:h-screen inset-y-0 left-0 z-40 w-64 -translate-x-full md:translate-x-0 transform transition bg-slate-950/60 border-r border-slate-800/70 backdrop-blur flex flex-col">
       <div class="p-4 border-b border-slate-800/70">
         <div class="flex items-center gap-3 select-none">
-          <img src="./ktox.png?v=2" alt="KTOx" class="h-10 drop-shadow-[0_0_16px_rgba(139,0,0,0.35)]"/>
+          <img src="./ktox.png" alt="KTOx" class="h-10 drop-shadow-[0_0_16px_rgba(139,0,0,0.35)]"/>
           <div>
             <div class="text-lg font-black tracking-wide"><span class="text-red-400">K</span>TOx_<span class="text-rose-400">P</span>i</div>
             <div class="text-[11px] text-slate-400">Remote Control</div>
@@ -415,10 +395,8 @@
 
       <nav class="p-3 space-y-2 flex-1 min-h-0 overflow-y-auto overscroll-contain">
         <button id="navDevice" type="button" class="w-full px-3 py-2 rounded-xl text-left text-sm font-semibold border border-red-400/30 bg-red-800/10 text-red-400 shadow-[0_0_16px_rgba(16,185,129,0.15)]"><i class="fa-solid fa-gamepad mr-2"></i>Device</button>
-        <button id="navTerminal" type="button" class="w-full px-3 py-2 rounded-xl text-left text-sm font-semibold border border-slate-400/20 bg-slate-800/40 text-slate-300 hover:text-white hover:bg-slate-700/50 transition"><i class="fa-solid fa-terminal mr-2"></i>Terminal</button>
         <button id="navSystem" type="button" class="w-full px-3 py-2 rounded-xl text-left text-sm font-semibold border border-slate-400/20 bg-slate-800/40 text-slate-300 hover:text-white hover:bg-slate-700/50 transition"><i class="fa-solid fa-microchip mr-2"></i>System</button>
-        <!-- System Monitor Dropdown -->
-        <div id="systemDropdown" class="hidden rounded-xl border border-slate-800/80 bg-slate-950/40 p-2 space-y-2 mt-1">
+        <div id="systemDropdown" class="hidden rounded-xl border border-slate-800/80 bg-slate-950/40 p-2 space-y-2">
           <div class="flex items-center justify-between">
             <div class="text-[11px] font-semibold text-red-400">System Monitor</div>
             <div id="systemStatus" class="text-[10px] text-slate-400">Ready</div>
@@ -489,98 +467,95 @@
     </aside>
 
     <main class="flex-1 px-4 py-6 md:px-8">
-      <div id="mobileTopBar" class="sticky top-0 z-20 mb-4 md:mb-6 -mx-4 px-4 md:mx-0 md:px-0 md:relative flex items-center justify-between py-2 md:py-4 px-3 md:px-0 border border-slate-800/70 md:border-slate-800/70 bg-slate-950/95 md:bg-slate-950/45 backdrop-blur rounded-none md:rounded-xl">
+      <div id="mobileTopBar" class="flex items-center justify-between mb-4 md:mb-6 px-3 py-2 border border-slate-800/70 bg-slate-950/45 backdrop-blur rounded-xl">
         <div class="flex items-center gap-2 text-[11px] text-slate-300">
           <i class="fa-solid fa-terminal text-red-400"></i>
           <span class="tracking-wide">WEBUI CONTROL DECK</span>
         </div>
-        <div class="flex items-center gap-2 relative">
+        <div class="flex items-center gap-2">
           <button id="menuToggle" type="button" class="md:hidden px-3 py-2 rounded-lg bg-slate-800/60 border border-slate-600/40 text-slate-200"><i class="fa-solid fa-bars"></i></button>
-          <div class="relative">
-            <button id="settingsToggle" type="button" class="px-3 py-1.5 text-xs rounded-lg bg-slate-800/80 border border-slate-600/40 text-slate-200 hover:bg-slate-700/80 transition"><i class="fa-solid fa-sliders"></i></button>
-            <!-- Settings Dropdown Menu -->
-            <div id="settingsDropdown" class="hidden absolute top-full right-0 mt-2 w-64 rounded-xl border border-slate-800/80 bg-slate-950/95 backdrop-blur shadow-lg">
-              <div class="p-3 border-b border-slate-800/70">
-                <div class="text-xs font-semibold text-red-400 uppercase tracking-wider">Settings</div>
-              </div>
-              <div class="p-3 space-y-3 max-h-96 overflow-y-auto">
-                <!-- Themes -->
-                <div>
-                  <div class="text-xs font-semibold text-slate-200 mb-2">Themes</div>
-                  <div class="flex gap-1">
-                    <button type="button" data-theme="neon" class="px-2 py-1 rounded-lg text-[10px] font-semibold border border-slate-500/20 bg-slate-900/40 text-slate-300 hover:bg-slate-800/60 transition">Syndicate</button>
-                    <button type="button" data-theme="gameboy" class="px-2 py-1 rounded-lg text-[10px] font-semibold border border-slate-500/20 bg-slate-900/40 text-slate-300 hover:bg-slate-800/60 transition">Game Boy</button>
-                    <button type="button" data-theme="pager" class="px-2 py-1 rounded-lg text-[10px] font-semibold border border-slate-500/20 bg-slate-900/40 text-slate-300 hover:bg-slate-800/60 transition">Pager</button>
-                  </div>
-                </div>
-                <!-- WebSocket URL -->
-                <div>
-                  <div class="text-xs font-semibold text-slate-200 mb-1">WebSocket URL (iOS PWA)</div>
-                  <input type="text" id="wsUrlDropdownInput" placeholder="ws://192.168.1.100:8765/" class="w-full px-2 py-1 rounded-lg bg-slate-900/70 border border-slate-700/60 text-slate-100 text-[11px] focus:outline-none focus:ring-1 focus:ring-red-400/50">
-                  <div class="flex gap-1 mt-2">
-                    <button type="button" class="px-2 py-1 text-[10px] rounded-lg bg-red-900/80 border border-red-300/30 text-white hover:bg-red-800/80 transition" id="wsUrlDropdownSave">Save</button>
-                    <button type="button" class="px-2 py-1 text-[10px] rounded-lg bg-slate-800/80 border border-slate-600/40 text-slate-200 hover:bg-slate-700/80 transition" id="wsUrlDropdownClear">Clear</button>
-                  </div>
-                </div>
-                <!-- Discord Webhook -->
-                <div>
-                  <div class="text-xs font-semibold text-slate-200 mb-1">Discord Webhook</div>
-                  <input type="password" id="discordWebhookDropdownInput" placeholder="https://discord.com/api/webhooks/..." class="w-full px-2 py-1 rounded-lg bg-slate-900/70 border border-slate-700/60 text-slate-100 text-[11px] focus:outline-none focus:ring-1 focus:ring-red-400/50">
-                  <div class="flex gap-1 mt-2">
-                    <button type="button" class="px-2 py-1 text-[10px] rounded-lg bg-red-900/80 border border-red-300/30 text-white hover:bg-red-800/80 transition" id="discordWebhookDropdownSave">Save</button>
-                    <button type="button" class="px-2 py-1 text-[10px] rounded-lg bg-slate-800/80 border border-slate-600/40 text-slate-200 hover:bg-slate-700/80 transition" id="discordWebhookDropdownClear">Clear</button>
-                  </div>
-                </div>
-                <!-- Full Settings & Logout -->
-                <div class="pt-2 border-t border-slate-800/70 space-y-2">
-                  <button id="settingsFullBtn" type="button" class="w-full px-3 py-1.5 rounded-lg bg-slate-800/80 border border-slate-600/40 text-slate-200 hover:bg-slate-700/80 transition text-xs font-semibold"><i class="fa-solid fa-sliders mr-1"></i>Full Settings</button>
-                  <button id="settingsDropdownLogoutBtn" type="button" class="w-full px-3 py-1.5 rounded-lg bg-red-900/80 border border-red-300/30 text-white hover:bg-red-800/80 transition text-xs font-semibold"><i class="fa-solid fa-right-from-bracket mr-1"></i>Logout</button>
-                </div>
-              </div>
-            </div>
-          </div>
+          <button id="logoutBtn" type="button" class="px-3 py-1.5 text-xs rounded-lg bg-slate-800/80 border border-slate-600/40 text-slate-200 hover:bg-slate-700/80 transition"><i class="fa-solid fa-right-from-bracket mr-1"></i>Logout</button>
         </div>
       </div>
 
       <!-- Device card -->
-      <div id="deviceTab" class="block overflow-hidden h-screen flex items-center justify-center">
-          <div class="device-shell-col flex justify-center">
+      <div id="deviceTab" class="block">
+        <div class="flex flex-col md:flex-row md:items-start md:gap-6">
+          <div class="terminal-col md:order-1 order-2 flex-1 min-w-0">
+            <div class="terminal-wrap terminal-divider md:pr-6">
+              <div class="flex items-center justify-between px-4 py-3 border-b border-slate-800/70">
+                <div class="text-sm font-semibold text-red-400">Terminal</div>
+                <div class="flex items-center gap-2">
+                  <div id="shellStatus" class="text-[11px] text-slate-400">Disconnected</div>
+                  <button id="shellConnect" type="button" class="px-3 py-1.5 text-xs rounded-lg bg-red-900/80 border border-red-300/30 text-white hover:bg-red-800/80 transition">Open</button>
+                  <button id="shellDisconnect" type="button" class="px-3 py-1.5 text-xs rounded-lg bg-slate-800/80 border border-slate-600/40 text-slate-200 hover:bg-slate-700/80 transition">Close</button>
+                </div>
+              </div>
+              <div id="terminal" class="terminal-body"></div>
+              <div class="flex flex-wrap items-center gap-1.5 px-3 py-2 border-t border-slate-800/70">
+                <button class="shell-key-btn" data-shell-key="&#x03;" title="Ctrl+C">^C</button>
+                <button class="shell-key-btn" data-shell-key="&#x04;" title="Ctrl+D">^D</button>
+                <button class="shell-key-btn" data-shell-key="&#x1a;" title="Ctrl+Z">^Z</button>
+                <button class="shell-key-btn" data-shell-key="&#x0c;" title="Ctrl+L (clear)">^L</button>
+                <button class="shell-key-btn" data-shell-key="&#x01;" title="Ctrl+A (start of line)">^A</button>
+                <button class="shell-key-btn" data-shell-key="&#x05;" title="Ctrl+E (end of line)">^E</button>
+                <button class="shell-key-btn" data-shell-key="&#x0b;" title="Ctrl+K (kill to end)">^K</button>
+                <button class="shell-key-btn" data-shell-key="&#x1b;" title="Escape">ESC</button>
+                <button class="shell-key-btn" data-shell-key="&#x1b;[A" title="Arrow Up">↑</button>
+                <button class="shell-key-btn" data-shell-key="&#x1b;[B" title="Arrow Down">↓</button>
+                <button class="shell-key-btn" data-shell-key="&#x09;" title="Tab">TAB</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="device-shell-col md:order-2 order-1 flex justify-center md:justify-end md:pl-6">
             <div id="deviceShell" data-theme="neon" class="device-shell theme-neon rounded-3xl p-4 md:p-5 w-full md:w-fit mx-auto md:mx-0">
+      <div class="syndicate-bezel" aria-hidden="true"></div>
+      <div class="syndicate-accent-top" aria-hidden="true"></div>
+      <div class="syndicate-accent-bottom" aria-hidden="true"></div>
+      <div class="syndicate-speaker-top" aria-hidden="true"></div>
+      <div class="syndicate-brand" aria-hidden="true">KTOx_Pi</div>
       <div class="pager-clip" aria-hidden="true"></div>
       <div class="pager-brand">KTOx_Pi</div>
       <div class="pager-speaker" aria-hidden="true">
         <span></span><span></span><span></span><span></span><span></span>
       </div>
-      <div class="syndicate-bezel" aria-hidden="true"></div>
-      <div class="syndicate-accent-top" aria-hidden="true"></div>
-      <div class="syndicate-accent-bottom" aria-hidden="true"></div>
-      <div class="syndicate-speaker-top" aria-hidden="true"></div>
-      <div class="syndicate-brand">KTOX</div>
-      <!-- Default layout (Syndicate / Dark Cyberdeck) -->
-      <div class="layout-default">
-        <div class="screen-frame">
-          <canvas id="screen" width="128" height="128" class="w-[240px] md:w-[300px] aspect-square"></canvas>
-        </div>
-        <div class="flex justify-between mb-4">
-          <div class="grid grid-cols-3 grid-rows-3 gap-2">
+      <!-- Default layout (Neon / Pager) -->
+      <div class="layout-default grid grid-cols-2 md:grid-cols-[120px_auto_120px] gap-3 md:gap-4 md:justify-items-center items-center w-full">
+        <!-- Left pad -->
+        <div class="order-2 md:order-1 flex md:block justify-center">
+          <div class="grid grid-cols-3 grid-rows-3 gap-1.5 w-[120px]">
             <div></div>
-            <button class="rj-btn" data-btn="UP">▲</button>
+            <button class="rj-btn dpad-btn rounded-xl bg-slate-800/70 hover:bg-slate-700/70 w-10 h-10 flex items-center justify-center backdrop-blur ring-1 ring-white/10 hover:ring-red-400/30 transition" data-btn="UP">▲</button>
             <div></div>
-            <button class="rj-btn" data-btn="LEFT">◄</button>
-            <button class="rj-btn" data-btn="OK" aria-label="OK"></button>
-            <button class="rj-btn" data-btn="RIGHT">►</button>
+            <button class="rj-btn dpad-btn rounded-xl bg-slate-800/70 hover:bg-slate-700/70 w-10 h-10 flex items-center justify-center backdrop-blur ring-1 ring-white/10 hover:ring-red-400/30 transition" data-btn="LEFT">◄</button>
+            <button class="rj-btn ok-btn rounded-xl bg-red-900/80 hover:bg-red-800/80 w-10 h-10 flex items-center justify-center ring-1 ring-red-300/40 transition" data-btn="OK" aria-label="OK"></button>
+            <button class="rj-btn dpad-btn rounded-xl bg-slate-800/70 hover:bg-slate-700/70 w-10 h-10 flex items-center justify-center backdrop-blur ring-1 ring-white/10 hover:ring-red-400/30 transition" data-btn="RIGHT">►</button>
             <div></div>
-            <button class="rj-btn" data-btn="DOWN">▼</button>
+            <button class="rj-btn dpad-btn rounded-xl bg-slate-800/70 hover:bg-slate-700/70 w-10 h-10 flex items-center justify-center backdrop-blur ring-1 ring-white/10 hover:ring-red-400/30 transition" data-btn="DOWN">▼</button>
             <div></div>
           </div>
-          <div class="flex flex-col gap-2 side-buttons">
-            <button class="rj-btn key-btn" data-btn="KEY1">KEY1</button>
-            <button class="rj-btn key-btn" data-btn="KEY2">KEY2</button>
-            <button class="rj-btn key-btn" data-btn="KEY3">KEY3</button>
-          </div>
         </div>
-        <div class="text-center text-xs text-gray-300">OK = Enter · KEY3 = Esc</div>
-        <div id="status" class="status-text text-center text-[11px] text-gray-500 mt-1">Connecting…</div>
+
+        <!-- Screen -->
+        <div class="order-1 md:order-2 col-span-2 md:col-span-1">
+          <div class="screen-frame rounded-2xl p-2">
+            <div class="flex items-center justify-center">
+              <canvas id="screen" width="128" height="128" class="w-full md:w-[300px] aspect-square"></canvas>
+            </div>
+          </div>
+          <div class="pager-text mt-3 text-center text-xs text-slate-400">OK = Enter · KEY3 = Esc</div>
+          <div id="status" class="status-text pager-text mt-1 text-center text-[11px] text-slate-500">Connecting…</div>
+        </div>
+
+        <!-- Right buttons -->
+        <div class="order-3 md:order-3 flex flex-col items-stretch gap-2 md:items-stretch">
+          <button class="rj-btn key-btn rounded-xl bg-fuchsia-700/80 hover:bg-fuchsia-600/80 px-3 py-2 w-full md:w-24 ring-1 ring-white/10 transition" data-btn="KEY1">KEY1</button>
+          <button class="rj-btn key-btn rounded-xl bg-fuchsia-700/80 hover:bg-fuchsia-600/80 px-3 py-2 w-full md:w-24 ring-1 ring-white/10 transition" data-btn="KEY2">KEY2</button>
+          <button class="rj-btn key-btn rounded-xl bg-fuchsia-700/80 hover:bg-fuchsia-600/80 px-3 py-2 w-full md:w-24 ring-1 ring-white/10 transition" data-btn="KEY3">KEY3</button>
+          <button onclick="tapInput('MANUAL_LOCK')" class="rounded-xl bg-slate-700/70 hover:bg-slate-600/90 px-3 py-2 w-full md:w-24 ring-1 ring-slate-500/30 text-slate-300 hover:text-white text-xs font-bold transition" title="Lock screen">&#xf023;</button>
+          <button onclick="exitStealth()" class="rounded-xl bg-red-900/70 hover:bg-red-700/90 px-3 py-2 w-full md:w-24 ring-1 ring-red-500/30 text-red-300 hover:text-white text-xs font-bold transition" title="Exit stealth mode">EXIT<br>STEALTH</button>
+        </div>
       </div>
 
       <!-- Game Boy layout -->
@@ -636,22 +611,26 @@
         <div class="pager-text text-center text-[11px] mt-4">OK = Enter · KEY3 = Esc</div>
         <div class="status-text pager-text text-center text-[10px] mt-1">Connecting…</div>
           </div>
+        </div>
+      </div>
+      </div>
+      </div>
 
-      <!-- Syndicate layout (Cyberdeck theme) -->
+      <!-- Syndicate layout -->
       <div class="layout-syndicate hidden">
         <div class="screen-frame">
           <canvas id="screen-syndicate" width="128" height="128" class="w-[240px] md:w-[300px] aspect-square"></canvas>
         </div>
-        <div class="flex justify-between mb-4">
+        <div class="flex justify-between mb-4 mt-4">
           <div class="grid grid-cols-3 grid-rows-3 gap-2">
             <div></div>
-            <button class="rj-btn" data-btn="UP">▲</button>
+            <button class="rj-btn" data-btn="UP">â–²</button>
             <div></div>
-            <button class="rj-btn" data-btn="LEFT">◄</button>
+            <button class="rj-btn" data-btn="LEFT">â—„</button>
             <button class="rj-btn" data-btn="OK" aria-label="OK"></button>
-            <button class="rj-btn" data-btn="RIGHT">►</button>
+            <button class="rj-btn" data-btn="RIGHT">â–º</button>
             <div></div>
-            <button class="rj-btn" data-btn="DOWN">▼</button>
+            <button class="rj-btn" data-btn="DOWN">â–¼</button>
             <div></div>
           </div>
           <div class="flex flex-col gap-2 side-buttons">
@@ -660,140 +639,8 @@
             <button class="rj-btn key-btn" data-btn="KEY3">KEY3</button>
           </div>
         </div>
-        <div class="text-center text-xs text-gray-300">OK = Enter · KEY3 = Esc</div>
-        <div id="status-syndicate" class="status-text text-center text-[11px] text-gray-500 mt-1">Connecting…</div>
-      </div>
-            </div>
-      </div>
-
-      <!-- Terminal Tab -->
-      <div id="terminalTab" class="hidden block overflow-y-auto">
-        <div class="flex flex-col h-full">
-          <div class="terminal-wrap terminal-divider flex-1 flex flex-col min-h-0">
-            <div class="flex items-center justify-between px-4 py-3 border-b border-slate-800/70">
-              <div class="text-sm font-semibold text-red-400">Terminal</div>
-              <div class="flex items-center gap-2">
-                <div id="shellStatus" class="text-[11px] text-slate-400">Disconnected</div>
-                <button id="shellConnect" type="button" class="px-3 py-1.5 text-xs rounded-lg bg-red-900/80 border border-red-300/30 text-white hover:bg-red-800/80 transition">Open</button>
-                <button id="shellDisconnect" type="button" class="px-3 py-1.5 text-xs rounded-lg bg-slate-800/80 border border-slate-600/40 text-slate-200 hover:bg-slate-700/80 transition">Close</button>
-              </div>
-            </div>
-            <div id="terminal" class="terminal-body flex-1"></div>
-            <div id="terminalQuickBar" class="flex flex-wrap items-center gap-1.5 px-3 py-2 border-t border-slate-800/70">
-              <button class="shell-key-btn" data-shell-key="&#x03;" title="Ctrl+C">^C</button>
-              <button class="shell-key-btn" data-shell-key="&#x04;" title="Ctrl+D">^D</button>
-              <button class="shell-key-btn" data-shell-key="&#x1a;" title="Ctrl+Z">^Z</button>
-              <button class="shell-key-btn" data-shell-key="&#x0c;" title="Ctrl+L (clear)">^L</button>
-              <button class="shell-key-btn" data-shell-key="&#x01;" title="Ctrl+A (start of line)">^A</button>
-              <button class="shell-key-btn" data-shell-key="&#x05;" title="Ctrl+E (end of line)">^E</button>
-              <button class="shell-key-btn" data-shell-key="&#x0b;" title="Ctrl+K (kill to end)">^K</button>
-              <button class="shell-key-btn" data-shell-key="&#x1b;" title="Escape">ESC</button>
-              <button class="shell-key-btn" data-shell-key="&#x1b;[A" title="Arrow Up">↑</button>
-              <button class="shell-key-btn" data-shell-key="&#x1b;[B" title="Arrow Down">↓</button>
-              <button class="shell-key-btn" data-shell-key="&#x09;" title="Tab">TAB</button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- System Stats (mobile-optimized) -->
-      <div id="systemTab" class="hidden">
-        <!-- Dashboard Status Header -->
-        <div id="dashboardStatus" class="mb-6 grid grid-cols-1 md:grid-cols-4 gap-4">
-          <!-- Connection Status Card -->
-          <div class="rounded-2xl border border-slate-800/60 bg-gradient-to-br from-slate-900/80 to-slate-950/80 backdrop-blur p-4 shadow-lg hover:border-slate-700/80 transition">
-            <div class="flex items-center justify-between mb-2">
-              <div class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Connection</div>
-              <div id="connectionDot" class="w-2.5 h-2.5 rounded-full bg-amber-500/60 animate-pulse"></div>
-            </div>
-            <div id="connectionStatus" class="text-lg font-bold text-slate-100">Connecting...</div>
-            <div id="connectionType" class="text-xs text-slate-500 mt-1">WebSocket</div>
-          </div>
-
-          <!-- Device Info Card -->
-          <div class="rounded-2xl border border-slate-800/60 bg-gradient-to-br from-slate-900/80 to-slate-950/80 backdrop-blur p-4 shadow-lg hover:border-slate-700/80 transition">
-            <div class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Device</div>
-            <div id="deviceName" class="text-lg font-bold text-slate-100">KTOx Pi</div>
-            <div id="deviceIp" class="text-xs text-slate-500 mt-1">0.0.0.0</div>
-          </div>
-
-          <!-- System Health Card -->
-          <div class="rounded-2xl border border-slate-800/60 bg-gradient-to-br from-slate-900/80 to-slate-950/80 backdrop-blur p-4 shadow-lg hover:border-slate-700/80 transition">
-            <div class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Health</div>
-            <div class="flex items-baseline gap-2">
-              <div id="healthScore" class="text-lg font-bold text-emerald-400">--</div>
-              <div class="text-xs text-slate-500">/ 100</div>
-            </div>
-            <div class="flex gap-1 mt-2 h-1 rounded-full overflow-hidden bg-slate-800/50">
-              <div id="healthBar" class="bg-gradient-to-r from-emerald-500 to-emerald-400 rounded-full" style="width: 0%"></div>
-            </div>
-          </div>
-
-          <!-- Network Card -->
-          <div class="rounded-2xl border border-slate-800/60 bg-gradient-to-br from-slate-900/80 to-slate-950/80 backdrop-blur p-4 shadow-lg hover:border-slate-700/80 transition">
-            <div class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Network</div>
-            <div class="text-xs text-slate-300 space-y-1">
-              <div><span class="text-slate-500">Uptime:</span> <span id="quickUptime">--</span></div>
-              <div><span class="text-slate-500">Payload:</span> <span id="quickPayload" class="text-amber-400">Idle</span></div>
-            </div>
-          </div>
-        </div>
-
-        <div class="rounded-3xl border border-slate-700/60 bg-slate-900/40 backdrop-blur p-4 md:p-5 max-w-3xl mx-auto shadow-[0_0_30px_rgba(15,23,42,0.35)] space-y-3">
-          <div class="flex items-center justify-between mb-2">
-            <div class="text-sm font-semibold text-red-400">System Monitor</div>
-            <div id="mobileSystemStatus" class="text-[11px] text-slate-400">Ready</div>
-          </div>
-
-          <div class="rounded-xl border border-slate-800/80 bg-slate-950/40 p-3">
-            <div class="text-xs text-slate-400 mb-1.5">CPU Usage</div>
-            <div class="flex items-center justify-between mb-1">
-              <span class="text-lg font-bold text-red-400" id="mobSysCpuValue">0%</span>
-              <span class="text-xs text-slate-500" id="mobSysTempValue">--.- C</span>
-            </div>
-            <div class="h-2 rounded bg-slate-800 overflow-hidden">
-              <div id="mobSysCpuBar" class="h-2 bg-red-800/80" style="width: 0%"></div>
-            </div>
-          </div>
-
-          <div class="rounded-xl border border-slate-800/80 bg-slate-950/40 p-3">
-            <div class="text-xs text-slate-400 mb-1.5">Memory</div>
-            <div class="flex items-center justify-between mb-1">
-              <span class="text-lg font-bold text-cyan-400" id="mobSysMemValue">0%</span>
-              <span class="text-xs text-slate-500" id="mobSysMemMeta">0 / 0</span>
-            </div>
-            <div class="h-2 rounded bg-slate-800 overflow-hidden">
-              <div id="mobSysMemBar" class="h-2 bg-cyan-500/80" style="width: 0%"></div>
-            </div>
-          </div>
-
-          <div class="rounded-xl border border-slate-800/80 bg-slate-950/40 p-3">
-            <div class="text-xs text-slate-400 mb-1.5">Disk (/)</div>
-            <div class="flex items-center justify-between mb-1">
-              <span class="text-lg font-bold text-fuchsia-400" id="mobSysDiskValue">0%</span>
-              <span class="text-xs text-slate-500" id="mobSysDiskMeta">0 / 0</span>
-            </div>
-            <div class="h-2 rounded bg-slate-800 overflow-hidden">
-              <div id="mobSysDiskBar" class="h-2 bg-fuchsia-500/80" style="width: 0%"></div>
-            </div>
-          </div>
-
-          <div class="rounded-xl border border-slate-800/80 bg-slate-950/40 p-3 space-y-1.5">
-            <div class="text-xs text-slate-400">System Info</div>
-            <div class="text-xs text-slate-300">Uptime: <span id="mobSysUptime">-</span></div>
-            <div class="text-xs text-slate-300">Load Avg: <span id="mobSysLoad">-</span></div>
-            <div class="text-xs text-slate-300">Payload: <span id="mobSysPayload">none</span></div>
-          </div>
-
-          <div class="rounded-xl border border-slate-800/80 bg-slate-950/40 p-3">
-            <div class="text-xs text-slate-400 mb-2">Network Interfaces</div>
-            <div id="mobSysInterfaces" class="text-xs text-slate-300 space-y-1.5">
-              <div class="text-slate-500">No data yet</div>
-            </div>
-          </div>
-
-          <button type="button" class="w-full px-4 py-2 rounded-lg bg-red-900/80 border border-red-300/30 text-white hover:bg-red-800/80 transition text-sm font-semibold" onclick="loadMobileSystemStatus()">Refresh</button>
-        </div>
+        <div class="text-center text-[11px] mt-4">OK = Enter Â· KEY3 = Esc</div>
+        <div id="status-syndicate" class="status-text text-center text-[10px] mt-1">Connectingâ€¦</div>
       </div>
 
       <!-- Settings -->
@@ -801,27 +648,16 @@
         <div class="rounded-3xl border border-slate-700/60 bg-slate-900/40 backdrop-blur p-4 md:p-5 max-w-3xl mx-auto shadow-[0_0_30px_rgba(15,23,42,0.35)] space-y-4">
           <div class="flex items-center justify-between">
             <div class="text-sm font-semibold text-red-400">Settings</div>
-            <div class="text-[11px] text-slate-400">Current theme: <span id="themeName">Syndicate</span></div>
+            <div class="text-[11px] text-slate-400">Current theme: <span id="themeName">Neon</span></div>
           </div>
 
           <div class="rounded-xl border border-slate-800/70 bg-slate-950/40 p-3">
             <div class="text-xs font-semibold text-slate-200 mb-2">Themes</div>
-            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              <button type="button" data-theme="neon" class="px-3 py-2 rounded-lg text-left text-xs font-semibold border border-slate-500/20 bg-slate-900/40 text-slate-300 hover:bg-slate-800/60 transition">Syndicate</button>
+            <div class="grid grid-cols-1 sm:grid-cols-4 gap-2">
+              <button type="button" data-theme="neon" class="px-3 py-2 rounded-lg text-left text-xs font-semibold border border-slate-500/20 bg-slate-900/40 text-slate-300 hover:bg-slate-800/60 transition">Neon</button>
+              <button type="button" data-theme="syndicate" class="px-3 py-2 rounded-lg text-left text-xs font-semibold border border-slate-500/20 bg-slate-900/40 text-slate-300 hover:bg-slate-800/60 transition">Syndicate</button>
               <button type="button" data-theme="gameboy" class="px-3 py-2 rounded-lg text-left text-xs font-semibold border border-slate-500/20 bg-slate-900/40 text-slate-300 hover:bg-slate-800/60 transition">Game Boy</button>
               <button type="button" data-theme="pager" class="px-3 py-2 rounded-lg text-left text-xs font-semibold border border-slate-500/20 bg-slate-900/40 text-slate-300 hover:bg-slate-800/60 transition">Pager</button>
-            </div>
-          </div>
-
-          <div class="rounded-xl border border-slate-800/70 bg-slate-950/40 p-3">
-            <div class="text-xs font-semibold text-slate-200 mb-2">WebSocket Connection (iOS PWA)</div>
-            <p class="text-[11px] text-slate-400 mb-2">For iOS web apps, use the device IP address instead of hostname. Format: ws://192.168.1.100:8765/</p>
-            <label for="wsUrlOverrideInput" class="block text-[11px] text-slate-400 mb-1">WebSocket URL (optional)</label>
-            <input id="wsUrlOverrideInput" type="text" autocomplete="off" placeholder="ws://192.168.1.100:8765/" class="w-full px-3 py-2 rounded-lg bg-slate-900/70 border border-slate-700/60 text-slate-100 text-xs focus:outline-none focus:ring-1 focus:ring-red-400/50">
-            <div class="mt-2 flex items-center gap-2">
-              <button id="wsUrlOverrideSave" type="button" class="px-3 py-1.5 text-xs rounded-lg bg-red-900/80 border border-red-300/30 text-white hover:bg-red-800/80 transition">Save</button>
-              <button id="wsUrlOverrideClear" type="button" class="px-3 py-1.5 text-xs rounded-lg bg-slate-800/80 border border-slate-600/40 text-slate-200 hover:bg-slate-700/80 transition">Clear</button>
-              <div id="wsUrlStatus" class="text-[11px] text-slate-400">Ready</div>
             </div>
           </div>
 
@@ -852,11 +688,6 @@
                 Re-authenticate with new key
               </button>
             </div>
-          </div>
-
-          <div class="rounded-xl border border-slate-800/70 bg-slate-950/40 p-3">
-            <div class="text-xs font-semibold text-slate-200 mb-2">Logout</div>
-            <button id="settingsLogoutBtn" type="button" class="w-full px-4 py-2 rounded-lg bg-red-900/80 border border-red-300/30 text-white hover:bg-red-800/80 transition text-sm font-semibold"><i class="fa-solid fa-right-from-bracket mr-2"></i>Logout</button>
           </div>
         </div>
       </div>
@@ -1007,18 +838,6 @@
     </div>
   </div>
 
-  <!-- Mobile terminal quick command dock -->
-  <div id="mobileTerminalDock" aria-label="Terminal quick controls">
-    <button class="shell-key-btn" data-shell-key="&#x03;" title="Ctrl+C">^C</button>
-    <button class="shell-key-btn" data-shell-key="&#x04;" title="Ctrl+D">^D</button>
-    <button class="shell-key-btn" data-shell-key="&#x1a;" title="Ctrl+Z">^Z</button>
-    <button class="shell-key-btn" data-shell-key="&#x0c;" title="Ctrl+L">^L</button>
-    <button class="shell-key-btn" data-shell-key="&#x1b;[A" title="Arrow Up">↑</button>
-    <button class="shell-key-btn" data-shell-key="&#x1b;[B" title="Arrow Down">↓</button>
-    <button class="shell-key-btn" data-shell-key="&#x09;" title="Tab">TAB</button>
-    <button class="shell-key-btn" data-shell-key="&#x1b;" title="Escape">ESC</button>
-  </div>
-
   <!-- Mobile bottom navigation (hidden on desktop via CSS) -->
   <nav id="mobileNav" aria-label="Mobile navigation">
     <button class="mob-nav-btn mob-nav-active" data-mobnav="device" aria-label="Device">
@@ -1028,10 +847,6 @@
     <button class="mob-nav-btn" data-mobnav="terminal" aria-label="Terminal">
       <i class="fa-solid fa-terminal"></i>
       <span>Terminal</span>
-    </button>
-    <button class="mob-nav-btn" data-mobnav="system" aria-label="System">
-      <i class="fa-solid fa-microchip"></i>
-      <span>System</span>
     </button>
     <button class="mob-nav-btn" data-mobnav="payloads" aria-label="Payloads">
       <i class="fa-solid fa-bolt"></i>
@@ -1086,7 +901,6 @@
     })();
   </script>
   <script>
-    // iOS PWA service worker for persistence
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('./sw.js').catch(function(err){
         console.log('[PWA] Service Worker registration failed:', err);
