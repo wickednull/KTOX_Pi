@@ -1,459 +1,200 @@
 #!/usr/bin/env python3
-# NAME: USB Army Knife Controller
-# USB Army Knife Marauder Controller for KTOx_Pi
-# Full command set – selects target APs/stations, runs attacks, displays output on LCD
-
+"""USB Army Knife Controller payload (device-only build).
+Designed for KTOx Pi hardware + 1.44" LCD + buttons.
+"""
 import os
-import sys
 import time
-try:
-    import serial
-    import serial.tools.list_ports
-    HAS_SERIAL = True
-except Exception as e:
-    serial = None
-    HAS_SERIAL = False
-    SERIAL_IMPORT_ERROR = str(e)
-from datetime import datetime
+import serial
+import serial.tools.list_ports
+import RPi.GPIO as GPIO
+import LCD_1in44
+from PIL import Image, ImageDraw, ImageFont
 
-# KTOx environment
-KTOX_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
-sys.path.insert(0, KTOX_DIR)
-
-try:
-    import RPi.GPIO as GPIO
-    from PIL import Image, ImageDraw, ImageFont
-    import LCD_1in44
-    HAS_HW = True
-except Exception:
-    HAS_HW = False
-
-try:
-    from ktox_device import draw_lock, LCD, image, draw, text_font, small_font, color, getButton, Dialog_info
-    # Check if draw is actually available (None in headless mode)
-    HAS_LCD = draw is not None
-    if not HAS_LCD:
-        print("[WARN] LCD/UI unavailable (headless mode)")
-        Dialog_info = None
-        getButton = None
-except Exception as e:
-    print(f"[WARN] LCD/UI unavailable: {e}")
-    HAS_LCD = False
-    draw_lock = None
-    Dialog_info = None
-    getButton = None
-    color = None
-    draw = None
-    text_font = None
-    small_font = None
-
-# ------------------------------------------------------------
-# Serial connection to USB Army Knife
-# ------------------------------------------------------------
 SERIAL_BAUD = 115200
 PROMPT_PATTERNS = ("marauder>", "Marauder>", ">")
+
+PINS = {
+    "UP": 6, "DOWN": 19, "LEFT": 5, "RIGHT": 26,
+    "OK": 13, "KEY1": 21, "KEY2": 20, "KEY3": 16,
+}
+
+COMMAND_CATEGORIES = {
+    "Scan / Sniff": ["scanap", "scansta", "scanall", "sniffbeacon", "sniffdeauth", "packetcount"],
+    "Attacks": ["attack -t deauth -a", "attack -t deauth -s", "attack -t beacon -r", "attack -t probe"],
+    "Targets": ["list -a", "list -s", "list -c", "select -a 0", "clearlist -a", "clearlist -s"],
+    "System": ["help", "channel -s 6", "stopscan", "clear", "reboot"],
+}
+
+
+def font(size=10):
+    try:
+        return ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", size)
+    except Exception:
+        return ImageFont.load_default()
+
+
+FONT = font(10)
+FONT_SM = font(9)
+
 
 class USBArmyKnife:
     def __init__(self):
         self.ser = None
+        self.port = None
         self.last_error = None
-        self.port = self._find_port()
 
-    def _find_port(self):
-        if not HAS_SERIAL:
-            self.last_error = f"pyserial unavailable: {SERIAL_IMPORT_ERROR}"
-            return None
+    def list_ports(self):
+        ports = list(serial.tools.list_ports.comports())
+        out = [p.device for p in ports]
+        for dev in ["/dev/ttyACM0", "/dev/ttyUSB0", "/dev/ttyUSB1"]:
+            if os.path.exists(dev) and dev not in out:
+                out.append(dev)
+        return out
 
-        # Try to auto‑detect by VID/PID (CP210x is common)
-        for port in serial.tools.list_ports.comports():
-            desc = port.description or ""
-            prod = port.product or ""
-            # Check for common patterns: USB Army Knife, CP210x, or FTDI chips
-            if any(x in desc for x in ["USB Army Knife", "CP210x", "FTDI"]) or "210x" in prod:
-                return port.device
-        # Fallback to common TTY names
-        for dev in ["/dev/ttyACM0", "/dev/ttyUSB0"]:
-            if os.path.exists(dev):
-                return dev
-        return None
-
-    def connect(self):
-        if not HAS_SERIAL:
-            self.last_error = f"pyserial unavailable: {SERIAL_IMPORT_ERROR}"
-            return False
-        if not self.port:
-            self.last_error = "No serial port detected for USB Army Knife"
-            return False
+    def connect(self, port):
+        self.port = port
         try:
-            self.ser = serial.Serial(self.port, SERIAL_BAUD, timeout=2)
-            time.sleep(1.5)
+            self.ser = serial.Serial(port, SERIAL_BAUD, timeout=1)
+            time.sleep(1.2)
             self.ser.write(b"\r\n")
-            self.ser.write(b"\n")
-            time.sleep(0.5)
             self.ser.reset_input_buffer()
             return True
         except Exception as e:
-            self.last_error = f"Connect error: {e}"
-            print(f"[Marauder] {self.last_error}")
+            self.last_error = str(e)
             return False
 
-    def send_command(self, cmd, wait_for_prompt=True, timeout=15):
+    def send(self, cmd, timeout=12):
         if not self.ser or not self.ser.is_open:
-            if not self.connect():
-                return ["[ERROR] Cannot connect to USB Army Knife"]
-        self.ser.write(f"{cmd}\r\n".encode())
-        if not wait_for_prompt:
-            return []
-
-        output = []
-        buffer = ""
+            return ["[ERROR] serial not open"]
+        self.ser.write((cmd + "\r\n").encode())
+        out, buf = [], ""
         start = time.time()
-        last_data = time.time()
-        while (time.time() - start) < timeout:
-            try:
-                chunk = self.ser.read(256).decode(errors='ignore')
-                if chunk:
-                    last_data = time.time()
-                    buffer += chunk
-                    while "\n" in buffer:
-                        line, buffer = buffer.split("\n", 1)
-                        line = line.strip()
-                        if line:
-                            output.append(line)
-                            if any(p in line for p in PROMPT_PATTERNS):
-                                return output
-                else:
-                    if output and (time.time() - last_data) > 1.0:
-                        return output
-                    time.sleep(0.05)
-            except Exception as e:
-                self.last_error = f"Serial read error: {e}"
-                break
-
-        if buffer.strip():
-            output.append(buffer.strip())
-        return output if output else ["[TIMEOUT] No response"]
+        last = time.time()
+        while time.time() - start < timeout:
+            chunk = self.ser.read(256).decode(errors="ignore")
+            if chunk:
+                last = time.time()
+                buf += chunk
+                while "\n" in buf:
+                    line, buf = buf.split("\n", 1)
+                    line = line.strip()
+                    if line:
+                        out.append(line)
+                        if any(p in line for p in PROMPT_PATTERNS):
+                            return out
+            else:
+                if out and time.time() - last > 0.8:
+                    return out
+                time.sleep(0.03)
+        if buf.strip():
+            out.append(buf.strip())
+        return out if out else ["[TIMEOUT]"]
 
     def close(self):
         if self.ser and self.ser.is_open:
             self.ser.close()
 
-# ------------------------------------------------------------
-# Menu structure – full command set
-# ------------------------------------------------------------
-COMMAND_CATEGORIES = {
-    "📡 Scan / Sniff": [
-        ("scanap",              "Scan for access points"),
-        ("scansta",             "Scan for stations (clients)"),
-        ("scanall",             "Scan for both APs and stations"),
-        ("sniffbeacon",         "Capture beacon frames"),
-        ("sniffdeauth",         "Capture deauth packets"),
-        ("sniffpmkid -c 1",     "Capture PMKID on channel 1"),
-        ("packetcount",         "Show packet rate"),
-        ("sigmon",              "Signal strength monitor"),
-    ],
-    "⚔️ Attacks": [
-        ("attack -t deauth -a",     "Deauth attack (all clients)"),
-        ("attack -t deauth -s",     "Deauth attack (selected target)"),
-        ("attack -t beacon -r",     "Beacon flood (random SSIDs)"),
-        ("attack -t beacon -l",     "Beacon flood (from SSID list)"),
-        ("attack -t probe",         "Probe request flood"),
-        ("attack -t rickroll",      "Rick Roll beacon flood"),
-    ],
-    "🎯 Target Mgmt": [
-        ("list -a",                 "List all APs"),
-        ("list -s",                 "List all stations (clients)"),
-        ("list -c",                 "List all clients"),
-        ("select -a 0",             "Select AP index 0"),
-        ("select -s 0,1",           "Select stations 0 and 1"),
-        ("select -f 'contains Home'", "Select APs containing 'Home'"),
-        ("clearlist -a",            "Clear AP list"),
-        ("clearlist -s",            "Clear station list"),
-    ],
-    "📀 SSID Mgmt (beacon lists)": [
-        ("ssid -a -n 'FreeWiFi'",   "Add SSID 'FreeWiFi'"),
-        ("ssid -r 0",               "Remove first SSID"),
-        ("save -a",                 "Save AP list to SD"),
-        ("load -a",                 "Load AP list from SD"),
-        ("clearlist -s",            "Clear SSID list"),
-    ],
-    "🧠 Bluetooth": [
-        ("sniffbt -t airtag",       "Scan for AirTags"),
-        ("sniffbt -t flipper",      "Scan for Flipper Zero devices"),
-        ("blespam -t apple",        "Apple BLE spam"),
-        ("blespam -t samsung",      "Samsung BLE spam"),
-        ("blespam -t windows",      "Windows BLE spam"),
-        ("spoofat -t 0",            "Spoof AirTag #0"),
-    ],
-    "🖥️ System / LED / Logs": [
-        ("help",                    "Show command list"),
-        ("channel -s 6",            "Set WiFi channel 6"),
-        ("reboot",                  "Reboot USB Army Knife"),
-        ("settings -s SavePCAP enable", "Enable PCAP saving"),
-        ("led -s #FF0000",          "Set LED to red"),
-        ("stopscan",                "Stop any scan/attack"),
-        ("clear",                   "Clear device screen"),
-        ("ls /",                    "List files on SD card"),
-    ],
-    "✨ Advanced": [
-        ("evilportal -c start",     "Start Evil Portal"),
-        ("gps -g fix",              "Get GPS fix"),
-    ],
-}
 
-# ------------------------------------------------------------
-# UI helper functions (LCD or headless fallback)
-# ------------------------------------------------------------
+class UI:
+    def __init__(self):
+        GPIO.setmode(GPIO.BCM)
+        for pin in PINS.values():
+            GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+        self.lcd = LCD_1in44.LCD()
+        self.lcd.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
 
-
-def _port_label(port_info):
-    desc = port_info.description or "Unknown"
-    return f"{port_info.device} — {desc[:40]}"
-
-def select_serial_port(current_port=None):
-    """Return a serial device path selected by user/LCD, or None if cancelled."""
-    if not HAS_SERIAL:
+    def button(self, timeout=0.15):
+        end = time.time() + timeout
+        while time.time() < end:
+            for k, pin in PINS.items():
+                if GPIO.input(pin) == 0:
+                    time.sleep(0.07)
+                    return k
+            time.sleep(0.01)
         return None
 
-    ports = list(serial.tools.list_ports.comports())
-    if not ports:
-        # fallback to common device names when enumeration fails
-        fallback = [dev for dev in ["/dev/ttyACM0", "/dev/ttyUSB0", "/dev/ttyUSB1"] if os.path.exists(dev)]
-        if len(fallback) == 1:
-            return fallback[0]
-        if fallback:
-            return get_menu_selection(fallback, title="SELECT SERIAL")
-        return None
+    def draw_lines(self, title, lines, sel=None, footer="OK=Select  K3=Back"):
+        img = Image.new("RGB", (128, 128), (10, 0, 0))
+        d = ImageDraw.Draw(img)
+        d.rectangle((0, 0, 128, 14), fill=(139, 0, 0))
+        d.text((4, 2), title[:20], font=FONT_SM, fill=(255, 255, 255))
+        y = 18
+        for i, line in enumerate(lines[:8]):
+            text = ("> " if sel == i else "  ") + line
+            d.text((2, y), text[:24], font=FONT_SM, fill=(200, 200, 200))
+            y += 13
+        d.rectangle((0, 116, 128, 128), fill=(34, 0, 0))
+        d.text((2, 118), footer[:24], font=FONT_SM, fill=(140, 140, 140))
+        self.lcd.LCD_ShowImage(img, 0, 0)
 
-    menu = [_port_label(p) for p in ports]
-    selected = get_menu_selection(menu, title="SELECT SERIAL")
-    if not selected:
-        return current_port
+    def menu(self, title, items):
+        idx = 0
+        while True:
+            start = max(0, min(idx, len(items) - 8))
+            view = items[start:start+8]
+            self.draw_lines(title, view, sel=idx-start)
+            b = self.button()
+            if b == "UP":
+                idx = (idx - 1) % len(items)
+            elif b == "DOWN":
+                idx = (idx + 1) % len(items)
+            elif b in ("OK", "RIGHT", "KEY1"):
+                return items[idx]
+            elif b in ("LEFT", "KEY3"):
+                return None
 
-    idx = menu.index(selected)
-    return ports[idx].device
+    def message(self, title, body, seconds=1.5):
+        self.draw_lines(title, [body])
+        time.sleep(seconds)
 
-def show_message(text, wait=True, timeout=None):
-    """Display message on LCD if available, otherwise print to console."""
-    if HAS_LCD and Dialog_info:
-        Dialog_info(text, wait=wait, timeout=timeout)
-    else:
-        print(f"[INFO] {text.replace(chr(10), ' / ')}")
-        if wait and not timeout:
-            try:
-                input("Press Enter to continue...")
-            except EOFError:
-                pass
-        elif timeout:
-            time.sleep(timeout)
 
-def get_menu_selection(items, title="Select"):
-    """Get menu selection from LCD or console."""
-    if HAS_LCD:
-        return _get_menu_string(items, title=title)
-    else:
-        print(f"\n{title}")
-        for i, item in enumerate(items):
-            print(f"  {i+1}. {item}")
-        try:
-            choice = int(input("Enter number (0 to cancel): ")) - 1
-            return items[choice] if 0 <= choice < len(items) else None
-        except (ValueError, IndexError, EOFError):
-            return None
-
-# ------------------------------------------------------------
-# LCD scrolling text viewer
-# ------------------------------------------------------------
-def show_scrollable_text(title, lines):
-    if not lines:
-        lines = ["(no output)"]
-
-    if not HAS_LCD or draw is None:
-        # Headless mode: just print output
-        print(f"\n--- {title} ---")
-        for line in lines:
-            print(line)
-        print("\nPress Enter to continue...")
-        try:
-            input()
-        except EOFError:
-            pass
-        return
-
-    # LCD mode: scrollable text viewer
-    # Truncate long lines to fit 128px width
-    max_len = 21
-    display_lines = []
-    for l in lines:
-        if len(l) > max_len:
-            l = l[:max_len-3] + "..."
-        display_lines.append(l)
-
-    idx = 0
-    window = 5
-    total = len(display_lines)
-    while True:
-        offset = max(0, min(idx, total - window))
-        with draw_lock:
-            draw.rectangle([0, 12, 128, 128], fill=color.background)
-            color.DrawBorder()
-            draw.rectangle([3, 13, 125, 24], fill="#1a0000")
-            _centered(title[:18], 13, font=small_font, fill=color.border)
-            draw.line([(3,24),(125,24)], fill=color.border, width=1)
-            y = 28
-            for i in range(window):
-                line_idx = offset + i
-                if line_idx >= total: break
-                draw.text((5, y), display_lines[line_idx], font=text_font, fill=color.text)
-                y += 12
-            draw.line([3, 118, 125, 118], fill="#2a0505", width=1)
-            _centered("▲/▼ scroll  ●=back", 120, font=small_font, fill="#888888")
-        btn = getButton()
-        if btn == "KEY_UP_PIN":
-            idx = max(0, idx-1)
-        elif btn == "KEY_DOWN_PIN":
-            idx = min(total-1, idx+1)
-        elif btn in ("KEY_PRESS_PIN", "KEY_LEFT_PIN", "KEY1_PIN", "KEY2_PIN", "KEY3_PIN"):
-            break
-
-def _centered(text, y, font=small_font, fill="#c8c8c8"):
-    try:
-        bbox = draw.textbbox((0, 0), text, font=font)
-        w = bbox[2] - bbox[0]
-    except Exception:
-        try:
-            w, _ = draw.textsize(text, font=font)
-        except Exception:
-            w = len(text) * 6
-    draw.text(((128 - w) // 2, y), text, font=font, fill=fill)
-
-# ------------------------------------------------------------
-# Main payload entry point
-# ------------------------------------------------------------
 def run():
-    show_message("USB Army Knife\nInitialising...", wait=False, timeout=1)
+    ui = UI()
     knife = USBArmyKnife()
 
-    # Let user choose serial port when multiple adapters are attached
-    if HAS_SERIAL:
-        chosen_port = select_serial_port(knife.port)
-        if chosen_port:
-            knife.port = chosen_port
-
-    if not knife.connect():
-        err = knife.last_error or "Device not found"
-        show_message(f"Connection failed:\n{err[:70]}", wait=True)
+    ports = knife.list_ports()
+    if not ports:
+        ui.message("USB Army Knife", "No serial ports found", 2)
+        GPIO.cleanup()
         return
 
-    # Soft communication test: warn, but still allow menu usage
-    test = knife.send_command("help", timeout=6)
-    if not test or any("[ERROR]" in x for x in test):
-        show_message("Connected, but no help output.\nTry commands manually.", wait=False, timeout=2)
+    port = ui.menu("Select Serial", ports)
+    if not port:
+        GPIO.cleanup()
+        return
 
-    # Main menu loop
+    if not knife.connect(port):
+        ui.message("Connect failed", knife.last_error or "unknown", 2)
+        GPIO.cleanup()
+        return
+
+    ui.message("Connected", port, 1)
+
     while True:
-        # Build category list for menu
-        cat_labels = list(COMMAND_CATEGORIES.keys())
-        # Use KTOx's built‑in menu selector or console fallback
-        selected_cat = get_menu_selection(cat_labels, title="SELECT CATEGORY")
-        if not selected_cat:
+        cat = ui.menu("USB Army Knife", list(COMMAND_CATEGORIES.keys()) + ["Exit"])
+        if not cat or cat == "Exit":
             break
-
-        # Show commands in that category
-        cmd_list = COMMAND_CATEGORIES[selected_cat]
-        menu_items = [f"{cmd[0]}  ({cmd[1][:15]})" for cmd in cmd_list]
-        selected_cmd_desc = get_menu_selection(menu_items, title=selected_cat[:18])
-        if not selected_cmd_desc:
+        cmd = ui.menu(cat, COMMAND_CATEGORIES[cat])
+        if not cmd:
             continue
-
-        # Extract pure command string
-        chosen_cmd = None
-        for cmd, desc in cmd_list:
-            if cmd in selected_cmd_desc:
-                chosen_cmd = cmd
+        ui.message("Sending", cmd[:20], 0.7)
+        out = knife.send(cmd)
+        # output viewer
+        idx = 0
+        while True:
+            page = out[idx:idx+8] if out else ["(no output)"]
+            ui.draw_lines(cmd[:20], page, footer="UP/DN scroll K3 back")
+            b = ui.button()
+            if b == "UP":
+                idx = max(0, idx-1)
+            elif b == "DOWN":
+                idx = min(max(0, len(out)-1), idx+1)
+            elif b in ("LEFT", "KEY3", "OK", "RIGHT"):
                 break
-        if not chosen_cmd:
-            continue
-
-        # Sanity check before dangerous commands
-        dangerous = ["reboot", "attack -t deauth", "attack -t beacon", "attack -t probe"]
-        if any(d in chosen_cmd for d in dangerous):
-            if not _confirm_choice(f"Send:\n{chosen_cmd[:18]}"):
-                continue
-
-        # Dispatch command and show output
-        show_message(f"Sending: {chosen_cmd[:20]}...", wait=False, timeout=1)
-        if HAS_LCD and draw_lock and draw and color:
-            try:
-                with draw_lock:
-                    draw.rectangle([0,12,128,128], fill=color.background)
-                    color.DrawBorder()
-                    _centered("Sending command...", 40)
-                    _centered(chosen_cmd[:20], 60)
-            except Exception:
-                pass
-        output = knife.send_command(chosen_cmd, wait_for_prompt=True, timeout=15)
-        show_scrollable_text(chosen_cmd[:18], output)
 
     knife.close()
+    GPIO.cleanup()
 
-def _get_menu_string(items, title="Select"):
-    """Use KTOx's GetMenuString if available, otherwise use a button-driven fallback."""
-    try:
-        from ktox_device import GetMenuString
-        return GetMenuString(items)
-    except Exception:
-        pass
-
-    if not items:
-        return None
-    if not (HAS_LCD and draw is not None and getButton is not None):
-        return items[0]
-
-    idx = 0
-    window = 5
-    while True:
-        start = max(0, min(idx, len(items) - window))
-        with draw_lock:
-            draw.rectangle([0, 12, 128, 128], fill=color.background)
-            color.DrawBorder()
-            draw.rectangle([3, 13, 125, 24], fill="#1a0000")
-            _centered(title[:18], 13, font=small_font, fill=color.border)
-            y = 28
-            for i in range(window):
-                item_idx = start + i
-                if item_idx >= len(items):
-                    break
-                prefix = ">" if item_idx == idx else " "
-                line = f"{prefix} {items[item_idx]}"[:20]
-                draw.text((5, y), line, font=text_font, fill=color.text)
-                y += 12
-
-        btn = getButton()
-        if btn == "KEY_UP_PIN":
-            idx = (idx - 1) % len(items)
-        elif btn == "KEY_DOWN_PIN":
-            idx = (idx + 1) % len(items)
-        elif btn in ("KEY_PRESS_PIN", "KEY_RIGHT_PIN", "KEY1_PIN"):
-            return items[idx]
-        elif btn in ("KEY_LEFT_PIN", "KEY3_PIN"):
-            return None
-
-def _confirm_choice(msg):
-    """Confirm a dangerous action (headless or LCD)."""
-    if HAS_LCD:
-        try:
-            from ktox_device import YNDialog
-            return YNDialog(msg, y="Yes", n="No")
-        except Exception:
-            pass
-    # Headless fallback
-    print(f"\n{msg}")
-    try:
-        response = input("Proceed? (yes/no): ").strip().lower()
-    except EOFError:
-        return False
-    return response in ("yes", "y", "true", "1")
 
 if __name__ == "__main__":
     run()
