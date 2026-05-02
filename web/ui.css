@@ -965,7 +965,7 @@ main > .flex.items-center.justify-between.mb-4.md\:mb-6 {
   }
 
   main {
-    margin-top: 60px !important;
+    padding-top: 70px !important;
   }
 
   #deviceTab.mobile-device-focus .terminal-col {

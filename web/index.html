@@ -469,18 +469,18 @@
       </nav>
     </aside>
 
-    <main class="flex-1 px-4 py-6 md:px-8">
-      <div id="mobileTopBar" class="flex items-center justify-between mb-4 md:mb-6 px-3 py-2 border border-slate-800/70 bg-slate-950/45 backdrop-blur rounded-xl">
-        <div class="flex items-center gap-2 text-[11px] text-slate-300">
-          <i class="fa-solid fa-terminal text-red-400"></i>
-          <span class="tracking-wide">KTOx_Pi CyberDeck Control Panel</span>
-        </div>
-        <div class="flex items-center gap-2">
-          <button id="menuToggle" type="button" class="md:hidden px-3 py-2 rounded-lg bg-slate-800/60 border border-slate-600/40 text-slate-200"><i class="fa-solid fa-bars"></i></button>
-        </div>
+    <!-- Mobile top bar (outside main for fixed positioning) -->
+    <div id="mobileTopBar" class="flex items-center justify-between mb-4 md:mb-6 px-3 py-2 border border-slate-800/70 bg-slate-950/45 backdrop-blur rounded-xl">
+      <div class="flex items-center gap-2 text-[11px] text-slate-300">
+        <i class="fa-solid fa-terminal text-red-400"></i>
+        <span class="tracking-wide">KTOx_Pi CyberDeck Control Panel</span>
       </div>
+      <div class="flex items-center gap-2">
+        <button id="menuToggle" type="button" class="md:hidden px-3 py-2 rounded-lg bg-slate-800/60 border border-slate-600/40 text-slate-200"><i class="fa-solid fa-bars"></i></button>
+      </div>
+    </div>
 
-      <!-- Device card -->
+    <main class="flex-1 px-4 py-6 md:px-8">
       <div id="deviceTab" class="block">
         <div class="flex flex-col md:flex-row md:items-start md:gap-6">
           <div class="terminal-col md:order-1 order-2 flex-1 min-w-0">
