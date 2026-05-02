@@ -6,8 +6,14 @@
 import os
 import sys
 import time
-import serial
-import serial.tools.list_ports
+try:
+    import serial
+    import serial.tools.list_ports
+    HAS_SERIAL = True
+except Exception as e:
+    serial = None
+    HAS_SERIAL = False
+    SERIAL_IMPORT_ERROR = str(e)
 from datetime import datetime
 
 # KTOx environment
@@ -45,14 +51,19 @@ except Exception as e:
 # Serial connection to USB Army Knife
 # ------------------------------------------------------------
 SERIAL_BAUD = 115200
-PROMPT = "marauder>"   # prompt string after each command
+PROMPT_PATTERNS = ("marauder>", "Marauder>", ">")
 
 class USBArmyKnife:
     def __init__(self):
         self.ser = None
+        self.last_error = None
         self.port = self._find_port()
 
     def _find_port(self):
+        if not HAS_SERIAL:
+            self.last_error = f"pyserial unavailable: {SERIAL_IMPORT_ERROR}"
+            return None
+
         # Try to auto‑detect by VID/PID (CP210x is common)
         for port in serial.tools.list_ports.comports():
             desc = port.description or ""
@@ -67,7 +78,11 @@ class USBArmyKnife:
         return None
 
     def connect(self):
+        if not HAS_SERIAL:
+            self.last_error = f"pyserial unavailable: {SERIAL_IMPORT_ERROR}"
+            return False
         if not self.port:
+            self.last_error = "No serial port detected for USB Army Knife"
             return False
         try:
             self.ser = serial.Serial(self.port, SERIAL_BAUD, timeout=2)
@@ -77,7 +92,8 @@ class USBArmyKnife:
             self.ser.reset_input_buffer()
             return True
         except Exception as e:
-            print(f"[Marauder] Connect error: {e}")
+            self.last_error = f"Connect error: {e}"
+            print(f"[Marauder] {self.last_error}")
             return False
 
     def send_command(self, cmd, wait_for_prompt=True, timeout=15):
@@ -87,25 +103,34 @@ class USBArmyKnife:
         self.ser.write(f"{cmd}\r\n".encode())
         if not wait_for_prompt:
             return []
+
         output = []
         buffer = ""
         start = time.time()
+        last_data = time.time()
         while (time.time() - start) < timeout:
             try:
-                chunk = self.ser.read(1024).decode(errors='ignore')
+                chunk = self.ser.read(256).decode(errors='ignore')
                 if chunk:
+                    last_data = time.time()
                     buffer += chunk
                     while "\n" in buffer:
                         line, buffer = buffer.split("\n", 1)
                         line = line.strip()
                         if line:
                             output.append(line)
-                        if PROMPT in line:
-                            return output
+                            if any(p in line for p in PROMPT_PATTERNS):
+                                return output
                 else:
+                    if output and (time.time() - last_data) > 1.0:
+                        return output
                     time.sleep(0.05)
-            except Exception:
+            except Exception as e:
+                self.last_error = f"Serial read error: {e}"
                 break
+
+        if buffer.strip():
+            output.append(buffer.strip())
         return output if output else ["[TIMEOUT] No response"]
 
     def close(self):
@@ -178,6 +203,35 @@ COMMAND_CATEGORIES = {
 # ------------------------------------------------------------
 # UI helper functions (LCD or headless fallback)
 # ------------------------------------------------------------
+
+
+def _port_label(port_info):
+    desc = port_info.description or "Unknown"
+    return f"{port_info.device} — {desc[:40]}"
+
+def select_serial_port(current_port=None):
+    """Return a serial device path selected by user/LCD, or None if cancelled."""
+    if not HAS_SERIAL:
+        return None
+
+    ports = list(serial.tools.list_ports.comports())
+    if not ports:
+        # fallback to common device names when enumeration fails
+        fallback = [dev for dev in ["/dev/ttyACM0", "/dev/ttyUSB0", "/dev/ttyUSB1"] if os.path.exists(dev)]
+        if len(fallback) == 1:
+            return fallback[0]
+        if fallback:
+            return get_menu_selection(fallback, title="SELECT SERIAL")
+        return None
+
+    menu = [_port_label(p) for p in ports]
+    selected = get_menu_selection(menu, title="SELECT SERIAL")
+    if not selected:
+        return current_port
+
+    idx = menu.index(selected)
+    return ports[idx].device
+
 def show_message(text, wait=True, timeout=None):
     """Display message on LCD if available, otherwise print to console."""
     if HAS_LCD and Dialog_info:
@@ -185,7 +239,10 @@ def show_message(text, wait=True, timeout=None):
     else:
         print(f"[INFO] {text.replace(chr(10), ' / ')}")
         if wait and not timeout:
-            input("Press Enter to continue...")
+            try:
+                input("Press Enter to continue...")
+            except EOFError:
+                pass
         elif timeout:
             time.sleep(timeout)
 
@@ -200,7 +257,7 @@ def get_menu_selection(items, title="Select"):
         try:
             choice = int(input("Enter number (0 to cancel): ")) - 1
             return items[choice] if 0 <= choice < len(items) else None
-        except (ValueError, IndexError):
+        except (ValueError, IndexError, EOFError):
             return None
 
 # ------------------------------------------------------------
@@ -216,7 +273,10 @@ def show_scrollable_text(title, lines):
         for line in lines:
             print(line)
         print("\nPress Enter to continue...")
-        input()
+        try:
+            input()
+        except EOFError:
+            pass
         return
 
     # LCD mode: scrollable text viewer
@@ -256,9 +316,15 @@ def show_scrollable_text(title, lines):
             break
 
 def _centered(text, y, font=small_font, fill="#c8c8c8"):
-    bbox = draw.textbbox((0,0), text, font=font)
-    w = bbox[2] - bbox[0]
-    draw.text(((128-w)//2, y), text, font=font, fill=fill)
+    try:
+        bbox = draw.textbbox((0, 0), text, font=font)
+        w = bbox[2] - bbox[0]
+    except Exception:
+        try:
+            w, _ = draw.textsize(text, font=font)
+        except Exception:
+            w = len(text) * 6
+    draw.text(((128 - w) // 2, y), text, font=font, fill=fill)
 
 # ------------------------------------------------------------
 # Main payload entry point
@@ -266,13 +332,21 @@ def _centered(text, y, font=small_font, fill="#c8c8c8"):
 def run():
     show_message("USB Army Knife\nInitialising...", wait=False, timeout=1)
     knife = USBArmyKnife()
+
+    # Let user choose serial port when multiple adapters are attached
+    if HAS_SERIAL:
+        chosen_port = select_serial_port(knife.port)
+        if chosen_port:
+            knife.port = chosen_port
+
     if not knife.connect():
-        show_message("Device not found!\nPlug in USB Army Knife", wait=True)
+        err = knife.last_error or "Device not found"
+        show_message(f"Connection failed:\n{err[:70]}", wait=True)
         return
 
     # Test communication by asking for help
-    test = knife.send_command("help", timeout=3)
-    if not test or PROMPT not in str(test):
+    test = knife.send_command("help", timeout=6)
+    if not test or any("[ERROR]" in x for x in test):
         show_message("Device not responding\nCheck connection", wait=True)
         knife.close()
         return
@@ -325,13 +399,46 @@ def run():
     knife.close()
 
 def _get_menu_string(items, title="Select"):
-    """Use KTOx's GetMenuString if available, otherwise fallback."""
+    """Use KTOx's GetMenuString if available, otherwise use a button-driven fallback."""
     try:
         from ktox_device import GetMenuString
         return GetMenuString(items)
-    except ImportError:
-        # Minimal fallback: just return first item
-        return items[0] if items else ""
+    except Exception:
+        pass
+
+    if not items:
+        return None
+    if not (HAS_LCD and draw is not None and getButton is not None):
+        return items[0]
+
+    idx = 0
+    window = 5
+    while True:
+        start = max(0, min(idx, len(items) - window))
+        with draw_lock:
+            draw.rectangle([0, 12, 128, 128], fill=color.background)
+            color.DrawBorder()
+            draw.rectangle([3, 13, 125, 24], fill="#1a0000")
+            _centered(title[:18], 13, font=small_font, fill=color.border)
+            y = 28
+            for i in range(window):
+                item_idx = start + i
+                if item_idx >= len(items):
+                    break
+                prefix = ">" if item_idx == idx else " "
+                line = f"{prefix} {items[item_idx]}"[:20]
+                draw.text((5, y), line, font=text_font, fill=color.text)
+                y += 12
+
+        btn = getButton()
+        if btn == "KEY_UP_PIN":
+            idx = (idx - 1) % len(items)
+        elif btn == "KEY_DOWN_PIN":
+            idx = (idx + 1) % len(items)
+        elif btn in ("KEY_PRESS_PIN", "KEY_RIGHT_PIN", "KEY1_PIN"):
+            return items[idx]
+        elif btn in ("KEY_LEFT_PIN", "KEY3_PIN"):
+            return None
 
 def _confirm_choice(msg):
     """Confirm a dangerous action (headless or LCD)."""
@@ -343,7 +450,10 @@ def _confirm_choice(msg):
             pass
     # Headless fallback
     print(f"\n{msg}")
-    response = input("Proceed? (yes/no): ").strip().lower()
+    try:
+        response = input("Proceed? (yes/no): ").strip().lower()
+    except EOFError:
+        return False
     return response in ("yes", "y", "true", "1")
 
 if __name__ == "__main__":
