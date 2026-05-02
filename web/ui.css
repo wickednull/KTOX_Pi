@@ -964,7 +964,18 @@ main > .flex.items-center.justify-between.mb-4.md\:mb-6 {
     width: calc(100% - 1rem) !important;
   }
 
-  main {
+  #deviceTab {
+    padding-top: 0 !important;
+  }
+
+  #settingsTab,
+  #lootTab,
+  #payloadsTab,
+  #systemTab {
+    margin-top: 60px !important;
+  }
+
+  #deviceTab.terminal-mode {
     margin-top: 60px !important;
   }
 
