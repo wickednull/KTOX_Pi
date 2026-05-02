@@ -578,6 +578,7 @@
   let terminalHasFocus = false;
   let shellWanted = false;
   let systemOpen = false;
+  let mobileSystemTabActive = false;
   let wsAuthenticated = true;
 
   function applyStatusTone(el, txt){
@@ -759,6 +760,8 @@
     document.querySelectorAll('[data-mobnav]').forEach(btn => {
       btn.classList.toggle('mob-nav-active', btn.dataset.mobnav === tab);
     });
+    // Track mobile system tab state for polling
+    mobileSystemTabActive = (tab === 'system');
     // Refit terminal when switching to terminal tab
     if (tab === 'terminal' && fitAddon) {
       requestAnimationFrame(() => { try { fitAddon.fit(); } catch{} });
@@ -2184,6 +2187,9 @@
     systemPollTimer = setTimeout(async () => {
       if (systemOpen){
         await loadSystemStatus();
+      }
+      if (mobileSystemTabActive){
+        await loadMobileSystemStatus();
       }
       scheduleSystemPoll();
     }, delay);
