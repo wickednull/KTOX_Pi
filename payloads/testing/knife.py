@@ -13,7 +13,7 @@ import LCD_1in44
 from PIL import Image, ImageDraw, ImageFont
 
 SERIAL_BAUD_CANDIDATES = (115200, 57600, 230400, 9600)
-PROMPT_PATTERNS = ("marauder>", "Marauder>")
+PROMPT_PATTERNS = ("uak>", "UAK>", "marauder>", "Marauder>")
 
 PINS = {
     "UP": 6, "DOWN": 19, "LEFT": 5, "RIGHT": 26,
@@ -21,10 +21,10 @@ PINS = {
 }
 
 COMMAND_CATEGORIES = {
-    "Scan / Sniff": ["scanap", "scansta", "scanall", "sniffbeacon", "sniffdeauth", "packetcount"],
-    "Attacks": ["attack -t deauth -a", "attack -t deauth -s", "attack -t beacon -r", "attack -t probe"],
-    "Targets": ["list -a", "list -s", "list -c", "select -a 0", "select -s 0", "clearlist -a", "clearlist -s"],
-    "System": ["help", "channel -s 6", "stopscan", "clear", "reboot"],
+    "Scan / Sniff": ["ESP32M help", "ESP32M scanap", "ESP32M scansta", "ESP32M sniffbeacon", "ESP32M sniffdeauth", "ESP32M packetcount"],
+    "Attacks": ["ESP32M attack -t deauth -a", "ESP32M attack -t deauth -s", "ESP32M attack -t beacon -r", "ESP32M attack -t probe"],
+    "Targets": ["ESP32M list -a", "ESP32M list -s", "ESP32M select -a 0", "ESP32M select -s 0", "ESP32M clearlist -a", "ESP32M clearlist -s"],
+    "System": ["HELP", "SERIAL 115200", "SERIAL 57600", "ESP32M channel -s 6", "ESP32M stopscan", "LOGS", "REBOOT"],
 }
 
 
@@ -98,14 +98,16 @@ class USBArmyKnife:
         time.sleep(1.2)
         self.ser.write(b"\r\n")
         self.ser.write(b"\n")
-        self.ser.write(b"help\r\n")
+        self.ser.write(b"HELP\r\n")
         self.ser.flush()
         time.sleep(0.25)
         self.ser.reset_input_buffer()
         self.ser.reset_output_buffer()
 
     def _probe_cli(self):
-        self.ser.write(b"help\n")
+        # UAK shell + Marauder wrapper probes from the wiki command model.
+        self.ser.write(b"HELP\n")
+        self.ser.write(b"ESP32M help\n")
         self.ser.flush()
         raw = ""
         start = time.time()
@@ -126,7 +128,7 @@ class USBArmyKnife:
             try:
                 self._open(baud)
                 probe = self._probe_cli().lower()
-                if "help" in probe or "marauder" in probe or "scanap" in probe:
+                if "esp32m" in probe or "duckyscript" in probe or "usb army knife" in probe or "marauder" in probe or "command" in probe:
                     self.baud = baud
                     keep_open = True
                     return True
@@ -150,26 +152,24 @@ class USBArmyKnife:
     def send(self, cmd, timeout=20):
         if not self.ser or not self.ser.is_open:
             return ["[ERROR] serial not open"]
-        # Different builds parse line-endings differently; send both.
-        for payload in (cmd + "\r\n", cmd + "\n"):
-            self.ser.write(payload.encode())
-        self.ser.flush()
         raw = ""
-        start = time.time()
-        last = 0
-        while time.time() - start < timeout:
-            waiting = self.ser.in_waiting
-            if waiting > 0:
-                chunk = self.ser.read(waiting).decode(errors="ignore")
+        # Try multiple line-endings because different builds parse differently.
+        for payload in (cmd + "\r\n", cmd + "\n", cmd + "\r"):
+            self.ser.write(payload.encode())
+            self.ser.flush()
+            start = time.time()
+            last = 0
+            while time.time() - start < timeout:
+                chunk = self.ser.read(512).decode(errors="ignore")
                 if chunk:
                     raw += chunk
                     last = time.time()
-                    # Some firmware echoes prompt many times; don't stop immediately.
-                    # We stop on idle after receiving data so full output is captured.
-            else:
-                if raw and last and time.time() - last > 2.5:
-                    break
-                time.sleep(0.03)
+                else:
+                    if raw and last and time.time() - last > 2.5:
+                        break
+                    time.sleep(0.03)
+            if raw.strip():
+                break
         lines = [ln.strip() for ln in raw.replace("\r", "\n").split("\n") if ln.strip()]
         if lines:
             return lines
@@ -270,27 +270,27 @@ def run():
         cmd = ui.menu(cat, COMMAND_CATEGORIES[cat])
         if not cmd:
             continue
-        if cmd == "select -a 0" and selected_ap is not None:
-            cmd = f"select -a {selected_ap}"
-        elif cmd == "select -s 0" and selected_sta is not None:
-            cmd = f"select -s {selected_sta}"
+        if cmd == "ESP32M select -a 0" and selected_ap is not None:
+            cmd = f"ESP32M select -a {selected_ap}"
+        elif cmd == "ESP32M select -s 0" and selected_sta is not None:
+            cmd = f"ESP32M select -s {selected_sta}"
         ui.message("Sending", cmd[:20], 0.7)
         out = knife.send(cmd)
         # Parse discovered indexes to make target selection easier later.
-        if cmd == "list -a":
+        if cmd == "ESP32M list -a":
             ap_indices = [ln.split()[0] for ln in out if ln and ln[0].isdigit()]
             if ap_indices:
                 choice = ui.menu("Select AP idx", ap_indices + ["Skip"])
                 if choice and choice != "Skip":
                     selected_ap = choice
-                    knife.send(f"select -a {choice}")
-        elif cmd == "list -s":
+                    knife.send(f"ESP32M select -a {choice}")
+        elif cmd == "ESP32M list -s":
             sta_indices = [ln.split()[0] for ln in out if ln and ln[0].isdigit()]
             if sta_indices:
                 choice = ui.menu("Select STA idx", sta_indices + ["Skip"])
                 if choice and choice != "Skip":
                     selected_sta = choice
-                    knife.send(f"select -s {choice}")
+                    knife.send(f"ESP32M select -s {choice}")
         # output viewer
         idx = 0
         while True:
