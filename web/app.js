@@ -862,9 +862,13 @@
     }
     activeTab = tab;
     const isSystemOverlay = isMobile && tab === 'system';
-    const isDevice = tab === 'device' || tab === 'terminal' || isSystemOverlay;
+    // Show/hide device tab (only when tab is 'device')
     if (deviceTab) {
-      deviceTab.classList.toggle('hidden', !isDevice);
+      deviceTab.classList.toggle('hidden', tab !== 'device' && isSystemOverlay === false);
+    }
+    // Show/hide terminal tab (when tab is 'terminal')
+    if (terminalTab) {
+      terminalTab.classList.toggle('hidden', tab !== 'terminal');
     }
     applyResponsiveTabClasses(tab);
     document.body.classList.toggle('mobile-system-overlay', isSystemOverlay);
@@ -874,7 +878,10 @@
     if (lootTab) lootTab.classList.toggle('hidden', tab !== 'loot');
     const payloadsTabEl = document.getElementById('payloadsTab');
     if (payloadsTabEl) payloadsTabEl.classList.toggle('hidden', tab !== 'payloads');
+
+    // Set nav button active states
     setNavActive(navDevice, tab === 'device');
+    setNavActive(navTerminal, tab === 'terminal');
     setNavActive(navLoot, tab === 'loot');
     setNavActive(navSettings, tab === 'settings');
     setSidebarOpen(false);
@@ -888,6 +895,7 @@
     }
     if (tab === 'terminal'){
       shellWanted = true;
+      ensureTerminal();
       if (ws && ws.readyState === WebSocket.OPEN){
         sendShellOpen();
       } else {
@@ -2384,10 +2392,12 @@
         }
       } else if (tab === 'terminal'){
         setActiveTab('terminal');
-      } else if (tab === 'settings'){
-        setActiveTab('settings');
-        loadDiscordWebhook();
-        loadTailscaleSettings();
+      } else if (tab === 'payloads'){
+        setActiveTab('payloads');
+        if (!payloadState.loaded) {
+          loadPayloads();
+          payloadState.loaded = true;
+        }
       } else if (tab === 'loot'){
         setActiveTab('loot');
         if (lootList && !lootList.dataset.loaded){ loadLoot(''); lootList.dataset.loaded = '1'; }
