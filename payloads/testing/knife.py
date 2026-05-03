@@ -12,6 +12,10 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from urllib.error import URLError
+from urllib.parse import quote, urlparse
+from urllib.request import Request, urlopen as urllib_urlopen
+import json
 
 try:
     import serial
@@ -131,10 +135,11 @@ COMMAND_CATEGORIES = {
         "WAIT_FOR_AGENT_RUN_RESULT",
     ],
     "System": [
-        "HELP",
+        "STATUS",
         "SERIAL 115200",
         "SERIAL 57600",
         "SET_SETTING_BOOL StartWebService 1",
+        "SET_SETTING_BOOL usbSerialRaw 1",
         "RESET_SETTINGS",
         "LOG KTOX USBArmyKnife control",
     ],
@@ -170,6 +175,33 @@ def _wrap(text, width=24):
     if current:
         lines.append(current)
     return lines or [""]
+
+
+def _looks_like_esp_label(label):
+    lowered = str(label).lower()
+    return any(token in lowered for token in ("esp", "lilygo", "t-dongle", "tdongle", "cp210", "ch340", "ch341", "acm"))
+
+
+def _normalize_web_url(target):
+    text = str(target or "4.3.2.1").strip()
+    if not text.startswith(("http://", "https://")):
+        text = "http://" + text
+    parsed = urlparse(text)
+    netloc = parsed.netloc
+    if ":" not in netloc:
+        netloc += ":8080"
+    return parsed._replace(netloc=netloc, path="", params="", query="", fragment="").geturl().rstrip("/")
+
+
+def _status_lines(data):
+    if not isinstance(data, dict):
+        return ["STATUS unavailable"]
+    keys = ("status", "USBmode", "agentConnected", "machineName", "version", "uptime", "errorCount")
+    lines = []
+    for key in keys:
+        if key in data:
+            lines.append(f"{key}: {data[key]}")
+    return lines or ["STATUS OK"]
 
 
 class USBArmyKnife:
@@ -294,6 +326,7 @@ class USBArmyKnife:
             return False
 
         self.port = port.split(" | ")[0].strip()
+        self.port_label = port
         last_exc = None
         for baud in SERIAL_BAUD_CANDIDATES:
             keep_open = False
@@ -304,6 +337,12 @@ class USBArmyKnife:
                     self.baud = baud
                     keep_open = True
                     return True
+                if _looks_like_esp_label(port):
+                    self.last_error = (
+                        f"{self.port} is an ESP serial device, but USBArmyKnife raw serial did not answer. "
+                        "Use Web 4.3.2.1 unless usbSerialRaw is enabled."
+                    )
+                    return False
             except Exception as exc:
                 last_exc = exc
             finally:
@@ -335,6 +374,68 @@ class USBArmyKnife:
     def close(self):
         if self.ser and getattr(self.ser, "is_open", False):
             self.ser.close()
+
+
+class USBArmyKnifeWeb:
+    def __init__(self, urlopen=None):
+        self.urlopen = urlopen or urllib_urlopen
+        self.base_url = None
+        self.last_error = None
+        self.last_data = {}
+        self.port = "web"
+        self.baud = "http"
+
+    def connect(self, target="http://4.3.2.1:8080"):
+        self.base_url = _normalize_web_url(target)
+        try:
+            self.last_data = self._json("/data.json")
+        except Exception as exc:
+            self.last_error = f"Cannot reach USBArmyKnife web UI at {self.base_url}: {exc}"
+            return False
+        return True
+
+    def _open(self, path, timeout=5):
+        request = Request(self.base_url + path, headers={"User-Agent": "KTOX-Pi"})
+        response = self.urlopen(request, timeout=timeout)
+        try:
+            return response.read()
+        finally:
+            close = getattr(response, "close", None)
+            if callable(close):
+                close()
+
+    def _json(self, path):
+        raw = self._open(path)
+        return json.loads(raw.decode("utf-8", errors="ignore") or "{}")
+
+    def send(self, cmd, timeout=12):
+        clean = cmd.strip()
+        if not clean:
+            return ["[ERROR] empty command"]
+        try:
+            path = self._path_for_command(clean)
+            self._open(path, timeout=timeout)
+            if clean == "STATUS":
+                self.last_data = self._json("/data.json")
+                return _status_lines(self.last_data)
+            return [f"OK via web: {clean}"]
+        except Exception as exc:
+            return [f"[ERROR] web command failed: {exc}"]
+
+    def _path_for_command(self, cmd):
+        upper = cmd.upper()
+        if upper == "STATUS" or upper == "HELP":
+            return "/data.json"
+        if upper.startswith("ESP32M "):
+            return "/marauder?marauderCmd=" + quote(cmd.split(" ", 1)[1], safe="")
+        if upper.startswith("RUN_PAYLOAD "):
+            return "/runfile?filename=" + quote(cmd.split(" ", 1)[1], safe="")
+        if upper.startswith("AGENT_RUN "):
+            return "/runagentcmd?rawCommand=" + quote(cmd.split(" ", 1)[1], safe="")
+        return "/rawinput?rawCommand=" + quote(cmd, safe="")
+
+    def close(self):
+        pass
 
 
 class UI:
@@ -486,30 +587,55 @@ def _show_output(ui, title, lines):
 def _choose_port(ui, knife):
     while True:
         ports = knife.list_ports()
-        choices = ports + ["Refresh ports", "Manual path", "Exit"]
+        choices = ["Web 4.3.2.1", "Manual Web URL"] + ports + ["Refresh ports", "Manual serial path", "Exit"]
         choice = ui.menu("Select Serial", choices)
         if not choice or choice == "Exit":
             return None
+        if choice == "Web 4.3.2.1":
+            return ("web", "http://4.3.2.1:8080")
+        if choice == "Manual Web URL":
+            url = ui.text_input("Web URL", "4.3.2.1")
+            return ("web", url) if url else None
         if choice == "Refresh ports":
             continue
-        if choice == "Manual path":
-            return ui.text_input("Serial path", "/dev/ttyACM0")
-        return choice
+        if choice == "Manual serial path":
+            path = ui.text_input("Serial path", "/dev/ttyACM0")
+            return ("serial", path) if path else None
+        return ("serial", choice)
+
+
+def _connect_choice(ui, choice):
+    if not choice:
+        return None
+    mode, target = choice
+    controller = USBArmyKnifeWeb() if mode == "web" else USBArmyKnife()
+    label = "Web" if mode == "web" else "Serial"
+    ui.message("Connecting", f"{label} {str(target)[:18]}", 0.8)
+    if controller.connect(target):
+        return controller
+
+    if mode == "serial" and _looks_like_esp_label(target):
+        ui.message("Serial raw off", "Trying web 4.3.2.1", 1.3)
+        web_controller = USBArmyKnifeWeb()
+        if web_controller.connect("http://4.3.2.1:8080"):
+            return web_controller
+        ui.message("Connect failed", web_controller.last_error or controller.last_error or "unknown", 4)
+        return None
+
+    ui.message("Connect failed", controller.last_error or "unknown", 4)
+    return None
 
 
 def run():
     ui = UI()
-    knife = USBArmyKnife()
+    knife = None
     selected_ap = None
     selected_sta = None
 
     try:
-        port = _choose_port(ui, knife)
-        if not port:
-            return
-        ui.message("Connecting", port[:24], 0.8)
-        if not knife.connect(port):
-            ui.message("Connect failed", knife.last_error or "unknown", 3)
+        choice = _choose_port(ui, USBArmyKnife())
+        knife = _connect_choice(ui, choice)
+        if not knife:
             return
 
         ui.message("Connected", f"{knife.port}@{knife.baud}", 1)
@@ -521,9 +647,9 @@ def run():
                 break
             if category == "Reconnect":
                 knife.close()
-                port = _choose_port(ui, knife)
-                if not port or not knife.connect(port):
-                    ui.message("Connect failed", knife.last_error or "unknown", 3)
+                choice = _choose_port(ui, USBArmyKnife())
+                knife = _connect_choice(ui, choice)
+                if not knife:
                     break
                 ui.message("Connected", f"{knife.port}@{knife.baud}", 1)
                 continue
@@ -559,7 +685,8 @@ def run():
 
             _show_output(ui, command, output)
     finally:
-        knife.close()
+        if knife is not None:
+            knife.close()
         ui.close()
 
 
