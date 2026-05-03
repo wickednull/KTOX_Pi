@@ -23,3 +23,6 @@ flask>=3.0.0
 
 # USB/Bluetooth keyboard input support (optional)
 evdev>=1.6.0
+
+# USB serial control for external ESP32 tools such as USB Army Knife
+pyserial>=3.5
