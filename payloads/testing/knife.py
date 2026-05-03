@@ -193,6 +193,17 @@ def _normalize_web_url(target):
     return parsed._replace(netloc=netloc, path="", params="", query="", fragment="").geturl().rstrip("/")
 
 
+def _parse_ap_target(target):
+    text = str(target or "iPhone14|password").strip()
+    if "|" in text:
+        ssid, password = text.split("|", 1)
+    elif "," in text:
+        ssid, password = text.split(",", 1)
+    else:
+        ssid, password = text, "password"
+    return ssid.strip() or "iPhone14", password.strip()
+
+
 def _status_lines(data):
     if not isinstance(data, dict):
         return ["STATUS unavailable"]
@@ -438,6 +449,30 @@ class USBArmyKnifeWeb:
         pass
 
 
+class USBArmyKnifeAP(USBArmyKnifeWeb):
+    def __init__(self, run_cmd=None, urlopen=None):
+        super().__init__(urlopen=urlopen)
+        self.run_cmd = run_cmd or subprocess.run
+        self.ssid = None
+        self.port = "uak-ap"
+        self.baud = "wifi"
+
+    def connect(self, target="iPhone14|password"):
+        self.ssid, password = _parse_ap_target(target)
+        result = self._join_ap(self.ssid, password)
+        if result.returncode != 0:
+            detail = (getattr(result, "stderr", "") or getattr(result, "stdout", "") or "").strip()
+            self.last_error = f"Could not join USBArmyKnife AP {self.ssid}: {detail or 'nmcli failed'}"
+            return False
+        return super().connect("http://4.3.2.1:8080")
+
+    def _join_ap(self, ssid, password):
+        cmd = ["nmcli", "dev", "wifi", "connect", ssid]
+        if password:
+            cmd += ["password", password]
+        return self.run_cmd(cmd, capture_output=True, text=True, timeout=30)
+
+
 class UI:
     def __init__(self):
         self.gpio = GPIO
@@ -587,10 +622,20 @@ def _show_output(ui, title, lines):
 def _choose_port(ui, knife):
     while True:
         ports = knife.list_ports()
-        choices = ["Web 4.3.2.1", "Manual Web URL"] + ports + ["Refresh ports", "Manual serial path", "Exit"]
-        choice = ui.menu("Select Serial", choices)
+        choices = [
+            "Join UAK AP",
+            "Manual AP",
+            "Web 4.3.2.1",
+            "Manual Web URL",
+        ] + ports + ["Refresh ports", "Manual serial path", "Exit"]
+        choice = ui.menu("UAK Connect", choices)
         if not choice or choice == "Exit":
             return None
+        if choice == "Join UAK AP":
+            return ("ap", "iPhone14|password")
+        if choice == "Manual AP":
+            ap = ui.text_input("SSID|Password", "iPhone14|password")
+            return ("ap", ap) if ap else None
         if choice == "Web 4.3.2.1":
             return ("web", "http://4.3.2.1:8080")
         if choice == "Manual Web URL":
@@ -608,18 +653,25 @@ def _connect_choice(ui, choice):
     if not choice:
         return None
     mode, target = choice
-    controller = USBArmyKnifeWeb() if mode == "web" else USBArmyKnife()
-    label = "Web" if mode == "web" else "Serial"
+    if mode == "ap":
+        controller = USBArmyKnifeAP()
+        label = "AP"
+    elif mode == "web":
+        controller = USBArmyKnifeWeb()
+        label = "Web"
+    else:
+        controller = USBArmyKnife()
+        label = "Serial"
     ui.message("Connecting", f"{label} {str(target)[:18]}", 0.8)
     if controller.connect(target):
         return controller
 
     if mode == "serial" and _looks_like_esp_label(target):
-        ui.message("Serial raw off", "Trying web 4.3.2.1", 1.3)
-        web_controller = USBArmyKnifeWeb()
-        if web_controller.connect("http://4.3.2.1:8080"):
-            return web_controller
-        ui.message("Connect failed", web_controller.last_error or controller.last_error or "unknown", 4)
+        ui.message("Runtime mode", "Joining UAK AP", 1.3)
+        ap_controller = USBArmyKnifeAP()
+        if ap_controller.connect("iPhone14|password"):
+            return ap_controller
+        ui.message("Connect failed", ap_controller.last_error or controller.last_error or "unknown", 4)
         return None
 
     ui.message("Connect failed", controller.last_error or "unknown", 4)
