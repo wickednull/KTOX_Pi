@@ -19,7 +19,7 @@
 
 ## ▐ WHAT IS THIS
 
-KTOx_Pi turns a Raspberry Pi Zero 2W into a standalone network penetration and purple team device. The Waveshare 1.44" LCD HAT gives you a full joystick-controlled attack menu that runs on boot. Every module from the full KTOx suite is bundled — ARP attacks, MITM, WiFi engine, Responder/NTLMv2, purple team defense, DNS spoofing with 30+ phishing sites, and 156 payload scripts across 12 categories.
+KTOx_Pi turns a Raspberry Pi Zero 2W into a standalone network penetration and purple team device. The Waveshare 1.44" LCD HAT gives you a full joystick-controlled attack menu that runs on boot. Every module from the full KTOx suite is bundled — ARP attacks, MITM, WiFi engine, Responder/NTLMv2, purple team defense, DNS spoofing with 30+ phishing sites, and 368 payload scripts across 21 categories.
 
 The WebUI (port 8080) mirrors the LCD screen live so you can control the device from any browser on the same network. The WebSocket server (port 8765) handles real-time frame streaming and virtual button injection. The full KTOx TUI is always accessible over SSH for anything that needs a terminal.
 
@@ -117,7 +117,7 @@ Stealth exit:   hold KEY1 + KEY3 for 3 seconds
 │   ├── Verify Baseline     diff current hosts against saved baseline
 │   └── SMB Probe           launches payloads/reconnaissance/smb_probe.py
 │
-├── Payloads                156 scripts, 12 categories — see below
+├── Payloads                368 scripts, 21 categories — see below
 │
 ├── Loot                    browse /root/KTOx/loot/ on LCD
 │
@@ -176,24 +176,24 @@ python3 /root/KTOx/ktox_dashboard.py
 
 ---
 
-## ▐ PAYLOADS (156 scripts)
+## ▐ PAYLOADS (368 scripts)
 
 All payloads are KTOx-compatible. They use `_input_helper.py` for unified button input (WebUI virtual buttons work too) and write loot to `/root/KTOx/loot/`. Drop any `.py` file into a category folder and it appears in the menu automatically.
 
 | Category | Count | Highlights |
 |----------|-------|-----------|
-| `reconnaissance` | 25 | arp_scanner, traffic_analyzer, log4shell_scanner, ping sweep, TCP/UDP port scanners, DNS zone transfer, SMB shares, SNMP walk, HTTP headers, OS fingerprint, cam finder, wardriving, navarro OSINT |
-| `interception` | 38 | kickthemout, mitm_code_injector, silent_bridge, dhcp_starvation, vlan_hopper, EternalBlue, Kerberoasting, PetitPotam, PrintNightmare, SMB relay, Pass the Hash, ProxyLogon, ProxyShell, Follina, KRACK, SSH/FTP/Telnet bruteforce, hashcat crack, IMSI catcher, JTAG |
-| `wifi` | 18 | deauth (multi-target), evil_twin, pmkid_capture, wifi_handshake_capture, tiny_wifite, marauder, wps_pixie, wifi_lab, beacon flood, probe sniffer, channel analyzer, client mapper, rogue AP, known networks deauth |
+| `reconnaissance` | 56 | arp_scanner, traffic_analyzer, log4shell_scanner, ping sweep, TCP/UDP port scanners, DNS zone transfer, SMB shares, SNMP walk, HTTP headers, OS fingerprint, cam finder, wardriving, navarro OSINT |
+| `interception` | 41 | kickthemout, mitm_code_injector, silent_bridge, dhcp_starvation, vlan_hopper, EternalBlue, Kerberoasting, PetitPotam, PrintNightmare, SMB relay, Pass the Hash, ProxyLogon, ProxyShell, Follina, KRACK, SSH/FTP/Telnet bruteforce, hashcat crack, IMSI catcher, JTAG |
+| `wifi` | 36 | deauth (multi-target), evil_twin, pmkid_capture, wifi_handshake_capture, tiny_wifite, marauder, wps_pixie, wifi_lab, beacon flood, probe sniffer, channel analyzer, client mapper, rogue AP, known networks deauth |
 | `dos` | 6 | SYN flood, UDP flood, LAND attack, smurf, ping of death, ARP poison DoS |
-| `bluetooth` | 9 | BLE spam, impersonator, flood, replay, char scanner, service explorer, BT scanner, BT manager |
+| `bluetooth` | 14 | BLE spam, impersonator, flood, replay, char scanner, service explorer, BT scanner, BT manager |
 | `social_eng` | 5 | Evil twin portals — Facebook, Google, PayPal, router login, VPN login |
-| `general` | 36 | MAC spoof (eth0/wlan0), C2 controller, Bloodhound collector, pwnagotchi, process killer, file browser, log viewer, service manager, fs encrypt/decrypt, webcam spy, system info, self-destruct, shell, auto-update |
-| `games` | 13 | Breakout, snake, Tetris, 2048, Conway's Game of Life, Doom demake, clock, pomodoro, video player, web browser |
-| `exfiltration` | 1 | exfiltrate_discord — send loot files to Discord webhook |
-| `remote_access` | 2 | shell (PTY over network), tailscale_control |
-| `evil_portal` | 1 | honeypot — full captive portal credential capture |
-| `examples` | 2 | `_payload_template.py`, `example_show_buttons.py` |
+| `general` | 27 | MAC spoof (eth0/wlan0), C2 controller, Bloodhound collector, pwnagotchi, process killer, file browser, log viewer, service manager, fs encrypt/decrypt, webcam spy, system info, self-destruct, shell, auto-update |
+| `games` | 27 | Breakout, snake, Tetris, 2048, Conway's Game of Life, Doom demake, clock, pomodoro, video player, web browser |
+| `exfiltration` | 9 | exfiltrate_discord — send loot files to Discord webhook |
+| `remote_access` | 7 | shell (PTY over network), tailscale_control |
+| `evil_portal` | 2 | honeypot — full captive portal credential capture |
+| `examples` | 13 | `_payload_template.py`, `example_show_buttons.py` |
 
 **Shared helpers in `payloads/`:**
 - `_input_helper.py` — unified GPIO + WebUI virtual button input
@@ -391,7 +391,7 @@ ktox_pi/                       copy this to the Pi → run install.sh
 ├── gui_conf.json                    blood-red colour scheme
 ├── discord_webhook.txt              webhook URL placeholder
 │
-├── payloads/                        156 payload scripts
+├── payloads/                        368 payload scripts
 │   ├── _input_helper.py
 │   ├── monitor_mode_helper.py
 │   ├── hid_helper.py
@@ -476,6 +476,6 @@ KTOx_Pi is built on top of the **RaspyJack** project. The WebUI, WebSocket devic
 
 RaspyJack is licensed under the MIT License. Copyright (c) 2025 7h30th3r0n3.
 
-**KTOx_Pi** adds the full KTOx attack and purple team suite, 155 custom payloads, KTOx_Pi firmware controller, blood-red theming, and extended menu system on top of the RaspyJack foundation.
+**KTOx_Pi** adds the full KTOx attack and purple team suite, 368 custom payloads, KTOx_Pi firmware controller, blood-red theming, and extended menu system on top of the RaspyJack foundation.
 
 **KTOx_Pi** — [github.com/wickednull/KTOx_Pi](https://github.com/wickednull/KTOx_Pi) · [@wickednull](https://github.com/wickednull)
