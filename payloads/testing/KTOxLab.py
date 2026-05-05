@@ -35,9 +35,12 @@ from collections import defaultdict, Counter
 import re
 
 # Add KTOx root to path
-KTOX_ROOT = '/root/KTOx'
-if os.path.isdir(KTOX_ROOT) and KTOX_ROOT not in sys.path:
-    sys.path.insert(0, KTOX_ROOT)
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_ROOT2 = os.path.abspath(os.path.join(_HERE, "..", ".."))
+_ROOT3 = os.path.abspath(os.path.join(_HERE, "..", "..", ".."))
+for _p in (_ROOT2, _ROOT3):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
 try:
     import RPi.GPIO as GPIO
@@ -46,6 +49,20 @@ try:
     HAS_HW = True
 except ImportError:
     HAS_HW = False
+
+try:
+    from _display_helper import ScaledDraw, scaled_font
+    from _input_helper import get_button, flush_input
+except ImportError:
+    try:
+        from payloads._display_helper import ScaledDraw, scaled_font
+        from payloads._input_helper import get_button, flush_input
+    except ImportError:
+        HAS_HELPERS = False
+    else:
+        HAS_HELPERS = True
+else:
+    HAS_HELPERS = True
 
 try:
     from scapy.all import sniff, IP, TCP, UDP, DNS, DNSQR, DNSRR, Raw, HTTP
@@ -81,6 +98,13 @@ FILES_CARVED = []
 DNS_QUERIES = defaultdict(int)
 TIMELINE_EVENTS = []
 
+# Setup GPIO if hardware available
+if HAS_HW:
+    GPIO.setmode(GPIO.BCM)
+    GPIO.setwarnings(False)
+    for pin in PINS.values():
+        GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # LCD INITIALIZATION
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -90,25 +114,24 @@ def init_screen():
     if not HAS_HW:
         return
 
-    GPIO.setmode(GPIO.BCM)
-    GPIO.setwarnings(False)
-    for pin in PINS.values():
-        GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-
     LCD = LCD_1in44.LCD()
     LCD.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
 
-    for fpath in ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-                  "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"):
-        if os.path.exists(fpath):
-            try:
-                FONT = ImageFont.truetype(fpath, 10)
-                FONT_SM = ImageFont.truetype(fpath, 8)
-                return
-            except:
-                pass
-    FONT = ImageFont.load_default()
-    FONT_SM = ImageFont.load_default()
+    if HAS_HELPERS:
+        FONT = scaled_font(10)
+        FONT_SM = scaled_font(8)
+    else:
+        for fpath in ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                      "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"):
+            if os.path.exists(fpath):
+                try:
+                    FONT = ImageFont.truetype(fpath, 10)
+                    FONT_SM = ImageFont.truetype(fpath, 8)
+                    return
+                except:
+                    pass
+        FONT = ImageFont.load_default()
+        FONT_SM = ImageFont.load_default()
 
 def cleanup_screen():
     if HAS_HW and LCD:
@@ -117,6 +140,7 @@ def cleanup_screen():
             GPIO.cleanup()
         except:
             pass
+    flush_input() if HAS_HELPERS else None
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # LCD DRAWING FUNCTIONS
@@ -125,7 +149,7 @@ def cleanup_screen():
 def draw_menu():
     """Draw main menu"""
     img = Image.new("RGB", (WIDTH, HEIGHT), BG)
-    d = ImageDraw.Draw(img)
+    d = ScaledDraw(img) if HAS_HELPERS else ImageDraw.Draw(img)
 
     d.rectangle((0, 0, WIDTH, 14), fill=HEADER)
     d.text((4, 1), "KTOxLab", font=FONT, fill=ACCENT)
@@ -151,7 +175,7 @@ def draw_menu():
 def draw_capturing():
     """Draw live capture screen"""
     img = Image.new("RGB", (WIDTH, HEIGHT), BG)
-    d = ImageDraw.Draw(img)
+    d = ScaledDraw(img) if HAS_HELPERS else ImageDraw.Draw(img)
 
     d.rectangle((0, 0, WIDTH, 14), fill=HEADER)
     d.text((4, 1), "Live Capture", font=FONT, fill=ACCENT)
@@ -174,7 +198,7 @@ def draw_capturing():
 def draw_results():
     """Draw results summary"""
     img = Image.new("RGB", (WIDTH, HEIGHT), BG)
-    d = ImageDraw.Draw(img)
+    d = ScaledDraw(img) if HAS_HELPERS else ImageDraw.Draw(img)
 
     d.rectangle((0, 0, WIDTH, 14), fill=HEADER)
     d.text((4, 1), "Results", font=FONT, fill=ACCENT)
@@ -362,21 +386,14 @@ def generate_report():
 # BUTTON INPUT HANDLING
 # ═══════════════════════════════════════════════════════════════════════════════
 
-LAST_BTN = {k: 0 for k in PINS}
-DEBOUNCE_MS = 300
-
-def is_button(pin):
-    """Debounced button check"""
+def is_button(name):
+    """Check if button pressed (uses helper if available)"""
     if not HAS_HW:
         return False
+    if HAS_HELPERS:
+        return get_button(PINS, GPIO) == name
     try:
-        now = int(time.time() * 1000)
-        if now - LAST_BTN.get(pin, 0) < DEBOUNCE_MS:
-            return False
-        if GPIO.input(PINS[pin]) == 0:
-            LAST_BTN[pin] = now
-            return True
-        return False
+        return GPIO.input(PINS[name]) == 0
     except:
         return False
 
