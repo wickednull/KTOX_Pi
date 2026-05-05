@@ -463,7 +463,7 @@ The Waveshare 1.44" HAT mounts on any board with a standard 40-pin header. BCM p
 
 ## ▐ CREDITS
 
-KTOx_Pi uses the WebUI frontend, WebSocket concept, and DNSPhish DNS spoofing sites from the **RaspyJack** project. Everything else — the LCD controller, button input system, device server, attack payloads, menu architecture, and all 368 custom modules — has been built from scratch for KTOx_Pi.
+**Credit to RaspyJack** for the WebUI frontend, WebSocket concept, and DNSSpoof phishing sites.
 
 **RaspyJack** — [github.com/7h30th3r0n3/Raspyjack](https://github.com/7h30th3r0n3/Raspyjack)
 
@@ -475,7 +475,5 @@ KTOx_Pi uses the WebUI frontend, WebSocket concept, and DNSPhish DNS spoofing si
 | Contributor | [@m0usem0use](https://github.com/m0usem0use) |
 
 RaspyJack is licensed under the MIT License. Copyright (c) 2025 7h30th3r0n3.
-
-**KTOx_Pi** — Custom implementation of the full KTOx attack and purple team suite with 368 payloads across 21 categories, custom LCD firmware, WebSocket device server, extended menu system, and blood-red cyberpunk theming — built on the RaspyJack foundation.
 
 **KTOx_Pi** — [github.com/wickednull/KTOx_Pi](https://github.com/wickednull/KTOx_Pi) · [@wickednull](https://github.com/wickednull)
