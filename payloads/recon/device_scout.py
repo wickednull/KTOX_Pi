@@ -32,14 +32,23 @@ import threading
 import subprocess
 from datetime import datetime
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-import monitor_mode_helper
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_ROOT2 = os.path.abspath(os.path.join(_HERE, "..", ".."))
+_ROOT3 = os.path.abspath(os.path.join(_HERE, "..", "..", ".."))
+for _p in (_ROOT2, _ROOT3):
+    if _p not in sys.path:
+        sys.path.append(_p)
 
-import RPi.GPIO as GPIO                          # type: ignore
-import LCD_1in44, LCD_Config                      # type: ignore
-from PIL import Image, ImageDraw, ImageFont       # type: ignore
-from _input_helper import get_button
+import RPi.GPIO as GPIO
+import LCD_1in44
+import LCD_Config
+from PIL import Image, ImageDraw, ImageFont
+if os.path.exists(os.path.join(_ROOT2, "_display_helper.py")):
+    from _display_helper import ScaledDraw, scaled_font
+    from _input_helper import get_button, flush_input
+else:
+    from payloads._display_helper import ScaledDraw, scaled_font
+    from payloads._input_helper import get_button, flush_input
 
 # Scapy (optional – WiFi capture won't work without it)
 try:
@@ -66,6 +75,43 @@ PINS = {
     "OK": 13, "KEY1": 21, "KEY2": 20, "KEY3": 16,
 }
 
+import signal
+
+# ── Hardware ──────────────────────────────────────────────────────────────────
+GPIO.setmode(GPIO.BCM)
+for _p in PINS.values():
+    GPIO.setup(_p, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+
+LCD = LCD_1in44.LCD()
+LCD.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
+WIDTH, HEIGHT = LCD.width, LCD.height
+font = scaled_font()
+small_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 8) if os.path.exists("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf") else font
+
+# KTOx colour palette (red/black)
+_BG     = (10,  0,   0)    # very dark red-black
+_HDR    = (139, 0,   0)    # dark red
+_BLOOD  = (192, 57,  43)   # bright red
+_EMBER  = (231, 76,  60)   # orange-red
+_WHITE  = (242, 243, 244)
+_ASH    = (171, 178, 185)  # light grey
+_STEEL  = (113, 125, 126)  # medium grey
+_DIM    = (86,  101, 115)  # dark grey
+_RUST   = (146, 43,  33)   # rust red
+_GOOD   = (30,  132, 73)   # green
+_FOOTER = (34,  0,   0)    # very dark footer
+
+running = True
+
+
+def _sig(s, f):
+    global running
+    running = False
+
+
+signal.signal(signal.SIGTERM, _sig)
+signal.signal(signal.SIGINT, _sig)
+
 VIEWS = ["DEVICES", "ALERTS", "STATS"]
 
 CH24 = list(range(1, 14))
@@ -81,7 +127,6 @@ TRACKER_COMPANY = {
     0x0075: "SmartTag",     # Samsung
 }
 
-import os
 paths = [
     "/root/KTOx/loot/DeviceScout",
     "/root/ktox/loot/DeviceScout"
@@ -121,12 +166,6 @@ lock = threading.Lock()
 # LCD init
 # ===================================================================
 
-def lcd_init():
-    LCD_Config.GPIO_Init()
-    lcd = LCD_1in44.LCD()
-    lcd.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
-    lcd.LCD_Clear()
-    return lcd
 
 # ===================================================================
 # WiFi monitor-mode setup  (from analyzer.py)
@@ -181,20 +220,31 @@ def find_iface():
 
 
 def monitor_up(iface):
-    """Put *iface* into monitor mode. Returns interface name or None.
-    
-    Only stops services for this specific interface — wlan0/WebUI is never touched.
-    """
-    return monitor_mode_helper.activate_monitor_mode(iface)
+    """Put interface into monitor mode via iw."""
+    if not iface:
+        return None
+    for cmd in [
+        ["/usr/bin/ip", "link", "set", iface, "down"],
+        ["/usr/sbin/iw", iface, "set", "monitor", "none"],
+        ["/usr/bin/ip", "link", "set", iface, "up"],
+    ]:
+        subprocess.run(cmd, capture_output=True, timeout=5)
+    time.sleep(0.3)
+    r = subprocess.run(["/usr/sbin/iw", "dev", iface, "info"],
+                       capture_output=True, text=True, timeout=5)
+    return iface if "type monitor" in r.stdout else None
 
 
 def monitor_down(iface):
-    """Best-effort restore to managed mode.
-    
-    Re-manages the interface in NetworkManager instead of restarting the service
-    (which would disrupt wlan0/WebUI).
-    """
-    monitor_mode_helper.deactivate_monitor_mode(iface)
+    """Restore interface to managed mode."""
+    if not iface:
+        return
+    for cmd in [
+        ["/usr/bin/ip", "link", "set", iface, "down"],
+        ["/usr/sbin/iw", iface, "set", "type", "managed"],
+        ["/usr/bin/ip", "link", "set", iface, "up"],
+    ]:
+        subprocess.run(cmd, capture_output=True, timeout=5)
 
 # ===================================================================
 # WiFi threads
@@ -209,7 +259,7 @@ def _hop_thread():
             ch = CHALL[idx % len(CHALL)]
             try:
                 subprocess.run(
-                    ["sudo", "iw", "dev", mon_iface, "set", "channel", str(ch)],
+                    ["/usr/sbin/iw", "dev", mon_iface, "set", "channel", str(ch)],
                     capture_output=True, timeout=3)
                 cur_ch = ch
             except Exception:

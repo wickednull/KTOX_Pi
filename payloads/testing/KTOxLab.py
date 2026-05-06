@@ -6,19 +6,16 @@ Real-time packet capture, credential extraction, file carving, and forensics ana
 
 Features:
   • Live packet capture & analysis on all interfaces
-  • Credential extraction (HTTP, FTP, Telnet, SMTP, DNS, TLS)
-  • File carving from network traffic (HTTP, FTP, SMB)
+  • Credential extraction (HTTP, FTP, Telnet, SMTP, DNS)
+  • File carving from network traffic
   • DNS intelligence & domain analysis
   • Timeline reconstruction of network events
-  • Professional forensics reports with findings
   • LCD dashboard for quick stats
-  • Web interface for detailed analysis
 
-Controls (LCD):
+Controls:
   UP/DOWN     - Navigate menu
   OK          - Select / Start capture
   KEY1        - Back / Stop capture
-  KEY2        - View results
   KEY3        - Exit
 """
 
@@ -31,52 +28,76 @@ import json
 import threading
 from pathlib import Path
 from datetime import datetime
-from collections import defaultdict, Counter
-import re
+from collections import defaultdict
 
-# Add KTOx root to path
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT2 = os.path.abspath(os.path.join(_HERE, "..", ".."))
 _ROOT3 = os.path.abspath(os.path.join(_HERE, "..", "..", ".."))
 for _p in (_ROOT2, _ROOT3):
     if _p not in sys.path:
-        sys.path.insert(0, _p)
+        sys.path.append(_p)
 
-try:
-    import RPi.GPIO as GPIO
-    import LCD_1in44
-    from PIL import Image, ImageDraw, ImageFont
-    HAS_HW = True
-except ImportError:
-    HAS_HW = False
-
-try:
+import RPi.GPIO as GPIO
+import LCD_1in44
+import LCD_Config
+from PIL import Image, ImageDraw, ImageFont
+if os.path.exists(os.path.join(_ROOT2, "_display_helper.py")):
     from _display_helper import ScaledDraw, scaled_font
     from _input_helper import get_button, flush_input
-except ImportError:
-    try:
-        from payloads._display_helper import ScaledDraw, scaled_font
-        from payloads._input_helper import get_button, flush_input
-    except ImportError:
-        HAS_HELPERS = False
-    else:
-        HAS_HELPERS = True
 else:
-    HAS_HELPERS = True
+    from payloads._display_helper import ScaledDraw, scaled_font
+    from payloads._input_helper import get_button, flush_input
 
 try:
-    from scapy.all import sniff, IP, TCP, UDP, DNS, DNSQR, DNSRR, Raw, HTTP
+    from scapy.all import sniff, IP, TCP, UDP, DNS, DNSQR, DNSRR, Raw
+    SCAPY_OK = True
 except ImportError:
-    HAS_SCAPY = False
-else:
-    HAS_SCAPY = True
+    SCAPY_OK = False
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# CONSTANTS & GLOBALS
-# ═══════════════════════════════════════════════════════════════════════════════
+# ── Hardware ──────────────────────────────────────────────────────────────────
+PINS = {
+    "UP": 6, "DOWN": 19, "LEFT": 5, "RIGHT": 26,
+    "OK": 13, "KEY1": 21, "KEY2": 20, "KEY3": 16,
+}
+GPIO.setmode(GPIO.BCM)
+for _p in PINS.values():
+    GPIO.setup(_p, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
-LOOT_DIR = Path(KTOX_ROOT) / "loot" / "forensics"
+LCD = LCD_1in44.LCD()
+LCD.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
+WIDTH, HEIGHT = LCD.width, LCD.height
+font = scaled_font()
+small_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 8) if os.path.exists("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf") else font
+
+# ── Constants ─────────────────────────────────────────────────────────────────
+LOOT_DIR = Path("/root/KTOx/loot/forensics")
 LOOT_DIR.mkdir(parents=True, exist_ok=True)
+
+# KTOx colour palette (red/black)
+_BG     = (10,  0,   0)    # very dark red-black
+_HDR    = (139, 0,   0)    # dark red
+_BLOOD  = (192, 57,  43)   # bright red
+_EMBER  = (231, 76,  60)   # orange-red
+_WHITE  = (242, 243, 244)
+_ASH    = (171, 178, 185)  # light grey
+_STEEL  = (113, 125, 126)  # medium grey
+_DIM    = (86,  101, 115)  # dark grey
+_RUST   = (146, 43,  33)   # rust red
+_GOOD   = (30,  132, 73)   # green
+_FOOTER = (34,  0,   0)    # very dark footer
+
+running = True
+
+
+def _sig(s, f):
+    global running
+    running = False
+
+
+signal.signal(signal.SIGTERM, _sig)
+signal.signal(signal.SIGINT, _sig)
+
+# ═══════════════════════════════════════════════════════════════════════════════
 
 PINS = {"UP": 6, "DOWN": 19, "LEFT": 5, "RIGHT": 26, "OK": 13, "KEY1": 21, "KEY2": 20, "KEY3": 16}
 WIDTH, HEIGHT = 128, 128
