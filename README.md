@@ -349,24 +349,27 @@ Select `Stealth` from the home menu. LCD goes blank (or shows a decoy image). Al
 
 **Loki** is a headless LAN reconnaissance tool that runs network discovery, vulnerability scanning, credential brute force, and file exfiltration. Access it from the LCD menu under `Payloads → Offensive → Loki Engine`.
 
-### First-time setup
+### First-time setup (required)
 
-The Loki reconnaissance engine needs dependencies installed. Run this once:
+After deploying KTOx to your Pi, initialize Loki by running:
 
 ```bash
-cd /home/user/KTOX_Pi/vendor/loki
+# On the Pi
+cd /root/KTOx
+sudo bash setup_loki.sh /root/KTOx
 
-# Install system packages (nmap, smbclient, freerdp, etc.)
-# Option 1: Full auto-install
-./install.sh
-
-# Option 2: Manual (if PPAs fail)
-pip3 install -q -r requirements.txt
-python3 -m venv .venv
-source .venv/bin/activate
-pip3 install --upgrade pip setuptools
-pip3 install -r requirements.txt
+# Or in development
+cd /home/user/KTOX_Pi
+bash setup_loki.sh /home/user/KTOX_Pi
 ```
+
+The `setup_loki.sh` script will:
+1. Clone the official loki-recon repository if needed
+2. Detect and install system dependencies (nmap, smbclient, freerdp, etc.)
+3. Create a Python virtual environment with all required packages
+4. Verify the installation
+
+**Note:** This only needs to be run once after initial KTOx installation.
 
 ### Using Loki
 
