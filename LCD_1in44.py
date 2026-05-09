@@ -76,16 +76,24 @@ def _load_rotation_config():
 	global _SCREEN_ROTATION
 	try:
 		import json
-		conf_paths = [
-			os.path.join(os.path.dirname(os.path.abspath(__file__)), "gui_conf.json"),
-			"/root/KTOx/gui_conf.json",
-		]
-		for path in conf_paths:
-			if os.path.isfile(path):
-				with open(path, 'r') as f:
-					conf = json.load(f)
-				_SCREEN_ROTATION = conf.get("UI", {}).get("ROTATION", 0)
-				break
+		# Try to get config path from default module if available
+		try:
+			from default import config_file as conf_path
+		except ImportError:
+			# Fallback to common paths
+			conf_path = None
+			for path in [
+				os.path.join(os.path.dirname(os.path.abspath(__file__)), "gui_conf.json"),
+				"/root/KTOx/gui_conf.json",
+			]:
+				if os.path.isfile(path):
+					conf_path = path
+					break
+
+		if conf_path and os.path.isfile(conf_path):
+			with open(conf_path, 'r') as f:
+				conf = json.load(f)
+			_SCREEN_ROTATION = conf.get("UI", {}).get("ROTATION", 0)
 	except Exception:
 		_SCREEN_ROTATION = 0
 
@@ -96,18 +104,26 @@ def set_screen_rotation(degrees):
 		_SCREEN_ROTATION = degrees
 		try:
 			import json
-			conf_paths = [
-				os.path.join(os.path.dirname(os.path.abspath(__file__)), "gui_conf.json"),
-				"/root/KTOx/gui_conf.json",
-			]
-			for path in conf_paths:
-				if os.path.isfile(path):
-					with open(path, 'r') as f:
-						conf = json.load(f)
-					conf.setdefault("UI", {})["ROTATION"] = degrees
-					with open(path, 'w') as f:
-						json.dump(conf, f, indent=4)
-					break
+			# Try to get config path from default module if available
+			try:
+				from default import config_file as conf_path
+			except ImportError:
+				# Fallback to common paths
+				conf_path = None
+				for path in [
+					os.path.join(os.path.dirname(os.path.abspath(__file__)), "gui_conf.json"),
+					"/root/KTOx/gui_conf.json",
+				]:
+					if os.path.isfile(path):
+						conf_path = path
+						break
+
+			if conf_path and os.path.isfile(conf_path):
+				with open(conf_path, 'r') as f:
+					conf = json.load(f)
+				conf.setdefault("UI", {})["ROTATION"] = degrees
+				with open(conf_path, 'w') as f:
+					json.dump(conf, f, indent=2)
 		except Exception:
 			pass
 
