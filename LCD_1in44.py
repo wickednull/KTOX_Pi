@@ -129,14 +129,19 @@ def set_screen_rotation(degrees):
 
 def _apply_rotation(pil_image, rotation):
 	"""Apply rotation to PIL image if needed."""
+	try:
+		from PIL import Image
+	except ImportError:
+		return pil_image
+
 	if rotation == 0:
 		return pil_image
 	elif rotation == 90:
-		return pil_image.transpose(3)  # Image.ROTATE_270
+		return pil_image.transpose(Image.ROTATE_270)
 	elif rotation == 180:
-		return pil_image.transpose(2)  # Image.ROTATE_180
+		return pil_image.transpose(Image.ROTATE_180)
 	elif rotation == 270:
-		return pil_image.transpose(4)  # Image.ROTATE_90
+		return pil_image.transpose(Image.ROTATE_90)
 	return pil_image
 
 # Load rotation on module import

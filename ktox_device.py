@@ -82,6 +82,35 @@ PINS = {
     "KEY3_PIN":      16,
 }
 
+def _rotate_button(btn: str, rotation: int) -> str:
+    """Map button input based on screen rotation (0, 90, 180, 270 degrees)."""
+    if rotation == 0 or not btn:
+        return btn
+
+    # Button rotation mappings
+    rotations = {
+        90: {
+            "KEY_UP_PIN": "KEY_LEFT_PIN",
+            "KEY_DOWN_PIN": "KEY_RIGHT_PIN",
+            "KEY_LEFT_PIN": "KEY_DOWN_PIN",
+            "KEY_RIGHT_PIN": "KEY_UP_PIN",
+        },
+        180: {
+            "KEY_UP_PIN": "KEY_DOWN_PIN",
+            "KEY_DOWN_PIN": "KEY_UP_PIN",
+            "KEY_LEFT_PIN": "KEY_RIGHT_PIN",
+            "KEY_RIGHT_PIN": "KEY_LEFT_PIN",
+        },
+        270: {
+            "KEY_UP_PIN": "KEY_RIGHT_PIN",
+            "KEY_DOWN_PIN": "KEY_LEFT_PIN",
+            "KEY_LEFT_PIN": "KEY_UP_PIN",
+            "KEY_RIGHT_PIN": "KEY_DOWN_PIN",
+        },
+    }
+
+    return rotations.get(rotation, {}).get(btn, btn)
+
 # ── Threading primitives ───────────────────────────────────────────────────────
 
 draw_lock   = threading.Lock()      # protect every draw call
@@ -803,6 +832,13 @@ def getButton(timeout=120):
     global _last_button, _last_button_time, _button_down_since
     start = time.time()
 
+    # Get current screen rotation for button mapping
+    try:
+        config_data = json.loads(Path(default.config_file).read_text())
+        screen_rotation = config_data.get("UI", {}).get("ROTATION", 0)
+    except Exception:
+        screen_rotation = 0
+
     while True:
         # Hard timeout — prevents infinite freeze
         if (time.time() - start) > timeout:
@@ -835,7 +871,7 @@ def getButton(timeout=120):
                         continue
                     _mark_user_activity()
                     _last_button = None
-                    return v
+                    return _rotate_button(v, screen_rotation)
             except Exception:
                 pass
 
@@ -846,7 +882,7 @@ def getButton(timeout=120):
                 if k:
                     _mark_user_activity()
                     _last_button = None
-                    return k
+                    return _rotate_button(k, screen_rotation)
             except Exception:
                 pass
 
@@ -893,7 +929,7 @@ def getButton(timeout=120):
             _last_button_time  = now
             _button_down_since = now
             _mark_user_activity()
-            return pressed
+            return _rotate_button(pressed, screen_rotation)
 
         if (now - _last_button_time) < _debounce_s:
             time.sleep(0.01)
@@ -901,7 +937,7 @@ def getButton(timeout=120):
         if ((now - _button_down_since) >= _repeat_delay
                 and (now - _last_button_time) >= _repeat_interval):
             _last_button_time = now
-            return pressed
+            return _rotate_button(pressed, screen_rotation)
         time.sleep(0.01)
 
 # ═══════════════════════════════════════════════════════════════════════════════
