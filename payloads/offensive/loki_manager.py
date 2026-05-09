@@ -76,20 +76,29 @@ def start_loki():
             print(f"   Expected at: {loki_script}")
             return False
 
+        # Check for virtual environment
+        venv_python = VENDOR_LOKI / ".venv" / "bin" / "python3"
+        if venv_python.exists():
+            python_exe = str(venv_python)
+        else:
+            python_exe = sys.executable
+
         print(f"\n📍 Starting: {loki_script}")
         print(f"🔌 Port: {LOKI_PORT}")
 
-        # Create environment with PYTHONPATH
+        # Create environment with PYTHONPATH and activation
         env = os.environ.copy()
         env['PYTHONPATH'] = str(VENDOR_LOKI) + ":" + str(VENDOR_LOKI / "loki")
         env['LOKI_PORT'] = str(LOKI_PORT)
         env['LOKI_DATA_DIR'] = str(LOOT_DIR / "loki_data")
+        env['VIRTUAL_ENV'] = str(VENDOR_LOKI / ".venv")
+        env['PATH'] = str(VENDOR_LOKI / ".venv" / "bin") + ":" + env.get('PATH', '')
 
         # Start as background process with log file for debugging
         log_file = LOOT_DIR / "loki.log"
         with open(log_file, 'w') as lf:
             proc = subprocess.Popen(
-                [sys.executable, str(loki_script)],
+                [python_exe, str(loki_script)],
                 stdout=lf,
                 stderr=subprocess.STDOUT,
                 cwd=str(VENDOR_LOKI),
