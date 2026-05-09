@@ -13,9 +13,17 @@ import signal
 from pathlib import Path
 
 # Add KTOX paths
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+script_dir = Path(__file__).resolve()
+KTOX_ROOT = script_dir.parent.parent.parent
 
-KTOX_ROOT = Path(__file__).parent.parent.parent
+# Handle both development (/home/user/KTOX_Pi) and production (/root/KTOx) paths
+if not (KTOX_ROOT / "vendor" / "loki").exists():
+    # Try production path
+    if Path("/root/KTOx/vendor/loki").exists():
+        KTOX_ROOT = Path("/root/KTOx")
+
+sys.path.insert(0, str(KTOX_ROOT))
+
 VENDOR_LOKI = KTOX_ROOT / "vendor" / "loki"
 LOOT_DIR = KTOX_ROOT / "loot"
 LOKI_PID_FILE = LOOT_DIR / "loki.pid"

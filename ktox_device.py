@@ -5040,7 +5040,8 @@ class KTOxMenu:
                 [sys.executable, loki_script, command],
                 capture_output=True,
                 text=True,
-                timeout=10
+                timeout=10,
+                cwd=os.path.dirname(__file__)
             )
 
             if result.returncode == 0:
@@ -5049,12 +5050,18 @@ class KTOxMenu:
                 elif command == "stop":
                     Dialog_info("Loki server\nstopped", wait=False, timeout=2)
             else:
-                error_msg = result.stderr or result.stdout or "Unknown error"
-                Dialog_info(f"Error:\n{error_msg[:40]}", wait=True)
+                # Show more error details
+                error_lines = []
+                if result.stderr:
+                    error_lines.extend(result.stderr.split('\n'))
+                if result.stdout:
+                    error_lines.extend(result.stdout.split('\n'))
+                error_msg = '\n'.join([l for l in error_lines if l.strip()])[:100]
+                Dialog_info(f"Error:\n{error_msg or 'Unknown'}", wait=True)
         except subprocess.TimeoutExpired:
             Dialog_info("Operation\ntimed out", wait=True)
         except Exception as e:
-            Dialog_info(f"Error:\n{str(e)[:40]}", wait=True)
+            Dialog_info(f"Error:\n{str(e)[:60]}", wait=True)
 
     # ── WiFi actions ──────────────────────────────────────────────────────────
 
