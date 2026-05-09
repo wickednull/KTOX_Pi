@@ -5345,7 +5345,29 @@ class KTOxMenu:
             f" {'*' if use else ' '} {ssid[:12]:12} {sig:>3}% {sec[:6]}"
             for use, ssid, sig, sec in rows
         ]
-        GetMenuString(labels, title="WiFi Scan")
+        sel = GetMenuString(labels, duplicates=True, title="WiFi Scan")
+        if not sel:
+            return
+        idx, _ = sel
+        _, ssid, _, security = rows[idx]
+
+        # Prompt for password if network has security
+        password = None
+        if security and security.lower() != "open":
+            pwd_input = self._get_text_input(f"Password for\n{ssid[:16]}", max_len=64)
+            if not pwd_input:
+                return
+            password = pwd_input
+
+        # Connect to the network
+        Dialog_info(f"Connecting to\n{ssid[:20]}...", wait=False, timeout=1)
+        if password:
+            self._nmcli("dev", "wifi", "connect", ssid, "password", password,
+                       "ifname", iface, timeout=20)
+        else:
+            self._nmcli("dev", "wifi", "connect", ssid, "ifname", iface, timeout=20)
+
+        Dialog_info(f"Connected to\n{ssid[:20]}", wait=False, timeout=2)
 
     def _network_saved_profiles_menu(self):
         if not self._nmcli_available():
