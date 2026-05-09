@@ -11,11 +11,14 @@ import time
 import urllib.request
 import urllib.error
 import json
+import os
 from pathlib import Path
 
 LOKI_HOST = "127.0.0.1"
 LOKI_PORT = 8000
 TIMEOUT = 5
+KTOX_ROOT = Path(os.environ.get("KTOX_DIR", "/root/KTOx"))
+TOKEN_FILE = KTOX_ROOT / "loot" / "loki_data" / "state" / "api_token.json"
 
 
 def check_port_open():
@@ -47,6 +50,10 @@ def check_endpoint(path, description):
     try:
         req = urllib.request.Request(url)
         req.add_header('User-Agent', 'Loki-TestClient/1.0')
+        if path.startswith("/api/v1/") and TOKEN_FILE.exists():
+            token = json.loads(TOKEN_FILE.read_text()).get("token")
+            if token:
+                req.add_header("Authorization", f"Bearer {token}")
 
         with urllib.request.urlopen(req, timeout=TIMEOUT) as response:
             status = response.status
@@ -102,7 +109,7 @@ def main():
     # Test connectivity
     if not check_port_open():
         print("\n[!] Cannot connect to Loki on port 8000")
-        print("    Make sure Loki is running: python3 /root/KTOx/payloads/offensive/loki_engine.py")
+        print("    Make sure Loki is running: python3 /root/KTOx/payloads/offensive/loki_manager.py start")
         return
 
     time.sleep(1)
@@ -111,14 +118,12 @@ def main():
     endpoints = [
         ("/", "Root / Homepage"),
         ("/index.html", "Index page"),
-        ("/dashboard", "Dashboard"),
-        ("/dashboard/", "Dashboard with slash"),
-        ("/api", "API root"),
-        ("/api/status", "API status"),
-        ("/api/hosts", "API hosts"),
-        ("/api/results", "API results"),
-        ("/static/", "Static files"),
-        ("/templates", "Templates"),
+        ("/config.html", "Config page"),
+        ("/actions.html", "Actions page"),
+        ("/network.html", "Network page"),
+        ("/api/v1/status", "API status"),
+        ("/api/v1/targets", "API targets"),
+        ("/api/v1/themes", "API themes"),
     ]
 
     results = []
