@@ -4990,26 +4990,71 @@ class KTOxMenu:
     # ── Loki Engine ───────────────────────────────────────────────────────────
 
     def _loki_engine(self):
-        """Launch Loki autonomous security engine."""
-        Dialog_info("Launching\nLoki...", wait=False, timeout=1)
-        import subprocess
-        import sys
+        """Loki reconnaissance engine control menu."""
+        while True:
+            # Check if Loki is running
+            loki_pid_file = Path(default.config_file).parent / "loot" / "loki.pid"
+            is_running = False
+            try:
+                if loki_pid_file.exists():
+                    with open(loki_pid_file, 'r') as f:
+                        pid = int(f.read().strip())
+                    os.kill(pid, 0)
+                    is_running = True
+            except (ValueError, ProcessLookupError, FileNotFoundError):
+                is_running = False
 
+            status = "✓ Running" if is_running else "Stopped"
+            choice = GetMenuString([
+                f" Status: {status}",
+                " Start Server",
+                " Stop Server",
+                " Back",
+            ], title="Loki Engine")
+
+            if not choice:
+                return
+            s = choice.strip()
+
+            if "Start Server" in s:
+                self._run_loki_command("start")
+            elif "Stop Server" in s:
+                self._run_loki_command("stop")
+            elif "Back" in s:
+                return
+
+    def _run_loki_command(self, command):
+        """Execute Loki manager command."""
         loki_script = os.path.join(
             os.path.dirname(__file__),
-            "payloads", "offensive", "loki_engine.py"
+            "payloads", "offensive", "loki_manager.py"
         )
 
         if not os.path.exists(loki_script):
-            Dialog_info("Loki script\nnot found", wait=True)
+            Dialog_info("Loki manager\nnot found", wait=True)
             return
 
         try:
-            # Launch in new terminal/process
-            subprocess.Popen([sys.executable, loki_script])
-            Dialog_info("Loki launcher\nstarted", wait=False, timeout=2)
+            Dialog_info(f"{command.title()}ing\nLoki...", wait=False, timeout=1)
+            result = subprocess.run(
+                [sys.executable, loki_script, command],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+
+            if result.returncode == 0:
+                if command == "start":
+                    Dialog_info("Loki server\nstarted!", wait=False, timeout=2)
+                elif command == "stop":
+                    Dialog_info("Loki server\nstopped", wait=False, timeout=2)
+            else:
+                error_msg = result.stderr or result.stdout or "Unknown error"
+                Dialog_info(f"Error:\n{error_msg[:40]}", wait=True)
+        except subprocess.TimeoutExpired:
+            Dialog_info("Operation\ntimed out", wait=True)
         except Exception as e:
-            Dialog_info(f"Error:\n{str(e)[:30]}", wait=True)
+            Dialog_info(f"Error:\n{str(e)[:40]}", wait=True)
 
     # ── WiFi actions ──────────────────────────────────────────────────────────
 

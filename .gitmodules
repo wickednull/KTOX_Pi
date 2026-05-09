@@ -1,0 +1,3 @@
+[submodule "vendor/loki"]
+	path = vendor/loki
+	url = https://github.com/brainphreak/loki-recon.git
