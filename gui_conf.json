@@ -24,6 +24,7 @@
         "KEY_UP_PIN": 6
     },
     "UI": {
-        "THEME": "ktox_red"
+        "THEME": "ktox_red",
+        "ROTATION": 0
     }
 }

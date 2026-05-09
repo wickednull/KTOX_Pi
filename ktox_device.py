@@ -5661,6 +5661,7 @@ class KTOxMenu:
                 " Save as User Theme",
                 " View Mode",
                 " Wallpaper",
+                " Screen Rotation",
                 " Return to Default",
             ]
             choice = GetMenuString(menu, title="UI Theme")
@@ -5679,6 +5680,8 @@ class KTOxMenu:
                 self._view_mode_menu()
             elif s == "Wallpaper":
                 self._wallpaper_menu()
+            elif s == "Screen Rotation":
+                self._screen_rotation_menu()
             elif s == "Return to Default":
                 if YNDialog("RESET THEME", y="Yes", n="No",
                            b="Reset to\nKTOx_Pi\nClassic?"):
@@ -5799,6 +5802,51 @@ class KTOxMenu:
             Path(config_path).write_text(json.dumps(data, indent=2))
         except Exception as e:
             print(f"[UI] save wallpaper failed: {e}")
+
+    def _screen_rotation_menu(self):
+        """Select screen rotation for LCD display."""
+        try:
+            config_path = default.config_file
+            try:
+                config_data = json.loads(Path(config_path).read_text())
+            except Exception:
+                config_data = {}
+            current_rotation = config_data.get("UI", {}).get("ROTATION", 0)
+        except Exception:
+            current_rotation = 0
+
+        rotations = [0, 90, 180, 270]
+        menu_items = []
+        for rot in rotations:
+            mark = "✔" if rot == current_rotation else " "
+            menu_items.append(f" {mark} {rot}°")
+
+        sel = GetMenuString(menu_items, duplicates=True, title="Screen Rotation")
+        if not sel:
+            return
+
+        idx, _ = sel
+        if idx < len(rotations):
+            selected_rotation = rotations[idx]
+            self._save_rotation(selected_rotation)
+            Dialog_info(f"Rotation set\nto {selected_rotation}°", wait=False, timeout=1)
+
+    def _save_rotation(self, degrees: int):
+        """Persist screen rotation to config file."""
+        try:
+            config_path = default.config_file
+            try:
+                data = json.loads(Path(config_path).read_text())
+            except Exception:
+                data = {}
+            if degrees in (0, 90, 180, 270):
+                data.setdefault("UI", {})["ROTATION"] = degrees
+                Path(config_path).write_text(json.dumps(data, indent=2))
+                import LCD_1in44
+                if hasattr(LCD_1in44, 'set_screen_rotation'):
+                    LCD_1in44.set_screen_rotation(degrees)
+        except Exception as e:
+            print(f"[UI] save rotation failed: {e}")
 
     def _pick_color(self, initial: str, title: str):
         """Interactive RGB color picker. Returns hex string or None."""
