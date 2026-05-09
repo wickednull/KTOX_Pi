@@ -345,6 +345,62 @@ Select `Stealth` from the home menu. LCD goes blank (or shows a decoy image). Al
 
 ---
 
+## ▐ LOKI RECONNAISSANCE ENGINE
+
+**Loki** is a headless LAN reconnaissance tool that runs network discovery, vulnerability scanning, credential brute force, and file exfiltration. Access it from the LCD menu under `Payloads → Offensive → Loki Engine`.
+
+### First-time setup
+
+The Loki reconnaissance engine needs dependencies installed. Run this once:
+
+```bash
+cd /home/user/KTOX_Pi/vendor/loki
+
+# Install system packages (nmap, smbclient, freerdp, etc.)
+# Option 1: Full auto-install
+./install.sh
+
+# Option 2: Manual (if PPAs fail)
+pip3 install -q -r requirements.txt
+python3 -m venv .venv
+source .venv/bin/activate
+pip3 install --upgrade pip setuptools
+pip3 install -r requirements.txt
+```
+
+### Using Loki
+
+From the LCD menu: `Payloads → Offensive → Loki Engine`
+- **Start Server** — launches Loki on `http://[ip]:8000`
+- **Stop Server** — shuts down the reconnaissance engine
+- **Status** — shows if Loki is running
+
+Or from command line:
+
+```bash
+cd /home/user/KTOX_Pi
+python3 payloads/offensive/loki_manager.py start
+python3 payloads/offensive/loki_manager.py status
+python3 payloads/offensive/loki_manager.py stop
+```
+
+Access the web UI at `http://[ip]:8000/`. Loki stores everything in `/home/user/KTOX_Pi/loot/loki_data/` (or `/root/KTOx/loot/loki_data/` on production).
+
+### Features
+
+- Network discovery (ARP scan + hostname resolution)
+- Port scanning (nmap integration)
+- Vulnerability scanning (nmap NSE + optional Nuclei)
+- CVE correlation (CISA KEV + optional NVD lookup)
+- Credential brute force (FTP, SSH, Telnet, SMB, MySQL, RDP)
+- File exfiltration (pull sensitive files from discovered services)
+- SQL data theft (database dumps from cracked MySQL)
+- Web UI + JSON API
+
+For full documentation see: [vendor/loki/README.md](vendor/loki/README.md)
+
+---
+
 ## ▐ HEADLESS MODE (NO LCD HAT)
 
 `ktox_device.py` detects missing hardware and falls back silently. You get full access via:
