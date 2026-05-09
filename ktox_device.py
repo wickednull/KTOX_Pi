@@ -5345,7 +5345,33 @@ class KTOxMenu:
             f" {'*' if use else ' '} {ssid[:12]:12} {sig:>3}% {sec[:6]}"
             for use, ssid, sig, sec in rows
         ]
-        GetMenuString(labels, title="WiFi Scan")
+        sel = GetMenuString(labels, duplicates=True, title="WiFi Scan")
+        if not sel:
+            return
+        idx, _ = sel
+        _, ssid, _, security = rows[idx]
+
+        # Prompt for password if network has security
+        password = None
+        if security and security.lower() != "open":
+            pwd_input = self._get_text_input(f"Password for\n{ssid[:16]}", max_len=64)
+            if not pwd_input:
+                return
+            password = pwd_input
+
+        # Connect to the network and save profile
+        Dialog_info(f"Connecting to\n{ssid[:20]}...", wait=False, timeout=1)
+        if password:
+            rc, out = self._nmcli("dev", "wifi", "connect", ssid, "password", password,
+                                 "ifname", iface, "name", ssid, timeout=20)
+        else:
+            rc, out = self._nmcli("dev", "wifi", "connect", ssid, "ifname", iface,
+                                 "name", ssid, timeout=20)
+
+        if rc == 0:
+            Dialog_info(f"Connected to\n{ssid[:20]}", wait=False, timeout=2)
+        else:
+            Dialog_info(f"Failed to\nconnect:\n{out[:40]}", wait=True)
 
     def _network_saved_profiles_menu(self):
         if not self._nmcli_available():
@@ -5369,10 +5395,17 @@ class KTOxMenu:
         idx, _ = sel
         name, _typ = profiles[idx]
         while True:
+            # Get autoconnect status
+            rc, auto_out = self._nmcli("connection", "show", name, timeout=10)
+            autoconnect = "yes" in auto_out.lower() and "autoconnect yes" in auto_out.lower()
+            auto_mark = "✔" if autoconnect else " "
+
             pick = GetMenuString([
                 f" {name[:20]}",
                 " Connect",
                 " Disconnect",
+                f" {auto_mark} Autoconnect",
+                " View Details",
                 " Forget Profile",
                 " Back",
             ], title="Profile")
@@ -5381,14 +5414,27 @@ class KTOxMenu:
             s = pick.strip()
             if s == "Connect":
                 self._nmcli("connection", "up", name, timeout=20)
-                Dialog_info(f"Connect req:\n{name[:20]}", wait=False, timeout=1)
+                Dialog_info(f"Connecting:\n{name[:20]}", wait=False, timeout=2)
             elif s == "Disconnect":
                 self._nmcli("connection", "down", name, timeout=20)
-                Dialog_info(f"Disconnect:\n{name[:20]}", wait=False, timeout=1)
+                Dialog_info(f"Disconnected:\n{name[:20]}", wait=False, timeout=1)
+            elif "Autoconnect" in s:
+                new_state = "no" if autoconnect else "yes"
+                self._nmcli("connection", "modify", name, f"connection.autoconnect", new_state, timeout=10)
+                Dialog_info(f"Autoconnect\n{new_state.upper()}", wait=False, timeout=1)
+            elif s == "View Details":
+                rc, details = self._nmcli("connection", "show", name, timeout=10)
+                lines = []
+                for ln in details.splitlines()[:10]:
+                    if ":" in ln:
+                        lines.append(f" {ln[:20]}")
+                if lines:
+                    GetMenuString(lines, title="Details")
             elif s == "Forget Profile":
-                self._nmcli("connection", "delete", name, timeout=20)
-                Dialog_info(f"Deleted:\n{name[:20]}", wait=False, timeout=1)
-                return
+                if YNDialog("Delete Profile", y="Yes", n="No", b=f"Delete\n{name[:16]}?"):
+                    self._nmcli("connection", "delete", name, timeout=20)
+                    Dialog_info(f"Deleted:\n{name[:20]}", wait=False, timeout=1)
+                    return
             elif s == "Back":
                 return
 
@@ -5412,6 +5458,55 @@ class KTOxMenu:
             lines += [f" {ln[:22]}" for ln in ip_br.splitlines()[:6]]
         GetMenuString(lines, title="Net Status")
 
+    def _network_quick_connect(self):
+        """Quick connect to strongest available saved WiFi network."""
+        if not self._nmcli_available():
+            Dialog_info("nmcli missing.\nInstall Network\nManager.", wait=True)
+            return
+
+        iface = ktox_state.get("wifi_iface", "wlan0")
+        Dialog_info(f"Scanning for\nsaved networks...", wait=False, timeout=1)
+
+        # Get list of saved profiles
+        rc, out = self._nmcli("-t", "--escape", "no", "-f", "NAME,TYPE",
+                             "connection", "show", timeout=10)
+        saved_networks = []
+        for ln in out.splitlines():
+            if ":" not in ln:
+                continue
+            name, typ = ln.split(":", 1)
+            if "802-11-wireless" in typ or "wifi" in typ.lower():
+                saved_networks.append(name)
+
+        if not saved_networks:
+            Dialog_info("No saved\nnetworks.", wait=True)
+            return
+
+        # Scan for available networks
+        rc, out = self._nmcli("-t", "--escape", "no", "-f", "SSID,SIGNAL",
+                             "dev", "wifi", "list", "ifname", iface, timeout=15)
+
+        # Find strongest saved network in range
+        best_network = None
+        best_signal = -999
+        for ln in out.splitlines():
+            parts = ln.split(":", 1)
+            if len(parts) < 2:
+                continue
+            ssid = parts[0].strip()
+            signal = int(parts[1].strip() or 0)
+            if ssid in saved_networks and signal > best_signal:
+                best_network = ssid
+                best_signal = signal
+
+        if not best_network:
+            Dialog_info("No saved networks\nin range.", wait=True)
+            return
+
+        Dialog_info(f"Connecting to\n{best_network[:20]}...", wait=False, timeout=1)
+        self._nmcli("connection", "up", best_network, timeout=20)
+        Dialog_info(f"Connected to\n{best_network[:20]}", wait=False, timeout=2)
+
     def _network_manager(self):
         while True:
             choice = GetMenuString([
@@ -5419,6 +5514,7 @@ class KTOxMenu:
                 " Interfaces",
                 " WiFi Scan",
                 " Saved Profiles",
+                " Quick Connect",
                 " Refresh State",
                 " Back",
             ], title="Network Mgr")
@@ -5433,6 +5529,8 @@ class KTOxMenu:
                 self._network_wifi_scan_menu()
             elif s == "Saved Profiles":
                 self._network_saved_profiles_menu()
+            elif s == "Quick Connect":
+                self._network_quick_connect()
             elif s == "Refresh State":
                 self._refresh()
             elif s == "Back":
