@@ -62,41 +62,38 @@ def start_loki():
 
     # Start Loki server
     try:
-        # Find the main Loki entry point
-        entry_points = [
-            VENDOR_LOKI / "main.py",
-            VENDOR_LOKI / "loki.py",
-            VENDOR_LOKI / "start.py",
-        ]
-
-        loki_script = None
-        for ep in entry_points:
-            if ep.exists():
-                loki_script = ep
-                break
-
-        if not loki_script:
+        loki_script = VENDOR_LOKI / "loki.py"
+        if not loki_script.exists():
             print("❌ Could not find Loki entry point")
-            print(f"   Checked: {', '.join(str(p) for p in entry_points)}")
+            print(f"   Expected at: {loki_script}")
             return False
 
         print(f"\n📍 Starting: {loki_script}")
         print(f"🔌 Port: {LOKI_PORT}")
 
-        # Start as background process
-        proc = subprocess.Popen(
-            [sys.executable, str(loki_script)],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            cwd=str(VENDOR_LOKI)
-        )
+        # Create environment with PYTHONPATH
+        env = os.environ.copy()
+        env['PYTHONPATH'] = str(VENDOR_LOKI) + ":" + str(VENDOR_LOKI / "loki")
+        env['LOKI_PORT'] = str(LOKI_PORT)
+        env['LOKI_DATA_DIR'] = str(LOOT_DIR / "loki_data")
+
+        # Start as background process with log file for debugging
+        log_file = LOOT_DIR / "loki.log"
+        with open(log_file, 'w') as lf:
+            proc = subprocess.Popen(
+                [sys.executable, str(loki_script)],
+                stdout=lf,
+                stderr=subprocess.STDOUT,
+                cwd=str(VENDOR_LOKI),
+                env=env
+            )
 
         # Save PID
         with open(LOKI_PID_FILE, 'w') as f:
             f.write(str(proc.pid))
 
         # Wait for startup
-        time.sleep(2)
+        time.sleep(3)
 
         # Verify it's running
         if get_loki_process():
@@ -105,6 +102,14 @@ def start_loki():
             return True
         else:
             print("❌ Failed to start Loki")
+            # Show last lines of log for debugging
+            if log_file.exists():
+                with open(log_file, 'r') as lf:
+                    lines = lf.readlines()[-10:]
+                    if lines:
+                        print("📋 Last log output:")
+                        for line in lines:
+                            print(f"   {line.rstrip()}")
             return False
 
     except Exception as e:
