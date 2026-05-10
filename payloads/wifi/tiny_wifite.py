@@ -582,13 +582,15 @@ if __name__ == '__main__':
             for ln in lines:
                 d.text((8,y), ln, font=FONT_MONO, fill=(171, 178, 185)); y+=MONO_CHAR_H+2
             LCD.LCD_ShowImage(img,0,0)
-            # wait for any release and tap
+            # wait for any button press and release
             timeout=time.time()+5
             while time.time()<timeout:
                 btn = get_button()
                 if btn:
-                    while get_button():
+                    # wait for release
+                    while get_button() is not None:
                         time.sleep(0.05)
+                    time.sleep(0.1)
                     break
                 time.sleep(0.05)
             # redraw last terminal view
