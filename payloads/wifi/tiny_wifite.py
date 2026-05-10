@@ -154,6 +154,9 @@ def set_terminal_font(size: int):
         MONO_CHAR_H = max(1, (bbox[3]-bbox[1]) + 1)
     MONO_COLS = max(10, (WIDTH - 2) // MONO_CHAR_W)
     MONO_ROWS = max(4, (HEIGHT - 2) // MONO_CHAR_H)
+    # Safety: ensure we have reasonable values
+    MONO_COLS = min(MONO_COLS, 128)  # Cap at reasonable width
+    MONO_ROWS = min(MONO_ROWS, 32)   # Cap at reasonable height
 
 set_terminal_font(TERM_FONT_SIZE)
 
@@ -195,6 +198,8 @@ VERSION_TAG = "tw2"
 # Append a full line to scrollback with hard wrapping
 def push_line(line: str):
     global scrollback
+    if MONO_COLS < 1:
+        return  # Safety check - don't process if MONO_COLS is invalid
     s = line
     while len(s) > MONO_COLS:
         scrollback.append(s[:MONO_COLS])
@@ -227,11 +232,14 @@ def draw_buffer(lines: list[str], partial: str = ""):
         s2 = status_text
     d.text((0, 0), header1.ljust(MONO_COLS)[:MONO_COLS], font=FONT_MONO, fill=(170, 170, 255))
     d.text((0, MONO_CHAR_H), s2.ljust(MONO_COLS)[:MONO_COLS], font=FONT_MONO, fill=(242, 243, 244))
-    # Content lines beneath header
-    visible_rows = MONO_ROWS - HEADER_ROWS
-    visible = lines[-(visible_rows-1):] + [partial]
+    # Content lines beneath header - show as many as fit on screen
+    content_rows = max(1, MONO_ROWS - HEADER_ROWS)
+    # Show last N lines from scrollback + current partial line
+    content_lines = (lines[-(content_rows-1):] if len(lines) > 0 else []) + [partial]
     y = MONO_CHAR_H * HEADER_ROWS
-    for line in visible:
+    for line in content_lines[-content_rows:]:  # Ensure we don't exceed available space
+        if y + MONO_CHAR_H > HEIGHT:  # Safety check - don't draw past bottom of screen
+            break
         d.text((0, y), line.ljust(MONO_COLS)[:MONO_COLS], font=FONT_MONO, fill=TERM_COLOR)
         y += MONO_CHAR_H
     LCD.LCD_ShowImage(img, 0, 0)
