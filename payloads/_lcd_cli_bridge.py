@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 """LCD command bridge for interactive command-line payload toolkits."""
 
+import errno
+import json
 import os
+import pty
+import re
+import select
 import signal
 import subprocess
 import sys
@@ -29,6 +34,14 @@ PINS = {
     "KEY3": 16,
 }
 
+ROTATION_MAPS = {
+    90: {"UP": "LEFT", "DOWN": "RIGHT", "LEFT": "DOWN", "RIGHT": "UP"},
+    180: {"UP": "DOWN", "DOWN": "UP", "LEFT": "RIGHT", "RIGHT": "LEFT"},
+    270: {"UP": "RIGHT", "DOWN": "LEFT", "LEFT": "UP", "RIGHT": "DOWN"},
+}
+
+ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+
 COLORS = {
     "BG": (6, 0, 0),
     "PANEL": (30, 0, 0),
@@ -50,6 +63,36 @@ def first_existing_dir(paths):
     return paths[0]
 
 
+def load_rotation(config_path="/root/KTOx/gui_conf.json"):
+    """Load the configured LCD rotation in degrees."""
+    try:
+        with open(config_path, encoding="utf-8") as fh:
+            rotation = int(json.load(fh).get("rotation", 0))
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        rotation = 0
+    return rotation if rotation in ROTATION_MAPS else 0
+
+
+def rotate_button(name, rotation):
+    """Translate a physical button name into the active screen orientation."""
+    return ROTATION_MAPS.get(rotation, {}).get(name, name)
+
+
+def rotated_gpio_pins(rotation):
+    """Return GPIO pins keyed by logical direction for rotated keyboard input."""
+    if rotation not in ROTATION_MAPS:
+        return dict(PINS)
+    logical = dict(PINS)
+    for physical, mapped in ROTATION_MAPS[rotation].items():
+        logical[mapped] = PINS[physical]
+    return logical
+
+
+def clean_output(text):
+    """Make terminal output compact and readable on the LCD."""
+    return ANSI_RE.sub("", text).replace("\x1b", "").replace("\r", "\n")
+
+
 class LCDCliBridge:
     """Run an interactive CLI program with LCD quick commands and keyboard input."""
 
@@ -61,11 +104,15 @@ class LCDCliBridge:
         self.exit_patterns = exit_patterns or ("0", "q", "quit", "exit")
         self.running = True
         self.proc = None
+        self.pty_master = None
         self.lines = []
         self.selected = 0
         self.mode = "menu"
         self.scroll = 0
+        self.partial_line = ""
         self.lock = threading.Lock()
+        self.rotation = load_rotation()
+        self.keyboard_pins = rotated_gpio_pins(self.rotation)
 
         GPIO.setmode(GPIO.BCM)
         for pin in PINS.values():
@@ -81,7 +128,7 @@ class LCDCliBridge:
             width=self.width,
             height=self.height,
             lcd=self.lcd,
-            gpio_pins=PINS,
+            gpio_pins=self.keyboard_pins,
             gpio_module=GPIO,
             on_ctrl_c=self.send_interrupt,
         )
@@ -97,7 +144,7 @@ class LCDCliBridge:
                 self._last_state[name] = True
                 if now - self._last_time[name] >= 0.18:
                     self._last_time[name] = now
-                    return name
+                    return rotate_button(name, self.rotation)
             elif not pressed and self._last_state[name]:
                 self._last_state[name] = False
         return None
@@ -111,20 +158,22 @@ class LCDCliBridge:
             self.lines = self.lines[-200:]
 
     def send_text(self, text, echo=True):
-        if not self.proc or self.proc.poll() is not None or self.proc.stdin is None:
+        if not self.proc or self.proc.poll() is not None or self.pty_master is None:
             self.add_line("[not running]")
             return
         try:
-            self.proc.stdin.write(text)
-            self.proc.stdin.flush()
+            os.write(self.pty_master, text.encode())
             if echo:
                 self.add_line(f"> {text.rstrip()}")
-        except BrokenPipeError:
+        except OSError:
             self.add_line("[stdin closed]")
 
     def send_interrupt(self):
         if self.proc and self.proc.poll() is None:
-            self.proc.send_signal(signal.SIGINT)
+            try:
+                os.killpg(self.proc.pid, signal.SIGINT)
+            except ProcessLookupError:
+                pass
             self.add_line("^C")
 
     def draw(self, footer=None):
@@ -199,27 +248,64 @@ class LCDCliBridge:
             self.add_line(f"Missing: {self.cwd}")
             return False
         self.add_line("Starting toolkit...")
+        master_fd, slave_fd = pty.openpty()
+        self.pty_master = master_fd
         self.proc = subprocess.Popen(
             self.command,
             cwd=self.cwd,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1,
-            env={**os.environ, "PYTHONUNBUFFERED": "1"},
+            stdin=slave_fd,
+            stdout=slave_fd,
+            stderr=slave_fd,
+            close_fds=True,
+            start_new_session=True,
+            env={**os.environ, "PYTHONUNBUFFERED": "1", "TERM": "xterm"},
         )
+        os.close(slave_fd)
         threading.Thread(target=self._read_output, daemon=True).start()
         return True
 
+    def _append_output_text(self, text):
+        text = clean_output(text)
+        parts = text.split("\n")
+        for part in parts[:-1]:
+            combined = self.partial_line + part
+            if self.partial_line:
+                with self.lock:
+                    if self.lines and self.lines[-1].startswith("…"):
+                        self.lines.pop()
+            self.partial_line = ""
+            self.add_line(combined)
+        if parts[-1]:
+            self.partial_line += parts[-1]
+            with self.lock:
+                if self.lines and self.lines[-1].startswith("…"):
+                    self.lines[-1] = "…" + self.partial_line
+                else:
+                    self.lines.append("…" + self.partial_line)
+                    self.lines = self.lines[-200:]
+
     def _read_output(self):
-        while self.running and self.proc and self.proc.stdout:
-            line = self.proc.stdout.readline()
-            if not line:
-                if self.proc.poll() is not None:
+        while self.running and self.proc and self.pty_master is not None:
+            try:
+                ready, _, _ = select.select([self.pty_master], [], [], 0.1)
+                if not ready:
+                    if self.proc.poll() is not None:
+                        break
+                    continue
+                chunk = os.read(self.pty_master, 4096)
+                if not chunk:
                     break
-                time.sleep(0.05)
-                continue
+                self._append_output_text(chunk.decode(errors="replace"))
+            except OSError as exc:
+                if exc.errno in (errno.EIO, errno.EBADF):
+                    break
+                raise
+        if self.partial_line:
+            line = self.partial_line
+            with self.lock:
+                if self.lines and self.lines[-1].startswith("…"):
+                    self.lines.pop()
+            self.partial_line = ""
             self.add_line(line)
         if self.proc:
             self.add_line(f"[exit {self.proc.poll()}]")
@@ -228,10 +314,19 @@ class LCDCliBridge:
         self.running = False
         if self.proc and self.proc.poll() is None:
             try:
-                self.proc.terminate()
+                os.killpg(self.proc.pid, signal.SIGTERM)
                 self.proc.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                self.proc.kill()
+            except (ProcessLookupError, subprocess.TimeoutExpired):
+                try:
+                    os.killpg(self.proc.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+        if self.pty_master is not None:
+            try:
+                os.close(self.pty_master)
+            except OSError:
+                pass
+            self.pty_master = None
         try:
             self.lcd.LCD_Clear()
         finally:
