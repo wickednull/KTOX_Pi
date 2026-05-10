@@ -128,7 +128,7 @@ except Exception:
     FONT_TITLE = ImageFont.load_default()
 # Terminal appearance (user adjustable)
 TERM_FONT_SIZE = 8   # px
-TERM_COLOR = "#00FF00"  # default green
+TERM_COLOR = (0, 255, 0)  # default green - RGB tuple for PIL
 FONT_MONO = None
 MONO_CHAR_W = MONO_CHAR_H = MONO_COLS = MONO_ROWS = 0
 
@@ -273,8 +273,8 @@ def process_stream(data: str):
     if time.time() - LAST_DRAW > 0.1:
         draw_buffer(scrollback, current_line)
 
-# Settings menu (font size & color)
-COLORS = ["#00FF00", "white", "cyan", "yellow", "red", "#00FFFF", "#FF00FF"]
+# Settings menu (font size & color) - use named colors or RGB tuples for PIL
+COLORS = [(0, 255, 0), "white", "cyan", "yellow", "red", (0, 255, 255), (255, 0, 255)]
 
 def open_settings_menu():
     global TERM_FONT_SIZE, TERM_COLOR, scrollback
@@ -466,7 +466,7 @@ if __name__ == '__main__':
             y = 32
             for i, iface in enumerate(options):
                 if i == sel:
-                    d.rectangle([(8, y-2), (120, y+12)], fill="#003366")
+                    d.rectangle([(8, y-2), (120, y+12)], fill=(0, 51, 102))
                     fill = (212, 172, 13)
                 else:
                     fill = (242, 243, 244)
@@ -582,13 +582,15 @@ if __name__ == '__main__':
             for ln in lines:
                 d.text((8,y), ln, font=FONT_MONO, fill=(171, 178, 185)); y+=MONO_CHAR_H+2
             LCD.LCD_ShowImage(img,0,0)
-            # wait for any release and tap
+            # wait for any button press and release
             timeout=time.time()+5
             while time.time()<timeout:
                 btn = get_button()
                 if btn:
-                    while get_button():
+                    # wait for release
+                    while get_button() is not None:
                         time.sleep(0.05)
+                    time.sleep(0.1)
                     break
                 time.sleep(0.05)
             # redraw last terminal view
@@ -634,7 +636,7 @@ if __name__ == '__main__':
             if NEEDS_TARGET_NUMBER:
                 NEEDS_TARGET_NUMBER = False
                 number_selector()
-            # KEY1 short press: Stop & Select (don’t wait for prompt)
+            # KEY1 short press: Stop & Select (don't wait for prompt)
             btn = get_button()
             if btn == "KEY1" and not IN_OVERLAY:
                 t0 = time.time()
@@ -685,14 +687,14 @@ if __name__ == '__main__':
                     while choice is None:
                         choice_btn = get_button()
                         if choice_btn == "OK":
-                            choice = ‘yes’
+                            choice = 'yes'
                             while get_button() == "OK": time.sleep(0.05)
                         elif choice_btn == "LEFT":
-                            choice = ‘no’
+                            choice = 'no'
                             while get_button() == "LEFT": time.sleep(0.05)
                         time.sleep(0.05)
                     draw_buffer(scrollback, current_line)
-                    if choice == ‘yes’:
+                    if choice == 'yes':
                         try:
                             os.killpg(os.getpgid(pid), signal.SIGINT)
                         except Exception:
