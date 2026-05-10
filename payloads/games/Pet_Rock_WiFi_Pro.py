@@ -284,15 +284,21 @@ def try_crack(cap_path, essid, bssid):
         save_stats()
         set_mood("cracked")
 
+packet_count = 0
+
 def packet_handler(pkt):
     """Process captured packets."""
-    global session_hs, session_hhs, session_pmkid, captured_bssids, lifetime_hs, lifetime_hhs, lifetime_pmkid
+    global session_hs, session_hhs, session_pmkid, captured_bssids, lifetime_hs, lifetime_hhs, lifetime_pmkid, packet_count
 
     if shutdown.is_set() or not capture_event.is_set():
         return
 
     if not pkt.haslayer(Dot11):
         return
+
+    packet_count += 1
+    if packet_count % 50 == 0:
+        print(f"Packets captured: {packet_count}")
 
     # Beacon: discover APs
     if pkt.haslayer(Dot11Beacon):
@@ -314,6 +320,7 @@ def packet_handler(pkt):
                     "essid": essid, "signal": sig, "clients": set(),
                     "last_seen": time.time()
                 }
+                print(f"New AP: {bssid} ({essid}) Signal: {sig}dBm")
             else:
                 session_aps[bssid]["signal"] = sig
                 session_aps[bssid]["essid"] = essid
@@ -379,6 +386,7 @@ def packet_handler(pkt):
                                                             session_pmkid += 1
                                                             lifetime_pmkid += 1
                                                             essid = session_aps[bssid]["essid"]
+                                                            print(f"PMKID captured for {essid} ({bssid})")
                                                             set_mood("pmkid")
                                                             save_capture(bssid, essid, [pkt], "pmkid")
                                                             break
@@ -396,6 +404,7 @@ def packet_handler(pkt):
                 session_hs += 1
                 lifetime_hs += 1
                 essid = session_aps[bssid]["essid"]
+                print(f"4-Way Handshake captured for {essid} ({bssid})")
                 set_mood("happy")
                 save_capture(bssid, essid, list(eapol_buffer[pair]), "hs4")
                 eapol_buffer[pair] = []
@@ -436,6 +445,7 @@ def half_hs_checker():
                                 session_hhs += 1
                                 lifetime_hhs += 1
                                 essid = session_aps[bssid]["essid"]
+                                print(f"Half-Handshake captured for {essid} ({bssid})")
                                 set_mood("half")
                                 save_capture(bssid, essid, pkts, "hs_half")
                 except:
@@ -620,13 +630,18 @@ def main():
     show_message("Enabling\nmonitor...", 2)
 
     original_mac = get_mac(adapter)
+    print(f"Original MAC: {original_mac}")
     mon_iface = monitor_up(adapter)
+    print(f"Monitor interface: {mon_iface}")
 
     if not mon_iface:
         show_message("Monitor mode\nfailed!", 2)
+        print(f"Failed to get monitor interface for {adapter}")
         return
 
     show_message("Starting\nscan...", 1)
+    print(f"Scapy available: {SCAPY_OK}")
+    print(f"Starting capture on {mon_iface}")
 
     # Setup signal handlers
     def _stop(sig, frame):
