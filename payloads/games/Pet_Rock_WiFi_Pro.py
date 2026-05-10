@@ -195,10 +195,8 @@ def monitor_up(iface):
         pass
 
     try:
-        result = subprocess.run(["sudo", "airmon-ng", "start", iface], capture_output=True, text=True, timeout=10)
-        print(f"airmon-ng output: {result.stdout} {result.stderr}")
-    except Exception as e:
-        print(f"airmon-ng failed: {e}")
+        subprocess.run(["sudo", "airmon-ng", "start", iface], capture_output=True, text=True, timeout=10)
+    except:
         return None
 
     time.sleep(2)
@@ -207,7 +205,6 @@ def monitor_up(iface):
     for candidate in [f"{iface}mon", f"{iface}-mon", f"wlan{iface[-1]}mon", f"wlan{iface[-1]}-mon"]:
         try:
             if subprocess.run(["ip", "link", "show", candidate], capture_output=True, timeout=5).returncode == 0:
-                print(f"Monitor interface found: {candidate}")
                 return candidate
         except:
             pass
@@ -296,10 +293,6 @@ def packet_handler(pkt):
     if not pkt.haslayer(Dot11):
         return
 
-    packet_count += 1
-    if packet_count % 50 == 0:
-        print(f"Packets captured: {packet_count}")
-
     # Beacon: discover APs
     if pkt.haslayer(Dot11Beacon):
         bssid = (pkt[Dot11].addr2 or "").upper()
@@ -320,7 +313,6 @@ def packet_handler(pkt):
                     "essid": essid, "signal": sig, "clients": set(),
                     "last_seen": time.time()
                 }
-                print(f"New AP: {bssid} ({essid}) Signal: {sig}dBm")
             else:
                 session_aps[bssid]["signal"] = sig
                 session_aps[bssid]["essid"] = essid
@@ -386,7 +378,6 @@ def packet_handler(pkt):
                                                             session_pmkid += 1
                                                             lifetime_pmkid += 1
                                                             essid = session_aps[bssid]["essid"]
-                                                            print(f"PMKID captured for {essid} ({bssid})")
                                                             set_mood("pmkid")
                                                             save_capture(bssid, essid, [pkt], "pmkid")
                                                             break
@@ -404,7 +395,6 @@ def packet_handler(pkt):
                 session_hs += 1
                 lifetime_hs += 1
                 essid = session_aps[bssid]["essid"]
-                print(f"4-Way Handshake captured for {essid} ({bssid})")
                 set_mood("happy")
                 save_capture(bssid, essid, list(eapol_buffer[pair]), "hs4")
                 eapol_buffer[pair] = []
@@ -445,7 +435,6 @@ def half_hs_checker():
                                 session_hhs += 1
                                 lifetime_hhs += 1
                                 essid = session_aps[bssid]["essid"]
-                                print(f"Half-Handshake captured for {essid} ({bssid})")
                                 set_mood("half")
                                 save_capture(bssid, essid, pkts, "hs_half")
                 except:
@@ -481,12 +470,7 @@ def channel_hopper():
 
 def sniffer_thread():
     """Packet sniffer."""
-    if not SCAPY_OK:
-        print("Scapy not available")
-        return
-
-    if not mon_iface:
-        print("No monitor interface")
+    if not SCAPY_OK or not mon_iface:
         return
 
     try:
@@ -501,8 +485,8 @@ def sniffer_thread():
             stop_filter=lambda _: shutdown.is_set() or not capture_event.is_set(),
             store=0
         )
-    except Exception as e:
-        print(f"Sniffer error: {e}")
+    except:
+        pass
 
 def draw_face():
     """Draw main face view."""
@@ -630,18 +614,13 @@ def main():
     show_message("Enabling\nmonitor...", 2)
 
     original_mac = get_mac(adapter)
-    print(f"Original MAC: {original_mac}")
     mon_iface = monitor_up(adapter)
-    print(f"Monitor interface: {mon_iface}")
 
     if not mon_iface:
         show_message("Monitor mode\nfailed!", 2)
-        print(f"Failed to get monitor interface for {adapter}")
         return
 
     show_message("Starting\nscan...", 1)
-    print(f"Scapy available: {SCAPY_OK}")
-    print(f"Starting capture on {mon_iface}")
 
     # Setup signal handlers
     def _stop(sig, frame):
@@ -680,16 +659,13 @@ def main():
 
             # Redraw every 0.2 seconds
             if time.time() - last_draw_time > 0.2:
-                try:
-                    if view == "face":
-                        draw_face()
-                    elif view == "stats":
-                        draw_stats()
-                    elif view == "captures":
-                        draw_captures()
-                    last_draw_time = time.time()
-                except Exception as e:
-                    print(f"Draw error: {e}")
+                if view == "face":
+                    draw_face()
+                elif view == "stats":
+                    draw_stats()
+                elif view == "captures":
+                    draw_captures()
+                last_draw_time = time.time()
 
             time.sleep(0.05)
 
