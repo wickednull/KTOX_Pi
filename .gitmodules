@@ -4,6 +4,7 @@
 [submodule "vendor/spam-jam"]
 	path = vendor/spam-jam
 	url = https://github.com/ekomsSavior/Spam-Jam
+	branch = main
 [submodule "vendor/jam-fi"]
 	path = vendor/jam-fi
 	url = https://github.com/ekomsSavior/Jam_fi
