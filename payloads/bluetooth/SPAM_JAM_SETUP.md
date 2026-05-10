@@ -8,7 +8,7 @@ Spam-Jam requires `bluepy` which has compatibility issues with Python 3.11+. Her
 ```bash
 sudo apt-get install python3.9
 pip3.9 install bluepy
-# Then update spam_jam_integrated.py to use python3.9
+# If needed, update payloads/bluetooth/spam_jam.py to call python3.9
 ```
 
 ### Option 2: Install via system package + compile workaround
@@ -23,7 +23,7 @@ The Bleak library is actively maintained and works with Python 3.11:
 pip3 install bleak
 ```
 
-A Bleak-compatible version would need modifications to spam_jam.py.
+A Bleak-compatible version would need modifications to the external Spam-Jam toolkit; the KTOx wrapper in `payloads/bluetooth/spam_jam.py` will continue to provide LCD controls for whichever interpreter/script path you configure.
 
 ## Quick Install
 Run the installer script:
