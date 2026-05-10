@@ -194,10 +194,10 @@ class LCDToolkitBridge:
 
         if self.mode == "output":
             self._draw_output(draw)
-            footer = footer or "K2=Menu K1=Keys K3=Exit"
+            footer = footer or "K2=Cmds K1=Keys K3=Exit"
         else:
             self._draw_menu(draw)
-            footer = footer or "OK=Send K1=Keys K2=Out"
+            footer = footer or "OK=Send K2=Output"
 
         draw.rectangle((0, self.height - 11, self.width, self.height), fill=COLORS["PANEL"])
         draw.text((2, self.height - 10), footer[:21], font=self.tiny, fill=COLORS["DIM"])
@@ -275,14 +275,33 @@ class LCDToolkitBridge:
             draw.text((2, y), line[:21], font=self.tiny, fill=COLORS["TEXT"])
             y += 10
 
+    def show_output(self, reset_scroll=False):
+        """Switch to output view, optionally jumping to the newest output."""
+        self.mode = "output"
+        if reset_scroll:
+            self.scroll = 0
+
+    def toggle_view(self):
+        """Toggle between quick commands and live toolkit output."""
+        if self.mode == "output":
+            self.mode = "menu"
+            self._ensure_selected_visible()
+        else:
+            self.show_output(reset_scroll=True)
+
     def open_keyboard(self):
+        sent_text = False
         try:
             text = self.keyboard.run()
             if text is not None:
                 self.send_text(text + "\n")
+                sent_text = True
         finally:
             self._refresh_button_state()
-            self.mode = "menu"
+            if sent_text:
+                self.show_output(reset_scroll=True)
+            else:
+                self.mode = "menu"
 
     def activate_selected(self):
         _label, value = self.quick_commands[self.selected]
@@ -290,8 +309,10 @@ class LCDToolkitBridge:
             self.open_keyboard()
         elif value == "__ctrl_c__":
             self.send_interrupt()
+            self.show_output(reset_scroll=True)
         else:
             self.send_text(value + "\n")
+            self.show_output(reset_scroll=True)
 
     def start_process(self):
         if not os.path.isdir(self.cwd):
@@ -407,7 +428,7 @@ class LCDToolkitBridge:
                 if btn == "KEY1":
                     self.open_keyboard()
                 elif btn == "KEY2":
-                    self.mode = "output" if self.mode == "menu" else "menu"
+                    self.toggle_view()
                 elif self.mode == "output":
                     if btn == "UP":
                         self.scroll += 1
@@ -421,7 +442,7 @@ class LCDToolkitBridge:
                     elif btn == "DOWN":
                         self._move_selection(1)
                     elif btn == "LEFT":
-                        self.mode = "output"
+                        self.show_output(reset_scroll=True)
                     elif btn == "RIGHT":
                         self.open_keyboard()
                     elif btn == "OK":
