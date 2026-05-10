@@ -184,7 +184,7 @@ All payloads are KTOx-compatible. They use `_input_helper.py` for unified button
 |----------|-------|-----------|
 | `reconnaissance` | 56 | arp_scanner, traffic_analyzer, log4shell_scanner, ping sweep, TCP/UDP port scanners, DNS zone transfer, SMB shares, SNMP walk, HTTP headers, OS fingerprint, cam finder, wardriving, navarro OSINT |
 | `interception` | 41 | kickthemout, mitm_code_injector, silent_bridge, dhcp_starvation, vlan_hopper, EternalBlue, Kerberoasting, PetitPotam, PrintNightmare, SMB relay, Pass the Hash, ProxyLogon, ProxyShell, Follina, KRACK, SSH/FTP/Telnet bruteforce, hashcat crack, IMSI catcher, JTAG |
-| `wifi` | 36 | deauth (multi-target), evil_twin, pmkid_capture, wifi_handshake_capture, tiny_wifite, marauder, wps_pixie, wifi_lab, beacon flood, probe sniffer, channel analyzer, client mapper, rogue AP, known networks deauth |
+| `wifi` | 36 | deauth (multi-target), evil_twin, pmkid_capture, wifi_handshake_capture, wifite_lcd, marauder, wps_pixie, wifi_lab, beacon flood, probe sniffer, channel analyzer, client mapper, rogue AP, known networks deauth |
 | `dos` | 6 | SYN flood, UDP flood, LAND attack, smurf, ping of death, ARP poison DoS |
 | `bluetooth` | 14 | BLE spam, impersonator, flood, replay, char scanner, service explorer, BT scanner, BT manager |
 | `social_eng` | 5 | Evil twin portals — Facebook, Google, PayPal, router login, VPN login |
