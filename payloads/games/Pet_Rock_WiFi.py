@@ -171,24 +171,33 @@ class WiFiCaptureManager:
         """Enable monitor mode on the interface."""
         try:
             # Kill conflicting processes
-            subprocess.run(["airmon-ng", "check", "kill"], capture_output=True)
+            subprocess.run(["airmon-ng", "check", "kill"], capture_output=True, timeout=10)
             time.sleep(1)
 
             # Enable monitor mode
             result = subprocess.run(
                 ["airmon-ng", "start", self.interface],
-                capture_output=True, text=True
+                capture_output=True, text=True, timeout=10
             )
 
-            # Determine monitor interface name (usually wlanXmon)
-            self.mon_interface = f"{self.interface}mon"
-            if not self._interface_exists(self.mon_interface):
-                self.mon_interface = f"{self.interface}-mon"
+            time.sleep(2)  # Wait for mode change
 
-            if not self._interface_exists(self.mon_interface):
-                return False
+            # Determine monitor interface name
+            for candidate in [f"{self.interface}mon", f"{self.interface}-mon", f"{self.interface.replace('wlan', 'wlan')}mon"]:
+                if self._interface_exists(candidate):
+                    self.mon_interface = candidate
+                    return True
 
-            return True
+            # Try to find any mon interface
+            result = subprocess.run(["ip", "link", "show"], capture_output=True, text=True)
+            for line in result.stdout.split('\n'):
+                if 'mon' in line and self.interface.replace('wlan', '') in line:
+                    match = re.search(r'(\w+):', line)
+                    if match:
+                        self.mon_interface = match.group(1)
+                        return True
+
+            return False
         except Exception as e:
             print(f"Monitor mode error: {e}")
             return False
@@ -333,7 +342,7 @@ def select_adapter():
             adapters.append(iface)
 
     if not adapters:
-        print("No WiFi adapters found!")
+        show_message("No WiFi\nadapters\nfound!", 3)
         return None
 
     if len(adapters) == 1:
@@ -352,6 +361,8 @@ def select_adapter():
             color = "#FF3333" if i == selection else "#AAAAAA"
             d.text((20, y), adapter, font=f11, fill=color)
 
+        d.text((4,110), "K1=start K3=exit", font=f9, fill=(192, 57, 43))
+
         if HAS_LCD:
             LCD.LCD_ShowImage(img, 0, 0)
 
@@ -360,10 +371,29 @@ def select_adapter():
             selection -= 1
         elif btn == "DOWN" and selection < len(adapters) - 1:
             selection += 1
-        elif btn == "OK":
+        elif btn == "KEY1":
             return adapters[selection]
         elif btn == "KEY3":
             return None
+
+def show_message(text, duration=2):
+    """Show status message on screen."""
+    img = Image.new("RGB", (W, H), "#0A0000")
+    d = ImageDraw.Draw(img)
+    d.rectangle((0,0,W,17), fill=(139, 0, 0))
+    d.text((4,3), "ROCK WiFi", font=f9, fill=(231, 76, 60))
+
+    # Draw text centered
+    lines = text.split('\n')
+    y = 40
+    for line in lines:
+        d.text((10, y), line, font=f11, fill=(171, 178, 185))
+        y += 25
+
+    if HAS_LCD:
+        LCD.LCD_ShowImage(img, 0, 0)
+
+    time.sleep(duration)
 
 def wait_btn(timeout=0.1):
     start = time.time()
@@ -377,36 +407,42 @@ def wait_btn(timeout=0.1):
 
 def main():
     print("[+] Pet Rock WiFi Edition")
-    print("[+] Selecting WiFi adapter...")
 
     adapter = select_adapter()
     if not adapter:
-        print("[-] No adapter selected")
+        show_message("Cancelled", 1)
         return
 
+    show_message(f"Using\n{adapter}", 1.5)
     print(f"[+] Using {adapter}")
-    print("[+] Enabling monitor mode...")
 
     rock = WiFiPetRock(adapter)
+
+    show_message("Enabling\nmonitor\nmode...", 2)
+    print("[+] Enabling monitor mode...")
 
     # Enable monitor mode
     if not rock.capture_mgr.enable_monitor_mode():
         print("[-] Failed to enable monitor mode")
+        show_message("Monitor\nmode\nfailed!", 2)
         GPIO.cleanup()
         return
 
-    print(f"[+] Monitor mode enabled on {rock.capture_mgr.mon_interface}")
+    print(f"[+] Monitor mode: {rock.capture_mgr.mon_interface}")
+
+    show_message("Starting\ncapture...", 2)
     print("[+] Starting capture...")
 
     # Start capturing
     if not rock.capture_mgr.start_capture():
         print("[-] Failed to start capture")
+        show_message("Capture\nfailed!", 2)
         rock.capture_mgr.disable_monitor_mode()
         GPIO.cleanup()
         return
 
+    show_message("Scanning...", 1.5)
     print("[+] Scanning for PMKIDs and handshakes...")
-    time.sleep(2)
 
     # Main loop
     try:
