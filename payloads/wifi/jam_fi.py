@@ -15,7 +15,7 @@ _REPO_ROOT = os.path.abspath(os.path.join(_HERE, "..", ".."))
 if _REPO_ROOT not in sys.path:
     sys.path.append(_REPO_ROOT)
 
-from payloads._lcd_cli_bridge import LCDCliBridge, first_existing_dir
+from payloads._lcd_toolkit_bridge import LCDToolkitBridge, first_existing_dir
 
 JAM_FI_PATH = first_existing_dir([
     "/root/Jam_Fi",
@@ -44,7 +44,7 @@ QUICK_COMMANDS = [
 def main():
     script = os.path.join(JAM_FI_PATH, "jam_fi.py")
     command = ["python3", script] if os.geteuid() == 0 else ["sudo", "python3", script]
-    bridge = LCDCliBridge("JAM FI", command, JAM_FI_PATH, QUICK_COMMANDS)
+    bridge = LCDToolkitBridge("JAM FI", command, JAM_FI_PATH, QUICK_COMMANDS)
     return bridge.run()
 
 
