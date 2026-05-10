@@ -57,6 +57,7 @@ running, attack_process, menu_idx = True, None, 0
 
 def draw_ui(title="", lines=None, menu=None, selected=0):
     if not HAS_LCD:
+        print(f"{title}: {lines if lines else menu}")
         return
     img = Image.new("RGB", (WIDTH, HEIGHT), "black")
     draw = ImageDraw.Draw(img)
@@ -66,12 +67,14 @@ def draw_ui(title="", lines=None, menu=None, selected=0):
         y += 14
     if lines:
         for line in lines:
-            draw.text((2, y), line[:20], font=FONT, fill="white")
+            text = line[:20] if line else ""
+            draw.text((2, y), text, font=FONT, fill="white")
             y += 10
     if menu:
         for i, item in enumerate(menu):
             color = "yellow" if i == selected else "white"
-            draw.text((2, y), f"{'>' if i == selected else ' '} {item}", font=FONT, fill=color)
+            text = f"{'>' if i == selected else ' '} {item[:17]}"
+            draw.text((2, y), text, font=FONT, fill=color)
             y += 11
     LCD.LCD_ShowImage(img)
 
@@ -92,23 +95,43 @@ def cleanup(*_):
     subprocess.run(["bluetoothctl", "power", "off"], stderr=subprocess.DEVNULL)
     time.sleep(1)
     if HAS_LCD:
-        GPIO.cleanup()
+        try:
+            GPIO.cleanup()
+        except:
+            pass
     sys.exit(0)
 
 signal.signal(signal.SIGINT, cleanup)
 signal.signal(signal.SIGTERM, cleanup)
 
-def run_spam_jam(script):
+def run_spam_jam():
     global attack_process
     try:
-        draw_ui("Spam Jam", [f"Starting: {script}", "Running..."])
-        cmd = ["sudo", "python3", os.path.join(SPAM_JAM_PATH, script)]
-        attack_process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        draw_ui("Spam Jam", ["Starting menu...", "Please wait..."])
+        cmd = ["sudo", "-u", "root", "python3", os.path.join(SPAM_JAM_PATH, "spam_jam.py")]
+        env = os.environ.copy()
+        env["PYTHONUNBUFFERED"] = "1"
+        attack_process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=env,
+            cwd=SPAM_JAM_PATH
+        )
         start = time.time()
         while attack_process.poll() is None and running:
             elapsed = int(time.time() - start)
-            draw_ui("Spam Jam", [f"Mode: {script}", f"Elapsed: {elapsed}s", "KEY3 to exit"])
+            draw_ui("Spam Jam", [f"Running...", f"Time: {elapsed}s", "KEY3 to exit"])
             time.sleep(1)
+
+        if attack_process.returncode != 0:
+            stderr = attack_process.stderr.read() if attack_process.stderr else "Unknown error"
+            draw_ui("Error", [f"Exit: {attack_process.returncode}", stderr[:25]])
+            time.sleep(2)
+    except FileNotFoundError:
+        draw_ui("Error", ["spam_jam.py not found", f"Path: {SPAM_JAM_PATH}"])
+        time.sleep(2)
     except Exception as e:
         draw_ui("Error", [str(e)[:30]])
         time.sleep(2)
@@ -122,25 +145,10 @@ def button_pressed(pin):
     elif pin == PINS["UP"]:
         menu_idx = (menu_idx - 1) % len(MENU)
     elif pin == PINS["OK"]:
-        if menu_idx == 0:
-            run_spam_jam("spam_jam.py")
-        elif menu_idx == 1:
-            draw_ui("Info", ["BLE Spam All", "Use main menu option"])
-            time.sleep(2)
-        elif menu_idx == 2:
-            draw_ui("Info", ["BLE Jam All", "Use main menu option"])
-            time.sleep(2)
-        elif menu_idx == 3:
-            draw_ui("Info", ["L2Ping Attack", "Use main menu option"])
-            time.sleep(2)
-        elif menu_idx == 4:
-            draw_ui("Info", ["RFCOMM Flood", "Use main menu option"])
-            time.sleep(2)
-        elif menu_idx == 5:
-            draw_ui("Info", ["Mesh Botnet", "Run spamjam_mesh.py"])
-            time.sleep(2)
-        elif menu_idx == 6:
+        if menu_idx == 6:
             cleanup()
+        else:
+            run_spam_jam()
     elif pin == PINS["KEY3"]:
         cleanup()
 
@@ -148,7 +156,11 @@ def main():
     global menu_idx, running
     if HAS_LCD:
         for pin in PINS.values():
-            GPIO.add_event_detect(pin, GPIO.FALLING, callback=lambda p: button_pressed(p), bouncetime=200)
+            try:
+                GPIO.add_event_detect(pin, GPIO.FALLING, callback=lambda p: button_pressed(p), bouncetime=200)
+            except:
+                pass
+
     try:
         while running:
             draw_ui("Spam Jam BLE Kit", menu=MENU, selected=menu_idx)
