@@ -15,7 +15,7 @@ _REPO_ROOT = os.path.abspath(os.path.join(_HERE, "..", ".."))
 if _REPO_ROOT not in sys.path:
     sys.path.append(_REPO_ROOT)
 
-from payloads._lcd_cli_bridge import LCDCliBridge, first_existing_dir
+from payloads._lcd_toolkit_bridge import LCDToolkitBridge, first_existing_dir
 
 SPAM_JAM_PATH = first_existing_dir([
     "/root/Spam-Jam",
@@ -40,7 +40,7 @@ QUICK_COMMANDS = [
 def main():
     script = os.path.join(SPAM_JAM_PATH, "spam_jam.py")
     command = ["python3", script] if os.geteuid() == 0 else ["sudo", "python3", script]
-    bridge = LCDCliBridge("SPAM JAM", command, SPAM_JAM_PATH, QUICK_COMMANDS)
+    bridge = LCDToolkitBridge("SPAM JAM", command, SPAM_JAM_PATH, QUICK_COMMANDS)
     return bridge.run()
 
 
