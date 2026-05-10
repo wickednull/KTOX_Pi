@@ -70,12 +70,13 @@ class LCDUI:
             sys.path.insert(0, str(repo_root()))
         if not (_module_available("PIL") and _module_available("LCD_1in44") and _module_available("RPi")):
             return
-        self.gpio = importlib.import_module("RPi.GPIO")
-        self.lcd_mod = importlib.import_module("LCD_1in44")
-        self.image_mod = importlib.import_module("PIL.Image")
-        self.draw_mod = importlib.import_module("PIL.ImageDraw")
-        font_mod = importlib.import_module("PIL.ImageFont")
         try:
+            self.gpio = importlib.import_module("RPi.GPIO")
+            self.lcd_mod = importlib.import_module("LCD_1in44")
+            self.image_mod = importlib.import_module("PIL.Image")
+            self.draw_mod = importlib.import_module("PIL.ImageDraw")
+            font_mod = importlib.import_module("PIL.ImageFont")
+
             self.gpio.setmode(self.gpio.BCM)
             for pin in PINS.values():
                 self.gpio.setup(pin, self.gpio.IN, pull_up_down=self.gpio.PUD_UP)
@@ -83,9 +84,15 @@ class LCDUI:
             self.lcd.LCD_Init(self.lcd_mod.SCAN_DIR_DFT)
             self.font = font_mod.load_default()
             self.enabled = True
-        except Exception as exc:
+        except (ImportError, RuntimeError, OSError) as exc:
             print(f"[WARN] LCD unavailable: {exc}", file=sys.stderr)
             self.enabled = False
+            self.gpio = None
+            self.lcd_mod = None
+            self.lcd = None
+            self.image_mod = None
+            self.draw_mod = None
+            self.font = None
 
     def close(self) -> None:
         if self.enabled and self.lcd:
