@@ -11,8 +11,12 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+import fcntl
 import os
+import pty
 import re
+import struct
+import termios
 import signal
 import select
 import shutil
@@ -64,14 +68,16 @@ class LCDUI:
     def _init_hardware(self) -> None:
         if str(repo_root()) not in sys.path:
             sys.path.insert(0, str(repo_root()))
-        if not (_module_available("PIL") and _module_available("LCD_1in44") and _module_available("RPi")):
-            return
-        self.gpio = importlib.import_module("RPi.GPIO")
-        self.lcd_mod = importlib.import_module("LCD_1in44")
-        self.image_mod = importlib.import_module("PIL.Image")
-        self.draw_mod = importlib.import_module("PIL.ImageDraw")
-        font_mod = importlib.import_module("PIL.ImageFont")
         try:
+            if not (_module_available("PIL") and _module_available("LCD_1in44") and _module_available("RPi")):
+                return
+
+            self.gpio = importlib.import_module("RPi.GPIO")
+            self.lcd_mod = importlib.import_module("LCD_1in44")
+            self.image_mod = importlib.import_module("PIL.Image")
+            self.draw_mod = importlib.import_module("PIL.ImageDraw")
+            font_mod = importlib.import_module("PIL.ImageFont")
+
             self.gpio.setmode(self.gpio.BCM)
             for pin in PINS.values():
                 self.gpio.setup(pin, self.gpio.IN, pull_up_down=self.gpio.PUD_UP)
@@ -79,9 +85,15 @@ class LCDUI:
             self.lcd.LCD_Init(self.lcd_mod.SCAN_DIR_DFT)
             self.font = font_mod.load_default()
             self.enabled = True
-        except Exception as exc:
+        except (ImportError, RuntimeError, OSError, ValueError) as exc:
             print(f"[WARN] LCD unavailable: {exc}", file=sys.stderr)
             self.enabled = False
+            self.gpio = None
+            self.lcd_mod = None
+            self.lcd = None
+            self.image_mod = None
+            self.draw_mod = None
+            self.font = None
 
     def close(self) -> None:
         if self.enabled and self.lcd:
@@ -202,6 +214,114 @@ def terminate_process(proc: Optional[subprocess.Popen], timeout: float = 3.0) ->
             pass
 
 
+def command_result_line(code: Optional[int], stopped: bool = False) -> str:
+    if stopped:
+        return "Stopped by user"
+    if code == 0:
+        return "Done"
+    if code is None:
+        return "Stopped"
+    return f"Failed rc={code}"
+
+
+def _set_pty_size(fd: int, rows: int = 24, cols: int = 100) -> None:
+    size = struct.pack("HHHH", rows, cols, 0, 0)
+    fcntl.ioctl(fd, termios.TIOCSWINSZ, size)
+
+
+def _send_pty(fd: Optional[int], text: str) -> None:
+    if fd is None:
+        return
+    try:
+        os.write(fd, text.encode())
+    except OSError:
+        pass
+
+
+def run_pty_command(ui: LCDUI, title: str, cmd: Sequence[str], footer: str = "KEY3=Stop") -> int:
+    """Run an interactive terminal command while rendering its output on the LCD.
+
+    Some tools, notably Wifite2, check that stdout is a TTY and/or prompt from a
+    terminal even in mostly automated modes.  A normal PIPE makes those tools
+    exit immediately (often with rc=0), which looked like a crash on the LCD.
+    This helper gives the child a real PTY but keeps the LCD/button controls.
+    """
+    lines = ["$ " + " ".join(cmd)]
+    master_fd: Optional[int] = None
+    proc: Optional[subprocess.Popen] = None
+    stopped = False
+    try:
+        master_fd, slave_fd = pty.openpty()
+        _set_pty_size(slave_fd)
+        proc = subprocess.Popen(
+            list(cmd),
+            stdin=slave_fd,
+            stdout=slave_fd,
+            stderr=slave_fd,
+            text=False,
+            preexec_fn=os.setsid,
+        )
+        os.close(slave_fd)
+        fcntl.fcntl(master_fd, fcntl.F_SETFL, os.O_NONBLOCK)
+        while proc.poll() is None:
+            ready, _, _ = select.select([master_fd], [], [], 0.1)
+            if ready:
+                try:
+                    chunk = os.read(master_fd, 4096)
+                except BlockingIOError:
+                    chunk = b""
+                except OSError:
+                    chunk = b""
+                if chunk:
+                    append_limited(lines, chunk.decode("utf-8", errors="replace"))
+            ui.draw_lines(title, lines[-8:] or ["Running..."], footer)
+            if ui.pressed("KEY3"):
+                stopped = True
+                append_limited(lines, "Stopping...")
+                _send_pty(master_fd, "q\n")
+                time.sleep(0.3)
+                terminate_process(proc)
+                break
+            if ui.pressed("OK") or ui.pressed("KEY1"):
+                _send_pty(master_fd, "\r")
+            elif ui.pressed("UP"):
+                _send_pty(master_fd, "\x1b[A")
+            elif ui.pressed("DOWN"):
+                _send_pty(master_fd, "\x1b[B")
+            time.sleep(0.02)
+        while master_fd is not None:
+            ready, _, _ = select.select([master_fd], [], [], 0)
+            if not ready:
+                break
+            try:
+                chunk = os.read(master_fd, 4096)
+            except OSError:
+                break
+            if not chunk:
+                break
+            append_limited(lines, chunk.decode("utf-8", errors="replace"))
+        code = proc.wait(timeout=1) if proc.poll() is None else proc.returncode
+        append_limited(lines, command_result_line(code, stopped))
+        ui.draw_lines(title, lines[-8:], "OK=Done KEY3=Back")
+        wait_for_ack(ui)
+        return int(code or 0)
+    except FileNotFoundError:
+        ui.draw_lines("Missing", [cmd[0], "not installed"], "KEY3=Back")
+        time.sleep(2)
+        return 127
+    except Exception as exc:
+        ui.draw_lines("Error", [str(exc)[:42]], "KEY3=Back")
+        time.sleep(2)
+        return 1
+    finally:
+        terminate_process(proc)
+        if master_fd is not None:
+            try:
+                os.close(master_fd)
+            except OSError:
+                pass
+
+
 def run_streaming_command(ui: LCDUI, title: str, cmd: Sequence[str], footer: str = "KEY3=Stop", cwd: Optional[Path] = None) -> int:
     lines = ["$ " + " ".join(cmd)]
     ui.draw_lines(title, lines, footer)
@@ -232,7 +352,7 @@ def run_streaming_command(ui: LCDUI, title: str, cmd: Sequence[str], footer: str
         if remainder:
             append_limited(lines, remainder)
         code = proc.wait(timeout=1) if proc.poll() is None else proc.returncode
-        append_limited(lines, f"Exit code: {code}")
+        append_limited(lines, command_result_line(code))
         ui.draw_lines(title, lines[-8:], "OK=Done KEY3=Back")
         wait_for_ack(ui)
         return int(code or 0)
