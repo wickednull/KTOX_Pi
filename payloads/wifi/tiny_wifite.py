@@ -128,7 +128,7 @@ except Exception:
     FONT_TITLE = ImageFont.load_default()
 # Terminal appearance (user adjustable)
 TERM_FONT_SIZE = 8   # px
-TERM_COLOR = "#00FF00"  # default green
+TERM_COLOR = (0, 255, 0)  # default green - RGB tuple
 FONT_MONO = None
 MONO_CHAR_W = MONO_CHAR_H = MONO_COLS = MONO_ROWS = 0
 
@@ -273,12 +273,28 @@ def process_stream(data: str):
     if time.time() - LAST_DRAW > 0.1:
         draw_buffer(scrollback, current_line)
 
-# Settings menu (font size & color)
-COLORS = ["#00FF00", "white", "cyan", "yellow", "red", "#00FFFF", "#FF00FF"]
+# Settings menu (font size & color) - RGB tuples only for PIL
+COLORS = [
+    (0, 255, 0),      # green
+    (255, 255, 255),  # white
+    (0, 255, 255),    # cyan
+    (255, 255, 0),    # yellow
+    (255, 0, 0),      # red
+    (0, 128, 255),    # light blue
+    (255, 0, 255),    # magenta
+]
+COLOR_NAMES = ["green", "white", "cyan", "yellow", "red", "light_blue", "magenta"]
 
 def open_settings_menu():
     global TERM_FONT_SIZE, TERM_COLOR, scrollback
-    idx = COLORS.index(TERM_COLOR) if TERM_COLOR in COLORS else 0
+    # Find color index - handle case where TERM_COLOR might be a list or tuple
+    try:
+        if isinstance(TERM_COLOR, (tuple, list)):
+            idx = COLORS.index(tuple(TERM_COLOR))
+        else:
+            idx = 0
+    except (ValueError, TypeError):
+        idx = 0
     last = 0.0
     while True:
         img = Image.new("RGB", (WIDTH, HEIGHT), (10, 0, 0))
@@ -286,7 +302,7 @@ def open_settings_menu():
         d.text((36, 6), "Settings", font=FONT_TITLE, fill=(242, 243, 244))
         d.line([(6, 22), (122, 22)], fill=(34, 0, 0), width=1)
         d.text((10, 40), f"Font: {TERM_FONT_SIZE}px", font=FONT_TITLE, fill=(242, 243, 244))
-        d.text((10, 60), f"Color: {COLORS[idx]}", font=FONT_TITLE, fill=COLORS[idx])
+        d.text((10, 60), f"Color: {COLOR_NAMES[idx]}", font=FONT_TITLE, fill=COLORS[idx])
         d.text((8, 100), "UP/DOWN size  LEFT/RIGHT color", font=ImageFont.load_default(), fill=(113, 125, 126))
         d.text((8, 112), "OK=Save  KEY3/LEFT=Back", font=ImageFont.load_default(), fill=(113, 125, 126))
         LCD.LCD_ShowImage(img, 0, 0)
@@ -447,8 +463,15 @@ if __name__ == '__main__':
                 import json as _json
                 with open(st_file, 'r') as fp:
                     st = _json.load(fp)
-                if 'font_size' in st: set_terminal_font(int(st['font_size']))
-                if 'color' in st: TERM_COLOR = st['color']
+                if 'font_size' in st:
+                    set_terminal_font(int(st['font_size']))
+                if 'color' in st:
+                    color_val = st['color']
+                    # Handle both tuple (from RGB) and string formats
+                    if isinstance(color_val, (list, tuple)) and len(color_val) == 3:
+                        TERM_COLOR = tuple(color_val)
+                    elif isinstance(color_val, str) and color_val in COLORS:
+                        TERM_COLOR = color_val
         except Exception:
             pass
         if 'wlan1' in options:
@@ -685,14 +708,14 @@ if __name__ == '__main__':
                     while choice is None:
                         choice_btn = get_button()
                         if choice_btn == "OK":
-                            choice = ‘yes’
+                            choice = "yes"
                             while get_button() == "OK": time.sleep(0.05)
                         elif choice_btn == "LEFT":
-                            choice = ‘no’
+                            choice = "no"
                             while get_button() == "LEFT": time.sleep(0.05)
                         time.sleep(0.05)
                     draw_buffer(scrollback, current_line)
-                    if choice == ‘yes’:
+                    if choice == "yes":
                         try:
                             os.killpg(os.getpgid(pid), signal.SIGINT)
                         except Exception:
@@ -720,8 +743,10 @@ if __name__ == '__main__':
         # Save settings on exit
         try:
             import json as _json
+            # Save as list to preserve tuple through JSON
+            color_list = list(TERM_COLOR) if isinstance(TERM_COLOR, (tuple, list)) else [0, 255, 0]
             with open(os.path.join(LOOT_DIR, 'tiny_wifite_settings.json'), 'w') as fp:
-                _json.dump({"font_size": TERM_FONT_SIZE, "color": TERM_COLOR}, fp)
+                _json.dump({"font_size": TERM_FONT_SIZE, "color": color_list}, fp)
         except Exception:
             pass
         t_reader.join(timeout=1.0)
