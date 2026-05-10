@@ -39,16 +39,30 @@ LCD, FONT, FONT_TITLE = None, None, None
 WIDTH, HEIGHT = 128, 128
 
 if HAS_LCD:
-    GPIO.setmode(GPIO.BCM)
-    for pin in PINS.values():
-        GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-    LCD = LCD_1in44.LCD()
-    LCD.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
-    FONT = ImageFont.load_default()
     try:
-        FONT_TITLE = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 12)
-    except:
-        FONT_TITLE = FONT
+        if GPIO.getmode() is None:
+            GPIO.setmode(GPIO.BCM)
+        for pin in PINS.values():
+            try:
+                GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+            except RuntimeError:
+                pass  # Pin might already be configured
+    except RuntimeError as e:
+        print(f"Warning: GPIO setup failed: {e}", file=sys.stderr)
+        HAS_LCD = False
+
+if HAS_LCD:
+    try:
+        LCD = LCD_1in44.LCD()
+        LCD.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
+        FONT = ImageFont.load_default()
+        try:
+            FONT_TITLE = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 12)
+        except:
+            FONT_TITLE = FONT
+    except Exception as e:
+        print(f"Warning: LCD initialization failed: {e}", file=sys.stderr)
+        HAS_LCD = False
 
 SPAM_JAM_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'vendor', 'spam-jam'))
 MENU = ["BLE Scan", "BLE Spam All", "BLE Jam All", "L2Ping Attack", "RFCOMM Flood", "Mesh Menu", "Exit"]
@@ -94,11 +108,11 @@ def cleanup(*_):
     subprocess.run(["pkill", "-f", "spam_jam"], stderr=subprocess.DEVNULL)
     subprocess.run(["bluetoothctl", "power", "off"], stderr=subprocess.DEVNULL)
     time.sleep(1)
-    if HAS_LCD:
-        try:
+    try:
+        if HAS_LCD and GPIO:
             GPIO.cleanup()
-        except:
-            pass
+    except:
+        pass
     sys.exit(0)
 
 signal.signal(signal.SIGINT, cleanup)
@@ -154,16 +168,42 @@ def button_pressed(pin):
 
 def main():
     global menu_idx, running
+    gpio_ready = False
     if HAS_LCD:
-        for pin in PINS.values():
-            try:
+        try:
+            for pin in PINS.values():
                 GPIO.add_event_detect(pin, GPIO.FALLING, callback=lambda p: button_pressed(p), bouncetime=200)
-            except:
-                pass
+            gpio_ready = True
+        except RuntimeError as e:
+            print(f"Warning: GPIO event detection failed: {e}", file=sys.stderr)
+            print("Running in headless mode - use keyboard input instead", file=sys.stderr)
+        except Exception as e:
+            print(f"Warning: GPIO initialization failed: {e}", file=sys.stderr)
 
     try:
         while running:
             draw_ui("Spam Jam BLE Kit", menu=MENU, selected=menu_idx)
+
+            # If GPIO isn't available, use keyboard input instead
+            if not gpio_ready and sys.stdin.isatty():
+                try:
+                    import select
+                    if select.select([sys.stdin], [], [], 0.1)[0]:
+                        key = sys.stdin.read(1)
+                        if key == 'w' or key == 'k':  # w or k for up
+                            menu_idx = (menu_idx - 1) % len(MENU)
+                        elif key == 's' or key == 'j':  # s or j for down
+                            menu_idx = (menu_idx + 1) % len(MENU)
+                        elif key == ' ' or key == '\n':  # space or enter for OK
+                            if menu_idx == 6:
+                                cleanup()
+                            else:
+                                run_spam_jam()
+                        elif key == 'q':  # q for quit
+                            cleanup()
+                except:
+                    pass
+
             time.sleep(0.2)
     except KeyboardInterrupt:
         cleanup()
