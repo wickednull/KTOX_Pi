@@ -27,7 +27,7 @@ from payloads._lcd_runtime import (  # noqa: E402
     LCDUI,
     command_exists,
     loot_dir,
-    run_streaming_command,
+    run_pty_command,
     wifi_interfaces,
 )
 
@@ -73,6 +73,8 @@ def build_command(binary: str, iface: str, mode: Tuple[str, List[str]]) -> List[
     name, args = mode
     cmd = sudo_prefix() + [binary]
     if name != "Show cracked":
+        # Keep the LCD wrapper in control of interface/mode selection while
+        # letting Wifite2 keep its expected interactive terminal behavior.
         cmd.extend(["-i", iface, "--kill", "--hs-dir", str(loot_dir("Wifite", "handshakes"))])
     cmd.extend(args)
     return cmd
@@ -94,7 +96,7 @@ def main() -> int:
             if not mode:
                 continue
             cmd = build_command(binary, ifaces[idx], mode)
-            run_streaming_command(ui, "Wifite", cmd, "KEY3=Stop")
+            run_pty_command(ui, "Wifite", cmd, "KEY3=Stop OK=Enter")
     finally:
         ui.close()
 
