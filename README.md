@@ -259,6 +259,18 @@ sudo bash install.sh
 
 Fully unattended. Reboots when done. On next boot the KTOx demon skull logo appears, then the main menu.
 
+### Step 4 — Set up Loki reconnaissance engine (optional but recommended)
+
+After the reboot, enable Loki from the LCD menu by running the setup script once:
+
+```bash
+ssh root@[pi-ip]
+cd /root/KTOx
+sudo bash setup_loki.sh /root/KTOx
+```
+
+This initializes the Loki reconnaissance engine with all dependencies. Once complete, `Payloads → Offensive → Loki Engine` will be available in the LCD menu.
+
 ### What the installer does
 
 1. Detects `/boot/firmware/config.txt` or `/boot/config.txt` (Bookworm-compatible)
@@ -279,6 +291,8 @@ Fully unattended. Reboots when done. On next boot the KTOx demon skull logo appe
 16. Sets hostname to `ktox`, writes `/etc/motd` and SSH banner
 17. Health checks — SPI device, Python imports, tool availability
 18. Reboots
+
+**Note:** The main installer does NOT include Loki setup (Step 4) because it's optional and resource-heavy. Run `setup_loki.sh` separately to enable it.
 
 ---
 
