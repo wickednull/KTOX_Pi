@@ -466,7 +466,7 @@ if __name__ == '__main__':
             y = 32
             for i, iface in enumerate(options):
                 if i == sel:
-                    d.rectangle([(8, y-2), (120, y+12)], fill="#003366")
+                    d.rectangle([(8, y-2), (120, y+12)], fill=(0, 51, 102))
                     fill = (212, 172, 13)
                 else:
                     fill = (242, 243, 244)
