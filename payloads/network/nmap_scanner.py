@@ -1,13 +1,8 @@
 #!/usr/bin/env python3
 """
-KTOx Payload – Nmap Network Scanner (LCD)
-==========================================
-Simple, robust nmap wrapper with LCD display on KTOx_Pi.
-
-Controls:
-  UP / DOWN         – Navigate options / Keyboard
-  OK / CENTER       – Select / Execute
-  KEY3              – Exit payload
+KTOx Payload – Nmap Scanner Interactive LCD
+=============================================
+Runs nmap fully interactive on the LCD with output display.
 """
 
 import sys
@@ -16,11 +11,14 @@ import time
 import signal
 import subprocess
 import threading
+import pty
+import fcntl
+import struct
+import termios
 import re
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
-# Hardware detection
 try:
     import RPi.GPIO as GPIO
     import LCD_1in44
@@ -29,12 +27,13 @@ try:
 except (ImportError, RuntimeError):
     HAS_LCD = False
 
-# ─────────────────────────────────────────────────────────────────────────────
-
 PINS = {"UP": 6, "DOWN": 19, "LEFT": 5, "RIGHT": 26, "OK": 13, "KEY1": 21, "KEY2": 20, "KEY3": 16}
 LCD = None
 WIDTH, HEIGHT = 128, 128
 FONT = None
+running = True
+nmap_proc = None
+master_fd = None
 
 if HAS_LCD:
     GPIO.setmode(GPIO.BCM)
@@ -44,25 +43,18 @@ if HAS_LCD:
     LCD.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
     FONT = ImageFont.load_default()
 
-# ─────────────────────────────────────────────────────────────────────────────
-
-running = True
-nmap_process = None
-output_lines = []
+output_buffer = []
 output_lock = threading.Lock()
 
 def cleanup(*_):
-    global running, nmap_process
+    global running, nmap_proc, master_fd
     running = False
-    if nmap_process and nmap_process.poll() is None:
+    if nmap_proc:
         try:
-            nmap_process.terminate()
-            nmap_process.wait(timeout=2)
+            nmap_proc.terminate()
+            nmap_proc.wait(timeout=2)
         except:
-            try:
-                nmap_process.kill()
-            except:
-                pass
+            pass
     if HAS_LCD:
         try:
             LCD.LCD_Clear()
@@ -74,184 +66,192 @@ def cleanup(*_):
 signal.signal(signal.SIGINT, cleanup)
 signal.signal(signal.SIGTERM, cleanup)
 
-def strip_ansi(text):
-    """Remove ANSI escape codes."""
-    ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
-    return ansi_escape.sub('', text)
-
-def draw_ui(title="", lines=None):
-    """Draw UI on LCD."""
+def draw_output(title, lines):
+    """Display output on LCD."""
     if not HAS_LCD or not LCD:
         return
     try:
         img = Image.new("RGB", (WIDTH, HEIGHT), (10, 0, 0))
         draw = ImageDraw.Draw(img)
 
-        # Title bar
         draw.rectangle((0, 0, WIDTH, 12), fill=(139, 0, 0))
-        draw.text((4, 1), title[:20], font=FONT, fill=(192, 57, 43))
+        draw.text((4, 1), title[:16], font=FONT, fill=(192, 57, 43))
 
-        # Content
         y = 16
-        if lines:
-            for line in lines[-7:]:
-                text = strip_ansi(str(line))[:20].strip()
-                draw.text((2, y), text, font=FONT, fill=(242, 243, 244))
-                y += 12
+        for line in lines[-7:]:
+            text = str(line)[:20]
+            draw.text((2, y), text, font=FONT, fill=(242, 243, 244))
+            y += 12
 
-        # Footer
         draw.rectangle((0, 117, WIDTH, 127), fill=(34, 0, 0))
         draw.text((4, 120), "KEY3=Exit", font=FONT, fill=(113, 125, 126))
 
         LCD.LCD_ShowImage(img, 0, 0)
-    except Exception as e:
+    except:
         pass
 
 def read_nmap_output():
-    """Read and display nmap output."""
-    global nmap_process, output_lines
+    """Read nmap output from PTY."""
+    global nmap_proc, master_fd, output_buffer
+
+    if not master_fd:
+        return
+
     try:
-        while nmap_process and nmap_process.poll() is None and running:
+        while nmap_proc and nmap_proc.poll() is None and running:
             try:
-                line = nmap_process.stdout.readline()
-                if line:
-                    clean_line = strip_ansi(line.strip())
-                    if clean_line:
-                        with output_lock:
-                            output_lines.append(clean_line)
-                            if len(output_lines) > 50:
-                                output_lines = output_lines[-50:]
-            except:
+                fcntl.fcntl(master_fd, fcntl.F_SETFL, os.O_NONBLOCK)
+                data = os.read(master_fd, 4096)
+                if data:
+                    text = data.decode('utf-8', errors='replace')
+                    for char in text:
+                        if char == '\n':
+                            with output_lock:
+                                output_buffer.append("")
+                                if len(output_buffer) > 100:
+                                    output_buffer = output_buffer[-100:]
+                        elif char not in ('\r', '\x00'):
+                            if output_buffer:
+                                output_buffer[-1] += char
+                            else:
+                                output_buffer.append(char)
+            except (BlockingIOError, OSError):
                 pass
-            time.sleep(0.05)
+            time.sleep(0.02)
     except:
         pass
 
 def run_nmap_scan(target):
-    """Start nmap scan."""
-    global nmap_process, output_lines
-    try:
-        output_lines = []
-        draw_ui("NMAP", ["Starting scan...", target[:15]])
+    """Run nmap interactively on LCD."""
+    global nmap_proc, master_fd, running, output_buffer
 
-        nmap_process = subprocess.Popen(
-            ["sudo", "nmap", "-sn", target],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1
+    output_buffer = []
+
+    try:
+        master_fd, slave_fd = pty.openpty()
+        s = struct.pack('HHHH', 10, 80, 0, 0)
+        fcntl.ioctl(slave_fd, termios.TIOCSWINSZ, s)
+
+        nmap_proc = subprocess.Popen(
+            ['sudo', 'nmap', '-sV', '-A', target],
+            stdin=slave_fd,
+            stdout=slave_fd,
+            stderr=slave_fd,
+            preexec_fn=os.setsid,
+            text=False
         )
 
-        reader_thread = threading.Thread(target=read_nmap_output, daemon=True)
-        reader_thread.start()
+        os.close(slave_fd)
 
-        return True
-    except FileNotFoundError:
-        draw_ui("ERROR", ["Nmap not found"])
-        time.sleep(2)
-        return False
-    except Exception as e:
-        draw_ui("ERROR", [str(e)[:20]])
-        time.sleep(2)
-        return False
+        reader = threading.Thread(target=read_nmap_output, daemon=True)
+        reader.start()
 
-def input_target():
-    """Get target from user via simple input."""
-    draw_ui("NMAP", ["Enter target:", "192.168.1.0/24"])
-    return "192.168.1.0/24"  # Default for now
-
-def show_menu():
-    """Show main menu."""
-    menu = ["Scan Network", "Scan Host", "Exit"]
-    selected = 0
-
-    while running:
-        try:
-            img = Image.new("RGB", (WIDTH, HEIGHT), (10, 0, 0))
-            draw = ImageDraw.Draw(img)
-
-            # Title
-            draw.rectangle((0, 0, WIDTH, 12), fill=(139, 0, 0))
-            draw.text((4, 1), "NMAP", font=FONT, fill=(192, 57, 43))
-
-            # Menu items
-            y = 20
-            for i, item in enumerate(menu):
-                color = (212, 172, 13) if i == selected else (242, 243, 244)
-                marker = ">" if i == selected else " "
-                draw.text((2, y), f"{marker} {item}", font=FONT, fill=color)
-                y += 15
-
-            if HAS_LCD:
-                LCD.LCD_ShowImage(img, 0, 0)
-
-            # Button handling
-            if HAS_LCD:
-                if GPIO.input(PINS["UP"]) == 0:
-                    selected = (selected - 1) % len(menu)
-                    time.sleep(0.2)
-                elif GPIO.input(PINS["DOWN"]) == 0:
-                    selected = (selected + 1) % len(menu)
-                    time.sleep(0.2)
-                elif GPIO.input(PINS["OK"]) == 0:
-                    time.sleep(0.2)
-                    if selected == 0:
-                        show_scan("192.168.1.0/24")
-                    elif selected == 1:
-                        show_scan("192.168.1.1")
-                    elif selected == 2:
-                        cleanup()
-                elif GPIO.input(PINS["KEY3"]) == 0:
-                    cleanup()
-            else:
-                time.sleep(0.1)
-        except KeyboardInterrupt:
-            cleanup()
-        except Exception:
-            time.sleep(0.1)
-
-def show_scan(target):
-    """Show scan results."""
-    global nmap_process, output_lines
-
-    if not run_nmap_scan(target):
-        return
-
-    while running:
-        try:
+        while nmap_proc.poll() is None and running:
             with output_lock:
-                lines_copy = output_lines.copy()
-            draw_ui("NMAP SCAN", lines_copy)
+                lines = output_buffer.copy()
+
+            draw_output("NMAP", lines)
 
             if HAS_LCD:
                 if GPIO.input(PINS["KEY3"]) == 0:
-                    if nmap_process and nmap_process.poll() is None:
-                        nmap_process.terminate()
-                        try:
-                            nmap_process.wait(timeout=1)
-                        except:
-                            nmap_process.kill()
+                    try:
+                        nmap_proc.terminate()
+                        nmap_proc.wait(timeout=1)
+                    except:
+                        pass
                     break
 
-            time.sleep(0.1)
-        except KeyboardInterrupt:
-            if nmap_process:
-                nmap_process.terminate()
-            break
-        except Exception:
-            time.sleep(0.1)
+            time.sleep(0.05)
+
+        try:
+            nmap_proc.wait(timeout=2)
+        except:
+            nmap_proc.kill()
+
+        draw_output("NMAP", ["Scan complete"])
+        time.sleep(2)
+
+    except FileNotFoundError:
+        draw_output("ERROR", ["Nmap not found"])
+        time.sleep(2)
+    except Exception as e:
+        draw_output("ERROR", [str(e)[:20]])
+        time.sleep(2)
+    finally:
+        nmap_proc = None
+        if master_fd:
+            try:
+                os.close(master_fd)
+            except:
+                pass
+            master_fd = None
+
+def draw_menu(title, items, selected):
+    """Draw menu on LCD."""
+    if not HAS_LCD or not LCD:
+        return
+    try:
+        img = Image.new("RGB", (WIDTH, HEIGHT), (10, 0, 0))
+        draw = ImageDraw.Draw(img)
+
+        draw.rectangle((0, 0, WIDTH, 12), fill=(139, 0, 0))
+        draw.text((4, 1), title[:16], font=FONT, fill=(192, 57, 43))
+
+        y = 16
+        for i, item in enumerate(items[:7]):
+            color = (212, 172, 13) if i == selected else (242, 243, 244)
+            marker = ">" if i == selected else " "
+            text = f"{marker} {item}"[:19]
+            draw.text((2, y), text, font=FONT, fill=color)
+            y += 12
+
+        draw.rectangle((0, 117, WIDTH, 127), fill=(34, 0, 0))
+        draw.text((4, 120), "OK=Sel KEY3=Back", font=FONT, fill=(113, 125, 126))
+        LCD.LCD_ShowImage(img, 0, 0)
+    except:
+        pass
+
+def menu_select(title, items):
+    """Show menu and return selection."""
+    selected = 0
+    while running:
+        draw_menu(title, items, selected)
+
+        if HAS_LCD:
+            if GPIO.input(PINS["UP"]) == 0:
+                selected = (selected - 1) % len(items)
+                time.sleep(0.15)
+            elif GPIO.input(PINS["DOWN"]) == 0:
+                selected = (selected + 1) % len(items)
+                time.sleep(0.15)
+            elif GPIO.input(PINS["OK"]) == 0:
+                time.sleep(0.15)
+                return items[selected]
+            elif GPIO.input(PINS["KEY3"]) == 0:
+                return None
+        time.sleep(0.05)
 
 def main():
-    """Main entry point."""
-    global running
-
     try:
-        show_menu()
+        while running:
+            presets = [
+                "192.168.1.0/24",
+                "192.168.1.1",
+                "10.0.0.0/24",
+                "Exit"
+            ]
+            target = menu_select("Nmap Scan", presets)
+
+            if target == "Exit" or target is None:
+                cleanup()
+            elif target:
+                run_nmap_scan(target)
+
     except KeyboardInterrupt:
         cleanup()
     except Exception as e:
         if HAS_LCD:
-            draw_ui("ERROR", [str(e)[:20]])
+            draw_output("ERROR", [str(e)[:20]])
             time.sleep(2)
         cleanup()
 
