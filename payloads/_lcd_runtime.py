@@ -214,6 +214,31 @@ def terminate_process(proc: Optional[subprocess.Popen], timeout: float = 3.0) ->
             pass
 
 
+def _install_active_proc_signal_handlers(proc_ref):
+    """Stop the active tool if the Python payload wrapper is terminated."""
+    old_handlers = {}
+
+    def _handler(signum, _frame):
+        terminate_process(proc_ref())
+        raise SystemExit(128 + signum)
+
+    for signum in (signal.SIGTERM, signal.SIGINT):
+        try:
+            old_handlers[signum] = signal.getsignal(signum)
+            signal.signal(signum, _handler)
+        except (ValueError, OSError, RuntimeError):
+            pass
+    return old_handlers
+
+
+def _restore_signal_handlers(old_handlers) -> None:
+    for signum, handler in old_handlers.items():
+        try:
+            signal.signal(signum, handler)
+        except (ValueError, OSError, RuntimeError):
+            pass
+
+
 def command_result_line(code: Optional[int], stopped: bool = False) -> str:
     if stopped:
         return "Stopped by user"
@@ -249,6 +274,7 @@ def run_pty_command(ui: LCDUI, title: str, cmd: Sequence[str], footer: str = "KE
     lines = ["$ " + " ".join(cmd)]
     master_fd: Optional[int] = None
     proc: Optional[subprocess.Popen] = None
+    signal_handlers = {}
     stopped = False
     try:
         master_fd, slave_fd = pty.openpty()
@@ -262,6 +288,7 @@ def run_pty_command(ui: LCDUI, title: str, cmd: Sequence[str], footer: str = "KE
             preexec_fn=os.setsid,
         )
         os.close(slave_fd)
+        signal_handlers = _install_active_proc_signal_handlers(lambda: proc)
         fcntl.fcntl(master_fd, fcntl.F_SETFL, os.O_NONBLOCK)
         while proc.poll() is None:
             ready, _, _ = select.select([master_fd], [], [], 0.1)
@@ -314,6 +341,7 @@ def run_pty_command(ui: LCDUI, title: str, cmd: Sequence[str], footer: str = "KE
         time.sleep(2)
         return 1
     finally:
+        _restore_signal_handlers(signal_handlers)
         terminate_process(proc)
         if master_fd is not None:
             try:
@@ -326,6 +354,7 @@ def run_streaming_command(ui: LCDUI, title: str, cmd: Sequence[str], footer: str
     lines = ["$ " + " ".join(cmd)]
     ui.draw_lines(title, lines, footer)
     proc: Optional[subprocess.Popen] = None
+    signal_handlers = {}
     try:
         proc = subprocess.Popen(
             list(cmd),
@@ -336,6 +365,7 @@ def run_streaming_command(ui: LCDUI, title: str, cmd: Sequence[str], footer: str
             bufsize=1,
             preexec_fn=os.setsid,
         )
+        signal_handlers = _install_active_proc_signal_handlers(lambda: proc)
         assert proc.stdout is not None
         while proc.poll() is None:
             ready, _, _ = select.select([proc.stdout], [], [], 0.1)
@@ -365,6 +395,7 @@ def run_streaming_command(ui: LCDUI, title: str, cmd: Sequence[str], footer: str
         time.sleep(2)
         return 1
     finally:
+        _restore_signal_handlers(signal_handlers)
         terminate_process(proc)
 
 
