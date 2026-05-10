@@ -307,17 +307,6 @@ def packet_handler(pkt):
 
         sig = getattr(pkt, "dBm_AntSignal", -99)
 
-        # Try to get channel from Dot11Elt
-        try:
-            ch = None
-            for elt in pkt[Dot11Beacon].layers:
-                if hasattr(elt, 'DSset'):
-                    ch = elt.DSset
-                    break
-            ch = ch or "1"
-        except:
-            ch = "1"
-
         with lock:
             beacon_cache[bssid] = pkt
             if bssid not in session_aps:
@@ -329,7 +318,8 @@ def packet_handler(pkt):
                 session_aps[bssid]["signal"] = sig
                 session_aps[bssid]["essid"] = essid
 
-            channel_activity[ch] += 1
+            # Track activity by BSSID (simpler and more reliable)
+            channel_activity[bssid] += 1
             set_mood("scanning")
 
     # Data: find clients
