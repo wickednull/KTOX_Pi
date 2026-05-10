@@ -195,10 +195,8 @@ def monitor_up(iface):
         pass
 
     try:
-        result = subprocess.run(["sudo", "airmon-ng", "start", iface], capture_output=True, text=True, timeout=10)
-        print(f"airmon-ng output: {result.stdout} {result.stderr}")
-    except Exception as e:
-        print(f"airmon-ng failed: {e}")
+        subprocess.run(["sudo", "airmon-ng", "start", iface], capture_output=True, text=True, timeout=10)
+    except:
         return None
 
     time.sleep(2)
@@ -207,7 +205,6 @@ def monitor_up(iface):
     for candidate in [f"{iface}mon", f"{iface}-mon", f"wlan{iface[-1]}mon", f"wlan{iface[-1]}-mon"]:
         try:
             if subprocess.run(["ip", "link", "show", candidate], capture_output=True, timeout=5).returncode == 0:
-                print(f"Monitor interface found: {candidate}")
                 return candidate
         except:
             pass
@@ -296,10 +293,6 @@ def packet_handler(pkt):
     if not pkt.haslayer(Dot11):
         return
 
-    packet_count += 1
-    if packet_count % 50 == 0:
-        print(f"Packets captured: {packet_count}")
-
     # Beacon: discover APs
     if pkt.haslayer(Dot11Beacon):
         bssid = (pkt[Dot11].addr2 or "").upper()
@@ -320,7 +313,6 @@ def packet_handler(pkt):
                     "essid": essid, "signal": sig, "clients": set(),
                     "last_seen": time.time()
                 }
-                print(f"New AP: {bssid} ({essid}) Signal: {sig}dBm")
             else:
                 session_aps[bssid]["signal"] = sig
                 session_aps[bssid]["essid"] = essid
@@ -386,7 +378,6 @@ def packet_handler(pkt):
                                                             session_pmkid += 1
                                                             lifetime_pmkid += 1
                                                             essid = session_aps[bssid]["essid"]
-                                                            print(f"PMKID captured for {essid} ({bssid})")
                                                             set_mood("pmkid")
                                                             save_capture(bssid, essid, [pkt], "pmkid")
                                                             break
@@ -404,7 +395,6 @@ def packet_handler(pkt):
                 session_hs += 1
                 lifetime_hs += 1
                 essid = session_aps[bssid]["essid"]
-                print(f"4-Way Handshake captured for {essid} ({bssid})")
                 set_mood("happy")
                 save_capture(bssid, essid, list(eapol_buffer[pair]), "hs4")
                 eapol_buffer[pair] = []
@@ -445,7 +435,6 @@ def half_hs_checker():
                                 session_hhs += 1
                                 lifetime_hhs += 1
                                 essid = session_aps[bssid]["essid"]
-                                print(f"Half-Handshake captured for {essid} ({bssid})")
                                 set_mood("half")
                                 save_capture(bssid, essid, pkts, "hs_half")
                 except:
@@ -481,12 +470,7 @@ def channel_hopper():
 
 def sniffer_thread():
     """Packet sniffer."""
-    if not SCAPY_OK:
-        print("Scapy not available")
-        return
-
-    if not mon_iface:
-        print("No monitor interface")
+    if not SCAPY_OK or not mon_iface:
         return
 
     try:
@@ -501,8 +485,8 @@ def sniffer_thread():
             stop_filter=lambda _: shutdown.is_set() or not capture_event.is_set(),
             store=0
         )
-    except Exception as e:
-        print(f"Sniffer error: {e}")
+    except:
+        pass
 
 def draw_face():
     """Draw main face view."""
@@ -587,76 +571,91 @@ def main():
     global mon_iface, original_mac, shutdown, capture_event, stealth_enabled, deauth_enabled
     global session_hs, session_hhs, session_pmkid, lifetime_hs, lifetime_hhs, lifetime_pmkid
 
-    load_stats()
-    set_mood("waiting")
+    try:
+        load_stats()
+        set_mood("waiting")
+    except Exception as e:
+        show_message(f"Load err:\n{str(e)[:20]}", 2)
+        return
 
     # Select adapter
-    adapters = []
-    for iface in ["wlan0", "wlan1"]:
-        if subprocess.run(["ip", "link", "show", iface], capture_output=True).returncode == 0:
-            adapters.append(iface)
+    try:
+        adapters = []
+        for iface in ["wlan0", "wlan1"]:
+            if subprocess.run(["ip", "link", "show", iface], capture_output=True).returncode == 0:
+                adapters.append(iface)
 
-    if not adapters:
-        show_message("No WiFi\nadapters!", 2)
+        if not adapters:
+            show_message("No WiFi\nadapters!", 2)
+            return
+    except Exception as e:
+        show_message(f"Adapter err:\n{str(e)[:20]}", 2)
         return
 
-    if len(adapters) > 1:
-        selection = 0
-        while True:
-            img = Image.new("RGB", (W, H), "#0A0000")
-            d = ImageDraw.Draw(img)
-            d.rectangle((0, 0, W, 17), fill=(139, 0, 0))
-            d.text((4, 3), "SELECT ADAPTER", font=f9, fill=(231, 76, 60))
-            for i, adapter in enumerate(adapters):
-                col = "#FF3333" if i == selection else "#AAAAAA"
-                d.text((20, 40 + i*30), adapter, font=f11, fill=col)
-            d.text((4, H-10), "U/D:Nav K1:Start K3:Exit", font=f9, fill=(192, 57, 43))
-            LCD.LCD_ShowImage(img, 0, 0)
+    try:
+        if len(adapters) > 1:
+            selection = 0
+            while True:
+                img = Image.new("RGB", (W, H), "#0A0000")
+                d = ImageDraw.Draw(img)
+                d.rectangle((0, 0, W, 17), fill=(139, 0, 0))
+                d.text((4, 3), "SELECT ADAPTER", font=f9, fill=(231, 76, 60))
+                for i, adapter in enumerate(adapters):
+                    col = "#FF3333" if i == selection else "#AAAAAA"
+                    d.text((20, 40 + i*30), adapter, font=f11, fill=col)
+                d.text((4, H-10), "U/D:Nav K1:Start K3:Exit", font=f9, fill=(192, 57, 43))
+                LCD.LCD_ShowImage(img, 0, 0)
 
-            btn = wait_btn(0.1)
-            if btn == "UP" and selection > 0:
-                selection -= 1
-            elif btn == "DOWN" and selection < len(adapters) - 1:
-                selection += 1
-            elif btn == "KEY1":
-                adapter = adapters[selection]
-                break
-            elif btn == "KEY3":
-                return
-    else:
-        adapter = adapters[0]
-
-    show_message(f"Using\n{adapter}", 1)
-    show_message("Enabling\nmonitor...", 2)
-
-    original_mac = get_mac(adapter)
-    print(f"Original MAC: {original_mac}")
-    mon_iface = monitor_up(adapter)
-    print(f"Monitor interface: {mon_iface}")
-
-    if not mon_iface:
-        show_message("Monitor mode\nfailed!", 2)
-        print(f"Failed to get monitor interface for {adapter}")
+                btn = wait_btn(0.1)
+                if btn == "UP" and selection > 0:
+                    selection -= 1
+                elif btn == "DOWN" and selection < len(adapters) - 1:
+                    selection += 1
+                elif btn == "KEY1":
+                    adapter = adapters[selection]
+                    break
+                elif btn == "KEY3":
+                    return
+        else:
+            adapter = adapters[0]
+    except Exception as e:
+        show_message(f"Sel err:\n{str(e)[:20]}", 2)
         return
 
-    show_message("Starting\nscan...", 1)
-    print(f"Scapy available: {SCAPY_OK}")
-    print(f"Starting capture on {mon_iface}")
+    try:
+        show_message(f"Using\n{adapter}", 1)
+        show_message("Enabling\nmonitor...", 2)
 
-    # Setup signal handlers
-    def _stop(sig, frame):
-        shutdown.set()
+        original_mac = get_mac(adapter)
+        mon_iface = monitor_up(adapter)
 
-    signal.signal(signal.SIGTERM, _stop)
-    signal.signal(signal.SIGINT, _stop)
+        if not mon_iface:
+            show_message("Monitor mode\nfailed!", 2)
+            return
 
-    # Start capture
-    capture_event.set()
+        show_message("Starting\nscan...", 1)
+    except Exception as e:
+        show_message(f"Monitor err:\n{str(e)[:20]}", 2)
+        return
 
-    # Start threads
-    threading.Thread(target=sniffer_thread, daemon=True).start()
-    threading.Thread(target=half_hs_checker, daemon=True).start()
-    threading.Thread(target=channel_hopper, daemon=True).start()
+    try:
+        # Setup signal handlers
+        def _stop(sig, frame):
+            shutdown.set()
+
+        signal.signal(signal.SIGTERM, _stop)
+        signal.signal(signal.SIGINT, _stop)
+
+        # Start capture
+        capture_event.set()
+
+        # Start threads
+        threading.Thread(target=sniffer_thread, daemon=True).start()
+        threading.Thread(target=half_hs_checker, daemon=True).start()
+        threading.Thread(target=channel_hopper, daemon=True).start()
+    except Exception as e:
+        show_message(f"Thread err:\n{str(e)[:20]}", 2)
+        return
 
     view = "face"
     last_draw_time = 0
@@ -680,16 +679,13 @@ def main():
 
             # Redraw every 0.2 seconds
             if time.time() - last_draw_time > 0.2:
-                try:
-                    if view == "face":
-                        draw_face()
-                    elif view == "stats":
-                        draw_stats()
-                    elif view == "captures":
-                        draw_captures()
-                    last_draw_time = time.time()
-                except Exception as e:
-                    print(f"Draw error: {e}")
+                if view == "face":
+                    draw_face()
+                elif view == "stats":
+                    draw_stats()
+                elif view == "captures":
+                    draw_captures()
+                last_draw_time = time.time()
 
             time.sleep(0.05)
 
@@ -712,4 +708,14 @@ def main():
         GPIO.cleanup()
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        # Show error on display
+        try:
+            show_message(f"ERROR:\n{str(e)[:30]}", 5)
+        except:
+            pass
+        import traceback
+        traceback.print_exc()
+        GPIO.cleanup()
