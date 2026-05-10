@@ -1283,7 +1283,7 @@ def _list_payloads(category):
     if not cat_dir.exists(): return []
     result = []
     for f in sorted(cat_dir.glob("*.py")):
-        if f.name.startswith("_"): continue
+        if f.name.startswith("_") or f.stem.endswith("_integrated"): continue
         name = f.stem.replace("_"," ").title()
         try:
             for line in f.read_text(errors="ignore").splitlines()[:10]:
