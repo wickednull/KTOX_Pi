@@ -380,6 +380,7 @@ def btn_sender(master_fd: int):
 
 # PTY reader → print output, wrap, mirror loot
 def pty_reader(master_fd: int):
+    global STATUS_TEXT
     # Non-blocking read
     fl = fcntl.fcntl(master_fd, fcntl.F_GETFL)
     fcntl.fcntl(master_fd, fcntl.F_SETFL, fl | os.O_NONBLOCK)
