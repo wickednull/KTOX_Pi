@@ -45,6 +45,27 @@ if os.path.isdir('/root/KTOx'):
     if '/root/KTOx' not in sys.path:
         sys.path.insert(0, '/root/KTOx')
 
+# Get screen rotation (0, 90, 180, 270 degrees)
+ROTATION = 0
+try:
+    if os.path.exists("/root/KTOx/gui_conf.json"):
+        with open("/root/KTOx/gui_conf.json") as f:
+            conf = json.load(f)
+            ROTATION = conf.get("rotation", 0)
+except:
+    pass
+
+def _rotate_button(btn, rotation):
+    """Map button input based on screen rotation."""
+    if rotation == 0 or not btn:
+        return btn
+    rotations = {
+        90: {"UP": "LEFT", "DOWN": "RIGHT", "LEFT": "DOWN", "RIGHT": "UP"},
+        180: {"UP": "DOWN", "DOWN": "UP", "LEFT": "RIGHT", "RIGHT": "LEFT"},
+        270: {"UP": "RIGHT", "DOWN": "LEFT", "LEFT": "UP", "RIGHT": "DOWN"},
+    }
+    return rotations.get(rotation, {}).get(btn, btn)
+
 # Hardware + LCD
 try:
     import RPi.GPIO as GPIO
@@ -55,6 +76,11 @@ except Exception as e:
     print(f"[ERROR] Hardware libraries not available: {e}", file=sys.stderr)
     sys.exit(1)
 
+try:
+    from _darksec_keyboard import DarkSecKeyboard
+except ImportError:
+    from payloads._darksec_keyboard import DarkSecKeyboard
+
 # WiFi helpers
 try:
     from wifi.ktox_integration import get_available_interfaces
@@ -63,48 +89,34 @@ try:
 except Exception:
     WIFI_OK = False
 
-# Pins via gui_conf.json (robust lookup)
+# Pins
 PINS = {"UP": 6, "DOWN": 19, "LEFT": 5, "RIGHT": 26, "OK": 13, "KEY1": 21, "KEY2": 20, "KEY3": 16}
-
-def _find_gui_conf():
-    cands = [
-        os.path.join(os.getcwd(), 'gui_conf.json'),
-        os.path.join('/root/KTOx', 'gui_conf.json'),
-        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'KTOx', 'gui_conf.json'),
-    ]
-    for sp in list(sys.path):
-        try:
-            if sp and os.path.basename(sp) == 'KTOx':
-                cands.append(os.path.join(sp, 'gui_conf.json'))
-        except Exception:
-            pass
-    for p in cands:
-        if os.path.exists(p):
-            return p
-    return None
-
-try:
-    cfg = _find_gui_conf()
-    if cfg:
-        with open(cfg, 'r') as f:
-            data = json.load(f)
-        mp = data.get('PINS', {})
-        PINS = {
-            "UP": mp.get("KEY_UP_PIN", PINS["UP"]),
-            "DOWN": mp.get("KEY_DOWN_PIN", PINS["DOWN"]),
-            "LEFT": mp.get("KEY_LEFT_PIN", PINS["LEFT"]),
-            "RIGHT": mp.get("KEY_RIGHT_PIN", PINS["RIGHT"]),
-            "OK": mp.get("KEY_PRESS_PIN", PINS["OK"]),
-            "KEY1": mp.get("KEY1_PIN", PINS["KEY1"]),
-            "KEY2": mp.get("KEY2_PIN", PINS["KEY2"]),
-            "KEY3": mp.get("KEY3_PIN", PINS["KEY3"]),
-        }
-except Exception:
-    pass
 
 GPIO.setmode(GPIO.BCM)
 for p in PINS.values():
     GPIO.setup(p, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+
+def get_button():
+    """Get button press with rotation mapping applied."""
+    if GPIO.input(PINS["UP"]) == 0:
+        btn = "UP"
+    elif GPIO.input(PINS["DOWN"]) == 0:
+        btn = "DOWN"
+    elif GPIO.input(PINS["LEFT"]) == 0:
+        btn = "LEFT"
+    elif GPIO.input(PINS["RIGHT"]) == 0:
+        btn = "RIGHT"
+    elif GPIO.input(PINS["OK"]) == 0:
+        btn = "OK"
+    elif GPIO.input(PINS["KEY1"]) == 0:
+        btn = "KEY1"
+    elif GPIO.input(PINS["KEY2"]) == 0:
+        btn = "KEY2"
+    elif GPIO.input(PINS["KEY3"]) == 0:
+        btn = "KEY3"
+    else:
+        return None
+    return _rotate_button(btn, ROTATION)
 
 # LCD + fonts (monospace terminal like shell.py)
 LCD = LCD_1in44.LCD()
@@ -213,7 +225,7 @@ def draw_buffer(lines: list[str], partial: str = ""):
         s2 = (status_text + pad + status_text)[MARQ_IDX:MARQ_IDX+MONO_COLS]
     else:
         s2 = status_text
-    d.text((0, 0), header1.ljust(MONO_COLS)[:MONO_COLS], font=FONT_MONO, fill="#AAAAFF")
+    d.text((0, 0), header1.ljust(MONO_COLS)[:MONO_COLS], font=FONT_MONO, fill=(170, 170, 255))
     d.text((0, MONO_CHAR_H), s2.ljust(MONO_COLS)[:MONO_COLS], font=FONT_MONO, fill=(242, 243, 244))
     # Content lines beneath header
     visible_rows = MONO_ROWS - HEADER_ROWS
@@ -279,25 +291,26 @@ def open_settings_menu():
         d.text((8, 112), "OK=Save  KEY3/LEFT=Back", font=ImageFont.load_default(), fill=(113, 125, 126))
         LCD.LCD_ShowImage(img, 0, 0)
         now = time.time()
-        if GPIO.input(PINS['UP']) == 0 and now - last > 0.18:
+        btn = get_button()
+        if btn == "UP" and now - last > 0.18:
             last = now; set_terminal_font(TERM_FONT_SIZE + 1); scrollback = []
-            while GPIO.input(PINS['UP']) == 0: time.sleep(0.05)
-        elif GPIO.input(PINS['DOWN']) == 0 and now - last > 0.18:
+            while get_button() == "UP": time.sleep(0.05)
+        elif btn == "DOWN" and now - last > 0.18:
             last = now; set_terminal_font(TERM_FONT_SIZE - 1); scrollback = []
-            while GPIO.input(PINS['DOWN']) == 0: time.sleep(0.05)
-        elif GPIO.input(PINS['LEFT']) == 0 and now - last > 0.18:
+            while get_button() == "DOWN": time.sleep(0.05)
+        elif btn == "LEFT" and now - last > 0.18:
             last = now; idx = (idx - 1) % len(COLORS)
-            while GPIO.input(PINS['LEFT']) == 0: time.sleep(0.05)
-        elif GPIO.input(PINS['RIGHT']) == 0 and now - last > 0.18:
+            while get_button() == "LEFT": time.sleep(0.05)
+        elif btn == "RIGHT" and now - last > 0.18:
             last = now; idx = (idx + 1) % len(COLORS)
-            while GPIO.input(PINS['RIGHT']) == 0: time.sleep(0.05)
-        elif GPIO.input(PINS['OK']) == 0 and now - last > 0.18:
+            while get_button() == "RIGHT": time.sleep(0.05)
+        elif btn == "OK" and now - last > 0.18:
             last = now; TERM_COLOR = COLORS[idx]
-            while GPIO.input(PINS['OK']) == 0: time.sleep(0.05)
+            while get_button() == "OK": time.sleep(0.05)
             return
-        elif GPIO.input(PINS['KEY3']) == 0 and now - last > 0.18:
+        elif btn == "KEY3" and now - last > 0.18:
             last = now
-            while GPIO.input(PINS['KEY3']) == 0:
+            while get_button() == "KEY3":
                 time.sleep(0.05)
             return
         time.sleep(0.06)
@@ -333,18 +346,19 @@ def btn_sender(master_fd: int):
             time.sleep(0.03)
             continue
         now = time.time()
+        btn = get_button()
         fired = None
-        if GPIO.input(PINS["LEFT"]) == 0 or GPIO.input(PINS["KEY3"]) == 0:
+        if btn == "LEFT" or btn == "KEY3":
             fired = b"\x03"  # Ctrl+C
-        elif GPIO.input(PINS["OK"]) == 0 or GPIO.input(PINS["RIGHT"]) == 0:
+        elif btn == "OK" or btn == "RIGHT":
             fired = b"\n"    # Enter
-        elif GPIO.input(PINS["UP"]) == 0:
+        elif btn == "UP":
             fired = b"\x1b[A"  # Arrow Up
-        elif GPIO.input(PINS["DOWN"]) == 0:
+        elif btn == "DOWN":
             fired = b"\x1b[B"  # Arrow Down
-        elif GPIO.input(PINS["KEY1"]) == 0:
+        elif btn == "KEY1":
             fired = b"1"
-        elif GPIO.input(PINS["KEY2"]) == 0:
+        elif btn == "KEY2":
             fired = b"2"
         if fired and (now - last) > debounce:
             last = now
@@ -463,22 +477,23 @@ if __name__ == '__main__':
             LCD.LCD_ShowImage(img, 0, 0)
             # Handle input
             now = time.time()
-            if GPIO.input(PINS['UP']) == 0 and now - last > 0.2:
+            btn = get_button()
+            if btn == "UP" and now - last > 0.2:
                 last = now; sel = (sel - 1) % len(options)
-                while GPIO.input(PINS['UP']) == 0: time.sleep(0.05)
-            elif GPIO.input(PINS['DOWN']) == 0 and now - last > 0.2:
+                while get_button() == "UP": time.sleep(0.05)
+            elif btn == "DOWN" and now - last > 0.2:
                 last = now; sel = (sel + 1) % len(options)
-                while GPIO.input(PINS['DOWN']) == 0: time.sleep(0.05)
-            elif GPIO.input(PINS['OK']) == 0 and now - last > 0.2:
+                while get_button() == "DOWN": time.sleep(0.05)
+            elif btn == "OK" and now - last > 0.2:
                 last = now; WIFI_IFACE = options[sel]
-                while GPIO.input(PINS['OK']) == 0: time.sleep(0.05)
+                while get_button() == "OK": time.sleep(0.05)
                 break
-            elif GPIO.input(PINS['LEFT']) == 0 and now - last > 0.2:
-                while GPIO.input(PINS['LEFT']) == 0: time.sleep(0.05)
+            elif btn == "LEFT" and now - last > 0.2:
+                while get_button() == "LEFT": time.sleep(0.05)
                 cleanup(); LCD.LCD_Clear(); GPIO.cleanup(); sys.exit(0)
-            elif GPIO.input(PINS['KEY1']) == 0 and now - last > 0.2:
+            elif btn == "KEY1" and now - last > 0.2:
                 last = now; open_settings_menu()
-                while GPIO.input(PINS['KEY1']) == 0: time.sleep(0.05)
+                while get_button() == "KEY1": time.sleep(0.05)
             time.sleep(0.06)
 
         # Let wifite manage monitor mode itself; use managed/base iface
@@ -531,27 +546,28 @@ if __name__ == '__main__':
                 d.text((8, 112), "OK=Send  LEFT=Cancel", font=FONT_MONO, fill=(113, 125, 126))
                 LCD.LCD_ShowImage(img, 0, 0)
                 now = time.time()
-                if GPIO.input(PINS['KEY1']) == 0 and now-last>0.15:
-                    last=now; val=max(1, val-1); 
-                    while GPIO.input(PINS['KEY1'])==0: time.sleep(0.05)
-                elif GPIO.input(PINS['KEY2']) == 0 and now-last>0.15:
-                    last=now; val=val+1; 
-                    while GPIO.input(PINS['KEY2'])==0: time.sleep(0.05)
-                elif GPIO.input(PINS['UP']) == 0 and now-last>0.15:
+                btn = get_button()
+                if btn == "KEY1" and now-last>0.15:
+                    last=now; val=max(1, val-1);
+                    while get_button()=="KEY1": time.sleep(0.05)
+                elif btn == "KEY2" and now-last>0.15:
+                    last=now; val=val+1;
+                    while get_button()=="KEY2": time.sleep(0.05)
+                elif btn == "UP" and now-last>0.15:
                     last=now; val=max(1, val-5);
-                    while GPIO.input(PINS['UP'])==0: time.sleep(0.05)
-                elif GPIO.input(PINS['DOWN']) == 0 and now-last>0.15:
+                    while get_button()=="UP": time.sleep(0.05)
+                elif btn == "DOWN" and now-last>0.15:
                     last=now; val=val+5;
-                    while GPIO.input(PINS['DOWN'])==0: time.sleep(0.05)
-                elif GPIO.input(PINS['OK']) == 0 and now-last>0.15:
+                    while get_button()=="DOWN": time.sleep(0.05)
+                elif btn == "OK" and now-last>0.15:
                     last=now
                     os.write(PTY_MASTER_FD, str(val).encode()+b"\n")
-                    while GPIO.input(PINS['OK'])==0: time.sleep(0.05)
+                    while get_button()=="OK": time.sleep(0.05)
                     IN_OVERLAY = False
                     return
-                elif GPIO.input(PINS['LEFT']) == 0 and now-last>0.15:
+                elif btn == "LEFT" and now-last>0.15:
                     last=now
-                    while GPIO.input(PINS['LEFT'])==0: time.sleep(0.05)
+                    while get_button()=="LEFT": time.sleep(0.05)
                     IN_OVERLAY = False
                     return
                 time.sleep(0.06)
@@ -569,9 +585,9 @@ if __name__ == '__main__':
             # wait for any release and tap
             timeout=time.time()+5
             while time.time()<timeout:
-                any_pressed = any(GPIO.input(p)==0 for p in PINS.values())
-                if any_pressed:
-                    while any(GPIO.input(p)==0 for p in PINS.values()):
+                btn = get_button()
+                if btn:
+                    while get_button():
                         time.sleep(0.05)
                     break
                 time.sleep(0.05)
@@ -619,16 +635,17 @@ if __name__ == '__main__':
                 NEEDS_TARGET_NUMBER = False
                 number_selector()
             # KEY1 short press: Stop & Select (don’t wait for prompt)
-            if GPIO.input(PINS['KEY1']) == 0 and not IN_OVERLAY:
+            btn = get_button()
+            if btn == "KEY1" and not IN_OVERLAY:
                 t0 = time.time()
-                while GPIO.input(PINS['KEY1']) == 0 and (time.time()-t0) < 0.7:
+                while get_button() == "KEY1" and (time.time()-t0) < 0.7:
                     time.sleep(0.05)
                 if time.time()-t0 < 0.7:
                     stop_scan_and_select()
             # KEY2 long press help / short tap raw overlay
-            if GPIO.input(PINS['KEY2']) == 0:
+            if btn == "KEY2":
                 t0 = time.time()
-                while GPIO.input(PINS['KEY2']) == 0 and (time.time()-t0) < 0.7:
+                while get_button() == "KEY2" and (time.time()-t0) < 0.7:
                     time.sleep(0.05)
                 if time.time()-t0 >= 0.7:
                     show_help()
@@ -645,16 +662,16 @@ if __name__ == '__main__':
                         y += MONO_CHAR_H
                     LCD.LCD_ShowImage(img, 0, 0)
                     # Dismiss on any key
-                    while all(GPIO.input(p)==1 for p in PINS.values()):
+                    while not get_button():
                         time.sleep(0.05)
-                    while any(GPIO.input(p)==0 for p in PINS.values()):
+                    while get_button():
                         time.sleep(0.05)
                     draw_buffer(scrollback, current_line)
                     IN_OVERLAY = False
             # KEY3 behavior: short press sends only Ctrl+C via btn_sender; long press confirms stop
-            if GPIO.input(PINS['KEY3']) == 0:
+            if btn == "KEY3":
                 t1 = time.time()
-                while GPIO.input(PINS['KEY3']) == 0 and (time.time()-t1) < 1.0:
+                while get_button() == "KEY3" and (time.time()-t1) < 1.0:
                     time.sleep(0.05)
                 if time.time()-t1 >= 1.0:
                     # Confirm overlay
@@ -666,15 +683,16 @@ if __name__ == '__main__':
                     # wait choice
                     choice = None
                     while choice is None:
-                        if GPIO.input(PINS['OK']) == 0:
-                            choice = 'yes'
-                            while GPIO.input(PINS['OK']) == 0: time.sleep(0.05)
-                        elif GPIO.input(PINS['LEFT']) == 0:
-                            choice = 'no'
-                            while GPIO.input(PINS['LEFT']) == 0: time.sleep(0.05)
+                        choice_btn = get_button()
+                        if choice_btn == "OK":
+                            choice = ‘yes’
+                            while get_button() == "OK": time.sleep(0.05)
+                        elif choice_btn == "LEFT":
+                            choice = ‘no’
+                            while get_button() == "LEFT": time.sleep(0.05)
                         time.sleep(0.05)
                     draw_buffer(scrollback, current_line)
-                    if choice == 'yes':
+                    if choice == ‘yes’:
                         try:
                             os.killpg(os.getpgid(pid), signal.SIGINT)
                         except Exception:
