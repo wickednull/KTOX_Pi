@@ -729,8 +729,18 @@
               <button id="lokiFrameStop" type="button" class="px-3 py-1.5 text-xs rounded-lg bg-slate-900/80 border border-slate-600/50 text-slate-200 hover:bg-slate-800/80 transition">Stop</button>
             </div>
           </div>
-          <div class="bg-black/40">
-            <iframe id="lokiFrame" title="Loki Reconnaissance WebUI" class="w-full h-[calc(100dvh-180px)] min-h-[620px] border-0 bg-black" sandbox="allow-forms allow-modals allow-same-origin allow-scripts allow-downloads allow-popups"></iframe>
+          <div class="bg-black/40 relative">
+            <div id="lokiFrameEmpty" class="min-h-[360px] md:min-h-[620px] flex items-center justify-center px-6 py-12 text-center">
+              <div class="max-w-lg rounded-2xl border border-cyan-400/20 bg-slate-950/80 p-5 shadow-[0_0_24px_rgba(8,145,178,0.12)]">
+                <div class="text-cyan-300 text-sm font-semibold"><i class="fa-solid fa-bolt mr-2"></i>Loki console is ready to embed</div>
+                <p class="mt-2 text-xs leading-5 text-slate-400">Start Loki to load its WebUI here through the authenticated KTOx proxy. If setup has not been run yet, start will report that <code class="text-cyan-200">vendor/loki</code> is missing.</p>
+                <div class="mt-4 flex flex-wrap justify-center gap-2">
+                  <button id="lokiFrameEmptyStart" type="button" class="px-3 py-1.5 text-xs rounded-lg bg-cyan-900/80 border border-cyan-300/30 text-white hover:bg-cyan-800/80 transition">Start Loki</button>
+                  <a href="./ide.html" class="px-3 py-1.5 text-xs rounded-lg bg-slate-800/80 border border-slate-600/50 text-slate-200 hover:bg-slate-700/80 transition">Payload Studio</a>
+                </div>
+              </div>
+            </div>
+            <iframe id="lokiFrame" title="Loki Reconnaissance WebUI" class="hidden w-full h-[calc(100dvh-180px)] min-h-[620px] border-0 bg-black" sandbox="allow-forms allow-modals allow-same-origin allow-scripts allow-downloads allow-popups"></iframe>
           </div>
         </div>
       </div>
