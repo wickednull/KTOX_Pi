@@ -16,10 +16,23 @@ Each generated theme contains:
 
 - Full-resolution landscape and portrait main skins.
 - Menu, settings, and pause backgrounds.
-- Sequential pixel-runner animation frames for every supported Loki action.
+- Sequential animation frames cropped and scaled from sprite-sheet source art.
 - Status icons for every supported Loki action.
 - Cyberpunk commentary text grouped by action.
 - Web UI palette colors and custom mood preset labels.
+
+## Sprite Sources
+
+Binary sprite sources are intentionally not tracked.  The theme generator renders sheet-style sprites directly from code so the repository stays source-only while still matching the supplied character-sheet layout: front-facing, left-facing, right-facing, and back-facing rows with three animation frames each.
+
+| Theme ID | Generated source profile | Reference look |
+| --- | --- | --- |
+| `neon_runner` | `twintail` | Cyan twin-tail cyber runner |
+| `chrome_mantis` | `spike` | Black/chrome spiked-hair hacker |
+| `edge_fury` | `swept` | Blond Edgerunners/Night City runner |
+| `icewire_ghost` | `icebob` | White-haired blue ICE ghost |
+
+To tune a character, edit `SPRITE_PROFILES` and `draw_reference_sprite()` in `payloads/offensive/loki_theme_generator.py`, then rerun the generator.
 
 ## Install
 
@@ -41,7 +54,7 @@ without committing binary PNG files to this repository.
 
 ## Regenerate Art
 
-The images are generated deterministically and intentionally not tracked in git. To create a local preview copy under this folder, run:
+The theme images are generated deterministically from source code and intentionally not tracked in git. To create a local preview copy under this folder, run:
 
 ```bash
 python3 tools/generate_loki_cyberpunk_themes.py

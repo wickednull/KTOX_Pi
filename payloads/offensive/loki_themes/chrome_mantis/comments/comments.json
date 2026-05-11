@@ -1,73 +1,73 @@
 {
     "IDLE": [
-        "Chrome Mantis link idling.",
-        "Neon rain on standby.",
-        "Waiting for a hostile skyline."
+        "Blades folded. Optics awake.",
+        "Quiet chrome, loud intent.",
+        "Mantis waits behind black glass."
     ],
     "NetworkScanner": [
-        "Sweeping alleys for live hosts.",
-        "Pinging the grid glow by glow.",
-        "Mapping the local sprawl."
+        "Green feelers comb the subnet.",
+        "Hosts twitch under acid light.",
+        "Chrome antennae taste the LAN."
     ],
     "NmapVulnScanner": [
-        "Running black-market vuln augury.",
-        "ICE seams are being traced.",
-        "Enumerating exposed chrome."
+        "ICE seams marked for cutting.",
+        "Service armor gets measured.",
+        "Green razors read every port."
     ],
     "SSHBruteforce": [
-        "Trying SSH keys in the rain.",
-        "Port 22 gets a neon knock."
+        "Port 22 under mantis taps.",
+        "Keys click like folded knives."
     ],
     "FTPBruteforce": [
-        "FTP vault tumblers spinning.",
-        "Old doors still leak light."
+        "FTP husk split at the hinge.",
+        "Old vault, acid prybar."
     ],
     "TelnetBruteforce": [
-        "Telnet ghosts answer too loudly.",
-        "Vintage access, modern attitude."
+        "Telnet shell chirps in the dark.",
+        "Legacy prey moves too slow."
     ],
     "SMBBruteforce": [
-        "SMB shares under streetlight.",
-        "Checking corporate file alleys."
+        "SMB joints exposed and tagged.",
+        "Share carapace flexes open."
     ],
     "SQLBruteforce": [
-        "Querying the chrome oracle.",
-        "Database locks meet neon picks."
+        "Green queries cut the lock.",
+        "Database chitin starts to split."
     ],
     "RDPBruteforce": [
-        "Remote desktop visor online.",
-        "RDP windows glow in the haze."
+        "RDP visor reflects the blade.",
+        "Remote glass under claw pressure."
     ],
     "StealFilesSSH": [
-        "Siphoning files through SSH smoke.",
-        "Secure copy, insecure choices."
+        "SSH files lifted with pincers.",
+        "Secure copy, surgical exit."
     ],
     "StealFilesFTP": [
-        "Dragging loot from FTP shadows.",
-        "Plaintext crates are moving."
+        "FTP meat pulled from old bone.",
+        "Plaintext carrion bagged."
     ],
     "StealFilesSMB": [
-        "SMB lockers are opening.",
-        "Corporate folders hit the street."
+        "SMB folders clipped clean.",
+        "Corporate molting collected."
     ],
     "StealFilesTelnet": [
-        "Telnet relics spill secrets.",
-        "Old wire, fresh data."
+        "Telnet fossils crack open.",
+        "Ancient wire gives up marrow."
     ],
     "StealDataSQL": [
-        "Dumping tables under neon glass.",
-        "Records flow like blue rain."
+        "Tables diced into green strips.",
+        "Rows carved out quiet."
     ],
     "LogStandalone": [
-        "Signal logged to the deck.",
-        "Trace note pinned."
+        "Cut mark logged.",
+        "Chrome scratch archived."
     ],
     "LogStandalone2": [
-        "Second log shard captured.",
-        "More street telemetry saved."
+        "Second incision recorded.",
+        "Telemetry folded into the case."
     ],
     "ZombifySSH": [
-        "SSH shell recruited to the crew.",
-        "Another chrome ghost joins."
+        "SSH husk stands back up.",
+        "Another chrome limb obeys."
     ]
 }
