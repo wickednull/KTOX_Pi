@@ -448,6 +448,8 @@ def draw_sprite(theme_key: str, theme: dict, action: str, frame: int, icon: bool
     bbox = sprite.getbbox()
     if bbox:
         sprite = sprite.crop(bbox)
+    # Scale the generated sheet-style frame into Loki's expected square asset
+    # size without smoothing so the chunky pixels remain visible.
     margin = 3 if icon else 12
     scale = max(1, min((size - margin * 2) // sprite.width, (size - margin * 2) // sprite.height))
     sprite = sprite.resize((sprite.width * scale, sprite.height * scale), Image.Resampling.NEAREST)
@@ -455,6 +457,19 @@ def draw_sprite(theme_key: str, theme: dict, action: str, frame: int, icon: bool
     x = (size - sprite.width) // 2
     y = size - sprite.height - (2 if icon else 8)
     img.alpha_composite(sprite, (x, y))
+
+    # Add tiny per-action props around the sheet sprite, preserving the avatar.
+    d = ImageDraw.Draw(img, "RGBA")
+    prop_color = theme["accent"] + (235,) if sum(action.encode("utf-8")) % 2 else theme["accent2"] + (235,)
+    unit = 2 if icon else 7
+    if "Scanner" in action or action == "IDLE":
+        d.arc((margin, margin, size - margin, size - margin), 205, 335, fill=prop_color, width=max(1, unit // 2))
+    elif "Bruteforce" in action:
+        d.rectangle((size - margin - unit * 3, size // 2, size - margin, size // 2 + unit * 2), fill=prop_color)
+    elif "Steal" in action or "Data" in action:
+        d.rectangle((margin, size // 2 + unit, margin + unit * 3, size // 2 + unit * 4), fill=prop_color)
+    else:
+        d.rectangle((size - margin - unit * 2, margin + unit * 2, size - margin, margin + unit * 8), fill=prop_color)
     return img
 
 
