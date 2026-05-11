@@ -1055,19 +1055,65 @@ def _inject_loki_proxy_bootstrap(raw: bytes) -> bytes:
     patch = """
 <script>
 (function(){
+  const proxyPrefix = '/loki';
   const qs = window.location.search || '';
+  const lokiRootPrefixes = [
+    '/api/', '/api/v1/', '/events', '/screen.png', '/favicon.ico',
+    '/manifest.json', '/apple-touch-icon', '/get_logs', '/list_credentials',
+    '/download_credentials', '/list_files', '/download_file', '/download_backup',
+    '/list_logs', '/download_log', '/load_config', '/restore_default_config',
+    '/get_web_delay', '/scan_wifi', '/network_data', '/netkb_data',
+    '/netkb_data_json', '/get_networks', '/save_config', '/connect_wifi',
+    '/disconnect_wifi', '/start_orchestrator', '/execute_manual_attack',
+    '/clear_hosts', '/clear_scan_logs', '/clear_stats', '/clear_stolen_files',
+    '/clear_credentials', '/clear_all', '/stop_manual_attack',
+    '/mark_action_start', '/add_manual_target'
+  ];
+  function shouldProxy(path){
+    return typeof path === 'string'
+      && path.startsWith('/')
+      && !path.startsWith(proxyPrefix + '/')
+      && lokiRootPrefixes.some(prefix => path === prefix || path.startsWith(prefix));
+  }
+  function proxiedUrl(url){
+    if (typeof url !== 'string') return url;
+    try {
+      const parsed = new URL(url, location.origin);
+      if (parsed.origin === location.origin && shouldProxy(parsed.pathname)) {
+        return proxyPrefix + parsed.pathname + parsed.search + parsed.hash;
+      }
+    } catch (e) {
+      if (shouldProxy(url)) return proxyPrefix + url;
+    }
+    return url;
+  }
   function withAuth(url){
-    if (!qs || typeof url !== 'string' || !url.startsWith('/api/v1')) return url;
+    if (!qs || typeof url !== 'string' || !url.startsWith(proxyPrefix + '/api/v1')) return url;
     return url + (url.includes('?') ? '&' : '?') + qs.slice(1);
   }
   const origFetch = window.fetch;
   if (origFetch) {
     window.fetch = function(input, init){
-      if (typeof input === 'string') input = withAuth(input);
-      else if (input && input.url && input.url.startsWith(location.origin + '/api/v1')) {
-        input = new Request(withAuth(input.url.slice(location.origin.length)), input);
+      if (typeof input === 'string' || input instanceof URL) {
+        input = withAuth(proxiedUrl(String(input)));
+      } else if (input && input.url) {
+        input = new Request(withAuth(proxiedUrl(input.url)), input);
       }
       return origFetch.call(this, input, init);
+    };
+  }
+  const OrigEventSource = window.EventSource;
+  if (OrigEventSource) {
+    window.EventSource = function(url, config){
+      return new OrigEventSource(withAuth(proxiedUrl(String(url))), config);
+    };
+    window.EventSource.prototype = OrigEventSource.prototype;
+  }
+  const origOpen = (typeof XMLHttpRequest !== 'undefined' && XMLHttpRequest.prototype) ? XMLHttpRequest.prototype.open : null;
+  if (origOpen) {
+    XMLHttpRequest.prototype.open = function(method, url){
+      arguments[1] = withAuth(proxiedUrl(String(url)));
+      return origOpen.apply(this, arguments);
     };
   }
 })();
