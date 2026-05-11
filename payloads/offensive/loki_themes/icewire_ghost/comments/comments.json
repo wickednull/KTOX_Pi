@@ -1,73 +1,85 @@
 {
     "IDLE": [
-        "Icewire Ghost link idling.",
-        "Neon rain on standby.",
-        "Waiting for a hostile skyline."
+        "White noise. Blue breath.",
+        "Ghost idle beneath black ICE.",
+        "No footprints in the frost."
     ],
     "NetworkScanner": [
-        "Sweeping alleys for live hosts.",
-        "Pinging the grid glow by glow.",
-        "Mapping the local sprawl."
+        "Cold pings cross the dark water.",
+        "Subnet frost blooms blue.",
+        "Every host exhales vapor."
     ],
     "NmapVulnScanner": [
-        "Running black-market vuln augury.",
-        "ICE seams are being traced.",
-        "Enumerating exposed chrome."
+        "ICE fractures under white light.",
+        "Ports freeze, then confess.",
+        "Scanner traces blue fault lines."
     ],
     "SSHBruteforce": [
-        "Trying SSH keys in the rain.",
-        "Port 22 gets a neon knock."
+        "Port 22 gets frostbitten.",
+        "Keys turn slowly in the cold."
     ],
     "FTPBruteforce": [
-        "FTP vault tumblers spinning.",
-        "Old doors still leak light."
+        "FTP archive thaw in progress.",
+        "Old doors crack under ice."
     ],
     "TelnetBruteforce": [
-        "Telnet ghosts answer too loudly.",
-        "Vintage access, modern attitude."
+        "Telnet signal found under snow.",
+        "Legacy line goes brittle."
     ],
     "SMBBruteforce": [
-        "SMB shares under streetlight.",
-        "Checking corporate file alleys."
+        "SMB shares iced and indexed.",
+        "File lockers frost over."
     ],
     "SQLBruteforce": [
-        "Querying the chrome oracle.",
-        "Database locks meet neon picks."
+        "Blue queries drift through glass.",
+        "Database lock chills open."
     ],
     "RDPBruteforce": [
-        "Remote desktop visor online.",
-        "RDP windows glow in the haze."
+        "RDP visor fogs from inside.",
+        "Remote pane turns blue."
     ],
     "StealFilesSSH": [
-        "Siphoning files through SSH smoke.",
-        "Secure copy, insecure choices."
+        "SSH files vanish in snowfall.",
+        "Secure copy leaves no tracks."
     ],
     "StealFilesFTP": [
-        "Dragging loot from FTP shadows.",
-        "Plaintext crates are moving."
+        "FTP crates slide across ice.",
+        "Plaintext frozen for pickup."
     ],
     "StealFilesSMB": [
-        "SMB lockers are opening.",
-        "Corporate folders hit the street."
+        "SMB cabinets open silently.",
+        "Corporate snowpack collected."
     ],
     "StealFilesTelnet": [
-        "Telnet relics spill secrets.",
-        "Old wire, fresh data."
+        "Telnet fossils thaw and spill.",
+        "Old wire cracks white."
     ],
     "StealDataSQL": [
-        "Dumping tables under neon glass.",
-        "Records flow like blue rain."
+        "Tables drift out under frost.",
+        "Rows crystallize in the cache."
     ],
     "LogStandalone": [
-        "Signal logged to the deck.",
-        "Trace note pinned."
+        "Cold trace archived.",
+        "Blue shard logged."
     ],
     "LogStandalone2": [
-        "Second log shard captured.",
-        "More street telemetry saved."
+        "Second frost mark saved.",
+        "Telemetry disappears into white."
     ],
     "ZombifySSH": [
-        "SSH shell recruited to the crew.",
-        "Another chrome ghost joins."
+        "SSH ghost rises quiet.",
+        "Another frozen shell obeys."
+    ],
+    "NucleiScanner": [
+        "Nuclei frost maps every fracture.",
+        "Templates drift through blue fault lines."
+    ],
+    "SearchSploitEnricher": [
+        "Exploit records freeze into focus.",
+        "CVE ghosts line up in the snow."
+    ],
+    "TestSSLScanner": [
+        "TLS panes fog under white ICE.",
+        "Cipher frost exposes the weak links."
     ]
 }

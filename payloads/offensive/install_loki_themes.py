@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import json
 import shutil
 import sys
 import tempfile
@@ -77,6 +78,20 @@ def install_theme(src: Path, target_root: Path) -> None:
     shutil.copytree(src, dst)
 
 
+def activate_theme(target_root: Path, theme_id: str) -> None:
+    """Set the installed theme active in loki-recon's shared_config.json."""
+    if not (target_root / theme_id / "theme.json").exists():
+        raise FileNotFoundError(f"Cannot activate missing Loki theme: {theme_id}")
+
+    config_path = target_root.parent / "config" / "shared_config.json"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config = {}
+    if config_path.exists():
+        config = json.loads(config_path.read_text(encoding="utf-8") or "{}")
+    config["theme"] = theme_id
+    config_path.write_text(json.dumps(config, indent=4) + "\n", encoding="utf-8")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -88,6 +103,13 @@ def main(argv: list[str] | None = None) -> int:
         "--list",
         action="store_true",
         help="List bundled theme IDs without installing.",
+    )
+    parser.add_argument(
+        "--activate",
+        nargs="?",
+        const="neon_runner",
+        metavar="THEME_ID",
+        help="Make an installed theme the active loki-recon theme (defaults to neon_runner).",
     )
     args = parser.parse_args(argv)
 
@@ -119,6 +141,10 @@ def main(argv: list[str] | None = None) -> int:
         for theme in generated_themes:
             install_theme(theme, target_root)
             print(f"installed {theme.name} -> {target_root / theme.name}")
+
+    if args.activate:
+        activate_theme(target_root, args.activate)
+        print(f"activated {args.activate} in {target_root.parent / 'config' / 'shared_config.json'}")
 
     print(f"Installed {len(generated_themes)} KTOx Loki cyberpunk themes.")
     return 0

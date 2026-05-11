@@ -413,10 +413,10 @@ KTOx includes four additional Loki skins under `payloads/offensive/loki_themes/`
 - `edge_fury` — gold/redline edge-runner crew vibe.
 - `icewire_ghost` — white-blue ICE and stealth netrunning.
 
-Fresh Loki installs generate and install these themes automatically through `setup_loki.sh` after the Loki Python environment is ready. To refresh them in an existing checkout, run:
+Fresh Loki installs generate, install, and activate `neon_runner` automatically through `setup_loki.sh` after the Loki Python environment is ready. To refresh and activate it in an existing checkout, run:
 
 ```bash
-python3 payloads/offensive/install_loki_themes.py /root/KTOx
+python3 payloads/offensive/install_loki_themes.py /root/KTOx --activate neon_runner
 ```
 
 ### Features

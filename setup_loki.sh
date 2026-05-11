@@ -96,8 +96,8 @@ if [ -f "$KTOX_DIR/payloads/offensive/install_loki_themes.py" ]; then
         "$LOKI_PYTHON" -m pip install pillow || \
             echo "⚠️  Could not install Pillow for Loki theme generation"
     fi
-    "$LOKI_PYTHON" "$KTOX_DIR/payloads/offensive/install_loki_themes.py" "$KTOX_DIR" || \
-        echo "⚠️  Could not install bundled Loki themes"
+    "$LOKI_PYTHON" "$KTOX_DIR/payloads/offensive/install_loki_themes.py" "$KTOX_DIR" --activate neon_runner || \
+        echo "⚠️  Could not install and activate bundled Loki themes"
 fi
 
 # Verify installation

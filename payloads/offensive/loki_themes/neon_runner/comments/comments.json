@@ -1,73 +1,85 @@
 {
     "IDLE": [
-        "Neon Runner link idling.",
-        "Neon rain on standby.",
-        "Waiting for a hostile skyline."
+        "Pulse at zero. Neon still breathing.",
+        "Deck is warm; alley is louder.",
+        "Chrome boots dry under pink rain."
     ],
     "NetworkScanner": [
-        "Sweeping alleys for live hosts.",
-        "Pinging the grid glow by glow.",
-        "Mapping the local sprawl."
+        "Cyan pings skip across rooftops.",
+        "Mapping signs, vents, and bad ideas.",
+        "Every AP leaves a little glow."
     ],
     "NmapVulnScanner": [
-        "Running black-market vuln augury.",
-        "ICE seams are being traced.",
-        "Enumerating exposed chrome."
+        "Port glass cracks under neon.",
+        "Service banners spill street rumors.",
+        "Vuln scan rides the rail line."
     ],
     "SSHBruteforce": [
-        "Trying SSH keys in the rain.",
-        "Port 22 gets a neon knock."
+        "Pink keys tap on port 22.",
+        "Trying creds between thunderclaps."
     ],
     "FTPBruteforce": [
-        "FTP vault tumblers spinning.",
-        "Old doors still leak light."
+        "Old FTP doors hum in cyan.",
+        "Plaintext crates rattle open."
     ],
     "TelnetBruteforce": [
-        "Telnet ghosts answer too loudly.",
-        "Vintage access, modern attitude."
+        "Telnet ghosts answer the payphone.",
+        "Legacy wire, fresh bruise."
     ],
     "SMBBruteforce": [
-        "SMB shares under streetlight.",
-        "Checking corporate file alleys."
+        "Share alleys get a neon sweep.",
+        "SMB lockers blink unlocked."
     ],
     "SQLBruteforce": [
-        "Querying the chrome oracle.",
-        "Database locks meet neon picks."
+        "Query lights chase wet asphalt.",
+        "Database locks meet glow picks."
     ],
     "RDPBruteforce": [
-        "Remote desktop visor online.",
-        "RDP windows glow in the haze."
+        "Remote windows flare hot pink.",
+        "RDP glass gets fingerprinted."
     ],
     "StealFilesSSH": [
-        "Siphoning files through SSH smoke.",
-        "Secure copy, insecure choices."
+        "SCP smoke curls into the bag.",
+        "Files ride a cyan backstreet."
     ],
     "StealFilesFTP": [
-        "Dragging loot from FTP shadows.",
-        "Plaintext crates are moving."
+        "FTP loot dragged under signage.",
+        "Anonymous crates move fast."
     ],
     "StealFilesSMB": [
-        "SMB lockers are opening.",
-        "Corporate folders hit the street."
+        "Corporate folders hit the street.",
+        "SMB cabinets cough up secrets."
     ],
     "StealFilesTelnet": [
-        "Telnet relics spill secrets.",
-        "Old wire, fresh data."
+        "Telnet relics leak vintage gold.",
+        "Old shells spill new data."
     ],
     "StealDataSQL": [
-        "Dumping tables under neon glass.",
-        "Records flow like blue rain."
+        "Tables pour like neon rain.",
+        "Rows copied before the light changes."
     ],
     "LogStandalone": [
-        "Signal logged to the deck.",
-        "Trace note pinned."
+        "Trace note pinned to the rail.",
+        "Signal shard logged in pink."
     ],
     "LogStandalone2": [
-        "Second log shard captured.",
-        "More street telemetry saved."
+        "Second shard hums in cyan.",
+        "Telemetry stacked and tagged."
     ],
     "ZombifySSH": [
-        "SSH shell recruited to the crew.",
-        "Another chrome ghost joins."
+        "SSH ghost joins the sprint.",
+        "Another shell follows the runner."
+    ],
+    "NucleiScanner": [
+        "Template sparks trace every weak seam.",
+        "Nuclei signatures bloom in cyan."
+    ],
+    "SearchSploitEnricher": [
+        "Exploit notes pinned under neon.",
+        "Public CVEs get street names."
+    ],
+    "TestSSLScanner": [
+        "TLS glass hums under pink probes.",
+        "Cipher suites leak rainbow static."
     ]
 }

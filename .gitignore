@@ -8,3 +8,10 @@ dist/
 build/
 # Generated Loki theme image assets (created by tools/generate_loki_cyberpunk_themes.py)
 payloads/offensive/loki_themes/*/images/
+# Local artist-provided Loki sprite/background PNGs are required at generation
+# time but are not committed because binary diffs are unsupported.
+assets/sprites/**/*.png
+assets/sprites/*.png
+assets/sprites/Test
+assets/sprites/Background/Test
+!assets/sprites/README.md
