@@ -26,3 +26,6 @@ evdev>=1.6.0
 
 # USB serial control for external ESP32 tools such as USB Army Knife
 pyserial>=3.5
+
+# Image generation/rendering for LCD previews and Loki themes
+Pillow>=10.0.0

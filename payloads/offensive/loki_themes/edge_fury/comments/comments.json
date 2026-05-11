@@ -1,73 +1,73 @@
 {
     "IDLE": [
-        "Edge Fury link idling.",
-        "Neon rain on standby.",
-        "Waiting for a hostile skyline."
+        "Waiting on a gig, choom.",
+        "Net's quiet. Too quiet.",
+        "Stay frosty."
     ],
     "NetworkScanner": [
-        "Sweeping alleys for live hosts.",
-        "Pinging the grid glow by glow.",
-        "Mapping the local sprawl."
+        "Night City blocks lighting up.",
+        "Pinging every rooftop in range.",
+        "Scanner rides the street grid."
     ],
     "NmapVulnScanner": [
-        "Running black-market vuln augury.",
-        "ICE seams are being traced.",
-        "Enumerating exposed chrome."
+        "ICE cracks under yellow heat.",
+        "Ports squeal like bad chrome.",
+        "Vulns tagged for the crew."
     ],
     "SSHBruteforce": [
-        "Trying SSH keys in the rain.",
-        "Port 22 gets a neon knock."
+        "Hammering port 22, choom.",
+        "Some corpo used 'password123'."
     ],
     "FTPBruteforce": [
-        "FTP vault tumblers spinning.",
-        "Old doors still leak light."
+        "FTP is preem ancient tech.",
+        "Old vaults still pay eddies."
     ],
     "TelnetBruteforce": [
-        "Telnet ghosts answer too loudly.",
-        "Vintage access, modern attitude."
+        "Telnet? That's museum-grade dumb.",
+        "Vintage wire gets flatlined."
     ],
     "SMBBruteforce": [
-        "SMB shares under streetlight.",
-        "Checking corporate file alleys."
+        "SMB shares smell like payroll.",
+        "Crew is checking every locker."
     ],
     "SQLBruteforce": [
-        "Querying the chrome oracle.",
-        "Database locks meet neon picks."
+        "Database sings under pressure.",
+        "Query the corpo oracle."
     ],
     "RDPBruteforce": [
-        "Remote desktop visor online.",
-        "RDP windows glow in the haze."
+        "RDP window, back-alley entry.",
+        "Remote desktop gets zeroed."
     ],
     "StealFilesSSH": [
-        "Siphoning files through SSH smoke.",
-        "Secure copy, insecure choices."
+        "SCP bag filling with receipts.",
+        "Files delta out through smoke."
     ],
     "StealFilesFTP": [
-        "Dragging loot from FTP shadows.",
-        "Plaintext crates are moving."
+        "FTP crates loaded for the run.",
+        "Plaintext loot, easy eddies."
     ],
     "StealFilesSMB": [
-        "SMB lockers are opening.",
-        "Corporate folders hit the street."
+        "SMB folders jacked clean.",
+        "Corp docs ride with us now."
     ],
     "StealFilesTelnet": [
-        "Telnet relics spill secrets.",
-        "Old wire, fresh data."
+        "Telnet relic spits secrets.",
+        "Old access, new payday."
     ],
     "StealDataSQL": [
-        "Dumping tables under neon glass.",
-        "Records flow like blue rain."
+        "Tables dump like bad memories.",
+        "Rows are eddies in disguise."
     ],
     "LogStandalone": [
-        "Signal logged to the deck.",
-        "Trace note pinned."
+        "Gig note saved.",
+        "Street telemetry pocketed."
     ],
     "LogStandalone2": [
-        "Second log shard captured.",
-        "More street telemetry saved."
+        "Second shard clipped.",
+        "More receipts for the fixer."
     ],
     "ZombifySSH": [
-        "SSH shell recruited to the crew.",
-        "Another chrome ghost joins."
+        "SSH shell joins the crew.",
+        "Another chrome ghost on payroll."
     ]
 }
