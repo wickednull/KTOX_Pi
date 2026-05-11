@@ -468,7 +468,8 @@
             <a id="pentestUrl" href="#" target="_blank" rel="noopener noreferrer" class="block truncate text-cyan-300 hover:text-cyan-100">No URL</a>
             <div class="grid grid-cols-2 gap-2">
               <button id="pentestStart" type="button" class="px-2 py-1 rounded bg-red-900/80 border border-red-300/30 text-white hover:bg-red-800/80">Start</button>
-              <button id="pentestStop" type="button" class="px-2 py-1 rounded bg-slate-800/80 border border-slate-600/50 text-slate-200 hover:bg-slate-700/80">Stop</button>
+              <button id="pentestOpen" type="button" class="px-2 py-1 rounded bg-red-950/70 border border-cyan-300/30 text-cyan-100 hover:bg-red-900/80">Open</button>
+              <button id="pentestStop" type="button" class="px-2 py-1 rounded bg-slate-800/80 border border-slate-600/50 text-slate-200 hover:bg-slate-700/80 col-span-2">Stop</button>
             </div>
           </div>
 
@@ -479,6 +480,7 @@
             </div>
           </div>
         </div>
+        <button id="navPentest" type="button" class="w-full px-3 py-2 rounded-xl text-left text-sm font-semibold border border-slate-400/20 bg-slate-800/40 text-slate-300 hover:text-white hover:bg-slate-700/50 transition"><i class="fa-solid fa-shield-halved mr-2"></i>Pentest Suite</button>
         <button id="navLoot" type="button" class="w-full px-3 py-2 rounded-xl text-left text-sm font-semibold border border-slate-400/20 bg-slate-800/40 text-slate-300 hover:text-white hover:bg-slate-700/50 transition"><i class="fa-solid fa-vault mr-2"></i>Loot</button>
         <button id="navSettings" type="button" class="w-full px-3 py-2 rounded-xl text-left text-sm font-semibold border border-slate-400/20 bg-slate-800/40 text-slate-300 hover:text-white hover:bg-slate-700/50 transition"><i class="fa-solid fa-sliders mr-2"></i>Settings</button>
         <a id="navPayloadStudio" href="./ide.html" class="w-full px-3 py-2 rounded-xl text-left text-sm font-semibold border border-slate-400/20 bg-slate-800/40 text-slate-300 hover:text-white hover:bg-slate-700/50 transition block"><i class="fa-solid fa-code mr-2"></i>Payload Studio</a>
@@ -675,6 +677,27 @@
         </div>
         <div class="text-center text-[11px] mt-4">OK = Enter Â· KEY3 = Esc</div>
         <div id="status-syndicate" class="status-text text-center text-[10px] mt-1">Connectingâ€¦</div>
+      </div>
+
+      <!-- Kali Pentest Suite -->
+      <div id="pentestTab" class="hidden">
+        <div class="rounded-3xl border border-red-400/20 bg-slate-950/60 backdrop-blur overflow-hidden shadow-[0_0_30px_rgba(15,23,42,0.35)]">
+          <div class="px-4 py-3 border-b border-slate-800/80 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div class="text-sm font-semibold text-red-400"><i class="fa-solid fa-shield-halved mr-2"></i>Kali Pentest Suite</div>
+              <div id="pentestFrameStatus" class="text-[11px] text-slate-400">Start the server to load the tool console.</div>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+              <button id="pentestFrameStart" type="button" class="px-3 py-1.5 text-xs rounded-lg bg-red-900/80 border border-red-300/30 text-white hover:bg-red-800/80 transition">Start</button>
+              <button id="pentestFrameReload" type="button" class="px-3 py-1.5 text-xs rounded-lg bg-slate-800/80 border border-slate-600/50 text-slate-200 hover:bg-slate-700/80 transition">Reload</button>
+              <a id="pentestFrameExternal" href="#" target="_blank" rel="noopener noreferrer" class="px-3 py-1.5 text-xs rounded-lg bg-slate-800/80 border border-cyan-300/30 text-cyan-100 hover:bg-slate-700/80 transition pointer-events-none">Open new tab</a>
+              <button id="pentestFrameStop" type="button" class="px-3 py-1.5 text-xs rounded-lg bg-slate-900/80 border border-slate-600/50 text-slate-200 hover:bg-slate-800/80 transition">Stop</button>
+            </div>
+          </div>
+          <div class="bg-black/40">
+            <iframe id="pentestFrame" title="Kali Pentest Suite" class="w-full h-[calc(100dvh-180px)] min-h-[620px] border-0 bg-black" sandbox="allow-forms allow-modals allow-same-origin allow-scripts allow-downloads allow-popups"></iframe>
+          </div>
+        </div>
       </div>
 
       <!-- Settings -->
@@ -963,6 +986,10 @@
     <button class="mob-nav-btn" data-mobnav="payloads" aria-label="Payloads">
       <i class="fa-solid fa-bolt"></i>
       <span>Payloads</span>
+    </button>
+    <button class="mob-nav-btn" data-mobnav="pentest" aria-label="Pentest">
+      <i class="fa-solid fa-shield-halved"></i>
+      <span>Pentest</span>
     </button>
     <button class="mob-nav-btn" data-mobnav="loot" aria-label="Loot">
       <i class="fa-solid fa-vault"></i>
