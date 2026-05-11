@@ -1150,6 +1150,10 @@
     return `${location.origin}/loki/${search}`;
   }
 
+  function lokiDisplayUrl(directUrl){
+    return directUrl ? lokiProxyUrl() : '';
+  }
+
   function loadPentestConsole(force = false){
     if (!pentestFrame) return;
     const src = pentestProxyUrl();
@@ -1231,7 +1235,7 @@
     if (lokiUrl){
       lokiUrl.textContent = url || 'No URL';
       if (url){
-        lokiUrl.href = url;
+        lokiUrl.href = lokiDisplayUrl(url);
         lokiUrl.classList.remove('pointer-events-none');
       } else {
         lokiUrl.href = '#';
@@ -1244,7 +1248,7 @@
         : (data.installed === false ? 'Loki is not installed. Run setup_loki.sh first.' : 'Start Loki to load the reconnaissance console.');
     }
     if (lokiFrameExternal){
-      lokiFrameExternal.href = url || '#';
+      lokiFrameExternal.href = lokiDisplayUrl(url) || '#';
       lokiFrameExternal.classList.toggle('pointer-events-none', !url);
     }
     if (running && activeTab === 'loki') loadLokiConsole(false);
