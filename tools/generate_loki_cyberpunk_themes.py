@@ -160,9 +160,14 @@ def background(theme: dict, size: tuple[int, int], portrait: bool = False, title
 def draw_sprite(theme: dict, action: str, frame: int, icon: bool = False) -> Image.Image:
     size = 46 if icon else 175
     scale = 2 if icon else 7
-    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    # Keep the generated PNG dimensions that Loki expects, but render into a
+    # larger scratch canvas first.  The old fixed y=38 origin clipped the
+    # 27-unit leg/foot rectangles at both 175px and 46px output sizes.
+    render_size = 92 if icon else 260
+    origin_y = 19 if icon else 52
+    img = Image.new("RGBA", (render_size, render_size), (0, 0, 0, 0))
     d = ImageDraw.Draw(img, "RGBA")
-    cx = size // 2
+    cx = render_size // 2
     bob = int(math.sin(frame * math.pi / 2) * scale)
     skin = (245, 170, 178)
     shadow = (32, 16, 38)
@@ -171,7 +176,7 @@ def draw_sprite(theme: dict, action: str, frame: int, icon: bool = False) -> Ima
         d.ellipse((cx - r, 20 - r // 3, cx + r, 20 + r), outline=theme["accent2"] + (alpha,), width=max(1, scale // 2))
     # body/head using pixel-ish rectangles
     def rect(x1, y1, x2, y2, c):
-        d.rectangle((cx + x1 * scale, 38 + y1 * scale + bob, cx + x2 * scale, 38 + y2 * scale + bob), fill=c)
+        d.rectangle((cx + x1 * scale, origin_y + y1 * scale + bob, cx + x2 * scale, origin_y + y2 * scale + bob), fill=c)
     rect(-4, -2, 4, 5, skin)
     rect(-6, -4, 6, -1, theme["hair"])
     rect(-5, 5, 5, 15, theme["jacket"])
@@ -193,9 +198,8 @@ def draw_sprite(theme: dict, action: str, frame: int, icon: bool = False) -> Ima
         rect(-10, 12, -6, 18, prop_color)
     else:
         rect(7, 5, 9, 18, prop_color)
-    # crop feel for icons
-    if icon:
-        img = img.resize((46, 46), Image.Resampling.NEAREST)
+    if render_size != size:
+        img = img.resize((size, size), Image.Resampling.NEAREST)
     return img
 
 
