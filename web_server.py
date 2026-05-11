@@ -34,6 +34,7 @@ import base64
 import hmac
 import hashlib
 import mimetypes
+import http.client
 import os
 import platform
 import secrets
@@ -65,6 +66,17 @@ SESSION_TTL_SECONDS = int(os.environ.get("RJ_WEB_SESSION_TTL", str(8 * 60 * 60))
 WS_TICKET_TTL_SECONDS = int(os.environ.get("RJ_WEB_WS_TICKET_TTL", "120"))
 TAILSCALE_KEY_PATH = ROOT_DIR / ".tailscale_auth_key"
 TAILSCALE_STATUS_PATH = Path("/dev/shm/rj_tailscale_status.json")
+PENTEST_PROXY_TIMEOUT = float(os.environ.get("KALI_PENTEST_PROXY_TIMEOUT", "120"))
+PENTEST_API_PREFIXES = (
+    "/api/status",
+    "/api/engagements",
+    "/api/jobs",
+    "/api/tools",
+    "/api/findings",
+    "/api/vault",
+    "/api/reports",
+)
+
 
 
 # ── Payload compatibility converter helpers ──────────────────────────────────
@@ -897,6 +909,24 @@ def _auth_ok(handler: SimpleHTTPRequestHandler, query: dict) -> bool:
     return ctx is not None and ctx.get("method") != "bootstrap"
 
 
+def _auth_ok_for_pentest_proxy(handler: SimpleHTTPRequestHandler, query: dict) -> bool:
+    if _auth_ok(handler, query):
+        return True
+    # The embedded pentest app uses absolute /api/... fetches. In token-only
+    # deployments those requests lose the token query string, but same-origin
+    # browsers keep the full /pentest/?token=... Referer. Accept that referer
+    # only for proxied pentest requests so the tool console can operate without
+    # opening the unauthenticated Flask port directly.
+    try:
+        ref = str(handler.headers.get("Referer", "") or "")
+        parsed = urlparse(ref)
+        if parsed.path == "/pentest" or parsed.path.startswith("/pentest/"):
+            return _auth_ok(handler, parse_qs(parsed.query or ""))
+    except Exception:
+        pass
+    return False
+
+
 def _request_is_https(handler: SimpleHTTPRequestHandler) -> bool:
     """Return True for direct TLS or trusted local reverse proxy TLS."""
     if getattr(handler, "request_version", "").startswith("HTTPS/"):
@@ -962,6 +992,55 @@ def _pentest_status() -> dict:
         return {"running": False, "error": str(exc)}
 
 
+def _is_pentest_proxy_path(path: str) -> bool:
+    return path == "/pentest" or path.startswith("/pentest/") or any(
+        path == prefix or path.startswith(prefix + "/") for prefix in PENTEST_API_PREFIXES
+    )
+
+
+def _pentest_proxy_target(path: str) -> str:
+    if path == "/pentest":
+        return "/"
+    if path.startswith("/pentest/"):
+        proxied = path[len("/pentest"):]
+        return proxied or "/"
+    return path
+
+
+def _inject_pentest_proxy_bootstrap(raw: bytes) -> bytes:
+    try:
+        html = raw.decode("utf-8")
+    except Exception:
+        return raw
+    patch = """
+<script>
+(function(){
+  const qs = window.location.search || '';
+  function withAuth(url){
+    if (!qs || typeof url !== 'string' || !url.startsWith('/api/')) return url;
+    return url + (url.includes('?') ? '&' : '?') + qs.slice(1);
+  }
+  const origFetch = window.fetch;
+  if (origFetch) {
+    window.fetch = function(input, init){
+      if (typeof input === 'string') input = withAuth(input);
+      else if (input && input.url && input.url.startsWith(location.origin + '/api/')) {
+        input = new Request(withAuth(input.url.slice(location.origin.length)), input);
+      }
+      return origFetch.call(this, input, init);
+    };
+  }
+})();
+</script>
+"""
+    marker = "</head>"
+    if marker in html:
+        html = html.replace(marker, patch + marker, 1)
+    else:
+        html = patch + html
+    return html.encode("utf-8")
+
+
 def _json_response(
     handler: SimpleHTTPRequestHandler,
     payload: dict,
@@ -1025,6 +1104,14 @@ class KTOxHandler(SimpleHTTPRequestHandler):
         if parsed.path == "/ide":
             self.path = "/ide.html" + (f"?{parsed.query}" if parsed.query else "")
             super().do_GET()
+            return
+
+        if _is_pentest_proxy_path(parsed.path):
+            query = parse_qs(parsed.query or "")
+            if not _auth_ok_for_pentest_proxy(self, query):
+                _json_response(self, {"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
+                return
+            self._handle_pentest_proxy(parsed)
             return
 
         if (
@@ -1117,6 +1204,14 @@ class KTOxHandler(SimpleHTTPRequestHandler):
             self._handle_auth_ws_ticket(query)
             return
 
+        if _is_pentest_proxy_path(parsed.path):
+            query = parse_qs(parsed.query or "")
+            if not _auth_ok_for_pentest_proxy(self, query):
+                _json_response(self, {"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
+                return
+            self._handle_pentest_proxy(parsed)
+            return
+
         if parsed.path == "/api/stealth/status":
             query = parse_qs(parsed.query or "")
             if not _auth_ok(self, query):
@@ -1189,6 +1284,13 @@ class KTOxHandler(SimpleHTTPRequestHandler):
 
     def do_PUT(self):
         parsed = urlparse(self.path)
+        if _is_pentest_proxy_path(parsed.path):
+            query = parse_qs(parsed.query or "")
+            if not _auth_ok_for_pentest_proxy(self, query):
+                _json_response(self, {"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
+                return
+            self._handle_pentest_proxy(parsed)
+            return
         if parsed.path == "/api/payloads/file":
             query = parse_qs(parsed.query or "")
             if not _auth_ok(self, query):
@@ -1214,6 +1316,13 @@ class KTOxHandler(SimpleHTTPRequestHandler):
 
     def do_PATCH(self):
         parsed = urlparse(self.path)
+        if _is_pentest_proxy_path(parsed.path):
+            query = parse_qs(parsed.query or "")
+            if not _auth_ok_for_pentest_proxy(self, query):
+                _json_response(self, {"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
+                return
+            self._handle_pentest_proxy(parsed)
+            return
         if parsed.path == "/api/payloads/entry":
             query = parse_qs(parsed.query or "")
             if not _auth_ok(self, query):
@@ -1225,6 +1334,13 @@ class KTOxHandler(SimpleHTTPRequestHandler):
 
     def do_DELETE(self):
         parsed = urlparse(self.path)
+        if _is_pentest_proxy_path(parsed.path):
+            query = parse_qs(parsed.query or "")
+            if not _auth_ok_for_pentest_proxy(self, query):
+                _json_response(self, {"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
+                return
+            self._handle_pentest_proxy(parsed)
+            return
         if parsed.path == "/api/payloads/entry":
             query = parse_qs(parsed.query or "")
             if not _auth_ok(self, query):
@@ -1734,6 +1850,87 @@ class KTOxHandler(SimpleHTTPRequestHandler):
             _json_response(self, {"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
         except Exception as exc:
             _json_response(self, {"error": f"parse error: {exc}"}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+
+    def _handle_pentest_proxy(self, parsed) -> None:
+        state = _pentest_status()
+        if not state.get("running"):
+            _json_response(self, {
+                "error": "pentest WebUI is not running",
+                "running": False,
+                "status": state,
+            }, status=HTTPStatus.SERVICE_UNAVAILABLE)
+            return
+
+        target_path = _pentest_proxy_target(parsed.path)
+        if parsed.query:
+            target_path = f"{target_path}?{parsed.query}"
+        body = b""
+        if self.command in ("POST", "PUT", "PATCH"):
+            try:
+                length = int(self.headers.get("Content-Length", "0") or "0")
+            except Exception:
+                length = 0
+            if length > REQUEST_MAX_BYTES:
+                _json_response(self, {"error": "request too large"}, status=HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
+                return
+            body = self.rfile.read(length) if length > 0 else b""
+
+        headers = {
+            key: value for key, value in self.headers.items()
+            if key.lower() not in ("host", "connection", "content-length", "accept-encoding")
+        }
+        if body:
+            headers["Content-Length"] = str(len(body))
+
+        port = int(state.get("port") or os.environ.get("KALI_PENTEST_PORT", "9000"))
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=PENTEST_PROXY_TIMEOUT)
+        try:
+            conn.request(self.command, target_path, body=body if body else None, headers=headers)
+            resp = conn.getresponse()
+            resp_headers = resp.getheaders()
+            content_type = ""
+            for key, value in resp_headers:
+                if key.lower() == "content-type":
+                    content_type = value.lower()
+                    break
+
+            excluded = {"connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
+                        "te", "trailers", "transfer-encoding", "upgrade"}
+
+            if "text/html" in content_type:
+                body_bytes = _inject_pentest_proxy_bootstrap(resp.read())
+                self.send_response(resp.status, resp.reason)
+                for key, value in resp_headers:
+                    if key.lower() in excluded or key.lower() == "content-length":
+                        continue
+                    self.send_header(key, value)
+                self.send_header("Content-Length", str(len(body_bytes)))
+                self.end_headers()
+                self.wfile.write(body_bytes)
+                return
+
+            self.send_response(resp.status, resp.reason)
+            for key, value in resp_headers:
+                if key.lower() in excluded:
+                    continue
+                self.send_header(key, value)
+            self.end_headers()
+            while True:
+                chunk = resp.read(64 * 1024)
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+                try:
+                    self.wfile.flush()
+                except Exception:
+                    pass
+        except Exception as exc:
+            _json_response(self, {"error": f"pentest proxy error: {exc}"}, status=HTTPStatus.BAD_GATEWAY)
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
     def _handle_pentest_status(self) -> None:
         _json_response(self, _pentest_status())
