@@ -11,7 +11,7 @@ Access at: **http://<device-ip>:9000** by default (`0.0.0.0:9000` bind), or your
 
 ## LCD / main WebUI controls
 
-Open **System → Pentest WebUI** on the KTOX LCD to start/stop the server and show the reachable URL plus CPU/RAM/temp. The main KTOX browser WebUI also has **Kali Pentest WebUI** Start/Stop controls in the System Monitor panel.
+Open **System → Pentest WebUI** on the KTOX LCD to start/stop the server and show the reachable URL plus CPU/RAM/temp. In the browser, use the main KTOX **Pentest Suite** tab for the embedded tool console (engagements, tool runs, job stop/output, findings, vault, and reports) or the System Monitor Start/Open/Stop quick controls.
 
 ## First Steps
 
