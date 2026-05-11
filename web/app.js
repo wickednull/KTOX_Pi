@@ -44,6 +44,7 @@
   const navDevice = document.getElementById('navDevice');
   const navSystem = document.getElementById('navSystem');
   const navPentest = document.getElementById('navPentest');
+  const navLoki = document.getElementById('navLoki');
   const navLoot = document.getElementById('navLoot');
   const navSettings = document.getElementById('navSettings');
   const navPayloadStudio = document.getElementById('navPayloadStudio');
@@ -55,6 +56,7 @@
   const systemDropdown = document.getElementById('systemDropdown');
   const settingsTab = document.getElementById('settingsTab');
   const pentestTab = document.getElementById('pentestTab');
+  const lokiTab = document.getElementById('lokiTab');
   const lootTab = document.getElementById('lootTab');
   const systemStatus = document.getElementById('systemStatus');
   const sysCpuValue = document.getElementById('sysCpuValue');
@@ -102,6 +104,17 @@
   const mobPentestUrl = document.getElementById('mobPentestUrl');
   const mobPentestStart = document.getElementById('mobPentestStart');
   const mobPentestStop = document.getElementById('mobPentestStop');
+  const lokiStatus = document.getElementById('lokiStatus');
+  const lokiUrl = document.getElementById('lokiUrl');
+  const lokiStart = document.getElementById('lokiStart');
+  const lokiStop = document.getElementById('lokiStop');
+  const lokiOpen = document.getElementById('lokiOpen');
+  const lokiFrame = document.getElementById('lokiFrame');
+  const lokiFrameStatus = document.getElementById('lokiFrameStatus');
+  const lokiFrameStart = document.getElementById('lokiFrameStart');
+  const lokiFrameReload = document.getElementById('lokiFrameReload');
+  const lokiFrameStop = document.getElementById('lokiFrameStop');
+  const lokiFrameExternal = document.getElementById('lokiFrameExternal');
   const mobileSystemRefresh = document.getElementById('mobileSystemRefresh');
   const lootList = document.getElementById('lootList');
   const lootPathEl = document.getElementById('lootPath');
@@ -799,6 +812,8 @@
     if (settingsTab) settingsTab.classList.toggle('hidden', tab !== 'settings');
     if (pentestTab) pentestTab.classList.toggle('hidden', tab !== 'pentest');
     if (tab === 'pentest') ensurePentestConsole();
+    if (lokiTab) lokiTab.classList.toggle('hidden', tab !== 'loki');
+    if (tab === 'loki') ensureLokiConsole();
     if (lootTab) lootTab.classList.toggle('hidden', tab !== 'loot');
     const systemTabEl = document.getElementById('systemTab');
     if (systemTabEl) systemTabEl.classList.toggle('hidden', tab !== 'system');
@@ -806,6 +821,7 @@
     if (payloadsTabEl) payloadsTabEl.classList.toggle('hidden', tab !== 'payloads');
     setNavActive(navDevice, tab === 'device');
     setNavActive(navPentest, tab === 'pentest');
+    setNavActive(navLoki, tab === 'loki');
     setNavActive(navLoot, tab === 'loot');
     setNavActive(navSettings, tab === 'settings');
     setSidebarOpen(false);
@@ -1127,6 +1143,11 @@
     return `${location.origin}/pentest/${search}`;
   }
 
+  function lokiProxyUrl(){
+    const search = window.location.search || '';
+    return `${location.origin}/loki/${search}`;
+  }
+
   function loadPentestConsole(force = false){
     if (!pentestFrame) return;
     const src = pentestProxyUrl();
@@ -1138,6 +1159,19 @@
   function ensurePentestConsole(){
     const running = pentestStatus && pentestStatus.textContent === 'running';
     if (running) loadPentestConsole(false);
+  }
+
+  function loadLokiConsole(force = false){
+    if (!lokiFrame) return;
+    const src = lokiProxyUrl();
+    if (force || lokiFrame.getAttribute('src') !== src){
+      lokiFrame.setAttribute('src', src);
+    }
+  }
+
+  function ensureLokiConsole(){
+    const running = lokiStatus && lokiStatus.textContent === 'running';
+    if (running) loadLokiConsole(false);
   }
 
   function applyPentestData(pentest, target = 'desktop'){
@@ -1175,6 +1209,40 @@
     if (!running && pentestFrame) pentestFrame.removeAttribute('src');
   }
 
+
+  function applyLokiData(loki){
+    const data = loki || {};
+    const running = !!data.running;
+    const statusText = running ? 'running' : 'stopped';
+    const url = data.url || '';
+    if (lokiStatus){
+      lokiStatus.textContent = statusText;
+      lokiStatus.classList.toggle('text-emerald-300', running);
+      lokiStatus.classList.toggle('text-slate-400', !running);
+    }
+    if (lokiUrl){
+      lokiUrl.textContent = url || 'No URL';
+      if (url){
+        lokiUrl.href = url;
+        lokiUrl.classList.remove('pointer-events-none');
+      } else {
+        lokiUrl.href = '#';
+        lokiUrl.classList.add('pointer-events-none');
+      }
+    }
+    if (lokiFrameStatus){
+      lokiFrameStatus.textContent = running
+        ? 'Loki reconnaissance console is ready below.'
+        : (data.installed === false ? 'Loki is not installed. Run setup_loki.sh first.' : 'Start Loki to load the reconnaissance console.');
+    }
+    if (lokiFrameExternal){
+      lokiFrameExternal.href = url || '#';
+      lokiFrameExternal.classList.toggle('pointer-events-none', !url);
+    }
+    if (running && activeTab === 'loki') loadLokiConsole(false);
+    if (!running && lokiFrame) lokiFrame.removeAttribute('src');
+  }
+
   function applySystemData(data, target = 'desktop'){
     const cpu = Number(data.cpu_percent || 0);
     const memUsed = Number(data.mem_used || 0);
@@ -1190,6 +1258,7 @@
     const payloadText = data.payload_running ? (data.payload_path || 'running') : 'none';
     const ifaces = Array.isArray(data.interfaces) ? data.interfaces : [];
     applyPentestData(data.pentest || {}, target);
+    applyLokiData(data.loki || {});
     const interfacesHtml = ifaces.length
       ? ifaces.map(i => `<div><span class="text-red-400">${escapeHtml(String(i.name || '-'))}</span>: ${escapeHtml(String(i.ipv4 || '-'))}</div>`).join('')
       : '<div class="text-slate-500">No active interfaces</div>';
@@ -1254,6 +1323,33 @@
     } catch (e){
       setSystemStatus(action === 'start' ? 'Pentest start failed' : 'Pentest stop failed');
       if (mobileSystemStatus) mobileSystemStatus.textContent = 'Pentest control failed';
+    } finally {
+      buttons.forEach(btn => { btn.disabled = false; btn.classList.remove('opacity-60'); });
+    }
+  }
+
+
+  async function controlLoki(action){
+    const buttons = [lokiStart, lokiStop, lokiFrameStart, lokiFrameStop].filter(Boolean);
+    buttons.forEach(btn => { btn.disabled = true; btn.classList.add('opacity-60'); });
+    try{
+      const res = await apiFetch(getApiUrl(`/api/loki/${action}`), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      });
+      const data = await res.json();
+      if (!res.ok || (data && data.ok === false)){
+        throw new Error(data && (data.error || data.message) ? (data.error || data.message) : `loki_${action}_failed`);
+      }
+      applyLokiData(data);
+      if (action === 'start') loadLokiConsole(true);
+      await loadSystemStatus();
+      if (typeof window.loadMobileSystemStatus === 'function') await loadMobileSystemStatus();
+    } catch (e){
+      setSystemStatus(action === 'start' ? 'Loki start failed' : 'Loki stop failed');
+      if (lokiFrameStatus) lokiFrameStatus.textContent = e && e.message ? e.message : 'Loki control failed';
+      if (mobileSystemStatus) mobileSystemStatus.textContent = 'Loki control failed';
     } finally {
       buttons.forEach(btn => { btn.disabled = false; btn.classList.remove('opacity-60'); });
     }
@@ -2247,12 +2343,18 @@
   if (payloadsRefresh) payloadsRefresh.addEventListener('click', () => loadPayloads());
   if (pentestStart) pentestStart.addEventListener('click', () => controlPentest('start'));
   if (pentestOpen) pentestOpen.addEventListener('click', () => setActiveTab('pentest'));
+  if (lokiOpen) lokiOpen.addEventListener('click', () => setActiveTab('loki'));
   if (pentestStop) pentestStop.addEventListener('click', () => controlPentest('stop'));
   if (pentestFrameStart) pentestFrameStart.addEventListener('click', () => controlPentest('start'));
   if (pentestFrameReload) pentestFrameReload.addEventListener('click', () => loadPentestConsole(true));
   if (pentestFrameStop) pentestFrameStop.addEventListener('click', () => controlPentest('stop'));
   if (mobPentestStart) mobPentestStart.addEventListener('click', () => controlPentest('start'));
   if (mobPentestStop) mobPentestStop.addEventListener('click', () => controlPentest('stop'));
+  if (lokiStart) lokiStart.addEventListener('click', () => controlLoki('start'));
+  if (lokiStop) lokiStop.addEventListener('click', () => controlLoki('stop'));
+  if (lokiFrameStart) lokiFrameStart.addEventListener('click', () => controlLoki('start'));
+  if (lokiFrameReload) lokiFrameReload.addEventListener('click', () => loadLokiConsole(true));
+  if (lokiFrameStop) lokiFrameStop.addEventListener('click', () => controlLoki('stop'));
   if (mobileSystemRefresh) mobileSystemRefresh.addEventListener('click', () => loadMobileSystemStatus());
   if (discordWebhookSave) discordWebhookSave.addEventListener('click', () => {
     saveDiscordWebhook(discordWebhookInput ? discordWebhookInput.value : '');

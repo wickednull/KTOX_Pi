@@ -10,6 +10,7 @@ import sys
 import subprocess
 import time
 import signal
+import socket
 from pathlib import Path
 
 # Add KTOX paths
@@ -27,7 +28,36 @@ sys.path.insert(0, str(KTOX_ROOT))
 VENDOR_LOKI = KTOX_ROOT / "vendor" / "loki"
 LOOT_DIR = KTOX_ROOT / "loot"
 LOKI_PID_FILE = LOOT_DIR / "loki.pid"
-LOKI_PORT = 8000
+LOKI_PORT = int(os.environ.get("LOKI_PORT", "8000"))
+
+
+def preferred_ip():
+    """Return the best LAN IP to show to users."""
+    for iface in ("wlan0", "eth0", "tailscale0"):
+        try:
+            res = subprocess.run(
+                ["ip", "-4", "addr", "show", iface],
+                capture_output=True,
+                text=True,
+                timeout=2,
+            )
+            if res.returncode == 0:
+                for line in res.stdout.splitlines():
+                    if "inet " in line:
+                        return line.split("inet ", 1)[1].split("/", 1)[0].strip()
+        except Exception:
+            pass
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.connect(("8.8.8.8", 80))
+            return sock.getsockname()[0]
+    except Exception:
+        return "127.0.0.1"
+
+
+def public_url(port=None):
+    """Return the externally useful URL for Loki's WebUI."""
+    return f"http://{preferred_ip()}:{int(port or LOKI_PORT)}"
 
 def ensure_loki_installed():
     """Check if Loki is properly installed."""
@@ -50,6 +80,40 @@ def get_loki_process():
         return pid
     except (ValueError, ProcessLookupError, FileNotFoundError):
         return None
+
+
+def status():
+    """Return JSON-serializable Loki WebUI status for the main KTOx WebUI."""
+    pid = get_loki_process()
+    installed = VENDOR_LOKI.exists() and (VENDOR_LOKI / "loki.py").exists()
+    return {
+        "running": bool(pid),
+        "pid": pid,
+        "installed": installed,
+        "port": LOKI_PORT,
+        "ip": preferred_ip(),
+        "url": public_url(),
+        "log": str(LOOT_DIR / "loki.log"),
+        "data_dir": str(LOOT_DIR / "loki_data"),
+        "vendor_dir": str(VENDOR_LOKI),
+        "updated_at": int(time.time()),
+    }
+
+
+def start_server(host=None, port=None):
+    """Start Loki and return status in the same shape as other WebUI managers."""
+    ok = start_loki()
+    result = status()
+    result.update({"ok": ok, "message": "started" if ok else "start failed"})
+    return result
+
+
+def stop_server():
+    """Stop Loki and return status in the same shape as other WebUI managers."""
+    ok = stop_loki()
+    result = status()
+    result.update({"ok": ok, "message": "stopped" if ok else "stop failed"})
+    return result
 
 def start_loki():
     """Start the Loki server."""
