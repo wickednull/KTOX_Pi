@@ -1,8 +1,9 @@
 # KTOx Loki Cyberpunk Theme Pack
 
 This source-only pack defines four skin-based Loki themes. PNG assets are
-generated locally from `tools/generate_loki_cyberpunk_themes.py` and copied
-into a `brainphreak/loki-recon` checkout under `loki/themes/`.
+generated locally from the payload-local `payloads/offensive/loki_theme_generator.py`
+module (also exposed through `tools/generate_loki_cyberpunk_themes.py`) and
+copied into a `brainphreak/loki-recon` checkout under `loki/themes/`.
 
 | Theme ID | Theme Name | Mood |
 | --- | --- | --- |
@@ -44,6 +45,8 @@ The images are generated deterministically and intentionally not tracked in git.
 
 ```bash
 python3 tools/generate_loki_cyberpunk_themes.py
+# or, on payload-only installs that do not include tools/:
+python3 payloads/offensive/loki_theme_generator.py
 ```
 
 Run that command after changing palettes, layouts, or sprite drawing logic.

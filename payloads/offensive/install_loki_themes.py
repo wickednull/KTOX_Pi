@@ -12,7 +12,10 @@ from pathlib import Path
 
 THEME_PACK = Path(__file__).resolve().parent / "loki_themes"
 DEFAULT_ROOT = Path(__file__).resolve().parents[2]
-GENERATOR = DEFAULT_ROOT / "tools" / "generate_loki_cyberpunk_themes.py"
+GENERATOR_CANDIDATES = [
+    Path(__file__).resolve().parent / "loki_theme_generator.py",
+    DEFAULT_ROOT / "tools" / "generate_loki_cyberpunk_themes.py",
+]
 
 
 def resolve_target(path_arg: str | None) -> Path:
@@ -39,13 +42,15 @@ def resolve_target(path_arg: str | None) -> Path:
 
 def generate_theme_pack(out_dir: Path) -> list[Path]:
     """Generate PNG-backed theme folders into out_dir and return them."""
-    if not GENERATOR.exists():
-        print(f"Theme generator not found: {GENERATOR}", file=sys.stderr)
+    generator = next((path for path in GENERATOR_CANDIDATES if path.exists()), None)
+    if generator is None:
+        searched = ", ".join(str(path) for path in GENERATOR_CANDIDATES)
+        print(f"Theme generator not found. Searched: {searched}", file=sys.stderr)
         return []
 
-    spec = importlib.util.spec_from_file_location("generate_loki_cyberpunk_themes", GENERATOR)
+    spec = importlib.util.spec_from_file_location("loki_theme_generator", generator)
     if spec is None or spec.loader is None:
-        print(f"Could not load theme generator: {GENERATOR}", file=sys.stderr)
+        print(f"Could not load theme generator: {generator}", file=sys.stderr)
         return []
 
     module = importlib.util.module_from_spec(spec)
