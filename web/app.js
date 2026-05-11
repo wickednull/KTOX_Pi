@@ -110,6 +110,8 @@
   const lokiStop = document.getElementById('lokiStop');
   const lokiOpen = document.getElementById('lokiOpen');
   const lokiFrame = document.getElementById('lokiFrame');
+  const lokiFrameEmpty = document.getElementById('lokiFrameEmpty');
+  const lokiFrameEmptyStart = document.getElementById('lokiFrameEmptyStart');
   const lokiFrameStatus = document.getElementById('lokiFrameStatus');
   const lokiFrameStart = document.getElementById('lokiFrameStart');
   const lokiFrameReload = document.getElementById('lokiFrameReload');
@@ -1161,12 +1163,18 @@
     if (running) loadPentestConsole(false);
   }
 
+  function setLokiFrameVisible(visible){
+    if (lokiFrame) lokiFrame.classList.toggle('hidden', !visible);
+    if (lokiFrameEmpty) lokiFrameEmpty.classList.toggle('hidden', visible);
+  }
+
   function loadLokiConsole(force = false){
     if (!lokiFrame) return;
     const src = lokiProxyUrl();
     if (force || lokiFrame.getAttribute('src') !== src){
       lokiFrame.setAttribute('src', src);
     }
+    setLokiFrameVisible(true);
   }
 
   function ensureLokiConsole(){
@@ -1240,7 +1248,10 @@
       lokiFrameExternal.classList.toggle('pointer-events-none', !url);
     }
     if (running && activeTab === 'loki') loadLokiConsole(false);
-    if (!running && lokiFrame) lokiFrame.removeAttribute('src');
+    if (!running && lokiFrame){
+      lokiFrame.removeAttribute('src');
+      setLokiFrameVisible(false);
+    }
   }
 
   function applySystemData(data, target = 'desktop'){
@@ -1330,7 +1341,7 @@
 
 
   async function controlLoki(action){
-    const buttons = [lokiStart, lokiStop, lokiFrameStart, lokiFrameStop].filter(Boolean);
+    const buttons = [lokiStart, lokiStop, lokiFrameStart, lokiFrameStop, lokiFrameEmptyStart].filter(Boolean);
     buttons.forEach(btn => { btn.disabled = true; btn.classList.add('opacity-60'); });
     try{
       const res = await apiFetch(getApiUrl(`/api/loki/${action}`), {
@@ -2231,6 +2242,10 @@
     setActiveTab('pentest');
     loadSystemStatus().then(() => ensurePentestConsole()).catch(() => {});
   });
+  if (navLoki) navLoki.addEventListener('click', () => {
+    setActiveTab('loki');
+    loadSystemStatus().then(() => ensureLokiConsole()).catch(() => {});
+  });
   if (navLoot) navLoot.addEventListener('click', () => {
     setActiveTab('loot');
     if (lootList && !lootList.dataset.loaded){
@@ -2353,6 +2368,7 @@
   if (lokiStart) lokiStart.addEventListener('click', () => controlLoki('start'));
   if (lokiStop) lokiStop.addEventListener('click', () => controlLoki('stop'));
   if (lokiFrameStart) lokiFrameStart.addEventListener('click', () => controlLoki('start'));
+  if (lokiFrameEmptyStart) lokiFrameEmptyStart.addEventListener('click', () => controlLoki('start'));
   if (lokiFrameReload) lokiFrameReload.addEventListener('click', () => loadLokiConsole(true));
   if (lokiFrameStop) lokiFrameStop.addEventListener('click', () => controlLoki('stop'));
   if (mobileSystemRefresh) mobileSystemRefresh.addEventListener('click', () => loadMobileSystemStatus());
