@@ -7,7 +7,11 @@ cd /root/KTOx/payloads/offensive
 python3 kali_pentest_webui.py
 ```
 
-Access at: **http://127.0.0.1:9000** (or your configured HOST/PORT)
+Access at: **http://<device-ip>:9000** by default (`0.0.0.0:9000` bind), or your configured `KALI_PENTEST_HOST`/`KALI_PENTEST_PORT`.
+
+## LCD / main WebUI controls
+
+Open **System → Pentest WebUI** on the KTOX LCD to start/stop the server and show the reachable URL plus CPU/RAM/temp. The main KTOX browser WebUI also has **Kali Pentest WebUI** Start/Stop controls in the System Monitor panel.
 
 ## First Steps
 
@@ -157,7 +161,7 @@ curl http://localhost:9000/api/reports/acme_2024/csv > findings.csv
 
 ### Port already in use
 ```bash
-KALI_PENTEST_PORT=9001 python3 kali_pentest_webui.py
+KALI_PENTEST_HOST=0.0.0.0 KALI_PENTEST_PORT=9001 python3 kali_pentest_webui.py
 ```
 
 ### Tool not found

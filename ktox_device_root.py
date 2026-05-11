@@ -1388,6 +1388,7 @@ class KTOxMenu:
         # ── SYSTEM ────────────────────────────────────────────────────────────
         "sys": (
             (" WebUI Status",    self._webui_status),
+            (" Pentest WebUI",   partial(exec_payload,"general/pentest_webui")),
             (" Refresh State",   self._refresh),
             (" System Info",     self._sysinfo),
             (" Discord Webhook", self._discord_status),

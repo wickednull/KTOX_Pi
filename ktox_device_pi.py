@@ -3926,6 +3926,7 @@ _FA_ICONS: dict = {
     "Baseline Export":  "\uf019",   # fa-download
     # ── System submenu ────────────────────────────────────────────────────
     "WebUI Status":     "\uf0e0",   # fa-envelope
+    "Pentest WebUI":    "\uf0ac",   # fa-globe
     "Refresh State":    "\uf021",   # fa-sync
     "System Info":      "\uf129",
     "Network Mgr":      "\uf6ff",   # fa-network-wired
@@ -4090,6 +4091,7 @@ class KTOxMenu:
         # ── SYSTEM ────────────────────────────────────────────────────────────
         "sys": (
             (" WebUI Status",    self._webui_status),
+            (" Pentest WebUI",   partial(exec_payload,"general/pentest_webui")),
             (" Refresh State",   self._refresh),
             (" System Info",     self._sysinfo),
             (" Network Mgr",     self._network_manager),

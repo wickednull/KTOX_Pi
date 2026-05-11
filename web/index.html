@@ -460,6 +460,18 @@
             <div>Payload: <span id="sysPayload">none</span></div>
           </div>
 
+          <div class="rounded-lg border border-red-400/20 bg-red-950/20 p-2 text-[10px] text-slate-300 space-y-2">
+            <div class="flex items-center justify-between gap-2">
+              <div class="font-semibold text-red-300">Kali Pentest WebUI</div>
+              <div id="pentestStatus" class="text-slate-400">stopped</div>
+            </div>
+            <a id="pentestUrl" href="#" target="_blank" rel="noopener noreferrer" class="block truncate text-cyan-300 hover:text-cyan-100">No URL</a>
+            <div class="grid grid-cols-2 gap-2">
+              <button id="pentestStart" type="button" class="px-2 py-1 rounded bg-red-900/80 border border-red-300/30 text-white hover:bg-red-800/80">Start</button>
+              <button id="pentestStop" type="button" class="px-2 py-1 rounded bg-slate-800/80 border border-slate-600/50 text-slate-200 hover:bg-slate-700/80">Stop</button>
+            </div>
+          </div>
+
           <div class="rounded-lg border border-slate-800/80 bg-slate-900/40 p-2">
             <div class="text-[10px] text-slate-400 mb-1">Interfaces</div>
             <div id="sysInterfaces" class="text-[10px] text-slate-300 space-y-1">
@@ -770,6 +782,16 @@
               <div class="text-xs text-slate-300">Uptime: <span id="mobSysUptime">-</span></div>
               <div class="text-xs text-slate-300">Load: <span id="mobSysLoad">-</span></div>
               <div class="text-xs text-slate-300">Payload: <span id="mobSysPayload">none</span></div>
+              <div class="text-xs text-slate-300">Pentest: <span id="mobPentestStatus">stopped</span></div>
+            </div>
+          </div>
+
+          <div class="mobile-stat-card space-y-2">
+            <div class="text-[10px] text-slate-400">Kali Pentest WebUI</div>
+            <a id="mobPentestUrl" href="#" target="_blank" rel="noopener noreferrer" class="block truncate text-xs text-cyan-300">No URL</a>
+            <div class="grid grid-cols-2 gap-2">
+              <button id="mobPentestStart" type="button" class="px-3 py-1.5 rounded-lg bg-red-900/80 border border-red-300/30 text-white text-xs">Start</button>
+              <button id="mobPentestStop" type="button" class="px-3 py-1.5 rounded-lg bg-slate-800/80 border border-slate-600/60 text-slate-200 text-xs">Stop</button>
             </div>
           </div>
 
