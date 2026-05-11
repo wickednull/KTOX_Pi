@@ -433,6 +433,9 @@ def draw_reference_sprite(profile: dict, direction: int, pose: int) -> Image.Ima
 
 
 def sprite_frame(theme_key: str, action: str, frame: int) -> Image.Image:
+    sprite_path = ROOT / "assets" / "sprites" / f"{action}{frame if frame > 1 else ''}.png"
+    if sprite_path.exists():
+        return Image.open(sprite_path).convert("RGBA")
     profile = SPRITE_PROFILES[theme_key]
     col = (frame - 1) % SPRITE_SHEET_GRID[0]
     row = ACTION_ROWS.get(action, 0)
