@@ -473,6 +473,19 @@
             </div>
           </div>
 
+          <div class="rounded-lg border border-cyan-400/20 bg-cyan-950/10 p-2 text-[10px] text-slate-300 space-y-2">
+            <div class="flex items-center justify-between gap-2">
+              <div class="font-semibold text-cyan-300">Loki WebUI</div>
+              <div id="lokiStatus" class="text-slate-400">stopped</div>
+            </div>
+            <a id="lokiUrl" href="#" target="_blank" rel="noopener noreferrer" class="block truncate text-cyan-300 hover:text-cyan-100">No URL</a>
+            <div class="grid grid-cols-2 gap-2">
+              <button id="lokiStart" type="button" class="px-2 py-1 rounded bg-cyan-900/80 border border-cyan-300/30 text-white hover:bg-cyan-800/80">Start</button>
+              <button id="lokiOpen" type="button" class="px-2 py-1 rounded bg-slate-900/70 border border-cyan-300/30 text-cyan-100 hover:bg-slate-800/80">Open</button>
+              <button id="lokiStop" type="button" class="px-2 py-1 rounded bg-slate-800/80 border border-slate-600/50 text-slate-200 hover:bg-slate-700/80 col-span-2">Stop</button>
+            </div>
+          </div>
+
           <div class="rounded-lg border border-slate-800/80 bg-slate-900/40 p-2">
             <div class="text-[10px] text-slate-400 mb-1">Interfaces</div>
             <div id="sysInterfaces" class="text-[10px] text-slate-300 space-y-1">
@@ -481,6 +494,7 @@
           </div>
         </div>
         <button id="navPentest" type="button" class="w-full px-3 py-2 rounded-xl text-left text-sm font-semibold border border-slate-400/20 bg-slate-800/40 text-slate-300 hover:text-white hover:bg-slate-700/50 transition"><i class="fa-solid fa-shield-halved mr-2"></i>Pentest Suite</button>
+        <button id="navLoki" type="button" class="w-full px-3 py-2 rounded-xl text-left text-sm font-semibold border border-slate-400/20 bg-slate-800/40 text-slate-300 hover:text-white hover:bg-slate-700/50 transition"><i class="fa-solid fa-bolt mr-2"></i>Loki WebUI</button>
         <button id="navLoot" type="button" class="w-full px-3 py-2 rounded-xl text-left text-sm font-semibold border border-slate-400/20 bg-slate-800/40 text-slate-300 hover:text-white hover:bg-slate-700/50 transition"><i class="fa-solid fa-vault mr-2"></i>Loot</button>
         <button id="navSettings" type="button" class="w-full px-3 py-2 rounded-xl text-left text-sm font-semibold border border-slate-400/20 bg-slate-800/40 text-slate-300 hover:text-white hover:bg-slate-700/50 transition"><i class="fa-solid fa-sliders mr-2"></i>Settings</button>
         <a id="navPayloadStudio" href="./ide.html" class="w-full px-3 py-2 rounded-xl text-left text-sm font-semibold border border-slate-400/20 bg-slate-800/40 text-slate-300 hover:text-white hover:bg-slate-700/50 transition block"><i class="fa-solid fa-code mr-2"></i>Payload Studio</a>
@@ -696,6 +710,37 @@
           </div>
           <div class="bg-black/40">
             <iframe id="pentestFrame" title="Kali Pentest Suite" class="w-full h-[calc(100dvh-180px)] min-h-[620px] border-0 bg-black" sandbox="allow-forms allow-modals allow-same-origin allow-scripts allow-downloads allow-popups"></iframe>
+          </div>
+        </div>
+      </div>
+
+      <!-- Loki WebUI -->
+      <div id="lokiTab" class="hidden">
+        <div class="rounded-3xl border border-cyan-400/20 bg-slate-950/60 backdrop-blur overflow-hidden shadow-[0_0_30px_rgba(15,23,42,0.35)]">
+          <div class="px-4 py-3 border-b border-slate-800/80 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div class="text-sm font-semibold text-cyan-300"><i class="fa-solid fa-bolt mr-2"></i>Loki Reconnaissance WebUI</div>
+              <div id="lokiFrameStatus" class="text-[11px] text-slate-400">Start Loki to load the reconnaissance console.</div>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+              <button id="lokiFrameStart" type="button" class="px-3 py-1.5 text-xs rounded-lg bg-cyan-900/80 border border-cyan-300/30 text-white hover:bg-cyan-800/80 transition">Start</button>
+              <button id="lokiFrameReload" type="button" class="px-3 py-1.5 text-xs rounded-lg bg-slate-800/80 border border-slate-600/50 text-slate-200 hover:bg-slate-700/80 transition">Reload</button>
+              <a id="lokiFrameExternal" href="#" target="_blank" rel="noopener noreferrer" class="px-3 py-1.5 text-xs rounded-lg bg-slate-800/80 border border-cyan-300/30 text-cyan-100 hover:bg-slate-700/80 transition pointer-events-none">Open new tab</a>
+              <button id="lokiFrameStop" type="button" class="px-3 py-1.5 text-xs rounded-lg bg-slate-900/80 border border-slate-600/50 text-slate-200 hover:bg-slate-800/80 transition">Stop</button>
+            </div>
+          </div>
+          <div class="bg-black/40 relative">
+            <div id="lokiFrameEmpty" class="min-h-[360px] md:min-h-[620px] flex items-center justify-center px-6 py-12 text-center">
+              <div class="max-w-lg rounded-2xl border border-cyan-400/20 bg-slate-950/80 p-5 shadow-[0_0_24px_rgba(8,145,178,0.12)]">
+                <div class="text-cyan-300 text-sm font-semibold"><i class="fa-solid fa-bolt mr-2"></i>Loki console is ready to embed</div>
+                <p class="mt-2 text-xs leading-5 text-slate-400">Start Loki to load its WebUI here through the authenticated KTOx proxy. If setup has not been run yet, start will report that <code class="text-cyan-200">vendor/loki</code> is missing.</p>
+                <div class="mt-4 flex flex-wrap justify-center gap-2">
+                  <button id="lokiFrameEmptyStart" type="button" class="px-3 py-1.5 text-xs rounded-lg bg-cyan-900/80 border border-cyan-300/30 text-white hover:bg-cyan-800/80 transition">Start Loki</button>
+                  <a href="./ide.html" class="px-3 py-1.5 text-xs rounded-lg bg-slate-800/80 border border-slate-600/50 text-slate-200 hover:bg-slate-700/80 transition">Payload Studio</a>
+                </div>
+              </div>
+            </div>
+            <iframe id="lokiFrame" title="Loki Reconnaissance WebUI" class="hidden w-full h-[calc(100dvh-180px)] min-h-[620px] border-0 bg-black" sandbox="allow-forms allow-modals allow-same-origin allow-scripts allow-downloads allow-popups"></iframe>
           </div>
         </div>
       </div>
@@ -990,6 +1035,10 @@
     <button class="mob-nav-btn" data-mobnav="pentest" aria-label="Pentest">
       <i class="fa-solid fa-shield-halved"></i>
       <span>Pentest</span>
+    </button>
+    <button class="mob-nav-btn" data-mobnav="loki" aria-label="Loki">
+      <i class="fa-solid fa-bolt"></i>
+      <span>Loki</span>
     </button>
     <button class="mob-nav-btn" data-mobnav="loot" aria-label="Loot">
       <i class="fa-solid fa-vault"></i>
