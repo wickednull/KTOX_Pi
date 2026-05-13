@@ -30,19 +30,35 @@ import RPi.GPIO as GPIO
 import time
 import numpy as np
 import os
+from PIL import Image as PILImage
+
+from display_profiles import get_display_profile
 
 LCD_1IN44 = 1
 LCD_1IN8 = 0
+
+# Native dimensions for the original Waveshare 1.44" ST7735 panel.
+# The public LCD_WIDTH/LCD_HEIGHT constants below follow the active display
+# profile so compatibility payloads that allocate from LCD_1in44 render into
+# the same canvas size used by _display_helper.ScaledDraw.
+_LCD_NATIVE_WIDTH = 128
+_LCD_NATIVE_HEIGHT = 128
+
 if LCD_1IN44 == 1:
-	LCD_WIDTH  = 128  #LCD width
-	LCD_HEIGHT = 128 #LCD height
 	LCD_X = 2
 	LCD_Y = 1
 if LCD_1IN8 == 1:
-	LCD_WIDTH  = 160
-	LCD_HEIGHT = 128
+	_LCD_NATIVE_WIDTH = 160
+	_LCD_NATIVE_HEIGHT = 128
 	LCD_X = 1
 	LCD_Y = 2
+
+try:
+	_DISPLAY_PROFILE = get_display_profile()
+	LCD_WIDTH, LCD_HEIGHT = _DISPLAY_PROFILE.size
+except Exception:
+	_DISPLAY_PROFILE = None
+	LCD_WIDTH, LCD_HEIGHT = _LCD_NATIVE_WIDTH, _LCD_NATIVE_HEIGHT
 
 LCD_X_MAXPIXEL = 132  #LCD width maximum memory 
 LCD_Y_MAXPIXEL = 162  #LCD height maximum memory
@@ -203,8 +219,14 @@ def _save_m5_frame(pil_image):
 
 class LCD:
 	def __init__(self):
+		# Public canvas dimensions track DISPLAY.type (128x128, 240x240,
+		# 480x320, ...).  Keep native dimensions separately for the legacy
+		# ST7735 SPI write path.
 		self.width = LCD_WIDTH
 		self.height = LCD_HEIGHT
+		self._native_width = _LCD_NATIVE_WIDTH
+		self._native_height = _LCD_NATIVE_HEIGHT
+		self._profile = _DISPLAY_PROFILE
 		self.LCD_Scan_Dir = SCAN_DIR_DFT
 		self.LCD_X_Adjust = LCD_X
 		self.LCD_Y_Adjust = LCD_Y
@@ -432,9 +454,10 @@ class LCD:
 		self.LCD_WriteReg(0x2C)
 
 	def LCD_Clear(self):
-		#hello
-		_buffer = [0xff]*(self.width * self.height * 2)
-		self.LCD_SetWindows(0, 0, self.width, self.height)
+		# Keep the legacy hardware clear bounded to the physical ST7735 RAM,
+		# while public canvases may be larger for alternate display profiles.
+		_buffer = [0xff]*(self._native_width * self._native_height * 2)
+		self.LCD_SetWindows(0, 0, self._native_width, self._native_height)
 		GPIO.output(LCD_Config.LCD_DC_PIN, GPIO.HIGH)
 		for i in range(0,len(_buffer),4096):
 			LCD_Config.SPI_Write_Byte(_buffer[i:i+4096])
@@ -447,13 +470,23 @@ class LCD:
 		if imwidth != self.width or imheight != self.height:
 			raise ValueError('Image must be same dimensions as display \
 				({0}x{1}).' .format(self.width, self.height))
-		img = np.asarray(Image)
-		pix = np.zeros((self.width,self.height,2), dtype = np.uint8)
+
+		# Preserve the active-profile frame for mirrors/streaming, then downsample
+		# only for the legacy ST7735 SPI transport when the public canvas is larger.
+		frame_image = Image
+		hardware_image = Image
+		if hardware_image.size != (self._native_width, self._native_height):
+			resample = getattr(PILImage, "Resampling", PILImage).LANCZOS
+			hardware_image = hardware_image.resize((self._native_width, self._native_height), resample)
+
+		img = np.asarray(hardware_image)
+		imheight, imwidth = img.shape[:2]
+		pix = np.zeros((imheight, imwidth, 2), dtype = np.uint8)
 		pix[...,[0]] = np.add(np.bitwise_and(img[...,[0]],0xF8),np.right_shift(img[...,[1]],5))
 		pix[...,[1]] = np.add(np.bitwise_and(np.left_shift(img[...,[1]],3),0xE0),np.right_shift(img[...,[2]],3))
 		# Use bytes directly - avoids slow Python list conversion on Pi Zero
 		pix_bytes = pix.flatten().tobytes()
-		self.LCD_SetWindows(0, 0, self.width , self.height)
+		self.LCD_SetWindows(0, 0, imwidth , imheight)
 		GPIO.output(LCD_Config.LCD_DC_PIN, GPIO.HIGH)
 		for i in range(0,len(pix_bytes),4096):
 			LCD_Config.SPI_Write_Byte(pix_bytes[i:i+4096])
@@ -463,9 +496,9 @@ class LCD:
 			try:
 				now = time.monotonic()
 				if (now - _last_frame_save) >= _FRAME_MIRROR_INTERVAL:
-					Image.save(_FRAME_MIRROR_PATH, "JPEG", quality=80)
+					frame_image.save(_FRAME_MIRROR_PATH, "JPEG", quality=80)
 					_last_frame_save = now
 			except Exception:
 				pass
 		# Save M5Cardputer-optimized frame if enabled
-		_save_m5_frame(Image)
+		_save_m5_frame(frame_image)
