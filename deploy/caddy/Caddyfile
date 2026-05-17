@@ -55,6 +55,15 @@ https://0.0.0.0 {
         header_up X-Real-IP {remote_host}
     }
 
+    # ── Optional noVNC Kali Desktop (WebSocket-capable) ──
+    handle_path /desktop* {
+        reverse_proxy 127.0.0.1:6080 {
+            header_up X-Forwarded-Proto {scheme}
+            header_up X-Forwarded-Host {host}
+            header_up X-Real-IP {remote_host}
+        }
+    }
+
     # ── API Endpoint (Future Expansion Ready) ──
     @api {
         path /api/*

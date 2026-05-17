@@ -694,24 +694,43 @@
       </div>
 
       <!-- Kali Pentest Suite -->
-      <div id="pentestTab" class="hidden">
+      <div id="pentestTab" class="hidden space-y-4">
         <div class="rounded-3xl border border-red-400/20 bg-slate-950/60 backdrop-blur overflow-hidden shadow-[0_0_30px_rgba(15,23,42,0.35)]">
           <div class="px-4 py-3 border-b border-slate-800/80 flex flex-wrap items-center justify-between gap-3">
             <div>
-              <div class="text-sm font-semibold text-red-400"><i class="fa-solid fa-shield-halved mr-2"></i>Kali Pentest Suite</div>
-              <div id="pentestFrameStatus" class="text-[11px] text-slate-400">Start the server to load the tool console.</div>
+              <div class="text-sm font-semibold text-red-400"><i class="fa-solid fa-desktop mr-2"></i>Kali Linux Desktop noVNC</div>
+              <div id="desktopFrameStatus" class="text-[11px] text-slate-400">Open Pentest to start a Kali Linux desktop; this is not the KTOX LCD mirror.</div>
             </div>
             <div class="flex flex-wrap items-center gap-2">
-              <button id="pentestFrameStart" type="button" class="px-3 py-1.5 text-xs rounded-lg bg-red-900/80 border border-red-300/30 text-white hover:bg-red-800/80 transition">Start</button>
-              <button id="pentestFrameReload" type="button" class="px-3 py-1.5 text-xs rounded-lg bg-slate-800/80 border border-slate-600/50 text-slate-200 hover:bg-slate-700/80 transition">Reload</button>
-              <a id="pentestFrameExternal" href="#" target="_blank" rel="noopener noreferrer" class="px-3 py-1.5 text-xs rounded-lg bg-slate-800/80 border border-cyan-300/30 text-cyan-100 hover:bg-slate-700/80 transition pointer-events-none">Open new tab</a>
-              <button id="pentestFrameStop" type="button" class="px-3 py-1.5 text-xs rounded-lg bg-slate-900/80 border border-slate-600/50 text-slate-200 hover:bg-slate-800/80 transition">Stop</button>
+              <button id="desktopFrameStart" type="button" class="px-3 py-1.5 text-xs rounded-lg bg-red-900/80 border border-red-300/30 text-white hover:bg-red-800/80 transition">Start Desktop</button>
+              <button id="desktopFrameReload" type="button" class="px-3 py-1.5 text-xs rounded-lg bg-slate-800/80 border border-slate-600/50 text-slate-200 hover:bg-slate-700/80 transition">Reload</button>
+              <a id="desktopFrameExternal" href="#" target="_blank" rel="noopener noreferrer" class="px-3 py-1.5 text-xs rounded-lg bg-slate-800/80 border border-cyan-300/30 text-cyan-100 hover:bg-slate-700/80 transition pointer-events-none">Open new tab</a>
+              <button id="desktopFrameStop" type="button" class="px-3 py-1.5 text-xs rounded-lg bg-slate-900/80 border border-slate-600/50 text-slate-200 hover:bg-slate-800/80 transition">Stop Desktop</button>
             </div>
           </div>
           <div class="bg-black/40">
-            <iframe id="pentestFrame" title="Kali Pentest Suite" class="w-full h-[calc(100dvh-180px)] min-h-[620px] border-0 bg-black" sandbox="allow-forms allow-modals allow-same-origin allow-scripts allow-downloads allow-popups"></iframe>
+            <iframe id="desktopFrame" title="Kali Linux Desktop noVNC" class="w-full h-[calc(100dvh-180px)] min-h-[620px] border-0 bg-black" sandbox="allow-forms allow-modals allow-same-origin allow-scripts allow-downloads allow-popups allow-pointer-lock"></iframe>
           </div>
         </div>
+
+        <details class="rounded-3xl border border-red-400/20 bg-slate-950/50 backdrop-blur overflow-hidden shadow-[0_0_20px_rgba(15,23,42,0.25)]">
+          <summary class="cursor-pointer select-none px-4 py-3 border-b border-slate-800/80 text-sm font-semibold text-red-300"><i class="fa-solid fa-shield-halved mr-2"></i>KTOX Kali Tool Suite</summary>
+          <div class="px-4 py-3 border-b border-slate-800/80 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div class="text-sm font-semibold text-red-400">Structured Tool Console</div>
+              <div id="pentestFrameStatus" class="text-[11px] text-slate-400">Start the server to load the tool console.</div>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+              <button id="pentestFrameStart" type="button" class="px-3 py-1.5 text-xs rounded-lg bg-red-900/80 border border-red-300/30 text-white hover:bg-red-800/80 transition">Start Tools</button>
+              <button id="pentestFrameReload" type="button" class="px-3 py-1.5 text-xs rounded-lg bg-slate-800/80 border border-slate-600/50 text-slate-200 hover:bg-slate-700/80 transition">Reload</button>
+              <a id="pentestFrameExternal" href="#" target="_blank" rel="noopener noreferrer" class="px-3 py-1.5 text-xs rounded-lg bg-slate-800/80 border border-cyan-300/30 text-cyan-100 hover:bg-slate-700/80 transition pointer-events-none">Open new tab</a>
+              <button id="pentestFrameStop" type="button" class="px-3 py-1.5 text-xs rounded-lg bg-slate-900/80 border border-slate-600/50 text-slate-200 hover:bg-slate-800/80 transition">Stop Tools</button>
+            </div>
+          </div>
+          <div class="bg-black/40">
+            <iframe id="pentestFrame" title="KTOX Kali Tool Suite" class="w-full h-[calc(100dvh-180px)] min-h-[620px] border-0 bg-black" sandbox="allow-forms allow-modals allow-same-origin allow-scripts allow-downloads allow-popups"></iframe>
+          </div>
+        </details>
       </div>
 
       <!-- Loki WebUI -->

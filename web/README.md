@@ -60,6 +60,38 @@ http://<device-ip>:8080
 - Legacy direct ports (`8080` and `8765`) remain available so access is not bricked if proxy setup fails.
 - If Caddy installation/configuration fails, installer prints remediation and keeps current services running.
 
+
+## Optional Kali Desktop noVNC mode
+The Pentest tab can now start an optional browser-hosted Kali Linux desktop. This does not replace the KTOX WebUI or the structured Kali Pentest Suite; it adds a noVNC desktop frame above the existing tool console for GUI-heavy Kali workflows.
+
+This is **not** another KTOX screen mirror. The existing LCD/WebUI mirror still streams the KTOX menu frame from `/dev/shm/ktox_last.jpg`; noVNC controls a Kali X desktop session on the same device. In the default `virtual` mode, that desktop is a headless X session that can launch Kali GUI tools and modify the same filesystem, network interfaces, loot, and processes as the rest of KTOX. If a real Kali desktop is already running on HDMI/console, set `KTOX_DESKTOP_MODE=existing` and `KTOX_DESKTOP_DISPLAY=:0` to attach noVNC to that existing X display instead.
+
+Runtime pieces started by `payloads/offensive/novnc_manager.py`:
+- Default `virtual` mode: `Xvfb` creates the virtual display (default `:1`, `1280x720x24`).
+- Default `virtual` mode: a lightweight window manager is selected automatically (`startxfce4`, `openbox-session`, `lxsession`, `fluxbox`, `icewm-session`, or `xterm`).
+- Existing-display mode: skips `Xvfb` and the window manager, then points `x11vnc` at `KTOX_DESKTOP_DISPLAY`.
+- `x11vnc` exposes the selected display on localhost VNC port `5901` with an auto-generated password.
+- `websockify`/`novnc_proxy` exposes noVNC on port `6080`.
+
+WebUI controls/API:
+- Open the main WebUI **Pentest** tab to auto-start the desktop frame.
+- `GET /api/desktop/status`
+- `POST /api/desktop/start`
+- `POST /api/desktop/stop`
+
+Caddy HTTPS deployments proxy `/desktop/*` to `127.0.0.1:6080`, including the noVNC WebSocket. Direct HTTP fallback uses the manager's `embed_url` on port `6080`.
+
+Optional environment variables:
+- `KTOX_NOVNC_HOST` (default `0.0.0.0`)
+- `KTOX_NOVNC_PORT` (default `6080`)
+- `KTOX_VNC_PORT` (default `5901`)
+- `KTOX_DESKTOP_MODE` (`virtual` by default, or `existing` to control an existing Kali X display)
+- `KTOX_DESKTOP_USE_EXISTING` (`1`/`true` also enables existing-display mode)
+- `KTOX_DESKTOP_DISPLAY` (default `:1`; use `:0` for a normal HDMI/console X desktop)
+- `KTOX_DESKTOP_GEOMETRY` (default `1280x720x24`, virtual mode only)
+- `KTOX_XAUTHORITY` (optional Xauthority file for existing-display mode)
+- `KTOX_NOVNC_PASSWORD` or `KTOX_NOVNC_PASSWORD_FILE`
+
 ## Environment variables (optional)
 `device_server.py` supports:
 - `RJ_FRAME_PATH` (default `/dev/shm/ktox_last.jpg`)

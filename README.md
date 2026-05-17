@@ -220,6 +220,7 @@ Real-time browser control at `http://[ip]:8080` (the actual KTOx WebUI).
 - **Loot browser** — view and download captured files, nmap XML visualizer
 - **System monitor** — CPU, RAM, temp, disk, uptime, active payload status
 - **Shell** — full interactive PTY terminal in browser (xterm.js)
+- **Kali desktop noVNC** — optional Kali Linux desktop session embedded in the Pentest tab for GUI tools (not the KTOX LCD mirror)
 - **Discord webhook** — configure exfiltration target
 - **Auth system** — username/password login with session tokens, first-run bootstrap
 
@@ -227,9 +228,12 @@ Real-time browser control at `http://[ip]:8080` (the actual KTOx WebUI).
 http://[ip]:8080    WebUI (HTTP server)
 ws://[ip]:8765      WebSocket device server (frame mirror + virtual buttons)
 http://[ip]:9999    KTOx live dashboard (ktox_dashboard.py)
+http://[ip]:6080    Optional noVNC Kali desktop bridge
 ```
 
 Frame mirror JPEG is always at `/dev/shm/ktox_last.jpg` for any tool that wants it.
+
+The noVNC desktop is separate from the LCD mirror: it controls a Kali X desktop session on the Pi. By default this is a headless virtual desktop; set `KTOX_DESKTOP_MODE=existing` with `KTOX_DESKTOP_DISPLAY=:0` to attach noVNC to an existing HDMI/console Kali desktop.
 
 ---
 
@@ -520,6 +524,7 @@ RPi.GPIO>=0.7.1       GPIO (buttons + LCD)
 requests              HTTP client
 websockets            WebSocket server
 customtkinter>=5.2.0  desktop GUI (Pi 5 / desktop only)
+xvfb/x11vnc/noVNC    optional browser-embedded Kali desktop mode
 ```
 
 ---

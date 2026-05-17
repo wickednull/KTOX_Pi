@@ -100,6 +100,12 @@
   const pentestFrameReload = document.getElementById('pentestFrameReload');
   const pentestFrameStop = document.getElementById('pentestFrameStop');
   const pentestFrameExternal = document.getElementById('pentestFrameExternal');
+  const desktopFrame = document.getElementById('desktopFrame');
+  const desktopFrameStatus = document.getElementById('desktopFrameStatus');
+  const desktopFrameStart = document.getElementById('desktopFrameStart');
+  const desktopFrameReload = document.getElementById('desktopFrameReload');
+  const desktopFrameStop = document.getElementById('desktopFrameStop');
+  const desktopFrameExternal = document.getElementById('desktopFrameExternal');
   const mobPentestStatus = document.getElementById('mobPentestStatus');
   const mobPentestUrl = document.getElementById('mobPentestUrl');
   const mobPentestStart = document.getElementById('mobPentestStart');
@@ -813,7 +819,7 @@
     }
     if (settingsTab) settingsTab.classList.toggle('hidden', tab !== 'settings');
     if (pentestTab) pentestTab.classList.toggle('hidden', tab !== 'pentest');
-    if (tab === 'pentest') ensurePentestConsole();
+    if (tab === 'pentest') { ensureDesktopConsole(); ensurePentestConsole(); }
     if (lokiTab) lokiTab.classList.toggle('hidden', tab !== 'loki');
     if (tab === 'loki') ensureLokiConsole();
     if (lootTab) lootTab.classList.toggle('hidden', tab !== 'loot');
@@ -1145,6 +1151,19 @@
     return `${location.origin}/pentest/${search}`;
   }
 
+  function desktopProxyUrl(data){
+    const search = window.location.search || '';
+    const basePath = data && data.proxy_path ? String(data.proxy_path) : '/desktop/vnc.html?autoconnect=true&resize=remote&path=desktop/websockify';
+    const join = search ? `${basePath.includes('?') ? '&' : '?'}${search.slice(1)}` : '';
+    return `${location.origin}${basePath}${join}`;
+  }
+
+  function desktopDirectUrl(data){
+    const base = data && data.embed_url ? String(data.embed_url) : '';
+    if (window.location.protocol === 'https:') return desktopProxyUrl(data);
+    return base;
+  }
+
   function lokiProxyUrl(){
     const search = window.location.search || '';
     return `${location.origin}/loki/${search}`;
@@ -1159,6 +1178,33 @@
     const src = pentestProxyUrl();
     if (force || pentestFrame.getAttribute('src') !== src){
       pentestFrame.setAttribute('src', src);
+    }
+  }
+
+  let lastDesktopData = {};
+  let desktopAutoStartInFlight = false;
+
+  function loadDesktopConsole(force = false){
+    if (!desktopFrame) return;
+    const src = desktopDirectUrl(lastDesktopData) || desktopProxyUrl(lastDesktopData);
+    if (force || desktopFrame.getAttribute('src') !== src){
+      desktopFrame.setAttribute('src', src);
+    }
+  }
+
+  async function ensureDesktopConsole(){
+    const running = lastDesktopData && lastDesktopData.running;
+    if (running){
+      loadDesktopConsole(false);
+      return;
+    }
+    if (!desktopAutoStartInFlight){
+      desktopAutoStartInFlight = true;
+      try{
+        await controlDesktop('start');
+      } finally {
+        desktopAutoStartInFlight = false;
+      }
     }
   }
 
@@ -1184,6 +1230,28 @@
   function ensureLokiConsole(){
     const running = lokiStatus && lokiStatus.textContent === 'running';
     if (running) loadLokiConsole(false);
+  }
+
+  function applyDesktopData(desktop){
+    const data = desktop || {};
+    lastDesktopData = data;
+    const running = !!data.running;
+    const url = desktopDirectUrl(data);
+    if (desktopFrameStatus){
+      if (running){
+        desktopFrameStatus.textContent = data.mode === 'existing' ? 'Connected to the existing Kali X desktop. This is not the KTOX LCD mirror.' : 'Kali desktop session is ready below. This controls a real Kali desktop on the device, not the KTOX LCD mirror.';
+      } else if (data.installed === false || (Array.isArray(data.missing) && data.missing.length)){
+        desktopFrameStatus.textContent = `Desktop dependencies missing: ${(data.missing || []).join(', ')}`;
+      } else {
+        desktopFrameStatus.textContent = 'Open Pentest to start the Kali desktop. noVNC controls Kali Linux, not the KTOX LCD mirror.';
+      }
+    }
+    if (desktopFrameExternal){
+      desktopFrameExternal.href = url || '#';
+      desktopFrameExternal.classList.toggle('pointer-events-none', !url);
+    }
+    if (running && activeTab === 'pentest') loadDesktopConsole(false);
+    if (!running && desktopFrame) desktopFrame.removeAttribute('src');
   }
 
   function applyPentestData(pentest, target = 'desktop'){
@@ -1274,6 +1342,7 @@
     const ifaces = Array.isArray(data.interfaces) ? data.interfaces : [];
     applyPentestData(data.pentest || {}, target);
     applyLokiData(data.loki || {});
+    applyDesktopData(data.desktop || {});
     const interfacesHtml = ifaces.length
       ? ifaces.map(i => `<div><span class="text-red-400">${escapeHtml(String(i.name || '-'))}</span>: ${escapeHtml(String(i.ipv4 || '-'))}</div>`).join('')
       : '<div class="text-slate-500">No active interfaces</div>';
@@ -1338,6 +1407,34 @@
     } catch (e){
       setSystemStatus(action === 'start' ? 'Pentest start failed' : 'Pentest stop failed');
       if (mobileSystemStatus) mobileSystemStatus.textContent = 'Pentest control failed';
+    } finally {
+      buttons.forEach(btn => { btn.disabled = false; btn.classList.remove('opacity-60'); });
+    }
+  }
+
+
+  async function controlDesktop(action){
+    const buttons = [desktopFrameStart, desktopFrameStop].filter(Boolean);
+    buttons.forEach(btn => { btn.disabled = true; btn.classList.add('opacity-60'); });
+    try{
+      if (desktopFrameStatus) desktopFrameStatus.textContent = action === 'start' ? 'Starting Kali desktop...' : 'Stopping Kali desktop...';
+      const res = await apiFetch(getApiUrl(`/api/desktop/${action}`), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      });
+      const data = await res.json();
+      if (!res.ok || (data && data.ok === false)){
+        throw new Error(data && (data.error || data.message) ? (data.error || data.message) : `desktop_${action}_failed`);
+      }
+      applyDesktopData(data);
+      if (action === 'start') loadDesktopConsole(true);
+      await loadSystemStatus();
+      if (typeof window.loadMobileSystemStatus === 'function') await loadMobileSystemStatus();
+    } catch (e){
+      setSystemStatus(action === 'start' ? 'Desktop start failed' : 'Desktop stop failed');
+      if (desktopFrameStatus) desktopFrameStatus.textContent = e && e.message ? e.message : 'Desktop control failed';
+      if (mobileSystemStatus) mobileSystemStatus.textContent = 'Desktop control failed';
     } finally {
       buttons.forEach(btn => { btn.disabled = false; btn.classList.remove('opacity-60'); });
     }
@@ -2367,6 +2464,9 @@
   if (pentestFrameStart) pentestFrameStart.addEventListener('click', () => controlPentest('start'));
   if (pentestFrameReload) pentestFrameReload.addEventListener('click', () => loadPentestConsole(true));
   if (pentestFrameStop) pentestFrameStop.addEventListener('click', () => controlPentest('stop'));
+  if (desktopFrameStart) desktopFrameStart.addEventListener('click', () => controlDesktop('start'));
+  if (desktopFrameReload) desktopFrameReload.addEventListener('click', () => loadDesktopConsole(true));
+  if (desktopFrameStop) desktopFrameStop.addEventListener('click', () => controlDesktop('stop'));
   if (mobPentestStart) mobPentestStart.addEventListener('click', () => controlPentest('start'));
   if (mobPentestStop) mobPentestStop.addEventListener('click', () => controlPentest('stop'));
   if (lokiStart) lokiStart.addEventListener('click', () => controlLoki('start'));

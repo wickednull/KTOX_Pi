@@ -14,6 +14,7 @@ Routes:
   /api/settings/discord_webhook -> get/save Discord webhook
   /api/pentest/*      -> start/stop/status for Kali Pentest WebUI
   /api/loki/*         -> start/stop/status for Loki WebUI
+  /api/desktop/*      -> start/stop/status for Kali noVNC desktop
   /api/auth/*         -> bootstrap/login/session endpoints
 
 Environment:
@@ -69,6 +70,7 @@ TAILSCALE_KEY_PATH = ROOT_DIR / ".tailscale_auth_key"
 TAILSCALE_STATUS_PATH = Path("/dev/shm/rj_tailscale_status.json")
 PENTEST_PROXY_TIMEOUT = float(os.environ.get("KALI_PENTEST_PROXY_TIMEOUT", "120"))
 LOKI_PROXY_TIMEOUT = float(os.environ.get("KTOX_LOKI_PROXY_TIMEOUT", "120"))
+DESKTOP_PROXY_TIMEOUT = float(os.environ.get("KTOX_NOVNC_PROXY_TIMEOUT", "120"))
 PENTEST_API_PREFIXES = (
     "/api/status",
     "/api/engagements",
@@ -81,6 +83,7 @@ PENTEST_API_PREFIXES = (
 LOKI_API_PREFIXES = (
     "/api/v1",
 )
+DESKTOP_PROXY_PREFIX = "/desktop"
 
 
 
@@ -430,6 +433,13 @@ def _regenerate_caddyfile_and_reload() -> None:
     reverse_proxy @ws 127.0.0.1:8765 {{
         header_up X-Forwarded-Proto {{scheme}}
         header_up X-Forwarded-Host {{host}}
+    }}
+
+    handle_path /desktop* {{
+        reverse_proxy 127.0.0.1:6080 {{
+            header_up X-Forwarded-Proto {{scheme}}
+            header_up X-Forwarded-Host {{host}}
+        }}
     }}
 
     reverse_proxy 127.0.0.1:8080 {{
@@ -1017,6 +1027,18 @@ def _loki_status() -> dict:
         return {"running": False, "error": str(exc)}
 
 
+def _desktop_manager():
+    from payloads.offensive import novnc_manager
+    return novnc_manager
+
+
+def _desktop_status() -> dict:
+    try:
+        return _desktop_manager().status()
+    except Exception as exc:
+        return {"running": False, "error": str(exc)}
+
+
 def _is_pentest_proxy_path(path: str) -> bool:
     return path == "/pentest" or path.startswith("/pentest/") or any(
         path == prefix or path.startswith(prefix + "/") for prefix in PENTEST_API_PREFIXES
@@ -1045,6 +1067,21 @@ def _loki_proxy_target(path: str) -> str:
         proxied = path[len("/loki"):]
         return proxied or "/"
     return path
+
+
+def _is_desktop_proxy_path(path: str) -> bool:
+    return path == DESKTOP_PROXY_PREFIX or path.startswith(DESKTOP_PROXY_PREFIX + "/")
+
+
+def _desktop_proxy_target(path: str) -> str:
+    if path == DESKTOP_PROXY_PREFIX:
+        return "/"
+    proxied = path[len(DESKTOP_PROXY_PREFIX):]
+    return proxied or "/"
+
+
+def _auth_ok_for_desktop_proxy(handler: SimpleHTTPRequestHandler, query: dict) -> bool:
+    return _auth_ok_for_embedded_proxy(handler, query, DESKTOP_PROXY_PREFIX)
 
 
 def _inject_loki_proxy_bootstrap(raw: bytes) -> bytes:
@@ -1242,6 +1279,14 @@ class KTOxHandler(SimpleHTTPRequestHandler):
             self._handle_loki_proxy(parsed)
             return
 
+        if _is_desktop_proxy_path(parsed.path):
+            query = parse_qs(parsed.query or "")
+            if not _auth_ok_for_desktop_proxy(self, query):
+                _json_response(self, {"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
+                return
+            self._handle_desktop_proxy(parsed)
+            return
+
         if (
             parsed.path.startswith("/api/loot/")
             or parsed.path.startswith("/api/payloads/")
@@ -1251,6 +1296,7 @@ class KTOxHandler(SimpleHTTPRequestHandler):
             or parsed.path.startswith("/api/stealth/")
             or parsed.path.startswith("/api/pentest/")
             or parsed.path.startswith("/api/loki/")
+            or parsed.path.startswith("/api/desktop/")
         ):
             query = parse_qs(parsed.query or "")
             if parsed.path == "/api/auth/bootstrap-status":
@@ -1272,6 +1318,9 @@ class KTOxHandler(SimpleHTTPRequestHandler):
                 return
             if parsed.path == "/api/loki/status":
                 self._handle_loki_status()
+                return
+            if parsed.path == "/api/desktop/status":
+                self._handle_desktop_status()
                 return
 
             if parsed.path == "/api/stealth/status":
@@ -1352,6 +1401,14 @@ class KTOxHandler(SimpleHTTPRequestHandler):
             self._handle_loki_proxy(parsed)
             return
 
+        if _is_desktop_proxy_path(parsed.path):
+            query = parse_qs(parsed.query or "")
+            if not _auth_ok_for_desktop_proxy(self, query):
+                _json_response(self, {"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
+                return
+            self._handle_desktop_proxy(parsed)
+            return
+
         if parsed.path == "/api/stealth/status":
             query = parse_qs(parsed.query or "")
             if not _auth_ok(self, query):
@@ -1412,6 +1469,20 @@ class KTOxHandler(SimpleHTTPRequestHandler):
                 return
             self._handle_loki_stop()
             return
+        if parsed.path == "/api/desktop/start":
+            query = parse_qs(parsed.query or "")
+            if not _auth_ok(self, query):
+                _json_response(self, {"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
+                return
+            self._handle_desktop_start()
+            return
+        if parsed.path == "/api/desktop/stop":
+            query = parse_qs(parsed.query or "")
+            if not _auth_ok(self, query):
+                _json_response(self, {"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
+                return
+            self._handle_desktop_stop()
+            return
 
         if parsed.path in ("/api/payloads/start", "/api/payloads/run"):
             query = parse_qs(parsed.query or "")
@@ -1453,6 +1524,13 @@ class KTOxHandler(SimpleHTTPRequestHandler):
                 return
             self._handle_loki_proxy(parsed)
             return
+        if _is_desktop_proxy_path(parsed.path):
+            query = parse_qs(parsed.query or "")
+            if not _auth_ok_for_desktop_proxy(self, query):
+                _json_response(self, {"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
+                return
+            self._handle_desktop_proxy(parsed)
+            return
         if parsed.path == "/api/payloads/file":
             query = parse_qs(parsed.query or "")
             if not _auth_ok(self, query):
@@ -1493,6 +1571,13 @@ class KTOxHandler(SimpleHTTPRequestHandler):
                 return
             self._handle_loki_proxy(parsed)
             return
+        if _is_desktop_proxy_path(parsed.path):
+            query = parse_qs(parsed.query or "")
+            if not _auth_ok_for_desktop_proxy(self, query):
+                _json_response(self, {"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
+                return
+            self._handle_desktop_proxy(parsed)
+            return
         if parsed.path == "/api/payloads/entry":
             query = parse_qs(parsed.query or "")
             if not _auth_ok(self, query):
@@ -1518,6 +1603,13 @@ class KTOxHandler(SimpleHTTPRequestHandler):
                 _json_response(self, {"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
                 return
             self._handle_loki_proxy(parsed)
+            return
+        if _is_desktop_proxy_path(parsed.path):
+            query = parse_qs(parsed.query or "")
+            if not _auth_ok_for_desktop_proxy(self, query):
+                _json_response(self, {"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
+                return
+            self._handle_desktop_proxy(parsed)
             return
         if parsed.path == "/api/payloads/entry":
             query = parse_qs(parsed.query or "")
@@ -2110,6 +2202,70 @@ class KTOxHandler(SimpleHTTPRequestHandler):
             except Exception:
                 pass
 
+
+    def _handle_desktop_proxy(self, parsed) -> None:
+        state = _desktop_status()
+        if not state.get("running"):
+            _json_response(self, {
+                "error": "Kali noVNC desktop is not running",
+                "running": False,
+                "status": state,
+            }, status=HTTPStatus.SERVICE_UNAVAILABLE)
+            return
+
+        target_path = _desktop_proxy_target(parsed.path)
+        if parsed.query:
+            target_path = f"{target_path}?{parsed.query}"
+        body = b""
+        if self.command in ("POST", "PUT", "PATCH"):
+            try:
+                length = int(self.headers.get("Content-Length", "0") or "0")
+            except Exception:
+                length = 0
+            if length > REQUEST_MAX_BYTES:
+                _json_response(self, {"error": "request too large"}, status=HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
+                return
+            body = self.rfile.read(length) if length > 0 else b""
+
+        headers = {
+            key: value for key, value in self.headers.items()
+            if key.lower() not in ("host", "connection", "content-length", "accept-encoding")
+        }
+        if body:
+            headers["Content-Length"] = str(len(body))
+
+        port = int(state.get("port") or os.environ.get("KTOX_NOVNC_PORT", "6080"))
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=DESKTOP_PROXY_TIMEOUT)
+        try:
+            conn.request(self.command, target_path, body=body if body else None, headers=headers)
+            resp = conn.getresponse()
+            resp_headers = resp.getheaders()
+            excluded = {"connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
+                        "te", "trailers", "transfer-encoding", "upgrade"}
+
+            self.send_response(resp.status, resp.reason)
+            for key, value in resp_headers:
+                if key.lower() in excluded:
+                    continue
+                self.send_header(key, value)
+            self.end_headers()
+            while True:
+                chunk = resp.read(64 * 1024)
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+                try:
+                    self.wfile.flush()
+                except Exception:
+                    pass
+        except Exception as exc:
+            _json_response(self, {"error": f"noVNC proxy error: {exc}"}, status=HTTPStatus.BAD_GATEWAY)
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
     def _handle_loki_proxy(self, parsed) -> None:
         state = _loki_status()
         if not state.get("running"):
@@ -2206,6 +2362,27 @@ class KTOxHandler(SimpleHTTPRequestHandler):
         except Exception as exc:
             _json_response(self, {"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
 
+    def _handle_desktop_status(self) -> None:
+        _json_response(self, _desktop_status())
+
+    def _handle_desktop_start(self) -> None:
+        body = _read_json(self)
+        if body is None:
+            _json_response(self, {"error": "invalid json"}, status=HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            port = int(body.get("port") or os.environ.get("KTOX_NOVNC_PORT", "6080"))
+            host = str(body.get("host") or os.environ.get("KTOX_NOVNC_HOST", "0.0.0.0"))
+            _json_response(self, _desktop_manager().start_server(host=host, port=port))
+        except Exception as exc:
+            _json_response(self, {"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+
+    def _handle_desktop_stop(self) -> None:
+        try:
+            _json_response(self, _desktop_manager().stop_server())
+        except Exception as exc:
+            _json_response(self, {"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+
     def _handle_pentest_status(self) -> None:
         _json_response(self, _pentest_status())
 
@@ -2269,6 +2446,7 @@ class KTOxHandler(SimpleHTTPRequestHandler):
                 "payload_path": payload_path,
                 "pentest": _pentest_status(),
                 "loki": _loki_status(),
+                "desktop": _desktop_status(),
             })
         except Exception as exc:
             _json_response(self, {"error": f"status error: {exc}"}, status=HTTPStatus.INTERNAL_SERVER_ERROR)

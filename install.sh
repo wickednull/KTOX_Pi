@@ -63,6 +63,7 @@ apt-get install -y --no-install-recommends \
     hashcat john hydra sshpass enum4linux \
     impacket-scripts smbclient snmp snmpd \
     responder mitmproxy \
+    xvfb x11vnc novnc websockify openbox xterm \
     bluez bluez-tools \
     openssh-server openssh-client autossh \
     net-tools ethtool git i2c-tools libglib2.0-dev 2>/dev/null || warn "Some packages failed"
