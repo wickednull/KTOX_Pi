@@ -102,6 +102,7 @@
   const pentestFrameExternal = document.getElementById('pentestFrameExternal');
   const desktopFrame = document.getElementById('desktopFrame');
   const desktopFrameStatus = document.getElementById('desktopFrameStatus');
+  const desktopFrameInstallDeps = document.getElementById('desktopFrameInstallDeps');
   const desktopFrameStart = document.getElementById('desktopFrameStart');
   const desktopFrameReload = document.getElementById('desktopFrameReload');
   const desktopFrameStop = document.getElementById('desktopFrameStop');
@@ -1237,14 +1238,30 @@
     lastDesktopData = data;
     const running = !!data.running;
     const url = desktopDirectUrl(data);
+    const install = data.install || {};
+    const missingDeps = Array.isArray(data.missing) && data.missing.length ? data.missing : [];
+    const depsMissing = data.installed === false || missingDeps.length > 0;
+    const installingDeps = !!install.installing;
     if (desktopFrameStatus){
       if (running){
         desktopFrameStatus.textContent = data.mode === 'existing' ? 'Connected to the existing Kali X desktop. This is not the KTOX LCD mirror.' : 'Kali desktop session is ready below. This controls a real Kali desktop on the device, not the KTOX LCD mirror.';
-      } else if (data.installed === false || (Array.isArray(data.missing) && data.missing.length)){
-        desktopFrameStatus.textContent = `Desktop dependencies missing: ${(data.missing || []).join(', ')}`;
+      } else if (installingDeps){
+        desktopFrameStatus.textContent = install.message || 'Installing Kali desktop dependencies...';
+      } else if (depsMissing){
+        desktopFrameStatus.textContent = `Desktop dependencies missing: ${missingDeps.join(', ') || 'required packages'}`;
       } else {
         desktopFrameStatus.textContent = 'Open Pentest to start the Kali desktop. noVNC controls Kali Linux, not the KTOX LCD mirror.';
       }
+    }
+    if (desktopFrameInstallDeps){
+      desktopFrameInstallDeps.classList.toggle('hidden', !depsMissing || running);
+      desktopFrameInstallDeps.disabled = installingDeps;
+      desktopFrameInstallDeps.classList.toggle('opacity-60', installingDeps);
+      desktopFrameInstallDeps.textContent = installingDeps ? 'Installing Deps...' : 'Install Desktop Deps';
+    }
+    if (desktopFrameStart){
+      desktopFrameStart.disabled = installingDeps || depsMissing;
+      desktopFrameStart.classList.toggle('opacity-60', installingDeps || depsMissing);
     }
     if (desktopFrameExternal){
       desktopFrameExternal.href = url || '#';
@@ -1409,6 +1426,33 @@
       if (mobileSystemStatus) mobileSystemStatus.textContent = 'Pentest control failed';
     } finally {
       buttons.forEach(btn => { btn.disabled = false; btn.classList.remove('opacity-60'); });
+    }
+  }
+
+
+  async function installDesktopDeps(){
+    const buttons = [desktopFrameInstallDeps].filter(Boolean);
+    buttons.forEach(btn => { btn.disabled = true; btn.classList.add('opacity-60'); });
+    try{
+      if (desktopFrameStatus) desktopFrameStatus.textContent = 'Starting Kali desktop dependency installation...';
+      const res = await apiFetch(getApiUrl('/api/desktop/install-deps'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      });
+      const data = await res.json();
+      if (!res.ok || (data && data.ok === false && !data.installing)){
+        throw new Error(data && (data.error || data.message) ? (data.error || data.message) : 'desktop_dependency_install_failed');
+      }
+      applyDesktopData(data);
+      await loadSystemStatus();
+      if (typeof window.loadMobileSystemStatus === 'function') await window.loadMobileSystemStatus();
+    } catch (e){
+      setSystemStatus('Desktop dependency install failed');
+      if (desktopFrameStatus) desktopFrameStatus.textContent = e && e.message ? e.message : 'Desktop dependency install failed';
+    } finally {
+      buttons.forEach(btn => { btn.disabled = false; btn.classList.remove('opacity-60'); });
+      applyDesktopData(lastDesktopData);
     }
   }
 
@@ -2464,6 +2508,7 @@
   if (pentestFrameStart) pentestFrameStart.addEventListener('click', () => controlPentest('start'));
   if (pentestFrameReload) pentestFrameReload.addEventListener('click', () => loadPentestConsole(true));
   if (pentestFrameStop) pentestFrameStop.addEventListener('click', () => controlPentest('stop'));
+  if (desktopFrameInstallDeps) desktopFrameInstallDeps.addEventListener('click', () => installDesktopDeps());
   if (desktopFrameStart) desktopFrameStart.addEventListener('click', () => controlDesktop('start'));
   if (desktopFrameReload) desktopFrameReload.addEventListener('click', () => loadDesktopConsole(true));
   if (desktopFrameStop) desktopFrameStop.addEventListener('click', () => controlDesktop('stop'));

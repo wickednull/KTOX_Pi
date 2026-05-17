@@ -9,6 +9,7 @@ import signal
 import shutil
 import socket
 import subprocess
+import threading
 import time
 from urllib.parse import quote
 from pathlib import Path
@@ -19,6 +20,7 @@ KTOX_ROOT = SCRIPT_PATH.parents[2]
 RUNTIME_DIR = Path(os.environ.get("KTOX_NOVNC_RUNTIME_DIR", "/dev/shm/ktox_novnc"))
 PID_PATH = RUNTIME_DIR / "pids.json"
 STATUS_PATH = RUNTIME_DIR / "status.json"
+INSTALL_STATUS_PATH = RUNTIME_DIR / "install_status.json"
 LOG_PATH = Path(os.environ.get("KTOX_NOVNC_LOG_FILE", "/tmp/ktox_novnc.log"))
 PASSWORD_PATH = Path(os.environ.get("KTOX_NOVNC_PASSWORD_FILE", str(RUNTIME_DIR / "vnc.pass")))
 DEFAULT_HOST = os.environ.get("KTOX_NOVNC_HOST", "0.0.0.0")
@@ -32,6 +34,9 @@ XAUTHORITY_PATH = os.environ.get("KTOX_XAUTHORITY", "").strip()
 
 
 ProcessMap = dict[str, int]
+_INSTALL_LOCK = threading.Lock()
+_INSTALLING = False
+NOVNC_APT_PACKAGES = ("xvfb", "x11vnc", "novnc", "websockify", "openbox", "xterm")
 
 
 def preferred_ip() -> str:
@@ -163,6 +168,136 @@ def dependency_status() -> dict[str, Any]:
     }
 
 
+def _read_install_status() -> dict[str, Any]:
+    try:
+        if not INSTALL_STATUS_PATH.exists():
+            return {"installing": False, "ok": None, "error": None, "packages": list(NOVNC_APT_PACKAGES)}
+        data = json.loads(INSTALL_STATUS_PATH.read_text(encoding="utf-8") or "{}")
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {"installing": False, "ok": None, "error": None, "packages": list(NOVNC_APT_PACKAGES)}
+
+
+def _write_install_status(payload: dict[str, Any]) -> None:
+    try:
+        RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
+        current = _read_install_status()
+        current.update(payload)
+        current.setdefault("packages", list(NOVNC_APT_PACKAGES))
+        current["updated_at"] = int(time.time())
+        INSTALL_STATUS_PATH.write_text(json.dumps(current), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def install_status() -> dict[str, Any]:
+    data = _read_install_status()
+    data.setdefault("installing", False)
+    data.setdefault("packages", list(NOVNC_APT_PACKAGES))
+    return data
+
+
+def _apt_command(*args: str) -> list[str]:
+    if os.geteuid() == 0:
+        return ["apt-get", *args]
+    sudo = shutil.which("sudo")
+    if sudo:
+        return [sudo, "-n", "apt-get", *args]
+    return ["apt-get", *args]
+
+
+def _run_apt_step(args: list[str], timeout: int) -> tuple[bool, str]:
+    env = os.environ.copy()
+    env.setdefault("DEBIAN_FRONTEND", "noninteractive")
+    try:
+        res = subprocess.run(args, capture_output=True, text=True, timeout=timeout, env=env)
+    except subprocess.TimeoutExpired:
+        return False, f"{' '.join(args)} timed out"
+    except Exception as exc:
+        return False, str(exc)
+    if res.returncode == 0:
+        return True, "ok"
+    msg = (res.stderr or res.stdout or "").strip()
+    if not msg:
+        msg = f"{' '.join(args)} failed with exit code {res.returncode}"
+    return False, msg[-1000:]
+
+
+def _install_dependencies_worker() -> dict[str, Any]:
+    before = dependency_status()
+    if before.get("installed"):
+        _write_install_status({"installing": False, "ok": True, "error": None, "message": "dependencies already installed"})
+        return status() | {"installing": False, "ok": True, "message": "dependencies already installed"}
+
+    if not shutil.which("apt-get"):
+        _write_install_status({"installing": False, "ok": False, "error": "apt-get is not available on this system"})
+        return status() | {"ok": False, "error": "apt-get is not available on this system"}
+
+    _write_install_status({
+        "installing": True,
+        "ok": False,
+        "error": None,
+        "message": "updating package lists",
+        "missing_before": before.get("missing", []),
+    })
+    ok, msg = _run_apt_step(_apt_command("update", "-qq"), 600)
+    if not ok:
+        _write_install_status({"installing": False, "ok": False, "error": msg, "message": "apt update failed"})
+        return status() | {"ok": False, "error": msg, "message": "apt update failed"}
+
+    _write_install_status({"installing": True, "ok": False, "error": None, "message": "installing noVNC desktop packages"})
+    install_args = _apt_command("install", "-y", "--no-install-recommends", *NOVNC_APT_PACKAGES)
+    ok, msg = _run_apt_step(install_args, 1200)
+    if not ok:
+        _write_install_status({"installing": False, "ok": False, "error": msg, "message": "apt install failed"})
+        return status() | {"ok": False, "error": msg, "message": "apt install failed"}
+
+    after = dependency_status()
+    if not after.get("installed"):
+        missing = after.get("missing", [])
+        err = "still missing: " + ", ".join(missing)
+        _write_install_status({"installing": False, "ok": False, "error": err, "message": "dependencies still missing", "missing_after": missing})
+        return status() | {"ok": False, "error": err, "message": "dependencies still missing"}
+
+    _write_install_status({"installing": False, "ok": True, "error": None, "message": "dependencies installed", "missing_after": []})
+    return status() | {"ok": True, "message": "dependencies installed"}
+
+
+def _install_dependencies_thread() -> None:
+    global _INSTALLING
+    try:
+        _install_dependencies_worker()
+    finally:
+        with _INSTALL_LOCK:
+            _INSTALLING = False
+
+
+def install_dependencies() -> dict[str, Any]:
+    """Install the optional noVNC desktop dependencies with apt-get."""
+    global _INSTALLING
+    with _INSTALL_LOCK:
+        if _INSTALLING:
+            return install_status() | {"installing": True, "ok": False, "error": "installation already in progress"}
+        _INSTALLING = True
+    try:
+        return _install_dependencies_worker()
+    finally:
+        with _INSTALL_LOCK:
+            _INSTALLING = False
+
+
+def install_dependencies_async() -> dict[str, Any]:
+    global _INSTALLING
+    with _INSTALL_LOCK:
+        if _INSTALLING:
+            return install_status() | {"installing": True, "ok": False, "error": "installation already in progress"}
+        _INSTALLING = True
+    _write_install_status({"installing": True, "ok": False, "error": None, "message": "installation started"})
+    thread = threading.Thread(target=_install_dependencies_thread, daemon=True)
+    thread.start()
+    return status() | {"ok": True, "installing": True, "message": "installation started"}
+
+
 def _read_pids() -> ProcessMap:
     try:
         raw = json.loads(PID_PATH.read_text(encoding="utf-8"))
@@ -220,6 +355,7 @@ def _write_status(extra: dict[str, Any] | None = None) -> None:
         "password": _desktop_password(),
         "log": str(LOG_PATH),
         "updated_at": int(time.time()),
+        "install": install_status(),
     }
     payload.update(deps)
     if extra:

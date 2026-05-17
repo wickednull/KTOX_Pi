@@ -78,6 +78,7 @@ WebUI controls/API:
 - `GET /api/desktop/status`
 - `POST /api/desktop/start`
 - `POST /api/desktop/stop`
+- `POST /api/desktop/install-deps` installs the optional noVNC packages (`xvfb`, `x11vnc`, `novnc`, `websockify`, `openbox`, `xterm`) when status reports missing dependencies.
 
 Caddy HTTPS deployments proxy `/desktop/*` to `127.0.0.1:6080`, including the noVNC WebSocket. Direct HTTP fallback uses the manager's `embed_url` on port `6080`.
 

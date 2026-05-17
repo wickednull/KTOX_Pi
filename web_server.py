@@ -14,7 +14,7 @@ Routes:
   /api/settings/discord_webhook -> get/save Discord webhook
   /api/pentest/*      -> start/stop/status for Kali Pentest WebUI
   /api/loki/*         -> start/stop/status for Loki WebUI
-  /api/desktop/*      -> start/stop/status for Kali noVNC desktop
+  /api/desktop/*      -> start/stop/status/install dependencies for Kali noVNC desktop
   /api/auth/*         -> bootstrap/login/session endpoints
 
 Environment:
@@ -1483,6 +1483,13 @@ class KTOxHandler(SimpleHTTPRequestHandler):
                 return
             self._handle_desktop_stop()
             return
+        if parsed.path == "/api/desktop/install-deps":
+            query = parse_qs(parsed.query or "")
+            if not _auth_ok(self, query):
+                _json_response(self, {"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
+                return
+            self._handle_desktop_install_deps()
+            return
 
         if parsed.path in ("/api/payloads/start", "/api/payloads/run"):
             query = parse_qs(parsed.query or "")
@@ -2380,6 +2387,12 @@ class KTOxHandler(SimpleHTTPRequestHandler):
     def _handle_desktop_stop(self) -> None:
         try:
             _json_response(self, _desktop_manager().stop_server())
+        except Exception as exc:
+            _json_response(self, {"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+
+    def _handle_desktop_install_deps(self) -> None:
+        try:
+            _json_response(self, _desktop_manager().install_dependencies_async())
         except Exception as exc:
             _json_response(self, {"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
 
