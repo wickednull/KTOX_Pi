@@ -50,6 +50,7 @@ EMULATORS = {
         "binaries": ["retroarch"],
         "core_candidates": ["/usr/lib/*/libretro/gambatte_libretro.so", "/usr/lib/libretro/gambatte_libretro.so"],
         "ext": [".gb", ".gbc"],
+        "browser_core": "gb",
         "launch": "retroarch -L {core} {rom}",
         "notes": "Best low-power choice for GB/GBC on Pi Zero 2 W.",
     },
@@ -59,6 +60,7 @@ EMULATORS = {
         "apt": ["fceux"],
         "binaries": ["fceux"],
         "ext": [".nes"],
+        "browser_core": "nes",
         "launch": "fceux {rom}",
         "notes": "Lightweight and stable for 8-bit games.",
     },
@@ -68,6 +70,7 @@ EMULATORS = {
         "apt": ["snes9x"],
         "binaries": ["snes9x"],
         "ext": [".smc", ".sfc"],
+        "browser_core": "snes",
         "launch": "snes9x {rom}",
         "notes": "Playable on Pi Zero 2 W with lighter titles and frameskip.",
     },
@@ -77,6 +80,7 @@ EMULATORS = {
         "apt": ["mgba-sdl"],
         "binaries": ["mgba"],
         "ext": [".gba"],
+        "browser_core": "gba",
         "launch": "mgba {rom}",
         "notes": "Good compatibility; some titles may need audio disabled.",
     },
@@ -87,6 +91,7 @@ EMULATORS = {
         "binaries": ["retroarch"],
         "core_candidates": ["/usr/lib/*/libretro/picodrive_libretro.so", "/usr/lib/libretro/picodrive_libretro.so"],
         "ext": [".md", ".gen"],
+        "browser_core": "segaMD",
         "launch": "retroarch -L {core} {rom}",
         "notes": "Fast, reliable 16-bit profile for the Zero 2 W.",
     },
@@ -97,6 +102,7 @@ EMULATORS = {
         "binaries": ["retroarch"],
         "core_candidates": ["/usr/lib/*/libretro/pcsx_rearmed_libretro.so", "/usr/lib/libretro/pcsx_rearmed_libretro.so"],
         "ext": [".cue", ".chd", ".pbp"],
+        "browser_core": "psx",
         "launch": "retroarch -L {core} {rom}",
         "notes": "Experimental but possible for lighter PS1 titles.",
     },
@@ -106,6 +112,7 @@ EMULATORS = {
         "apt": ["chocolate-doom"],
         "binaries": ["chocolate-doom"],
         "ext": [".wad"],
+        "browser_core": None,
         "launch": "chocolate-doom -iwad {rom}",
         "notes": "Native runtime, excellent fit for the device.",
     },
@@ -147,6 +154,10 @@ HTML = r"""<!doctype html>
     button:hover,a.button:hover{filter:brightness(1.12)}button.good{border-color:rgba(52,211,153,.45);background:#14513f}button.danger{border-color:rgba(239,68,68,.45);background:#5d151f}
     .library{display:grid;gap:8px}.rom{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;border:1px solid rgba(148,163,184,.16);background:rgba(2,6,23,.52);border-radius:8px;padding:10px}
     .rom strong{display:block;font-size:13px}.rom small{color:var(--muted)}
+    .console{margin-bottom:12px}.console-title{display:flex;justify-content:space-between;align-items:center;border:1px solid rgba(103,232,249,.22);border-radius:8px 8px 0 0;background:rgba(6,16,34,.75);padding:9px 10px}
+    .console-title strong{font-size:13px;text-transform:uppercase}.console-body{display:grid;gap:8px;border:1px solid rgba(103,232,249,.12);border-top:0;border-radius:0 0 8px 8px;padding:8px;background:rgba(2,6,23,.28)}
+    .actions{display:flex;gap:7px;flex-wrap:wrap;justify-content:flex-end}.actions button{white-space:nowrap}
+    button.secondary{background:#1f2f52;border-color:rgba(148,163,184,.32)}
     .terminal{height:380px;overflow:auto;background:#020617;border:1px solid rgba(103,232,249,.18);border-radius:8px;padding:12px;font-family:"JetBrains Mono",Consolas,monospace;font-size:12px;color:#b7f7d8;white-space:pre-wrap}
     .upload{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.upload input{max-width:100%;border:1px solid var(--line);background:#050a16;color:var(--text);padding:8px;border-radius:7px}
     @media(max-width:900px){main{grid-template-columns:1fr}.bar{align-items:flex-start;flex-direction:column}.terminal{height:300px}}
@@ -164,7 +175,7 @@ HTML = r"""<!doctype html>
         <div id="emulators" class="grid"></div>
       </section>
       <section style="margin-top:16px">
-        <div class="topline"><div><h2>Game Library</h2><p class="muted">ROMs auto-sort by extension. Launch starts the emulator on the Pi display/session.</p></div></div>
+        <div class="topline"><div><h2>Game Library</h2><p class="muted">Organized by console. Browser play opens a web emulator; Pi launch starts the native emulator on the device.</p></div></div>
         <form class="upload" method="post" enctype="multipart/form-data" action="/api/roms/upload">
           <input type="file" name="rom_file" required>
           <button class="good">Upload ROM</button>
@@ -192,7 +203,10 @@ HTML = r"""<!doctype html>
       pollLog();
       refreshAll();
     }
-    async function launchRom(path){
+    function playBrowser(path){
+      window.location.href = '/play?path=' + encodeURIComponent(path);
+    }
+    async function launchPiRom(path){
       const data = await api('/api/roms/launch', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({path})});
       document.getElementById('runStatus').textContent = data.ok ? `Launched ${data.rom} with ${data.emulator}` : (data.error || 'Launch failed');
       refreshAll();
@@ -211,9 +225,23 @@ HTML = r"""<!doctype html>
           <div class="muted">Status: <b style="color:${e.installed ? 'var(--green)' : 'var(--yellow)'}">${e.installed ? 'installed' : 'missing'}</b></div>
           <div style="margin-top:10px"><button class="good" onclick="installEmu('${e.id}')">${e.installed ? 'Repair / Update' : 'Install'}</button></div>
         </div>`).join('');
-      document.getElementById('roms').innerHTML = data.roms.length ? data.roms.map(r => `
-        <div class="rom"><div><strong>${r.name}</strong><small>${r.system} · ${fmtBytes(r.size)} · ${r.path}</small></div>
-        <button onclick="launchRom('${r.path.replaceAll('\\','\\\\').replaceAll("'","\\'")}')">Play</button></div>`).join('') : '<div class="card muted">No ROMs yet. Upload .gb, .gbc, .nes, .sfc, .smc, .gba, .md, .gen, .cue, .chd, .pbp, or .wad files.</div>';
+      const groups = {};
+      for (const rom of data.roms) {
+        if (!groups[rom.emulator]) groups[rom.emulator] = { label: rom.system, items: [] };
+        groups[rom.emulator].items.push(rom);
+      }
+      document.getElementById('roms').innerHTML = data.roms.length ? Object.entries(groups).map(([id, group]) => `
+        <div class="console">
+          <div class="console-title"><strong>${group.label}</strong><span class="muted">${group.items.length} ROM${group.items.length === 1 ? '' : 's'}</span></div>
+          <div class="console-body">${group.items.map(r => {
+            const safe = r.path.replaceAll('\\','\\\\').replaceAll("'","\\'");
+            return `<div class="rom"><div><strong>${r.name}</strong><small>${fmtBytes(r.size)} · ${r.path}</small></div>
+              <div class="actions">
+                ${r.browser_playable ? `<button class="good" onclick="playBrowser('${safe}')">Play in Browser</button>` : `<button class="secondary" disabled>Native Only</button>`}
+                <button class="secondary" onclick="launchPiRom('${safe}')">Launch on Pi</button>
+              </div></div>`;
+          }).join('')}</div>
+        </div>`).join('') : '<div class="card muted">No ROMs yet. Upload .gb, .gbc, .nes, .sfc, .smc, .gba, .md, .gen, .cue, .chd, .pbp, or .wad files.</div>';
       document.getElementById('runStatus').innerHTML = data.running && data.running.active
         ? `<b style="color:var(--green)">Running</b>: ${data.running.rom || ''}<br><button class="danger" style="margin-top:8px" onclick="stopEmulator()">Stop Emulator</button>`
         : 'No emulator launched.';
@@ -229,6 +257,39 @@ HTML = r"""<!doctype html>
   </script>
 </body></html>
 """
+
+PLAYER_HTML = r"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{name}} - KTOx Game Center</title>
+  <style>
+    :root{color-scheme:dark;--bg:#05060a;--line:#26365d;--text:#edf5ff;--muted:#8ea3c7;--red:#ef4444;--cyan:#67e8f9}
+    *{box-sizing:border-box}body{margin:0;background:#05060a;color:var(--text);font-family:Inter,Segoe UI,system-ui,sans-serif}
+    header{height:54px;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 16px;border-bottom:1px solid rgba(103,232,249,.22);background:rgba(5,6,10,.9)}
+    a{color:var(--cyan);text-decoration:none}.title{min-width:0}.title strong{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.title span{color:var(--muted);font-size:12px}
+    #game{width:100vw;height:calc(100vh - 54px);background:#000}
+    .warn{padding:14px;color:#ffd7a1;background:#261402;border:1px solid #6b3d10;margin:14px;border-radius:8px}
+  </style>
+</head>
+<body>
+  <header>
+    <a href="/">Back to Library</a>
+    <div class="title"><strong>{{name}}</strong><span>{{system}} · browser core {{core}}</span></div>
+  </header>
+  <div id="game"></div>
+  <script>
+    window.EJS_player = "#game";
+    window.EJS_core = "{{core}}";
+    window.EJS_gameName = "{{name}}";
+    window.EJS_gameUrl = "{{rom_url}}";
+    window.EJS_pathtodata = "https://cdn.emulatorjs.org/stable/data/";
+    window.EJS_startOnLoaded = true;
+  </script>
+  <script src="https://cdn.emulatorjs.org/stable/data/loader.js"></script>
+</body>
+</html>"""
 
 
 def _state_setup() -> None:
@@ -344,10 +405,12 @@ def _list_roms() -> list[dict]:
             "path": str(path.relative_to(ROMS_DIR)).replace("\\", "/"),
             "system": meta["name"],
             "emulator": emu_id,
+            "browser_core": meta.get("browser_core"),
+            "browser_playable": bool(meta.get("browser_core")),
             "size": stat.st_size,
             "mtime": int(stat.st_mtime),
         })
-    return roms
+    return sorted(roms, key=lambda r: (str(r["system"]).lower(), str(r["name"]).lower()))
 
 
 def _safe_rom_path(raw: str) -> Path | None:
@@ -403,6 +466,29 @@ def _stop_server() -> dict:
 @APP.get("/")
 def home():
     return render_template_string(HTML, host=request.host_url.rstrip("/"), rom_root=str(ROMS_DIR), port=PORT)
+
+
+@APP.get("/play")
+def play_rom():
+    raw_path = str(request.args.get("path", ""))
+    target = _safe_rom_path(raw_path)
+    if target is None or not target.exists():
+        return render_template_string(
+            '<div class="warn">ROM not found. <a href="/">Back to Library</a></div>'
+        ), 404
+    _emu_id, meta = _rom_emulator(target)
+    if not meta or not meta.get("browser_core"):
+        return render_template_string(
+            '<div class="warn">This ROM is native-only in Game Center. <a href="/">Back to Library</a></div>'
+        ), 400
+    rel = str(target.relative_to(ROMS_DIR)).replace("\\", "/")
+    return render_template_string(
+        PLAYER_HTML,
+        name=target.name,
+        system=meta["name"],
+        core=meta["browser_core"],
+        rom_url=url_for("api_raw_rom", path=rel),
+    )
 
 
 @APP.get("/api/state")
@@ -481,6 +567,14 @@ def api_download_rom(rom_path: str):
     if target is None or not target.exists():
         return jsonify({"ok": False, "error": "not found"}), 404
     return send_from_directory(target.parent, target.name, as_attachment=True)
+
+
+@APP.get("/api/roms/raw")
+def api_raw_rom():
+    target = _safe_rom_path(str(request.args.get("path", "")))
+    if target is None or not target.exists():
+        return jsonify({"ok": False, "error": "not found"}), 404
+    return send_from_directory(target.parent, target.name, as_attachment=False)
 
 
 @APP.post("/api/roms/launch")
