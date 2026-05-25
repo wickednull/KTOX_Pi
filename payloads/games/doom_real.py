@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""KTOx Payload: Real DOOM launcher for framebuffer LCD.
+"""KTOx Payload: DOOM on LCD.
 
-Runs Chocolate Doom on Raspberry Pi console framebuffers with optional uinput setup.
-KEY3 exits launcher; process receives SIGTERM on exit.
+Primary: Chocolate Doom on framebuffer LCD.
+Fallback: DOOM demake (pure LCD) if Chocolate Doom cannot launch.
 """
 
 import os
@@ -21,7 +21,7 @@ WAD_CANDIDATES = [
 ]
 
 
-def _find_wad() -> Path | None:
+def _find_wad():
     env_path = os.environ.get("KTOX_DOOM_WAD")
     if env_path and Path(env_path).exists():
         return Path(env_path)
@@ -31,65 +31,70 @@ def _find_wad() -> Path | None:
     return None
 
 
-def _is_installed(name: str) -> bool:
-    return shutil.which(name) is not None
-
-
-def _run(cmd: list[str]) -> int:
+def _run(cmd):
     print("[doom_real] $", " ".join(cmd), flush=True)
     return subprocess.call(cmd)
 
 
-def install_dependencies() -> None:
-    if _is_installed("chocolate-doom"):
-        print("[doom_real] chocolate-doom already installed")
-    else:
+def install_dependencies():
+    if shutil.which("chocolate-doom") is None:
         _run(["apt-get", "update"])
         _run(["apt-get", "install", "-y", "chocolate-doom"])
-
-    # uinput is part of kernel; best effort.
     _run(["modprobe", "uinput"])
 
 
-def launch_doom() -> int:
-    wad = _find_wad()
-    if wad is None:
-        print("[doom_real] No IWAD found. Set KTOX_DOOM_WAD or place doom1.wad in:")
-        for c in WAD_CANDIDATES:
-            print(f"  - {c}")
-        return 2
-
+def _launch_doom_fb(fbdev, wad):
     env = os.environ.copy()
-    env.setdefault("SDL_VIDEODRIVER", "fbcon")
-    env.setdefault("SDL_FBDEV", "/dev/fb1")
-    env.setdefault("FRAMEBUFFER", "/dev/fb1")
+    env["SDL_VIDEODRIVER"] = "fbcon"
+    env["SDL_FBDEV"] = fbdev
+    env["FRAMEBUFFER"] = fbdev
 
-    cmd = [
-        "chocolate-doom",
-        "-iwad",
-        str(wad),
-        "-nosound",
-        "-nomusic",
-        "-window",
-        "0",
-    ]
-
-    print("[doom_real] Launching Chocolate Doom on framebuffer...", flush=True)
+    cmd = ["chocolate-doom", "-iwad", str(wad), "-nosound", "-nomusic", "-fullscreen"]
+    print(f"[doom_real] Launching on {fbdev} ...", flush=True)
     proc = subprocess.Popen(cmd, env=env)
 
-    def _handle_exit(signum, frame):
+    def _handle_exit(signum, _frame):
         print(f"[doom_real] signal={signum}; terminating game")
         proc.terminate()
 
     signal.signal(signal.SIGTERM, _handle_exit)
     signal.signal(signal.SIGINT, _handle_exit)
 
+    # Freeze detector: if process exits immediately, treat as failed launch.
+    time.sleep(1.2)
+    if proc.poll() is not None:
+        return proc.returncode or 1
+
     while proc.poll() is None:
         time.sleep(0.2)
     return proc.returncode or 0
 
 
-def main() -> int:
+def launch_doom():
+    wad = _find_wad()
+    if wad is None:
+        print("[doom_real] No IWAD found. Falling back to DOOM demake.")
+        return _launch_demake()
+
+    for fb in ("/dev/fb1", "/dev/fb0"):
+        rc = _launch_doom_fb(fb, wad)
+        if rc == 0:
+            return 0
+        print(f"[doom_real] Chocolate Doom failed on {fb} (rc={rc})")
+
+    print("[doom_real] Falling back to doom_demake.py")
+    return _launch_demake()
+
+
+def _launch_demake():
+    demake = Path(__file__).with_name("doom_demake.py")
+    if demake.exists():
+        return subprocess.call([sys.executable, str(demake)])
+    print("[doom_real] Missing doom_demake.py fallback")
+    return 2
+
+
+def main():
     install_dependencies()
     return launch_doom()
 
