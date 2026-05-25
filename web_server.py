@@ -46,6 +46,7 @@ import subprocess
 import textwrap
 import threading
 import time
+import shlex
 from http import HTTPStatus
 from http.cookies import SimpleCookie
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -88,6 +89,12 @@ LOKI_API_PREFIXES = (
     "/api/v1",
 )
 DESKTOP_PROXY_PREFIX = "/desktop"
+KALI_ARMHF_EMULATORS = [
+    {"id": "retroarch", "label": "RetroArch", "binary": "retroarch", "package": "retroarch"},
+    {"id": "dosbox", "label": "DOSBox", "binary": "dosbox", "package": "dosbox"},
+    {"id": "mednafen", "label": "Mednafen", "binary": "mednafen", "package": "mednafen"},
+    {"id": "mame", "label": "MAME", "binary": "mame", "package": "mame"},
+]
 
 
 
@@ -1352,6 +1359,9 @@ class KTOxHandler(SimpleHTTPRequestHandler):
             if parsed.path == "/api/games/center":
                 self._handle_games_center_get()
                 return
+            if parsed.path == "/api/games/emulators/health":
+                self._handle_games_emulators_health()
+                return
 
             if parsed.path == "/api/loot/list":
                 self._handle_loot_list(query)
@@ -1519,6 +1529,13 @@ class KTOxHandler(SimpleHTTPRequestHandler):
                 _json_response(self, {"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
                 return
             self._handle_games_play()
+            return
+        if parsed.path == "/api/games/emulators/install":
+            query = parse_qs(parsed.query or "")
+            if not _auth_ok(self, query):
+                _json_response(self, {"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
+                return
+            self._handle_games_emulators_install()
             return
         if parsed.path == "/api/payloads/entry":
             query = parse_qs(parsed.query or "")
@@ -1768,7 +1785,75 @@ class KTOxHandler(SimpleHTTPRequestHandler):
             "emulators": self._load_emulators_config(),
             "roms": self._list_roms(),
             "roms_dir": str(ROMS_DIR),
+            "webui_port": PORT,
         })
+
+    def _handle_games_emulators_health(self) -> None:
+        status = []
+        for emulator in KALI_ARMHF_EMULATORS:
+            binary = emulator.get("binary", "")
+            installed_path = shutil.which(binary) if binary else None
+            status.append({
+                **emulator,
+                "installed": bool(installed_path),
+                "binary_path": installed_path,
+            })
+        _json_response(self, {
+            "platform": platform.platform(),
+            "machine": platform.machine(),
+            "kali_armhf_target": platform.machine().lower().startswith("arm"),
+            "emulators": status,
+            "webui_port": PORT,
+            "webui_expected_port": 8099,
+        })
+
+    def _handle_games_emulators_install(self) -> None:
+        missing_packages = []
+        for emulator in KALI_ARMHF_EMULATORS:
+            binary = emulator.get("binary", "")
+            package = emulator.get("package", "")
+            if package and binary and shutil.which(binary) is None:
+                missing_packages.append(package)
+        if not missing_packages:
+            _json_response(self, {"ok": True, "installed": [], "message": "all emulator packages already present"})
+            return
+        cmd = [
+            "apt-get",
+            "install",
+            "-y",
+            *sorted(set(missing_packages)),
+        ]
+        try:
+            run = subprocess.run(
+                ["apt-get", "update"],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            if run.returncode != 0:
+                _json_response(
+                    self,
+                    {"error": "apt-get update failed", "stdout": run.stdout[-3000:], "stderr": run.stderr[-3000:]},
+                    status=HTTPStatus.INTERNAL_SERVER_ERROR,
+                )
+                return
+            install = subprocess.run(cmd, check=False, capture_output=True, text=True)
+            if install.returncode != 0:
+                _json_response(
+                    self,
+                    {
+                        "error": "apt-get install failed",
+                        "command": " ".join(shlex.quote(x) for x in cmd),
+                        "stdout": install.stdout[-3000:],
+                        "stderr": install.stderr[-3000:],
+                    },
+                    status=HTTPStatus.INTERNAL_SERVER_ERROR,
+                )
+                return
+        except Exception as exc:
+            _json_response(self, {"error": f"install failed: {exc}"}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+        _json_response(self, {"ok": True, "installed": sorted(set(missing_packages))})
 
     def _handle_games_emulators_put(self) -> None:
         body = _read_json(self)
