@@ -150,6 +150,12 @@
   const payloadStatus = document.getElementById('payloadStatus');
   const payloadStatusDot = document.getElementById('payloadStatusDot');
   const payloadsRefresh = document.getElementById('payloadsRefresh');
+  const gameCenterStatus = document.getElementById('gameCenterStatus');
+  const gameCenterRefresh = document.getElementById('gameCenterRefresh');
+  const gameCenterInstall = document.getElementById('gameCenterInstall');
+  const gameCenterEmulator = document.getElementById('gameCenterEmulator');
+  const gameCenterRom = document.getElementById('gameCenterRom');
+  const gameCenterPlay = document.getElementById('gameCenterPlay');
   const settingsStatus = document.getElementById('settingsStatus');
   const discordWebhookInput = document.getElementById('discordWebhookInput');
   const discordWebhookSave = document.getElementById('discordWebhookSave');
@@ -185,6 +191,7 @@
 
   let wsCandidates = [];
   let wsCandidateIndex = 0;
+  let gameCenterState = { emulators: [], roms: [] };
 
   function getWsCandidates(){
     if (shared.getWsUrlCandidates){
@@ -828,6 +835,7 @@
     if (systemTabEl) systemTabEl.classList.toggle('hidden', tab !== 'system');
     const payloadsTabEl = document.getElementById('payloadsTab');
     if (payloadsTabEl) payloadsTabEl.classList.toggle('hidden', tab !== 'payloads');
+    if (tab === 'payloads') loadGameCenter();
     setNavActive(navDevice, tab === 'device');
     setNavActive(navPentest, tab === 'pentest');
     setNavActive(navLoki, tab === 'loki');
@@ -843,6 +851,90 @@
     // Refit terminal when switching to terminal tab
     if (tab === 'terminal' && fitAddon) {
       requestAnimationFrame(() => { try { fitAddon.fit(); } catch{} });
+    }
+  }
+
+  function setGameCenterStatus(text){
+    if (gameCenterStatus) gameCenterStatus.textContent = text;
+  }
+
+  function fillSelect(el, items, mapper){
+    if (!el) return;
+    el.innerHTML = '';
+    items.forEach((item, idx) => {
+      const opt = document.createElement('option');
+      const mapped = mapper(item, idx);
+      opt.value = mapped.value;
+      opt.textContent = mapped.label;
+      el.appendChild(opt);
+    });
+  }
+
+  async function loadGameCenter(){
+    setGameCenterStatus('Loading Game Center…');
+    try{
+      const [centerRes, healthRes] = await Promise.all([
+        apiFetch(getApiUrl('/api/games/center'), { cache: 'no-store' }),
+        apiFetch(getApiUrl('/api/games/emulators/health'), { cache: 'no-store' }),
+      ]);
+      if (!centerRes.ok || !healthRes.ok) throw new Error(`HTTP ${centerRes.status}/${healthRes.status}`);
+      const center = await centerRes.json();
+      const health = await healthRes.json();
+      gameCenterState = {
+        emulators: Array.isArray(center.emulators) ? center.emulators : [],
+        roms: Array.isArray(center.roms) ? center.roms : [],
+      };
+      fillSelect(gameCenterEmulator, gameCenterState.emulators, (e) => ({
+        value: String(e.id || ''),
+        label: `${e.label || e.id || 'emulator'} (${e.id || 'unknown'})`
+      }));
+      fillSelect(gameCenterRom, gameCenterState.roms, (r) => ({
+        value: String(r.path || ''),
+        label: `${r.name || r.path || 'rom'}`
+      }));
+      const installedCount = Array.isArray(health.emulators)
+        ? health.emulators.filter(e => e && e.installed).length
+        : 0;
+      const total = Array.isArray(health.emulators) ? health.emulators.length : 0;
+      setGameCenterStatus(`Emulators installed: ${installedCount}/${total} • ROMs: ${gameCenterState.roms.length} • WebUI Port: ${health.webui_port || 'unknown'}`);
+    } catch (err){
+      setGameCenterStatus(`Game Center error: ${err.message || err}`);
+    }
+  }
+
+  async function installGameCenterEmulators(){
+    setGameCenterStatus('Installing missing emulators…');
+    try{
+      const res = await apiFetch(getApiUrl('/api/games/emulators/install'), { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      const count = Array.isArray(data.installed) ? data.installed.length : 0;
+      setGameCenterStatus(count ? `Installed: ${data.installed.join(', ')}` : 'No packages needed.');
+      await loadGameCenter();
+    } catch (err){
+      setGameCenterStatus(`Install failed: ${err.message || err}`);
+    }
+  }
+
+  async function playSelectedGame(){
+    const emulator = gameCenterEmulator ? String(gameCenterEmulator.value || '').trim() : '';
+    const rom = gameCenterRom ? String(gameCenterRom.value || '').trim() : '';
+    if (!emulator || !rom){
+      setGameCenterStatus('Choose emulator + ROM first.');
+      return;
+    }
+    setGameCenterStatus('Queueing game launch…');
+    try{
+      const res = await apiFetch(getApiUrl('/api/games/play'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ emulator, rom }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      setGameCenterStatus(`Launch queued: ${emulator} -> ${rom}`);
+    } catch (err){
+      setGameCenterStatus(`Play failed: ${err.message || err}`);
     }
   }
 
@@ -2501,6 +2593,9 @@
     });
   });
   if (payloadsRefresh) payloadsRefresh.addEventListener('click', () => loadPayloads());
+  if (gameCenterRefresh) gameCenterRefresh.addEventListener('click', () => loadGameCenter());
+  if (gameCenterInstall) gameCenterInstall.addEventListener('click', () => installGameCenterEmulators());
+  if (gameCenterPlay) gameCenterPlay.addEventListener('click', () => playSelectedGame());
   if (pentestStart) pentestStart.addEventListener('click', () => controlPentest('start'));
   if (pentestOpen) pentestOpen.addEventListener('click', () => setActiveTab('pentest'));
   if (lokiOpen) lokiOpen.addEventListener('click', () => setActiveTab('loki'));
