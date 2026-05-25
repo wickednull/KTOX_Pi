@@ -58,6 +58,10 @@ ROOT_DIR = Path(__file__).resolve().parent
 WEB_DIR = ROOT_DIR / "web"
 LOOT_DIR = ROOT_DIR / "loot"
 PAYLOADS_DIR = ROOT_DIR / "payloads"
+GAMES_DIR = ROOT_DIR / "games"
+ROMS_DIR = GAMES_DIR / "roms"
+EMULATORS_CONFIG_PATH = GAMES_DIR / "emulators.json"
+GAMECENTER_STATE_PATH = Path("/dev/shm/ktox_gamecenter_state.json")
 PAYLOAD_STATE_PATH = Path("/dev/shm/ktox_payload_state.json")
 DISCORD_WEBHOOK_PATH = ROOT_DIR / "discord_webhook.txt"
 TOKEN_FILE = Path(os.environ.get("RJ_WS_TOKEN_FILE", str(ROOT_DIR / ".webui_token")))
@@ -1290,6 +1294,7 @@ class KTOxHandler(SimpleHTTPRequestHandler):
         if (
             parsed.path.startswith("/api/loot/")
             or parsed.path.startswith("/api/payloads/")
+            or parsed.path.startswith("/api/games/")
             or parsed.path.startswith("/api/system/")
             or parsed.path.startswith("/api/settings/")
             or parsed.path.startswith("/api/auth/")
@@ -1343,6 +1348,9 @@ class KTOxHandler(SimpleHTTPRequestHandler):
                 return
             if parsed.path == "/api/payloads/file":
                 self._handle_payloads_file_get(query)
+                return
+            if parsed.path == "/api/games/center":
+                self._handle_games_center_get()
                 return
 
             if parsed.path == "/api/loot/list":
@@ -1497,6 +1505,20 @@ class KTOxHandler(SimpleHTTPRequestHandler):
                 _json_response(self, {"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
                 return
             self._handle_payloads_start()
+            return
+        if parsed.path == "/api/games/emulators":
+            query = parse_qs(parsed.query or "")
+            if not _auth_ok(self, query):
+                _json_response(self, {"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
+                return
+            self._handle_games_emulators_put()
+            return
+        if parsed.path == "/api/games/play":
+            query = parse_qs(parsed.query or "")
+            if not _auth_ok(self, query):
+                _json_response(self, {"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
+                return
+            self._handle_games_play()
             return
         if parsed.path == "/api/payloads/entry":
             query = parse_qs(parsed.query or "")
@@ -1718,6 +1740,67 @@ class KTOxHandler(SimpleHTTPRequestHandler):
             })
 
         _json_response(self, {"categories": payload_categories})
+
+    def _load_emulators_config(self) -> list[dict]:
+        if not EMULATORS_CONFIG_PATH.exists():
+            return []
+        try:
+            data = json.loads(EMULATORS_CONFIG_PATH.read_text(encoding="utf-8"))
+            if isinstance(data, list):
+                return [x for x in data if isinstance(x, dict)]
+        except Exception:
+            return []
+        return []
+
+    def _list_roms(self) -> list[dict]:
+        if not ROMS_DIR.exists():
+            return []
+        roms: list[dict] = []
+        for p in sorted(ROMS_DIR.rglob("*")):
+            if not p.is_file():
+                continue
+            rel = str(p.relative_to(ROMS_DIR)).replace("\\", "/")
+            roms.append({"name": p.name, "path": rel, "size": p.stat().st_size})
+        return roms
+
+    def _handle_games_center_get(self) -> None:
+        _json_response(self, {
+            "emulators": self._load_emulators_config(),
+            "roms": self._list_roms(),
+            "roms_dir": str(ROMS_DIR),
+        })
+
+    def _handle_games_emulators_put(self) -> None:
+        body = _read_json(self)
+        if body is None or not isinstance(body.get("emulators"), list):
+            _json_response(self, {"error": "invalid json"}, status=HTTPStatus.BAD_REQUEST)
+            return
+        emulators = [e for e in body["emulators"] if isinstance(e, dict)]
+        GAMES_DIR.mkdir(parents=True, exist_ok=True)
+        EMULATORS_CONFIG_PATH.write_text(json.dumps(emulators, indent=2), encoding="utf-8")
+        _json_response(self, {"ok": True, "count": len(emulators)})
+
+    def _handle_games_play(self) -> None:
+        body = _read_json(self)
+        if body is None:
+            _json_response(self, {"error": "invalid json"}, status=HTTPStatus.BAD_REQUEST)
+            return
+        emulator = str(body.get("emulator", "")).strip()
+        rom = str(body.get("rom", "")).strip().lstrip("/").replace("\\", "/")
+        if not emulator or not rom:
+            _json_response(self, {"error": "emulator and rom required"}, status=HTTPStatus.BAD_REQUEST)
+            return
+        rom_path = (ROMS_DIR / rom).resolve()
+        try:
+            rom_root = ROMS_DIR.resolve()
+        except FileNotFoundError:
+            rom_root = ROMS_DIR
+        if rom_root not in rom_path.parents or not rom_path.exists():
+            _json_response(self, {"error": "rom not found"}, status=HTTPStatus.NOT_FOUND)
+            return
+        payload = {"emulator": emulator, "rom": rom, "ts": int(time.time())}
+        GAMECENTER_STATE_PATH.write_text(json.dumps(payload), encoding="utf-8")
+        _json_response(self, {"ok": True, "launch": payload})
 
     def _handle_payloads_start(self) -> None:
         body = _read_json(self)
