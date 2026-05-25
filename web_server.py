@@ -12,9 +12,6 @@ Routes:
     /api/loot/nmap      -> normalized Nmap XML (read-only)
   /api/system/status  -> live system monitor metrics
   /api/settings/discord_webhook -> get/save Discord webhook
-  /api/pentest/*      -> start/stop/status for Kali Pentest WebUI
-  /api/loki/*         -> start/stop/status for Loki WebUI
-  /api/desktop/*      -> start/stop/status/install dependencies for Kali noVNC desktop
   /api/auth/*         -> bootstrap/login/session endpoints
 
 Environment:
@@ -36,17 +33,13 @@ import base64
 import hmac
 import hashlib
 import mimetypes
-import http.client
 import os
-import platform
 import secrets
 import shutil
-import socket
 import subprocess
 import textwrap
 import threading
 import time
-import shlex
 from http import HTTPStatus
 from http.cookies import SimpleCookie
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -59,10 +52,6 @@ ROOT_DIR = Path(__file__).resolve().parent
 WEB_DIR = ROOT_DIR / "web"
 LOOT_DIR = ROOT_DIR / "loot"
 PAYLOADS_DIR = ROOT_DIR / "payloads"
-GAMES_DIR = ROOT_DIR / "games"
-ROMS_DIR = GAMES_DIR / "roms"
-EMULATORS_CONFIG_PATH = GAMES_DIR / "emulators.json"
-GAMECENTER_STATE_PATH = Path("/dev/shm/ktox_gamecenter_state.json")
 PAYLOAD_STATE_PATH = Path("/dev/shm/ktox_payload_state.json")
 DISCORD_WEBHOOK_PATH = ROOT_DIR / "discord_webhook.txt"
 TOKEN_FILE = Path(os.environ.get("RJ_WS_TOKEN_FILE", str(ROOT_DIR / ".webui_token")))
@@ -73,29 +62,6 @@ SESSION_TTL_SECONDS = int(os.environ.get("RJ_WEB_SESSION_TTL", str(8 * 60 * 60))
 WS_TICKET_TTL_SECONDS = int(os.environ.get("RJ_WEB_WS_TICKET_TTL", "120"))
 TAILSCALE_KEY_PATH = ROOT_DIR / ".tailscale_auth_key"
 TAILSCALE_STATUS_PATH = Path("/dev/shm/rj_tailscale_status.json")
-PENTEST_PROXY_TIMEOUT = float(os.environ.get("KALI_PENTEST_PROXY_TIMEOUT", "120"))
-LOKI_PROXY_TIMEOUT = float(os.environ.get("KTOX_LOKI_PROXY_TIMEOUT", "120"))
-DESKTOP_PROXY_TIMEOUT = float(os.environ.get("KTOX_NOVNC_PROXY_TIMEOUT", "120"))
-PENTEST_API_PREFIXES = (
-    "/api/status",
-    "/api/engagements",
-    "/api/jobs",
-    "/api/tools",
-    "/api/findings",
-    "/api/vault",
-    "/api/reports",
-)
-LOKI_API_PREFIXES = (
-    "/api/v1",
-)
-DESKTOP_PROXY_PREFIX = "/desktop"
-KALI_ARMHF_EMULATORS = [
-    {"id": "retroarch", "label": "RetroArch", "binary": "retroarch", "package": "retroarch"},
-    {"id": "dosbox", "label": "DOSBox", "binary": "dosbox", "package": "dosbox"},
-    {"id": "mednafen", "label": "Mednafen", "binary": "mednafen", "package": "mednafen"},
-    {"id": "mame", "label": "MAME", "binary": "mame", "package": "mame"},
-]
-
 
 
 # ── Payload compatibility converter helpers ──────────────────────────────────
@@ -231,12 +197,8 @@ def _load_or_create_auth_secret() -> str:
 
 HOST = os.environ.get("RJ_WEB_HOST", "0.0.0.0")
 PORT = int(os.environ.get("RJ_WEB_PORT", "8080"))
+TOKEN = _load_shared_token()
 AUTH_SECRET = _load_or_create_auth_secret()
-
-
-def _get_token() -> str | None:
-    """Get current token (dynamically loaded to allow updates without restart)."""
-    return _load_shared_token()
 
 # WebUI only listens on these interfaces — wlan1+ are for attacks/monitor mode
 WEBUI_INTERFACES = ["eth0", "wlan0", "tailscale0"]
@@ -274,18 +236,13 @@ def _get_webui_bind_addrs() -> list[tuple[str, str]]:
     return addrs
 PREVIEW_MAX_BYTES = int(os.environ.get("RJ_LOOT_PREVIEW_MAX", str(200 * 1024)))
 PAYLOAD_MAX_BYTES = int(os.environ.get("RJ_PAYLOAD_MAX", str(512 * 1024)))
-REQUEST_MAX_BYTES = int(os.environ.get("RJ_REQUEST_MAX", str(10 * 1024 * 1024)))
 TEXT_EXTS = {
     ".txt", ".log", ".md", ".json", ".csv", ".conf", ".ini", ".yaml", ".yml",
     ".pcapng.txt", ".xml", ".sqlite", ".db", ".out", ".py", ".sh"
 }
 
 _CPU_SNAPSHOT = None
-_CPU_LOCK = threading.Lock()
 _LOGIN_FAILS: dict[str, list[float]] = {}
-_LOGIN_FAILS_LOCK = threading.Lock()
-_TAILSCALE_INSTALLING = False
-_TAILSCALE_LOCK = threading.Lock()
 
 
 def _is_valid_discord_webhook(url: str) -> bool:
@@ -446,13 +403,6 @@ def _regenerate_caddyfile_and_reload() -> None:
         header_up X-Forwarded-Host {{host}}
     }}
 
-    handle_path /desktop* {{
-        reverse_proxy 127.0.0.1:6080 {{
-            header_up X-Forwarded-Proto {{scheme}}
-            header_up X-Forwarded-Host {{host}}
-        }}
-    }}
-
     reverse_proxy 127.0.0.1:8080 {{
         header_up X-Forwarded-Proto {{scheme}}
         header_up X-Forwarded-Host {{host}}
@@ -483,134 +433,106 @@ def _regenerate_caddyfile_and_reload() -> None:
             pass
 
 
-def _cleanup_login_failures() -> None:
-    """Periodically clean up old login failure records to prevent unbounded memory growth."""
-    global _LOGIN_FAILS
-    while True:
-        try:
-            time.sleep(600)
-            now = time.time()
-            with _LOGIN_FAILS_LOCK:
-                for ip in list(_LOGIN_FAILS.keys()):
-                    _LOGIN_FAILS[ip] = [ts for ts in _LOGIN_FAILS[ip] if now - ts < 600]
-                    if not _LOGIN_FAILS[ip]:
-                        del _LOGIN_FAILS[ip]
-        except Exception:
-            pass
-
-
 def _tailscale_run_install_and_up() -> None:
     """
     Run the official install script and bring Tailscale up using the stored auth key.
     This is executed in a background thread so HTTP handlers can return quickly.
     """
-    global _TAILSCALE_INSTALLING
-    with _TAILSCALE_LOCK:
-        if _TAILSCALE_INSTALLING:
-            _tailscale_write_status({
-                "installing": False,
-                "ok": False,
-                "error": "tailscale installation already in progress",
-            })
-            return
-        _TAILSCALE_INSTALLING = True
+    _tailscale_write_status({"installing": True, "ok": False, "error": None})
 
     try:
-        _tailscale_write_status({"installing": True, "ok": False, "error": None})
-
-        try:
-            if not TAILSCALE_KEY_PATH.exists():
-                _tailscale_write_status({
-                    "installing": False,
-                    "ok": False,
-                    "error": "auth key not found",
-                })
-                return
-        except Exception:
+        if not TAILSCALE_KEY_PATH.exists():
             _tailscale_write_status({
                 "installing": False,
                 "ok": False,
                 "error": "auth key not found",
             })
             return
-
-        try:
-            install_res = subprocess.run(
-                ["sh", "-c", "curl -fsSL https://tailscale.com/install.sh | sh"],
-                capture_output=True,
-                text=True,
-                timeout=600,
-            )
-        except subprocess.TimeoutExpired:
-            _tailscale_write_status({
-                "installing": False,
-                "ok": False,
-                "error": "tailscale install timeout",
-            })
-            return
-        except Exception as exc:
-            _tailscale_write_status({
-                "installing": False,
-                "ok": False,
-                "error": str(exc),
-            })
-            return
-
-        if install_res.returncode != 0:
-            msg = (install_res.stderr or install_res.stdout or "").strip()
-            if not msg:
-                msg = f"tailscale install failed (code {install_res.returncode})"
-            _tailscale_write_status({
-                "installing": False,
-                "ok": False,
-                "error": msg[:200],
-            })
-            return
-
-        try:
-            auth_arg = f"--auth-key=file:{TAILSCALE_KEY_PATH}"
-            up_res = subprocess.run(
-                ["tailscale", "up", auth_arg, "--ssh"],
-                capture_output=True,
-                text=True,
-                timeout=120,
-            )
-        except subprocess.TimeoutExpired:
-            _tailscale_write_status({
-                "installing": False,
-                "ok": False,
-                "error": "tailscale up timeout",
-            })
-            return
-        except Exception as exc:
-            _tailscale_write_status({
-                "installing": False,
-                "ok": False,
-                "error": str(exc),
-            })
-            return
-
-        if up_res.returncode != 0:
-            msg = (up_res.stderr or up_res.stdout or "").strip()
-            if not msg:
-                msg = f"tailscale up failed (code {up_res.returncode})"
-            _tailscale_write_status({
-                "installing": False,
-                "ok": False,
-                "error": msg[:200],
-            })
-            return
-
-        _regenerate_caddyfile_and_reload()
-
+    except Exception:
         _tailscale_write_status({
             "installing": False,
-            "ok": True,
-            "error": None,
+            "ok": False,
+            "error": "auth key not found",
         })
-    finally:
-        with _TAILSCALE_LOCK:
-            _TAILSCALE_INSTALLING = False
+        return
+
+    # 1) Install Tailscale using the official script.
+    try:
+        install_res = subprocess.run(
+            ["sh", "-c", "curl -fsSL https://tailscale.com/install.sh | sh"],
+            capture_output=True,
+            text=True,
+            timeout=600,
+        )
+    except subprocess.TimeoutExpired:
+        _tailscale_write_status({
+            "installing": False,
+            "ok": False,
+            "error": "tailscale install timeout",
+        })
+        return
+    except Exception as exc:
+        _tailscale_write_status({
+            "installing": False,
+            "ok": False,
+            "error": str(exc),
+        })
+        return
+
+    if install_res.returncode != 0:
+        msg = (install_res.stderr or install_res.stdout or "").strip()
+        if not msg:
+            msg = f"tailscale install failed (code {install_res.returncode})"
+        _tailscale_write_status({
+            "installing": False,
+            "ok": False,
+            "error": msg[:200],
+        })
+        return
+
+    # 2) Bring the daemon up using the stored auth key (non-interactive).
+    try:
+        auth_arg = f"--auth-key=file:{TAILSCALE_KEY_PATH}"
+        up_res = subprocess.run(
+            ["tailscale", "up", auth_arg, "--ssh"],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+    except subprocess.TimeoutExpired:
+        _tailscale_write_status({
+            "installing": False,
+            "ok": False,
+            "error": "tailscale up timeout",
+        })
+        return
+    except Exception as exc:
+        _tailscale_write_status({
+            "installing": False,
+            "ok": False,
+            "error": str(exc),
+        })
+        return
+
+    if up_res.returncode != 0:
+        msg = (up_res.stderr or up_res.stdout or "").strip()
+        if not msg:
+            msg = f"tailscale up failed (code {up_res.returncode})"
+        _tailscale_write_status({
+            "installing": False,
+            "ok": False,
+            "error": msg[:200],
+        })
+        return
+
+    # Regenerate Caddyfile with tailscale0 IP and reload Caddy so HTTPS works over Tailscale.
+    _regenerate_caddyfile_and_reload()
+
+    _tailscale_write_status({
+        "installing": False,
+        "ok": True,
+        "error": None,
+    })
 
 
 def _tailscale_run_reauth() -> None:
@@ -618,80 +540,65 @@ def _tailscale_run_reauth() -> None:
     Re-authenticate an existing Tailscale install using the stored auth key.
     Does not re-run the install script, only `tailscale up --reset --auth-key=... --ssh`.
     """
-    global _TAILSCALE_INSTALLING
-    with _TAILSCALE_LOCK:
-        if _TAILSCALE_INSTALLING:
-            _tailscale_write_status({
-                "installing": False,
-                "ok": False,
-                "error": "tailscale installation already in progress",
-            })
-            return
-        _TAILSCALE_INSTALLING = True
+    _tailscale_write_status({"installing": True, "ok": False, "error": None})
 
     try:
-        _tailscale_write_status({"installing": True, "ok": False, "error": None})
-
-        try:
-            if not TAILSCALE_KEY_PATH.exists():
-                _tailscale_write_status({
-                    "installing": False,
-                    "ok": False,
-                    "error": "auth key not found",
-                })
-                return
-        except Exception:
+        if not TAILSCALE_KEY_PATH.exists():
             _tailscale_write_status({
                 "installing": False,
                 "ok": False,
                 "error": "auth key not found",
             })
             return
-
-        try:
-            auth_arg = f"--auth-key=file:{TAILSCALE_KEY_PATH}"
-            up_res = subprocess.run(
-                ["tailscale", "up", "--reset", auth_arg, "--ssh"],
-                capture_output=True,
-                text=True,
-                timeout=120,
-            )
-        except subprocess.TimeoutExpired:
-            _tailscale_write_status({
-                "installing": False,
-                "ok": False,
-                "error": "tailscale up timeout",
-            })
-            return
-        except Exception as exc:
-            _tailscale_write_status({
-                "installing": False,
-                "ok": False,
-                "error": str(exc),
-            })
-            return
-
-        if up_res.returncode != 0:
-            msg = (up_res.stderr or up_res.stdout or "").strip()
-            if not msg:
-                msg = f"tailscale up failed (code {up_res.returncode})"
-            _tailscale_write_status({
-                "installing": False,
-                "ok": False,
-                "error": msg[:200],
-            })
-            return
-
-        _regenerate_caddyfile_and_reload()
-
+    except Exception:
         _tailscale_write_status({
             "installing": False,
-            "ok": True,
-            "error": None,
+            "ok": False,
+            "error": "auth key not found",
         })
-    finally:
-        with _TAILSCALE_LOCK:
-            _TAILSCALE_INSTALLING = False
+        return
+
+    try:
+        auth_arg = f"--auth-key=file:{TAILSCALE_KEY_PATH}"
+        up_res = subprocess.run(
+            ["tailscale", "up", "--reset", auth_arg, "--ssh"],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+    except subprocess.TimeoutExpired:
+        _tailscale_write_status({
+            "installing": False,
+            "ok": False,
+            "error": "tailscale up timeout",
+        })
+        return
+    except Exception as exc:
+        _tailscale_write_status({
+            "installing": False,
+            "ok": False,
+            "error": str(exc),
+        })
+        return
+
+    if up_res.returncode != 0:
+        msg = (up_res.stderr or up_res.stdout or "").strip()
+        if not msg:
+            msg = f"tailscale up failed (code {up_res.returncode})"
+        _tailscale_write_status({
+            "installing": False,
+            "ok": False,
+            "error": msg[:200],
+        })
+        return
+
+    _regenerate_caddyfile_and_reload()
+
+    _tailscale_write_status({
+        "installing": False,
+        "ok": True,
+        "error": None,
+    })
 
 
 def _read_cpu_percent() -> float:
@@ -705,12 +612,11 @@ def _read_cpu_percent() -> float:
         parts = [int(x) for x in line.split()[1:]]
         idle = parts[3] + (parts[4] if len(parts) > 4 else 0)
         total = sum(parts)
-        with _CPU_LOCK:
-            if _CPU_SNAPSHOT is None:
-                _CPU_SNAPSHOT = (idle, total)
-                return 0.0
-            prev_idle, prev_total = _CPU_SNAPSHOT
+        if _CPU_SNAPSHOT is None:
             _CPU_SNAPSHOT = (idle, total)
+            return 0.0
+        prev_idle, prev_total = _CPU_SNAPSHOT
+        _CPU_SNAPSHOT = (idle, total)
         idle_delta = idle - prev_idle
         total_delta = total - prev_total
         if total_delta <= 0:
@@ -916,8 +822,7 @@ def _auth_context(handler: SimpleHTTPRequestHandler, query: dict) -> dict | None
         return {"method": "session", "user": str(sess.get("usr")), "claims": sess}
     bearer = _bearer_token_from_request(handler, query)
     # Check shared static token first
-    current_token = _get_token()
-    if current_token and bearer and hmac.compare_digest(bearer, current_token):
+    if TOKEN and bearer and hmac.compare_digest(bearer, TOKEN):
         return {"method": "token", "user": "token-admin", "claims": None}
     # Also accept a signed session token delivered as a Bearer header
     # (fallback for browsers/clients that drop the Set-Cookie header)
@@ -933,32 +838,6 @@ def _auth_context(handler: SimpleHTTPRequestHandler, query: dict) -> dict | None
 def _auth_ok(handler: SimpleHTTPRequestHandler, query: dict) -> bool:
     ctx = _auth_context(handler, query)
     return ctx is not None and ctx.get("method") != "bootstrap"
-
-
-def _auth_ok_for_embedded_proxy(handler: SimpleHTTPRequestHandler, query: dict, mount_path: str) -> bool:
-    if _auth_ok(handler, query):
-        return True
-    try:
-        ref = str(handler.headers.get("Referer", "") or "")
-        parsed = urlparse(ref)
-        if parsed.path == mount_path or parsed.path.startswith(mount_path + "/"):
-            return _auth_ok(handler, parse_qs(parsed.query or ""))
-    except Exception:
-        pass
-    return False
-
-
-def _auth_ok_for_pentest_proxy(handler: SimpleHTTPRequestHandler, query: dict) -> bool:
-    # The embedded pentest app uses absolute /api/... fetches. In token-only
-    # deployments those requests lose the token query string, but same-origin
-    # browsers keep the full /pentest/?token=... Referer. Accept that referer
-    # only for proxied pentest requests so the tool console can operate without
-    # opening the unauthenticated Flask port directly.
-    return _auth_ok_for_embedded_proxy(handler, query, "/pentest")
-
-
-def _auth_ok_for_loki_proxy(handler: SimpleHTTPRequestHandler, query: dict) -> bool:
-    return _auth_ok_for_embedded_proxy(handler, query, "/loki")
 
 
 def _request_is_https(handler: SimpleHTTPRequestHandler) -> bool:
@@ -1014,212 +893,13 @@ def _safe_payload_path(raw_path: str) -> Path | None:
     return None
 
 
-def _pentest_manager():
-    from payloads.offensive import _kali_pentest_manager
-    return _kali_pentest_manager
-
-
-def _pentest_status() -> dict:
-    try:
-        return _pentest_manager().status()
-    except Exception as exc:
-        return {"running": False, "error": str(exc)}
-
-
-def _loki_manager():
-    from payloads.offensive import loki_manager
-    return loki_manager
-
-
-def _loki_status() -> dict:
-    try:
-        return _loki_manager().status()
-    except Exception as exc:
-        return {"running": False, "error": str(exc)}
-
-
-def _desktop_manager():
-    from payloads.offensive import novnc_manager
-    return novnc_manager
-
-
-def _desktop_status() -> dict:
-    try:
-        return _desktop_manager().status()
-    except Exception as exc:
-        return {"running": False, "error": str(exc)}
-
-
-def _is_pentest_proxy_path(path: str) -> bool:
-    return path == "/pentest" or path.startswith("/pentest/") or any(
-        path == prefix or path.startswith(prefix + "/") for prefix in PENTEST_API_PREFIXES
-    )
-
-
-def _pentest_proxy_target(path: str) -> str:
-    if path == "/pentest":
-        return "/"
-    if path.startswith("/pentest/"):
-        proxied = path[len("/pentest"):]
-        return proxied or "/"
-    return path
-
-
-def _is_loki_proxy_path(path: str) -> bool:
-    return path == "/loki" or path.startswith("/loki/") or any(
-        path == prefix or path.startswith(prefix + "/") for prefix in LOKI_API_PREFIXES
-    )
-
-
-def _loki_proxy_target(path: str) -> str:
-    if path == "/loki":
-        return "/"
-    if path.startswith("/loki/"):
-        proxied = path[len("/loki"):]
-        return proxied or "/"
-    return path
-
-
-def _is_desktop_proxy_path(path: str) -> bool:
-    return path == DESKTOP_PROXY_PREFIX or path.startswith(DESKTOP_PROXY_PREFIX + "/")
-
-
-def _desktop_proxy_target(path: str) -> str:
-    if path == DESKTOP_PROXY_PREFIX:
-        return "/"
-    proxied = path[len(DESKTOP_PROXY_PREFIX):]
-    return proxied or "/"
-
-
-def _auth_ok_for_desktop_proxy(handler: SimpleHTTPRequestHandler, query: dict) -> bool:
-    return _auth_ok_for_embedded_proxy(handler, query, DESKTOP_PROXY_PREFIX)
-
-
-def _inject_loki_proxy_bootstrap(raw: bytes) -> bytes:
-    try:
-        html = raw.decode("utf-8")
-    except Exception:
-        return raw
-    patch = """
-<script>
-(function(){
-  const proxyPrefix = '/loki';
-  const qs = window.location.search || '';
-  const lokiRootPrefixes = [
-    '/api/', '/api/v1/', '/events', '/screen.png', '/favicon.ico',
-    '/manifest.json', '/apple-touch-icon', '/get_logs', '/list_credentials',
-    '/download_credentials', '/list_files', '/download_file', '/download_backup',
-    '/list_logs', '/download_log', '/load_config', '/restore_default_config',
-    '/get_web_delay', '/scan_wifi', '/network_data', '/netkb_data',
-    '/netkb_data_json', '/get_networks', '/save_config', '/connect_wifi',
-    '/disconnect_wifi', '/start_orchestrator', '/execute_manual_attack',
-    '/clear_hosts', '/clear_scan_logs', '/clear_stats', '/clear_stolen_files',
-    '/clear_credentials', '/clear_all', '/stop_manual_attack',
-    '/mark_action_start', '/add_manual_target'
-  ];
-  function shouldProxy(path){
-    return typeof path === 'string'
-      && path.startsWith('/')
-      && !path.startsWith(proxyPrefix + '/')
-      && lokiRootPrefixes.some(prefix => path === prefix || path.startsWith(prefix));
-  }
-  function proxiedUrl(url){
-    if (typeof url !== 'string') return url;
-    try {
-      const parsed = new URL(url, location.origin);
-      if (parsed.origin === location.origin && shouldProxy(parsed.pathname)) {
-        return proxyPrefix + parsed.pathname + parsed.search + parsed.hash;
-      }
-    } catch (e) {
-      if (shouldProxy(url)) return proxyPrefix + url;
-    }
-    return url;
-  }
-  function withAuth(url){
-    if (!qs || typeof url !== 'string' || !url.startsWith(proxyPrefix + '/api/v1')) return url;
-    return url + (url.includes('?') ? '&' : '?') + qs.slice(1);
-  }
-  const origFetch = window.fetch;
-  if (origFetch) {
-    window.fetch = function(input, init){
-      if (typeof input === 'string' || input instanceof URL) {
-        input = withAuth(proxiedUrl(String(input)));
-      } else if (input && input.url) {
-        input = new Request(withAuth(proxiedUrl(input.url)), input);
-      }
-      return origFetch.call(this, input, init);
-    };
-  }
-  const OrigEventSource = window.EventSource;
-  if (OrigEventSource) {
-    window.EventSource = function(url, config){
-      return new OrigEventSource(withAuth(proxiedUrl(String(url))), config);
-    };
-    window.EventSource.prototype = OrigEventSource.prototype;
-  }
-  const origOpen = (typeof XMLHttpRequest !== 'undefined' && XMLHttpRequest.prototype) ? XMLHttpRequest.prototype.open : null;
-  if (origOpen) {
-    XMLHttpRequest.prototype.open = function(method, url){
-      arguments[1] = withAuth(proxiedUrl(String(url)));
-      return origOpen.apply(this, arguments);
-    };
-  }
-})();
-</script>
-"""
-    marker = "</head>"
-    if marker in html:
-        html = html.replace(marker, patch + marker, 1)
-    else:
-        html = patch + html
-    return html.encode("utf-8")
-
-
-def _inject_pentest_proxy_bootstrap(raw: bytes) -> bytes:
-    try:
-        html = raw.decode("utf-8")
-    except Exception:
-        return raw
-    patch = """
-<script>
-(function(){
-  const qs = window.location.search || '';
-  function withAuth(url){
-    if (!qs || typeof url !== 'string' || !url.startsWith('/api/')) return url;
-    return url + (url.includes('?') ? '&' : '?') + qs.slice(1);
-  }
-  const origFetch = window.fetch;
-  if (origFetch) {
-    window.fetch = function(input, init){
-      if (typeof input === 'string') input = withAuth(input);
-      else if (input && input.url && input.url.startsWith(location.origin + '/api/')) {
-        input = new Request(withAuth(input.url.slice(location.origin.length)), input);
-      }
-      return origFetch.call(this, input, init);
-    };
-  }
-})();
-</script>
-"""
-    marker = "</head>"
-    if marker in html:
-        html = html.replace(marker, patch + marker, 1)
-    else:
-        html = patch + html
-    return html.encode("utf-8")
-
-
 def _json_response(
     handler: SimpleHTTPRequestHandler,
     payload: dict,
     status: int = 200,
     extra_headers: list[tuple[str, str]] | None = None,
 ) -> None:
-    try:
-        body = json.dumps(payload).encode("utf-8")
-    except (TypeError, ValueError) as exc:
-        body = json.dumps({"error": f"serialization error: {exc}"}).encode("utf-8")
-        status = HTTPStatus.INTERNAL_SERVER_ERROR
+    body = json.dumps(payload).encode("utf-8")
     handler.send_response(status)
     if extra_headers:
         for key, value in extra_headers:
@@ -1235,8 +915,6 @@ def _read_json(handler: SimpleHTTPRequestHandler) -> dict | None:
         length = int(handler.headers.get("Content-Length", "0") or "0")
     except Exception:
         length = 0
-    if length > REQUEST_MAX_BYTES:
-        return None
     try:
         raw = handler.rfile.read(length) if length > 0 else b"{}"
         return json.loads(raw.decode("utf-8", "ignore")) if raw else {}
@@ -1254,15 +932,6 @@ def _is_text_file(path: Path) -> bool:
     return False
 
 
-class KTOxServer(ThreadingHTTPServer):
-    """HTTP server with properly configured socket options to prevent SYN floods."""
-    def server_bind(self) -> None:
-        self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        if hasattr(socket, 'SO_REUSEPORT'):
-            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
-        super().server_bind()
-
-
 class KTOxHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(WEB_DIR), **kwargs)
@@ -1274,41 +943,13 @@ class KTOxHandler(SimpleHTTPRequestHandler):
             super().do_GET()
             return
 
-        if _is_pentest_proxy_path(parsed.path):
-            query = parse_qs(parsed.query or "")
-            if not _auth_ok_for_pentest_proxy(self, query):
-                _json_response(self, {"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
-                return
-            self._handle_pentest_proxy(parsed)
-            return
-
-        if _is_loki_proxy_path(parsed.path):
-            query = parse_qs(parsed.query or "")
-            if not _auth_ok_for_loki_proxy(self, query):
-                _json_response(self, {"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
-                return
-            self._handle_loki_proxy(parsed)
-            return
-
-        if _is_desktop_proxy_path(parsed.path):
-            query = parse_qs(parsed.query or "")
-            if not _auth_ok_for_desktop_proxy(self, query):
-                _json_response(self, {"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
-                return
-            self._handle_desktop_proxy(parsed)
-            return
-
         if (
             parsed.path.startswith("/api/loot/")
             or parsed.path.startswith("/api/payloads/")
-            or parsed.path.startswith("/api/games/")
             or parsed.path.startswith("/api/system/")
             or parsed.path.startswith("/api/settings/")
             or parsed.path.startswith("/api/auth/")
             or parsed.path.startswith("/api/stealth/")
-            or parsed.path.startswith("/api/pentest/")
-            or parsed.path.startswith("/api/loki/")
-            or parsed.path.startswith("/api/desktop/")
         ):
             query = parse_qs(parsed.query or "")
             if parsed.path == "/api/auth/bootstrap-status":
@@ -1320,19 +961,6 @@ class KTOxHandler(SimpleHTTPRequestHandler):
 
             if not _auth_ok(self, query):
                 _json_response(self, {"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
-                return
-
-            if parsed.path == "/api/system/status":
-                self._handle_system_status()
-                return
-            if parsed.path == "/api/pentest/status":
-                self._handle_pentest_status()
-                return
-            if parsed.path == "/api/loki/status":
-                self._handle_loki_status()
-                return
-            if parsed.path == "/api/desktop/status":
-                self._handle_desktop_status()
                 return
 
             if parsed.path == "/api/stealth/status":
@@ -1356,12 +984,6 @@ class KTOxHandler(SimpleHTTPRequestHandler):
             if parsed.path == "/api/payloads/file":
                 self._handle_payloads_file_get(query)
                 return
-            if parsed.path == "/api/games/center":
-                self._handle_games_center_get()
-                return
-            if parsed.path == "/api/games/emulators/health":
-                self._handle_games_emulators_health()
-                return
 
             if parsed.path == "/api/loot/list":
                 self._handle_loot_list(query)
@@ -1374,6 +996,9 @@ class KTOxHandler(SimpleHTTPRequestHandler):
                 return
             if parsed.path == "/api/loot/nmap":
                 self._handle_loot_nmap(query)
+                return
+            if parsed.path == "/api/system/status":
+                self._handle_system_status()
                 return
             if parsed.path == "/api/settings/discord_webhook":
                 self._handle_settings_webhook_get()
@@ -1401,30 +1026,6 @@ class KTOxHandler(SimpleHTTPRequestHandler):
         if parsed.path == "/api/auth/ws-ticket":
             query = parse_qs(parsed.query or "")
             self._handle_auth_ws_ticket(query)
-            return
-
-        if _is_pentest_proxy_path(parsed.path):
-            query = parse_qs(parsed.query or "")
-            if not _auth_ok_for_pentest_proxy(self, query):
-                _json_response(self, {"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
-                return
-            self._handle_pentest_proxy(parsed)
-            return
-
-        if _is_loki_proxy_path(parsed.path):
-            query = parse_qs(parsed.query or "")
-            if not _auth_ok_for_loki_proxy(self, query):
-                _json_response(self, {"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
-                return
-            self._handle_loki_proxy(parsed)
-            return
-
-        if _is_desktop_proxy_path(parsed.path):
-            query = parse_qs(parsed.query or "")
-            if not _auth_ok_for_desktop_proxy(self, query):
-                _json_response(self, {"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
-                return
-            self._handle_desktop_proxy(parsed)
             return
 
         if parsed.path == "/api/stealth/status":
@@ -1459,83 +1060,12 @@ class KTOxHandler(SimpleHTTPRequestHandler):
             self._handle_system_restart_ui()
             return
 
-        if parsed.path == "/api/pentest/start":
-            query = parse_qs(parsed.query or "")
-            if not _auth_ok(self, query):
-                _json_response(self, {"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
-                return
-            self._handle_pentest_start()
-            return
-        if parsed.path == "/api/pentest/stop":
-            query = parse_qs(parsed.query or "")
-            if not _auth_ok(self, query):
-                _json_response(self, {"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
-                return
-            self._handle_pentest_stop()
-            return
-        if parsed.path == "/api/loki/start":
-            query = parse_qs(parsed.query or "")
-            if not _auth_ok(self, query):
-                _json_response(self, {"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
-                return
-            self._handle_loki_start()
-            return
-        if parsed.path == "/api/loki/stop":
-            query = parse_qs(parsed.query or "")
-            if not _auth_ok(self, query):
-                _json_response(self, {"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
-                return
-            self._handle_loki_stop()
-            return
-        if parsed.path == "/api/desktop/start":
-            query = parse_qs(parsed.query or "")
-            if not _auth_ok(self, query):
-                _json_response(self, {"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
-                return
-            self._handle_desktop_start()
-            return
-        if parsed.path == "/api/desktop/stop":
-            query = parse_qs(parsed.query or "")
-            if not _auth_ok(self, query):
-                _json_response(self, {"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
-                return
-            self._handle_desktop_stop()
-            return
-        if parsed.path == "/api/desktop/install-deps":
-            query = parse_qs(parsed.query or "")
-            if not _auth_ok(self, query):
-                _json_response(self, {"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
-                return
-            self._handle_desktop_install_deps()
-            return
-
         if parsed.path in ("/api/payloads/start", "/api/payloads/run"):
             query = parse_qs(parsed.query or "")
             if not _auth_ok(self, query):
                 _json_response(self, {"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
                 return
             self._handle_payloads_start()
-            return
-        if parsed.path == "/api/games/emulators":
-            query = parse_qs(parsed.query or "")
-            if not _auth_ok(self, query):
-                _json_response(self, {"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
-                return
-            self._handle_games_emulators_put()
-            return
-        if parsed.path == "/api/games/play":
-            query = parse_qs(parsed.query or "")
-            if not _auth_ok(self, query):
-                _json_response(self, {"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
-                return
-            self._handle_games_play()
-            return
-        if parsed.path == "/api/games/emulators/install":
-            query = parse_qs(parsed.query or "")
-            if not _auth_ok(self, query):
-                _json_response(self, {"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
-                return
-            self._handle_games_emulators_install()
             return
         if parsed.path == "/api/payloads/entry":
             query = parse_qs(parsed.query or "")
@@ -1555,28 +1085,6 @@ class KTOxHandler(SimpleHTTPRequestHandler):
 
     def do_PUT(self):
         parsed = urlparse(self.path)
-        if _is_pentest_proxy_path(parsed.path):
-            query = parse_qs(parsed.query or "")
-            if not _auth_ok_for_pentest_proxy(self, query):
-                _json_response(self, {"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
-                return
-            self._handle_pentest_proxy(parsed)
-            return
-
-        if _is_loki_proxy_path(parsed.path):
-            query = parse_qs(parsed.query or "")
-            if not _auth_ok_for_loki_proxy(self, query):
-                _json_response(self, {"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
-                return
-            self._handle_loki_proxy(parsed)
-            return
-        if _is_desktop_proxy_path(parsed.path):
-            query = parse_qs(parsed.query or "")
-            if not _auth_ok_for_desktop_proxy(self, query):
-                _json_response(self, {"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
-                return
-            self._handle_desktop_proxy(parsed)
-            return
         if parsed.path == "/api/payloads/file":
             query = parse_qs(parsed.query or "")
             if not _auth_ok(self, query):
@@ -1602,28 +1110,6 @@ class KTOxHandler(SimpleHTTPRequestHandler):
 
     def do_PATCH(self):
         parsed = urlparse(self.path)
-        if _is_pentest_proxy_path(parsed.path):
-            query = parse_qs(parsed.query or "")
-            if not _auth_ok_for_pentest_proxy(self, query):
-                _json_response(self, {"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
-                return
-            self._handle_pentest_proxy(parsed)
-            return
-
-        if _is_loki_proxy_path(parsed.path):
-            query = parse_qs(parsed.query or "")
-            if not _auth_ok_for_loki_proxy(self, query):
-                _json_response(self, {"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
-                return
-            self._handle_loki_proxy(parsed)
-            return
-        if _is_desktop_proxy_path(parsed.path):
-            query = parse_qs(parsed.query or "")
-            if not _auth_ok_for_desktop_proxy(self, query):
-                _json_response(self, {"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
-                return
-            self._handle_desktop_proxy(parsed)
-            return
         if parsed.path == "/api/payloads/entry":
             query = parse_qs(parsed.query or "")
             if not _auth_ok(self, query):
@@ -1635,28 +1121,6 @@ class KTOxHandler(SimpleHTTPRequestHandler):
 
     def do_DELETE(self):
         parsed = urlparse(self.path)
-        if _is_pentest_proxy_path(parsed.path):
-            query = parse_qs(parsed.query or "")
-            if not _auth_ok_for_pentest_proxy(self, query):
-                _json_response(self, {"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
-                return
-            self._handle_pentest_proxy(parsed)
-            return
-
-        if _is_loki_proxy_path(parsed.path):
-            query = parse_qs(parsed.query or "")
-            if not _auth_ok_for_loki_proxy(self, query):
-                _json_response(self, {"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
-                return
-            self._handle_loki_proxy(parsed)
-            return
-        if _is_desktop_proxy_path(parsed.path):
-            query = parse_qs(parsed.query or "")
-            if not _auth_ok_for_desktop_proxy(self, query):
-                _json_response(self, {"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
-                return
-            self._handle_desktop_proxy(parsed)
-            return
         if parsed.path == "/api/payloads/entry":
             query = parse_qs(parsed.query or "")
             if not _auth_ok(self, query):
@@ -1725,8 +1189,6 @@ class KTOxHandler(SimpleHTTPRequestHandler):
             "evil_portal",
             "exfiltration",
             "remote_access",
-            "dos",
-            "network",
             "general",
             "examples",
             "games",
@@ -1758,135 +1220,6 @@ class KTOxHandler(SimpleHTTPRequestHandler):
 
         _json_response(self, {"categories": payload_categories})
 
-    def _load_emulators_config(self) -> list[dict]:
-        if not EMULATORS_CONFIG_PATH.exists():
-            return []
-        try:
-            data = json.loads(EMULATORS_CONFIG_PATH.read_text(encoding="utf-8"))
-            if isinstance(data, list):
-                return [x for x in data if isinstance(x, dict)]
-        except Exception:
-            return []
-        return []
-
-    def _list_roms(self) -> list[dict]:
-        if not ROMS_DIR.exists():
-            return []
-        roms: list[dict] = []
-        for p in sorted(ROMS_DIR.rglob("*")):
-            if not p.is_file():
-                continue
-            rel = str(p.relative_to(ROMS_DIR)).replace("\\", "/")
-            roms.append({"name": p.name, "path": rel, "size": p.stat().st_size})
-        return roms
-
-    def _handle_games_center_get(self) -> None:
-        _json_response(self, {
-            "emulators": self._load_emulators_config(),
-            "roms": self._list_roms(),
-            "roms_dir": str(ROMS_DIR),
-            "webui_port": PORT,
-        })
-
-    def _handle_games_emulators_health(self) -> None:
-        status = []
-        for emulator in KALI_ARMHF_EMULATORS:
-            binary = emulator.get("binary", "")
-            installed_path = shutil.which(binary) if binary else None
-            status.append({
-                **emulator,
-                "installed": bool(installed_path),
-                "binary_path": installed_path,
-            })
-        _json_response(self, {
-            "platform": platform.platform(),
-            "machine": platform.machine(),
-            "kali_armhf_target": platform.machine().lower().startswith("arm"),
-            "emulators": status,
-            "webui_port": PORT,
-            "webui_expected_port": 8099,
-        })
-
-    def _handle_games_emulators_install(self) -> None:
-        missing_packages = []
-        for emulator in KALI_ARMHF_EMULATORS:
-            binary = emulator.get("binary", "")
-            package = emulator.get("package", "")
-            if package and binary and shutil.which(binary) is None:
-                missing_packages.append(package)
-        if not missing_packages:
-            _json_response(self, {"ok": True, "installed": [], "message": "all emulator packages already present"})
-            return
-        cmd = [
-            "apt-get",
-            "install",
-            "-y",
-            *sorted(set(missing_packages)),
-        ]
-        try:
-            run = subprocess.run(
-                ["apt-get", "update"],
-                check=False,
-                capture_output=True,
-                text=True,
-            )
-            if run.returncode != 0:
-                _json_response(
-                    self,
-                    {"error": "apt-get update failed", "stdout": run.stdout[-3000:], "stderr": run.stderr[-3000:]},
-                    status=HTTPStatus.INTERNAL_SERVER_ERROR,
-                )
-                return
-            install = subprocess.run(cmd, check=False, capture_output=True, text=True)
-            if install.returncode != 0:
-                _json_response(
-                    self,
-                    {
-                        "error": "apt-get install failed",
-                        "command": " ".join(shlex.quote(x) for x in cmd),
-                        "stdout": install.stdout[-3000:],
-                        "stderr": install.stderr[-3000:],
-                    },
-                    status=HTTPStatus.INTERNAL_SERVER_ERROR,
-                )
-                return
-        except Exception as exc:
-            _json_response(self, {"error": f"install failed: {exc}"}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
-            return
-        _json_response(self, {"ok": True, "installed": sorted(set(missing_packages))})
-
-    def _handle_games_emulators_put(self) -> None:
-        body = _read_json(self)
-        if body is None or not isinstance(body.get("emulators"), list):
-            _json_response(self, {"error": "invalid json"}, status=HTTPStatus.BAD_REQUEST)
-            return
-        emulators = [e for e in body["emulators"] if isinstance(e, dict)]
-        GAMES_DIR.mkdir(parents=True, exist_ok=True)
-        EMULATORS_CONFIG_PATH.write_text(json.dumps(emulators, indent=2), encoding="utf-8")
-        _json_response(self, {"ok": True, "count": len(emulators)})
-
-    def _handle_games_play(self) -> None:
-        body = _read_json(self)
-        if body is None:
-            _json_response(self, {"error": "invalid json"}, status=HTTPStatus.BAD_REQUEST)
-            return
-        emulator = str(body.get("emulator", "")).strip()
-        rom = str(body.get("rom", "")).strip().lstrip("/").replace("\\", "/")
-        if not emulator or not rom:
-            _json_response(self, {"error": "emulator and rom required"}, status=HTTPStatus.BAD_REQUEST)
-            return
-        rom_path = (ROMS_DIR / rom).resolve()
-        try:
-            rom_root = ROMS_DIR.resolve()
-        except FileNotFoundError:
-            rom_root = ROMS_DIR
-        if rom_root not in rom_path.parents or not rom_path.exists():
-            _json_response(self, {"error": "rom not found"}, status=HTTPStatus.NOT_FOUND)
-            return
-        payload = {"emulator": emulator, "rom": rom, "ts": int(time.time())}
-        GAMECENTER_STATE_PATH.write_text(json.dumps(payload), encoding="utf-8")
-        _json_response(self, {"ok": True, "launch": payload})
-
     def _handle_payloads_start(self) -> None:
         body = _read_json(self)
         if body is None:
@@ -1908,21 +1241,11 @@ class KTOxHandler(SimpleHTTPRequestHandler):
             return
 
         try:
-            request_payload = json.dumps({
+            request_path = Path("/dev/shm/rj_payload_request.json")
+            request_path.write_text(json.dumps({
                 "action": "start",
                 "path": rel_path,
-            })
-            errors = []
-            for request_path in (
-                Path("/dev/shm/ktox_payload_request.json"),
-                Path("/dev/shm/rj_payload_request.json"),
-            ):
-                try:
-                    request_path.write_text(request_payload, encoding="utf-8")
-                except Exception as exc:
-                    errors.append(f"{request_path}: {exc}")
-            if len(errors) == 2:
-                raise RuntimeError("; ".join(errors))
+            }))
         except Exception as exc:
             _json_response(self, {"error": f"request failed: {exc}"}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
             return
@@ -2146,12 +1469,6 @@ class KTOxHandler(SimpleHTTPRequestHandler):
     def _handle_payloads_convert(self) -> None:
         try:
             length = int(self.headers.get("Content-Length", 0))
-        except Exception:
-            length = 0
-        if length > REQUEST_MAX_BYTES:
-            _json_response(self, {"error": "request too large"}, status=HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
-            return
-        try:
             body = json.loads(self.rfile.read(length))
         except Exception:
             _json_response(self, {"error": "bad request"}, status=HTTPStatus.BAD_REQUEST)
@@ -2182,18 +1499,15 @@ class KTOxHandler(SimpleHTTPRequestHandler):
         converted = _compat_convert(source, target, ktox_root, rj_root)
         changed   = converted != source
 
-        diff_text = ""
-        if changed:
-            diff_lines = list(difflib.unified_diff(
-                source.splitlines(keepends=True),
-                converted.splitlines(keepends=True),
-                fromfile="original",
-                tofile="converted",
-                n=2,
-            ))
-            diff_text = "".join(diff_lines)
-            if len(diff_text) > 1024 * 1024:
-                diff_text = diff_text[:1024 * 1024] + "\n... (diff truncated)"
+        # Build unified diff for display
+        diff_lines = list(difflib.unified_diff(
+            source.splitlines(keepends=True),
+            converted.splitlines(keepends=True),
+            fromfile="original",
+            tofile="converted",
+            n=2,
+        ))
+        diff_text = "".join(diff_lines)
 
         saved_path: str | None = None
 
@@ -2296,295 +1610,6 @@ class KTOxHandler(SimpleHTTPRequestHandler):
         except Exception as exc:
             _json_response(self, {"error": f"parse error: {exc}"}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
 
-    def _handle_pentest_proxy(self, parsed) -> None:
-        state = _pentest_status()
-        if not state.get("running"):
-            _json_response(self, {
-                "error": "pentest WebUI is not running",
-                "running": False,
-                "status": state,
-            }, status=HTTPStatus.SERVICE_UNAVAILABLE)
-            return
-
-        target_path = _pentest_proxy_target(parsed.path)
-        if parsed.query:
-            target_path = f"{target_path}?{parsed.query}"
-        body = b""
-        if self.command in ("POST", "PUT", "PATCH"):
-            try:
-                length = int(self.headers.get("Content-Length", "0") or "0")
-            except Exception:
-                length = 0
-            if length > REQUEST_MAX_BYTES:
-                _json_response(self, {"error": "request too large"}, status=HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
-                return
-            body = self.rfile.read(length) if length > 0 else b""
-
-        headers = {
-            key: value for key, value in self.headers.items()
-            if key.lower() not in ("host", "connection", "content-length", "accept-encoding")
-        }
-        if body:
-            headers["Content-Length"] = str(len(body))
-
-        port = int(state.get("port") or os.environ.get("KALI_PENTEST_PORT", "9000"))
-        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=PENTEST_PROXY_TIMEOUT)
-        try:
-            conn.request(self.command, target_path, body=body if body else None, headers=headers)
-            resp = conn.getresponse()
-            resp_headers = resp.getheaders()
-            content_type = ""
-            for key, value in resp_headers:
-                if key.lower() == "content-type":
-                    content_type = value.lower()
-                    break
-
-            excluded = {"connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
-                        "te", "trailers", "transfer-encoding", "upgrade"}
-
-            if "text/html" in content_type:
-                body_bytes = _inject_pentest_proxy_bootstrap(resp.read())
-                self.send_response(resp.status, resp.reason)
-                for key, value in resp_headers:
-                    if key.lower() in excluded or key.lower() == "content-length":
-                        continue
-                    self.send_header(key, value)
-                self.send_header("Content-Length", str(len(body_bytes)))
-                self.end_headers()
-                self.wfile.write(body_bytes)
-                return
-
-            self.send_response(resp.status, resp.reason)
-            for key, value in resp_headers:
-                if key.lower() in excluded:
-                    continue
-                self.send_header(key, value)
-            self.end_headers()
-            while True:
-                chunk = resp.read(64 * 1024)
-                if not chunk:
-                    break
-                self.wfile.write(chunk)
-                try:
-                    self.wfile.flush()
-                except Exception:
-                    pass
-        except Exception as exc:
-            _json_response(self, {"error": f"pentest proxy error: {exc}"}, status=HTTPStatus.BAD_GATEWAY)
-        finally:
-            try:
-                conn.close()
-            except Exception:
-                pass
-
-
-    def _handle_desktop_proxy(self, parsed) -> None:
-        state = _desktop_status()
-        if not state.get("running"):
-            _json_response(self, {
-                "error": "Kali noVNC desktop is not running",
-                "running": False,
-                "status": state,
-            }, status=HTTPStatus.SERVICE_UNAVAILABLE)
-            return
-
-        target_path = _desktop_proxy_target(parsed.path)
-        if parsed.query:
-            target_path = f"{target_path}?{parsed.query}"
-        body = b""
-        if self.command in ("POST", "PUT", "PATCH"):
-            try:
-                length = int(self.headers.get("Content-Length", "0") or "0")
-            except Exception:
-                length = 0
-            if length > REQUEST_MAX_BYTES:
-                _json_response(self, {"error": "request too large"}, status=HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
-                return
-            body = self.rfile.read(length) if length > 0 else b""
-
-        headers = {
-            key: value for key, value in self.headers.items()
-            if key.lower() not in ("host", "connection", "content-length", "accept-encoding")
-        }
-        if body:
-            headers["Content-Length"] = str(len(body))
-
-        port = int(state.get("port") or os.environ.get("KTOX_NOVNC_PORT", "6080"))
-        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=DESKTOP_PROXY_TIMEOUT)
-        try:
-            conn.request(self.command, target_path, body=body if body else None, headers=headers)
-            resp = conn.getresponse()
-            resp_headers = resp.getheaders()
-            excluded = {"connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
-                        "te", "trailers", "transfer-encoding", "upgrade"}
-
-            self.send_response(resp.status, resp.reason)
-            for key, value in resp_headers:
-                if key.lower() in excluded:
-                    continue
-                self.send_header(key, value)
-            self.end_headers()
-            while True:
-                chunk = resp.read(64 * 1024)
-                if not chunk:
-                    break
-                self.wfile.write(chunk)
-                try:
-                    self.wfile.flush()
-                except Exception:
-                    pass
-        except Exception as exc:
-            _json_response(self, {"error": f"noVNC proxy error: {exc}"}, status=HTTPStatus.BAD_GATEWAY)
-        finally:
-            try:
-                conn.close()
-            except Exception:
-                pass
-
-    def _handle_loki_proxy(self, parsed) -> None:
-        state = _loki_status()
-        if not state.get("running"):
-            _json_response(self, {
-                "error": "Loki WebUI is not running",
-                "running": False,
-                "status": state,
-            }, status=HTTPStatus.SERVICE_UNAVAILABLE)
-            return
-
-        target_path = _loki_proxy_target(parsed.path)
-        if parsed.query:
-            target_path = f"{target_path}?{parsed.query}"
-        body = b""
-        if self.command in ("POST", "PUT", "PATCH"):
-            try:
-                length = int(self.headers.get("Content-Length", "0") or "0")
-            except Exception:
-                length = 0
-            if length > REQUEST_MAX_BYTES:
-                _json_response(self, {"error": "request too large"}, status=HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
-                return
-            body = self.rfile.read(length) if length > 0 else b""
-
-        headers = {
-            key: value for key, value in self.headers.items()
-            if key.lower() not in ("host", "connection", "content-length", "accept-encoding")
-        }
-        if body:
-            headers["Content-Length"] = str(len(body))
-
-        port = int(state.get("port") or os.environ.get("LOKI_PORT", "8000"))
-        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=LOKI_PROXY_TIMEOUT)
-        try:
-            conn.request(self.command, target_path, body=body if body else None, headers=headers)
-            resp = conn.getresponse()
-            resp_headers = resp.getheaders()
-            content_type = ""
-            for key, value in resp_headers:
-                if key.lower() == "content-type":
-                    content_type = value.lower()
-                    break
-
-            excluded = {"connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
-                        "te", "trailers", "transfer-encoding", "upgrade"}
-
-            if "text/html" in content_type:
-                body_bytes = _inject_loki_proxy_bootstrap(resp.read())
-                self.send_response(resp.status, resp.reason)
-                for key, value in resp_headers:
-                    if key.lower() in excluded or key.lower() == "content-length":
-                        continue
-                    self.send_header(key, value)
-                self.send_header("Content-Length", str(len(body_bytes)))
-                self.end_headers()
-                self.wfile.write(body_bytes)
-                return
-
-            self.send_response(resp.status, resp.reason)
-            for key, value in resp_headers:
-                if key.lower() in excluded:
-                    continue
-                self.send_header(key, value)
-            self.end_headers()
-            while True:
-                chunk = resp.read(64 * 1024)
-                if not chunk:
-                    break
-                self.wfile.write(chunk)
-                try:
-                    self.wfile.flush()
-                except Exception:
-                    pass
-        except Exception as exc:
-            _json_response(self, {"error": f"Loki proxy error: {exc}"}, status=HTTPStatus.BAD_GATEWAY)
-        finally:
-            try:
-                conn.close()
-            except Exception:
-                pass
-
-    def _handle_loki_status(self) -> None:
-        _json_response(self, _loki_status())
-
-    def _handle_loki_start(self) -> None:
-        try:
-            _json_response(self, _loki_manager().start_server())
-        except Exception as exc:
-            _json_response(self, {"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
-
-    def _handle_loki_stop(self) -> None:
-        try:
-            _json_response(self, _loki_manager().stop_server())
-        except Exception as exc:
-            _json_response(self, {"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
-
-    def _handle_desktop_status(self) -> None:
-        _json_response(self, _desktop_status())
-
-    def _handle_desktop_start(self) -> None:
-        body = _read_json(self)
-        if body is None:
-            _json_response(self, {"error": "invalid json"}, status=HTTPStatus.BAD_REQUEST)
-            return
-        try:
-            port = int(body.get("port") or os.environ.get("KTOX_NOVNC_PORT", "6080"))
-            host = str(body.get("host") or os.environ.get("KTOX_NOVNC_HOST", "0.0.0.0"))
-            _json_response(self, _desktop_manager().start_server(host=host, port=port))
-        except Exception as exc:
-            _json_response(self, {"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
-
-    def _handle_desktop_stop(self) -> None:
-        try:
-            _json_response(self, _desktop_manager().stop_server())
-        except Exception as exc:
-            _json_response(self, {"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
-
-    def _handle_desktop_install_deps(self) -> None:
-        try:
-            _json_response(self, _desktop_manager().install_dependencies_async())
-        except Exception as exc:
-            _json_response(self, {"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
-
-    def _handle_pentest_status(self) -> None:
-        _json_response(self, _pentest_status())
-
-    def _handle_pentest_start(self) -> None:
-        body = _read_json(self)
-        if body is None:
-            _json_response(self, {"error": "invalid json"}, status=HTTPStatus.BAD_REQUEST)
-            return
-        try:
-            port = int(body.get("port") or os.environ.get("KALI_PENTEST_PORT", "9000"))
-            host = str(body.get("host") or os.environ.get("KALI_PENTEST_HOST", "0.0.0.0"))
-            _json_response(self, _pentest_manager().start_server(host=host, port=port))
-        except Exception as exc:
-            _json_response(self, {"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
-
-    def _handle_pentest_stop(self) -> None:
-        try:
-            _json_response(self, _pentest_manager().stop_server())
-        except Exception as exc:
-            _json_response(self, {"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
-
     def _handle_system_status(self) -> None:
         try:
             cpu = _read_cpu_percent()
@@ -2594,10 +1619,6 @@ class KTOxHandler(SimpleHTTPRequestHandler):
             uptime_s = _read_uptime_seconds()
             ifaces = _read_ipv4_interfaces()
             load1, load5, load15 = os.getloadavg()
-            hostname = socket.gethostname()
-            kernel = platform.release()
-            platform_name = platform.platform()
-            tailscale = _tailscale_status() if _tailscale_installed() else {"backend_state": None, "ip": None}
             payload_running = False
             payload_path = None
             try:
@@ -2619,15 +1640,8 @@ class KTOxHandler(SimpleHTTPRequestHandler):
                 "uptime_s": uptime_s,
                 "load": [round(load1, 2), round(load5, 2), round(load15, 2)],
                 "interfaces": ifaces,
-                "hostname": hostname,
-                "kernel": kernel,
-                "platform": platform_name,
-                "tailscale": tailscale,
                 "payload_running": payload_running,
                 "payload_path": payload_path,
-                "pentest": _pentest_status(),
-                "loki": _loki_status(),
-                "desktop": _desktop_status(),
             })
         except Exception as exc:
             _json_response(self, {"error": f"status error: {exc}"}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
@@ -2695,25 +1709,23 @@ class KTOxHandler(SimpleHTTPRequestHandler):
         password = str(body.get("password", ""))
         now = time.time()
         ip = self._client_ip()
-        with _LOGIN_FAILS_LOCK:
-            failures = [ts for ts in _LOGIN_FAILS.get(ip, []) if now - ts < 600]
-            if len(failures) >= 6:
-                _LOGIN_FAILS[ip] = failures
-                _json_response(self, {"error": "too many attempts"}, status=HTTPStatus.TOO_MANY_REQUESTS)
-                return
+        failures = [ts for ts in _LOGIN_FAILS.get(ip, []) if now - ts < 600]
+        _LOGIN_FAILS[ip] = failures
+        if len(failures) >= 6:
+            _json_response(self, {"error": "too many attempts"}, status=HTTPStatus.TOO_MANY_REQUESTS)
+            return
 
-            cfg = _read_auth_config()
-            if not cfg:
-                _json_response(self, {"error": "auth not initialized"}, status=HTTPStatus.PRECONDITION_FAILED)
-                return
-            if username != str(cfg.get("username", "")) or not _verify_password(password, str(cfg.get("password_hash", ""))):
-                failures.append(now)
-                _LOGIN_FAILS[ip] = failures
-                _json_response(self, {"error": "invalid credentials"}, status=HTTPStatus.UNAUTHORIZED)
-                return
+        cfg = _read_auth_config()
+        if not cfg:
+            _json_response(self, {"error": "auth not initialized"}, status=HTTPStatus.PRECONDITION_FAILED)
+            return
+        if username != str(cfg.get("username", "")) or not _verify_password(password, str(cfg.get("password_hash", ""))):
+            failures.append(now)
+            _LOGIN_FAILS[ip] = failures
+            _json_response(self, {"error": "invalid credentials"}, status=HTTPStatus.UNAUTHORIZED)
+            return
 
-            _LOGIN_FAILS[ip] = []
-
+        _LOGIN_FAILS[ip] = []
         is_https = _request_is_https(self)
         cookie_hdr = _session_cookie_header(username, secure=is_https)
         now = int(time.time())
@@ -2825,16 +1837,14 @@ class KTOxHandler(SimpleHTTPRequestHandler):
 
 
 def main() -> None:
-    if _get_token():
+    if TOKEN:
         print("[WebUI] Token auth enabled")
     else:
         print("[WebUI] WARNING: Token auth disabled (set RJ_WS_TOKEN or token file)")
 
-    threading.Thread(target=_cleanup_login_failures, daemon=True).start()
-
     # If a specific host was set via env var, honour it as-is (single bind)
     if HOST != "0.0.0.0":
-        server = KTOxServer((HOST, PORT), KTOxHandler)
+        server = ThreadingHTTPServer((HOST, PORT), KTOxHandler)
         print(f"[WebUI] Serving on http://{HOST}:{PORT}")
         try:
             server.serve_forever()
@@ -2846,11 +1856,11 @@ def main() -> None:
 
     # Default: bind only to eth0 + wlan0 (+ localhost).  wlan1+ stay untouched.
     bind_addrs = _get_webui_bind_addrs()
-    servers: list[KTOxServer] = []
+    servers: list[ThreadingHTTPServer] = []
 
     for addr, iface in bind_addrs:
         try:
-            srv = KTOxServer((addr, PORT), KTOxHandler)
+            srv = ThreadingHTTPServer((addr, PORT), KTOxHandler)
             servers.append(srv)
             threading.Thread(target=srv.serve_forever, daemon=True).start()
             print(f"[WebUI] Serving on http://{addr}:{PORT} ({iface})")
@@ -2860,7 +1870,7 @@ def main() -> None:
     if not servers:
         # Last resort — fall back to all interfaces so the WebUI is not dead
         print("[WebUI] WARNING: No WebUI interfaces available, falling back to 0.0.0.0")
-        srv = KTOxServer(("0.0.0.0", PORT), KTOxHandler)
+        srv = ThreadingHTTPServer(("0.0.0.0", PORT), KTOxHandler)
         print(f"[WebUI] Serving on http://0.0.0.0:{PORT}")
         try:
             srv.serve_forever()
