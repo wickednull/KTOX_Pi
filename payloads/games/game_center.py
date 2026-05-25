@@ -81,11 +81,18 @@ def install_emu(emu: str):
 
     packages = meta["apt"]
     logs = []
+    failed = False
     if packages:
         rc, out = _run(["apt-get", "update"])
         logs.append({"cmd": "apt-get update", "rc": rc, "output": out[-1200:]})
+        failed = failed or rc != 0
+
         rc, out = _run(["apt-get", "install", "-y", *packages])
         logs.append({"cmd": f"apt-get install -y {' '.join(packages)}", "rc": rc, "output": out[-1200:]})
+        failed = failed or rc != 0
+
+    if failed:
+        return jsonify({"ok": False, "emulator": emu, "error": "install failed", "logs": logs}), 500
     return jsonify({"ok": True, "emulator": emu, "logs": logs})
 
 
@@ -126,8 +133,11 @@ def list_roms():
 
 @APP.get("/rom/download/<path:p>")
 def download_rom(p: str):
+    roms_root = ROMS_DIR.resolve()
     pth = (ROMS_DIR / p).resolve()
-    if not str(pth).startswith(str(ROMS_DIR.resolve())):
+    try:
+        pth.relative_to(roms_root)
+    except ValueError:
         return jsonify({"ok": False, "error": "invalid path"}), 400
     if not pth.exists():
         return jsonify({"ok": False, "error": "not found"}), 404
