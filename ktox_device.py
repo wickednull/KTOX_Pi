@@ -139,6 +139,9 @@ _temp_c      = 0.0
 
 PAYLOAD_STATE_PATH   = "/dev/shm/ktox_payload_state.json"
 PAYLOAD_REQUEST_PATH = "/dev/shm/rj_payload_request.json"   # WebUI uses rj_ prefix
+GAMECENTER_REQUEST_PATH = "/dev/shm/ktox_gamecenter_state.json"
+GAMES_EMULATORS_PATH = "/root/KTOx/games/emulators.json"
+GAMES_ROMS_DIR = "/root/KTOx/games/roms"
 
 # ── Global LCD / image / draw (KTOx pattern — must be globals) ───────────
 
@@ -2162,6 +2165,64 @@ def _check_payload_request():
     except Exception:
         pass
     return None
+
+
+def _check_gamecenter_request():
+    try:
+        with open(GAMECENTER_REQUEST_PATH) as f:
+            data = json.load(f)
+        os.remove(GAMECENTER_REQUEST_PATH)
+        emulator = str(data.get("emulator", "")).strip()
+        rom_rel = str(data.get("rom", "")).strip()
+        if emulator and rom_rel:
+            return emulator, rom_rel
+    except (FileNotFoundError, OSError):
+        pass
+    except Exception:
+        pass
+    return None
+
+
+def _launch_gamecenter_emulator(emulator: str, rom_rel: str):
+    rom_path = os.path.realpath(os.path.join(GAMES_ROMS_DIR, rom_rel))
+    rom_root = os.path.realpath(GAMES_ROMS_DIR)
+    if not rom_path.startswith(rom_root + os.sep) or not os.path.isfile(rom_path):
+        Dialog_info("ROM not found.", wait=True)
+        return
+
+    launch_cmd = None
+    try:
+        with open(GAMES_EMULATORS_PATH, "r", encoding="utf-8") as f:
+            entries = json.load(f)
+        for entry in entries if isinstance(entries, list) else []:
+            if str(entry.get("id", "")).strip() == emulator:
+                cmd = str(entry.get("cmd", "")).strip()
+                args = entry.get("args", [])
+                if cmd:
+                    launch_cmd = [cmd]
+                    if isinstance(args, list):
+                        launch_cmd.extend([str(x) for x in args if str(x).strip()])
+                break
+    except Exception:
+        pass
+
+    if not launch_cmd:
+        fallback = {
+            "retroarch": ["retroarch", "-f", "-L", "auto"],
+            "dosbox": ["dosbox"],
+            "mednafen": ["mednafen"],
+            "mame": ["mame"],
+        }
+        launch_cmd = fallback.get(emulator)
+
+    if not launch_cmd:
+        Dialog_info("Emulator config\nmissing.", wait=True)
+        return
+
+    if launch_cmd and launch_cmd[-1] == "auto":
+        launch_cmd = launch_cmd[:-1]
+    launch_cmd.append(rom_path)
+    subprocess.run(launch_cmd, cwd=INSTALL_PATH, check=False)
 
 
 def exec_payload(filename, *args):
@@ -5309,6 +5370,10 @@ class KTOxMenu:
             req = _check_payload_request()
             if req:
                 exec_payload(req)
+                continue
+            game_req = _check_gamecenter_request()
+            if game_req:
+                _launch_gamecenter_emulator(game_req[0], game_req[1])
                 continue
             self.navigate("home")
 
