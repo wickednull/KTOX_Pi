@@ -89,25 +89,28 @@ EMULATORS = {
     },
     "genesis": {
         "name": "Genesis / Mega Drive",
-        "engine": "PicoDrive via RetroArch",
-        "apt": ["retroarch", "libretro-picodrive"],
+        "engine": "Genesis Plus GX via RetroArch",
+        "apt": ["retroarch", "libretro-genesisplusgx"],
         "binaries": ["retroarch"],
-        "core_candidates": ["/usr/lib/*/libretro/picodrive_libretro.so", "/usr/lib/libretro/picodrive_libretro.so"],
-        "ext": [".md", ".gen"],
+        "core_candidates": [
+            "/usr/lib/*/libretro/genesis_plus_gx_libretro.so",
+            "/usr/lib/*/libretro/genesis_plus_gx.libretro",
+            "/usr/lib/libretro/genesis_plus_gx_libretro.so",
+        ],
+        "ext": [".md", ".gen", ".smd", ".32x"],
         "browser_core": "segaMD",
         "launch": "retroarch -L {core} {rom}",
-        "notes": "Fast, reliable 16-bit profile for the Zero 2 W.",
+        "notes": "Kali/Debian packaged Sega core with broad Mega Drive compatibility.",
     },
     "psx": {
         "name": "PlayStation 1",
-        "engine": "PCSX-ReARMed via RetroArch",
-        "apt": ["retroarch", "libretro-pcsx-rearmed"],
-        "binaries": ["retroarch"],
-        "core_candidates": ["/usr/lib/*/libretro/pcsx_rearmed_libretro.so", "/usr/lib/libretro/pcsx_rearmed_libretro.so"],
-        "ext": [".cue", ".chd", ".pbp"],
+        "engine": "PCSXR",
+        "apt": ["pcsxr"],
+        "binary_candidates": ["pcsxr", "pcsx"],
+        "ext": [".cue", ".chd", ".pbp", ".img", ".iso", ".ccd", ".m3u"],
         "browser_core": "psx",
-        "launch": "retroarch -L {core} {rom}",
-        "notes": "Experimental but possible for lighter PS1 titles.",
+        "launch": "{binary} -nogui -cdfile {rom}",
+        "notes": "Native Kali/Debian PS1 package; browser PS1 play still uses the web core.",
     },
     "doom": {
         "name": "DOOM WADs",
@@ -315,7 +318,11 @@ def _local_ip() -> str:
 
 
 def _which(name: str) -> str | None:
-    for folder in os.environ.get("PATH", "").split(os.pathsep):
+    search_path = os.environ.get("PATH", "").split(os.pathsep)
+    for extra in ("/usr/games", "/usr/local/games", "/usr/bin", "/usr/local/bin"):
+        if extra not in search_path:
+            search_path.append(extra)
+    for folder in search_path:
         candidate = Path(folder) / name
         if candidate.exists() and os.access(candidate, os.X_OK):
             return str(candidate)
@@ -336,9 +343,25 @@ def _runtime_missing(meta: dict) -> list[str]:
     for binary in meta.get("binaries", []):
         if not _which(binary):
             missing.append(f"binary:{binary}")
+    binary_candidates = meta.get("binary_candidates", [])
+    if binary_candidates and not any(_which(binary) for binary in binary_candidates):
+        missing.append("binary:" + "|".join(binary_candidates))
     if meta.get("core_candidates") and not _find_core(meta["core_candidates"]):
         missing.append("libretro core")
     return missing
+
+
+def _runtime_binary(meta: dict) -> str:
+    candidates = list(meta.get("binary_candidates", [])) + list(meta.get("binaries", []))
+    for binary in meta.get("binary_candidates", []):
+        found = _which(binary)
+        if found:
+            return found
+    for binary in meta.get("binaries", []):
+        found = _which(binary)
+        if found:
+            return found
+    return str(candidates[0]) if candidates else ""
 
 
 def _emulator_installed(meta: dict) -> bool:
@@ -515,6 +538,7 @@ def api_state():
         item["runtime_missing"] = missing
         item.pop("launch", None)
         item.pop("core_candidates", None)
+        item.pop("binary_candidates", None)
         emulators.append(item)
     return jsonify({
         "ok": True,
@@ -609,7 +633,11 @@ def api_launch_rom():
         core = _find_core(meta["core_candidates"]) or ""
         if not core:
             return jsonify({"ok": False, "error": "RetroArch core not found after install"}), 409
-    cmd_text = meta["launch"].format(core=shlex.quote(core), rom=shlex.quote(str(target)))
+    cmd_text = meta["launch"].format(
+        binary=shlex.quote(_runtime_binary(meta)),
+        core=shlex.quote(core),
+        rom=shlex.quote(str(target)),
+    )
     proc = subprocess.Popen(cmd_text, shell=True, cwd=str(ROMS_DIR), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
     _write_json(RUN_STATUS, {"active": True, "pid": proc.pid, "rom": target.name, "emulator": emu_id, "ts": time.time()})
     return jsonify({"ok": True, "pid": proc.pid, "rom": target.name, "emulator": meta["name"], "command": cmd_text})
