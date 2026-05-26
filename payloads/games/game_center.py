@@ -97,4 +97,4 @@ EMULATORS = {
             "/usr/lib/*/libretro/genesis_plus_gx.libretro",
             "/usr/lib/libretro/genesis_plus_gx_libretro.so",
         ],
-        "ext": [".md", ".gen", ".smd", ".32x"],
+        "ext": [".md", ".gen", ".smd", ".32x", ".bin", ".cue", ".iso", ".chd"],
