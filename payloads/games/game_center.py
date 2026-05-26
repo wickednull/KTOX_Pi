@@ -105,9 +105,9 @@ EMULATORS = {
     "psx": {
         "name": "PlayStation 1",
         "engine": "PCSXR",
-        "apt": ["pcsxr"],
+        "apt": ["pcsxr", "mame-tools"],
         "binary_candidates": ["pcsxr", "pcsx"],
-        "ext": [".cue", ".chd", ".pbp", ".img", ".iso", ".ccd", ".m3u"],
+        "ext": [".cue", ".bin", ".chd", ".pbp", ".img", ".iso", ".ccd", ".m3u"],
         "browser_core": "psx",
         "launch": "{binary} -nogui -cdfile {rom}",
         "notes": "Native Kali/Debian PS1 package; browser PS1 play still uses the web core.",
@@ -222,6 +222,11 @@ HTML = r"""<!doctype html>
       document.getElementById('runStatus').textContent = data.message || 'Stopped';
       refreshAll();
     }
+    async function convertPsxToChd(path){
+      const data = await api('/api/roms/convert/psx-chd', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({path})});
+      document.getElementById('runStatus').textContent = data.ok ? `Converted: ${data.path}` : (data.error || 'Convert failed');
+      refreshAll();
+    }
     async function refreshAll(){
       const data = await api('/api/state');
       document.getElementById('emulators').innerHTML = data.emulators.map(e => `
@@ -246,6 +251,7 @@ HTML = r"""<!doctype html>
               <div class="actions">
                 ${r.browser_playable ? `<button class="good" onclick="playBrowser('${safe}')">Play in Browser</button>` : `<button class="secondary" disabled>Native Only</button>`}
                 <button class="secondary" onclick="launchPiRom('${safe}')">Launch on Pi</button>
+                ${r.emulator === 'psx' && (r.path.endsWith('.cue') || r.path.endsWith('.bin')) ? `<button class="secondary" onclick="convertPsxToChd('${safe}')">Convert to CHD</button>` : ''}
               </div></div>`;
           }).join('')}</div>
         </div>`).join('') : '<div class="card muted">No ROMs yet. Upload .gb, .gbc, .nes, .sfc, .smc, .gba, .md, .gen, .cue, .chd, .pbp, or .wad files.</div>';
@@ -458,6 +464,50 @@ def _safe_rom_path(raw: str) -> Path | None:
         return None
 
 
+
+
+def _psx_launch_target(path: Path) -> Path:
+    """Prefer launching PSX via .cue when a .bin is selected."""
+    if path.suffix.lower() != ".bin":
+        return path
+    cue = path.with_suffix('.cue')
+    if cue.exists():
+        return cue
+    candidates = sorted(path.parent.glob('*.cue'))
+    for cand in candidates:
+        try:
+            text = cand.read_text(encoding='utf-8', errors='ignore')
+        except Exception:
+            continue
+        if path.name.lower() in text.lower():
+            return cand
+    return path
+
+
+def _find_chdman() -> str | None:
+    for name in ("chdman",):
+        found = _which(name)
+        if found:
+            return found
+    for candidate in ("/usr/lib/mame/chdman", "/usr/games/chdman"):
+        cp = Path(candidate)
+        if cp.exists() and os.access(cp, os.X_OK):
+            return str(cp)
+    return None
+
+
+def _convert_bin_cue_to_chd(cue_path: Path) -> tuple[bool, str, str | None]:
+    chdman = _find_chdman()
+    if not chdman:
+        return False, "chdman not installed (install PSX tools first)", None
+    out = cue_path.with_suffix('.chd')
+    cmd = [chdman, 'createcd', '-i', str(cue_path), '-o', str(out)]
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    if proc.returncode != 0:
+        err = (proc.stdout or '') + ('\n' if proc.stdout and proc.stderr else '') + (proc.stderr or '')
+        return False, err.strip() or 'CHD conversion failed', None
+    return True, f'created {out.name}', str(out.relative_to(ROMS_DIR)).replace('\\', '/')
+
 def _read_pid() -> int | None:
     try:
         return int(PID_FILE.read_text(encoding="utf-8").strip())
@@ -633,14 +683,34 @@ def api_launch_rom():
         core = _find_core(meta["core_candidates"]) or ""
         if not core:
             return jsonify({"ok": False, "error": "RetroArch core not found after install"}), 409
+    launch_target = _psx_launch_target(target) if emu_id == "psx" else target
     cmd_text = meta["launch"].format(
         binary=shlex.quote(_runtime_binary(meta)),
         core=shlex.quote(core),
-        rom=shlex.quote(str(target)),
+        rom=shlex.quote(str(launch_target)),
     )
     proc = subprocess.Popen(cmd_text, shell=True, cwd=str(ROMS_DIR), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
     _write_json(RUN_STATUS, {"active": True, "pid": proc.pid, "rom": target.name, "emulator": emu_id, "ts": time.time()})
     return jsonify({"ok": True, "pid": proc.pid, "rom": target.name, "emulator": meta["name"], "command": cmd_text})
+
+
+
+
+@APP.post("/api/roms/convert/psx-chd")
+def api_convert_psx_chd():
+    data = request.get_json(silent=True) or {}
+    target = _safe_rom_path(str(data.get("path", "")))
+    if target is None or not target.exists():
+        return jsonify({"ok": False, "error": "ROM not found"}), 404
+    cue_path = target
+    if cue_path.suffix.lower() == '.bin':
+        cue_path = cue_path.with_suffix('.cue')
+    if cue_path.suffix.lower() != '.cue' or not cue_path.exists():
+        return jsonify({"ok": False, "error": "Provide a .cue (or .bin with matching .cue)"}), 400
+    ok, message, out_rel = _convert_bin_cue_to_chd(cue_path)
+    if not ok:
+        return jsonify({"ok": False, "error": message}), 500
+    return jsonify({"ok": True, "message": message, "path": out_rel})
 
 
 @APP.post("/api/run/stop")
