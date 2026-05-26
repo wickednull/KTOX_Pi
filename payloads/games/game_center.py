@@ -56,33 +56,36 @@ EMULATORS = {
     },
     "nes": {
         "name": "NES",
-        "engine": "FCEUX",
-        "apt": ["fceux"],
-        "binaries": ["fceux"],
+        "engine": "Nestopia via RetroArch",
+        "apt": ["retroarch", "libretro-nestopia"],
+        "binaries": ["retroarch"],
+        "core_candidates": ["/usr/lib/*/libretro/nestopia_libretro.so", "/usr/lib/*/libretro/nestopia.libretro", "/usr/lib/libretro/nestopia_libretro.so"],
         "ext": [".nes"],
         "browser_core": "nes",
-        "launch": "fceux {rom}",
-        "notes": "Lightweight and stable for 8-bit games.",
+        "launch": "retroarch -L {core} {rom}",
+        "notes": "High-compatibility NES core with a reliable Debian ARM package.",
     },
     "snes": {
         "name": "SNES",
-        "engine": "Snes9x",
-        "apt": ["snes9x"],
-        "binaries": ["snes9x"],
+        "engine": "Snes9x via RetroArch",
+        "apt": ["retroarch", "libretro-snes9x"],
+        "binaries": ["retroarch"],
+        "core_candidates": ["/usr/lib/*/libretro/snes9x_libretro.so", "/usr/lib/libretro/snes9x_libretro.so"],
         "ext": [".smc", ".sfc"],
         "browser_core": "snes",
-        "launch": "snes9x {rom}",
-        "notes": "Playable on Pi Zero 2 W with lighter titles and frameskip.",
+        "launch": "retroarch -L {core} {rom}",
+        "notes": "Libretro Snes9x core; lighter titles work best on Pi Zero 2 W.",
     },
     "gba": {
         "name": "Game Boy Advance",
-        "engine": "mGBA SDL",
-        "apt": ["mgba-sdl"],
-        "binaries": ["mgba"],
+        "engine": "mGBA via RetroArch",
+        "apt": ["retroarch", "libretro-mgba"],
+        "binaries": ["retroarch"],
+        "core_candidates": ["/usr/lib/*/libretro/mgba_libretro.so", "/usr/lib/*/libretro/mgba.libretro", "/usr/lib/libretro/mgba_libretro.so"],
         "ext": [".gba"],
         "browser_core": "gba",
-        "launch": "mgba {rom}",
-        "notes": "Good compatibility; some titles may need audio disabled.",
+        "launch": "retroarch -L {core} {rom}",
+        "notes": "Libretro mGBA core; more dependable install path than mgba-sdl.",
     },
     "genesis": {
         "name": "Genesis / Mega Drive",
@@ -165,7 +168,7 @@ HTML = r"""<!doctype html>
 </head>
 <body>
   <header><div class="bar">
-    <div><div class="brand">KTOx <span>Game Center</span></div><div class="muted">Payload webserver on {{host}} · Pi Zero 2 W emulator profile</div></div>
+    <div><div class="brand">KTOx <span>Game Center</span></div><div class="muted">Payload webserver on {{host}} - Pi Zero 2 W emulator profile</div></div>
     <div class="status"><div class="chip">ROM root: {{rom_root}}</div><div class="chip">Port {{port}}</div></div>
   </div></header>
   <main>
@@ -223,6 +226,7 @@ HTML = r"""<!doctype html>
           <h3>${e.name}</h3><div class="meta"><b>${e.engine}</b><br>${e.notes}</div>
           <div class="tags">${e.ext.map(x=>`<span class="tag">${x}</span>`).join('')}</div>
           <div class="muted">Status: <b style="color:${e.installed ? 'var(--green)' : 'var(--yellow)'}">${e.installed ? 'installed' : 'missing'}</b></div>
+          ${!e.installed && e.runtime_missing && e.runtime_missing.length ? `<div class="muted">Missing: ${e.runtime_missing.join(', ')}</div>` : ''}
           <div style="margin-top:10px"><button class="good" onclick="installEmu('${e.id}')">${e.installed ? 'Repair / Update' : 'Install'}</button></div>
         </div>`).join('');
       const groups = {};
@@ -235,7 +239,7 @@ HTML = r"""<!doctype html>
           <div class="console-title"><strong>${group.label}</strong><span class="muted">${group.items.length} ROM${group.items.length === 1 ? '' : 's'}</span></div>
           <div class="console-body">${group.items.map(r => {
             const safe = r.path.replaceAll('\\','\\\\').replaceAll("'","\\'");
-            return `<div class="rom"><div><strong>${r.name}</strong><small>${fmtBytes(r.size)} · ${r.path}</small></div>
+            return `<div class="rom"><div><strong>${r.name}</strong><small>${fmtBytes(r.size)} - ${r.path}</small></div>
               <div class="actions">
                 ${r.browser_playable ? `<button class="good" onclick="playBrowser('${safe}')">Play in Browser</button>` : `<button class="secondary" disabled>Native Only</button>`}
                 <button class="secondary" onclick="launchPiRom('${safe}')">Launch on Pi</button>
@@ -276,7 +280,7 @@ PLAYER_HTML = r"""<!doctype html>
 <body>
   <header>
     <a href="/">Back to Library</a>
-    <div class="title"><strong>{{name}}</strong><span>{{system}} · browser core {{core}}</span></div>
+    <div class="title"><strong>{{name}}</strong><span>{{system}} - browser core {{core}}</span></div>
   </header>
   <div id="game"></div>
   <script>
@@ -327,9 +331,18 @@ def _find_core(patterns: list[str]) -> str | None:
     return None
 
 
+def _runtime_missing(meta: dict) -> list[str]:
+    missing = []
+    for binary in meta.get("binaries", []):
+        if not _which(binary):
+            missing.append(f"binary:{binary}")
+    if meta.get("core_candidates") and not _find_core(meta["core_candidates"]):
+        missing.append("libretro core")
+    return missing
+
+
 def _emulator_installed(meta: dict) -> bool:
-    binaries = meta.get("binaries", [])
-    return all(_which(binary) for binary in binaries)
+    return not _runtime_missing(meta)
 
 
 def _read_json(path: Path, default: dict) -> dict:
@@ -372,9 +385,9 @@ def _install_worker(emu_id: str) -> None:
         rc = _run_logged(["apt-get", "install", "-y", "--no-install-recommends", *meta["apt"]])
         if rc != 0:
             raise RuntimeError("apt-get install failed")
-        installed = _emulator_installed(meta)
-        if not installed:
-            raise RuntimeError("install completed, but expected emulator binary was not found")
+        missing = _runtime_missing(meta)
+        if missing:
+            raise RuntimeError("install completed, but missing " + ", ".join(missing))
         _append_install(f"[OK] {meta['engine']} is ready")
         _write_json(INSTALL_STATUS, {"running": False, "emulator": emu_id, "ok": True, "error": None, "ts": time.time()})
     except Exception as exc:
@@ -497,7 +510,9 @@ def api_state():
     for emu_id, meta in EMULATORS.items():
         item = dict(meta)
         item["id"] = emu_id
-        item["installed"] = _emulator_installed(meta)
+        missing = _runtime_missing(meta)
+        item["installed"] = not missing
+        item["runtime_missing"] = missing
         item.pop("launch", None)
         item.pop("core_candidates", None)
         emulators.append(item)
@@ -586,8 +601,9 @@ def api_launch_rom():
     emu_id, meta = _rom_emulator(target)
     if not meta:
         return jsonify({"ok": False, "error": "unsupported ROM type"}), 400
-    if not _emulator_installed(meta):
-        return jsonify({"ok": False, "error": f"{meta['engine']} is not installed"}), 409
+    missing = _runtime_missing(meta)
+    if missing:
+        return jsonify({"ok": False, "error": f"{meta['engine']} is missing " + ", ".join(missing)}), 409
     core = ""
     if meta.get("core_candidates"):
         core = _find_core(meta["core_candidates"]) or ""
