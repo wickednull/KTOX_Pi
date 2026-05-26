@@ -97,4 +97,20 @@ EMULATORS = {
             "/usr/lib/*/libretro/genesis_plus_gx.libretro",
             "/usr/lib/libretro/genesis_plus_gx_libretro.so",
         ],
-        "ext": [".md", ".gen", ".smd", ".32x", ".bin", ".cue", ".iso", ".chd"],
+        "ext": [".md", ".gen", ".smd", ".32x"],
+    },
+    "ps1": {
+        "name": "PlayStation",
+        "engine": "PCSX ReARMed via RetroArch",
+        "apt": ["retroarch", "libretro-pcsx-rearmed"],
+        "binaries": ["retroarch"],
+        "core_candidates": [
+            "/usr/lib/*/libretro/pcsx_rearmed_libretro.so",
+            "/usr/lib/libretro/pcsx_rearmed_libretro.so",
+        ],
+        "ext": [".bin", ".cue", ".iso", ".img", ".pbp", ".chd"],
+        "browser_core": "psx",
+        "launch": "retroarch -L {core} {rom}",
+        "notes": "Use .cue when available for multi-track .bin dumps.",
+    },
+}
