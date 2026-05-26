@@ -101,10 +101,12 @@ EMULATORS = {
     },
     "ps1": {
         "name": "PlayStation",
-        "engine": "PCSX ReARMed via RetroArch",
-        "apt": ["retroarch", "libretro-pcsx-rearmed"],
+        "engine": "Beetle PSX via RetroArch",
+        "apt": ["retroarch", "libretro-beetle-psx"],
         "binaries": ["retroarch"],
         "core_candidates": [
+            "/usr/lib/*/libretro/mednafen_psx_libretro.so",
+            "/usr/lib/libretro/mednafen_psx_libretro.so",
             "/usr/lib/*/libretro/pcsx_rearmed_libretro.so",
             "/usr/lib/libretro/pcsx_rearmed_libretro.so",
         ],
