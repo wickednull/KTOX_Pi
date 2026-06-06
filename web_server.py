@@ -11,6 +11,7 @@ Routes:
   /api/loot/view      -> text preview (read-only)
     /api/loot/nmap      -> normalized Nmap XML (read-only)
   /api/system/status  -> live system monitor metrics
+  /api/desktop/*      -> optional Kali Linux noVNC desktop controls
   /api/settings/discord_webhook -> get/save Discord webhook
   /api/auth/*         -> bootstrap/login/session endpoints
 
@@ -47,6 +48,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse, unquote
 
 from nmap_parser import parse_nmap_xml_file
+from payloads.offensive import novnc_manager
 
 ROOT_DIR = Path(__file__).resolve().parent
 WEB_DIR = ROOT_DIR / "web"
@@ -947,6 +949,7 @@ class KTOxHandler(SimpleHTTPRequestHandler):
             parsed.path.startswith("/api/loot/")
             or parsed.path.startswith("/api/payloads/")
             or parsed.path.startswith("/api/system/")
+            or parsed.path.startswith("/api/desktop/")
             or parsed.path.startswith("/api/settings/")
             or parsed.path.startswith("/api/auth/")
             or parsed.path.startswith("/api/stealth/")
@@ -999,6 +1002,9 @@ class KTOxHandler(SimpleHTTPRequestHandler):
                 return
             if parsed.path == "/api/system/status":
                 self._handle_system_status()
+                return
+            if parsed.path == "/api/desktop/status":
+                self._handle_desktop_status()
                 return
             if parsed.path == "/api/settings/discord_webhook":
                 self._handle_settings_webhook_get()
@@ -1058,6 +1064,20 @@ class KTOxHandler(SimpleHTTPRequestHandler):
                 _json_response(self, {"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
                 return
             self._handle_system_restart_ui()
+            return
+
+        if parsed.path in ("/api/desktop/start", "/api/desktop/stop", "/api/desktop/install-deps"):
+            query = parse_qs(parsed.query or "")
+            if not _auth_ok(self, query):
+                _json_response(self, {"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
+                return
+            if parsed.path == "/api/desktop/start":
+                self._handle_desktop_start()
+                return
+            if parsed.path == "/api/desktop/stop":
+                self._handle_desktop_stop()
+                return
+            self._handle_desktop_install_deps()
             return
 
         if parsed.path in ("/api/payloads/start", "/api/payloads/run"):
@@ -1642,9 +1662,45 @@ class KTOxHandler(SimpleHTTPRequestHandler):
                 "interfaces": ifaces,
                 "payload_running": payload_running,
                 "payload_path": payload_path,
+                "desktop": self._desktop_status_payload(),
             })
         except Exception as exc:
             _json_response(self, {"error": f"status error: {exc}"}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+
+    def _desktop_status_payload(self) -> dict:
+        try:
+            return novnc_manager.status()
+        except Exception as exc:
+            return {
+                "running": False,
+                "installed": False,
+                "missing": [],
+                "ok": False,
+                "error": str(exc),
+            }
+
+    def _handle_desktop_status(self) -> None:
+        _json_response(self, self._desktop_status_payload())
+
+    def _handle_desktop_start(self) -> None:
+        try:
+            payload = novnc_manager.start_server()
+            status = HTTPStatus.OK if payload.get("ok") else HTTPStatus.BAD_GATEWAY
+            _json_response(self, payload, status=status)
+        except Exception as exc:
+            _json_response(self, {"ok": False, "error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+
+    def _handle_desktop_stop(self) -> None:
+        try:
+            _json_response(self, novnc_manager.stop_server())
+        except Exception as exc:
+            _json_response(self, {"ok": False, "error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+
+    def _handle_desktop_install_deps(self) -> None:
+        try:
+            _json_response(self, novnc_manager.install_dependencies_async())
+        except Exception as exc:
+            _json_response(self, {"ok": False, "error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
 
     def _handle_system_restart_ui(self) -> None:
         try:

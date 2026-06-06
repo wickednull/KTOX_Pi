@@ -1,0 +1,193 @@
+:root {
+  color-scheme: dark;
+  --bg: #05060a;
+  --panel: rgba(15, 23, 42, 0.72);
+  --panel-strong: rgba(2, 6, 23, 0.86);
+  --border: rgba(148, 163, 184, 0.22);
+  --text: #e2e8f0;
+  --muted: #94a3b8;
+  --red: #8b0000;
+  --cyan: #22d3ee;
+  --green: #34d399;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 20% 0%, rgba(139, 0, 0, 0.22), transparent 30rem),
+    linear-gradient(135deg, #05060a, #0f172a 52%, #020617);
+  color: var(--text);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif;
+}
+
+button, input, select {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: rgba(15, 23, 42, 0.8);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 0.7rem 0.9rem;
+}
+
+button:hover { border-color: rgba(34, 211, 238, 0.45); }
+a { color: var(--cyan); }
+.export-link { display: inline-block; margin-bottom: 0.8rem; }
+.primary { background: linear-gradient(135deg, var(--red), #450a0a); border-color: rgba(248, 113, 113, 0.35); }
+
+.app-shell {
+  display: grid;
+  grid-template-columns: 270px 1fr;
+  min-height: 100vh;
+}
+
+.side {
+  padding: 1rem;
+  border-right: 1px solid var(--border);
+  background: rgba(2, 6, 23, 0.72);
+}
+
+.brand {
+  display: flex;
+  gap: 0.8rem;
+  align-items: center;
+  margin-bottom: 1.2rem;
+}
+
+.mark {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: #111827;
+  border: 1px solid rgba(248, 113, 113, 0.3);
+  color: #fecaca;
+  font-weight: 900;
+}
+
+h1, h2, p { margin: 0; }
+h1 { font-size: 1.05rem; }
+h2 { font-size: clamp(1.6rem, 3vw, 2.5rem); }
+p, small, span { color: var(--muted); }
+
+.tabs { display: grid; gap: 0.45rem; }
+.tab { text-align: left; }
+.tab.active { color: #fecaca; border-color: rgba(248, 113, 113, 0.45); background: rgba(139, 0, 0, 0.22); }
+
+.device-card {
+  margin-top: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 999px;
+  background: #64748b;
+}
+.dot.ok { background: var(--green); box-shadow: 0 0 16px rgba(52, 211, 153, 0.65); }
+
+.content { padding: clamp(1rem, 3vw, 2rem); }
+.panel { display: none; }
+.panel.active { display: block; }
+
+.section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.actions { display: flex; gap: 0.5rem; }
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.8rem;
+  margin-bottom: 1rem;
+}
+
+.tile, .preset-list article, .capture-row, .form-grid label {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 1rem;
+}
+
+.tile { display: grid; gap: 0.5rem; }
+.tile strong { font-size: 1.2rem; overflow-wrap: anywhere; }
+
+.preset-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.8rem;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 0.8rem;
+  margin-bottom: 1rem;
+}
+
+label { display: grid; gap: 0.45rem; color: var(--muted); }
+input, select {
+  width: 100%;
+  border: 1px solid var(--border);
+  background: var(--panel-strong);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 0.7rem;
+}
+
+canvas, .output {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #020617;
+}
+
+canvas {
+  height: min(52vh, 520px);
+  image-rendering: pixelated;
+}
+
+.output {
+  min-height: 300px;
+  padding: 1rem;
+  overflow: auto;
+}
+
+.status-line, .empty {
+  color: var(--muted);
+  padding: 0.8rem 0;
+}
+
+.capture-list { display: grid; gap: 0.6rem; }
+.capture-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto auto auto;
+  gap: 0.8rem;
+  align-items: center;
+}
+
+@media (max-width: 760px) {
+  .app-shell { grid-template-columns: 1fr; }
+  .side { border-right: 0; border-bottom: 1px solid var(--border); }
+  .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .section-head, .capture-row { grid-template-columns: 1fr; display: grid; }
+}

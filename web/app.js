@@ -45,6 +45,7 @@
   const navSystem = document.getElementById('navSystem');
   const navPentest = document.getElementById('navPentest');
   const navLoki = document.getElementById('navLoki');
+  const navSdr = document.getElementById('navSdr');
   const navLoot = document.getElementById('navLoot');
   const navSettings = document.getElementById('navSettings');
   const navPayloadStudio = document.getElementById('navPayloadStudio');
@@ -677,6 +678,12 @@
       systemStatus.textContent = txt;
       applyStatusTone(systemStatus, txt);
     }
+  }
+
+  function resolveSdrUrl(){
+    const protocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
+    const host = window.location.hostname || 'localhost';
+    return `${protocol}//${host}:8081`;
   }
 
   function setShellStatus(txt){
@@ -2495,6 +2502,7 @@
     loadDiscordWebhook();
     loadTailscaleSettings();
   });
+  if (navSdr) navSdr.href = resolveSdrUrl();
   if (navPayloadStudio) navPayloadStudio.href = './ide.html' + getForwardSearch();
   themeButtons.forEach(btn => {
     btn.addEventListener('click', () => {

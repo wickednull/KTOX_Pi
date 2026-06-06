@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>KTOX SDR Suite</title>
+  <link rel="stylesheet" href="./css/style.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="side">
+      <div class="brand">
+        <div class="mark">KX</div>
+        <div>
+          <h1>KTOX SDR Suite</h1>
+          <p>HackRF control deck</p>
+        </div>
+      </div>
+      <nav class="tabs" aria-label="SDR sections">
+        <button class="tab active" data-tab="dashboard">Dashboard</button>
+        <button class="tab" data-tab="waterfall">Waterfall</button>
+        <button class="tab" data-tab="sweep">Sweep</button>
+        <button class="tab" data-tab="capture">Capture</button>
+        <button class="tab" data-tab="settings">Settings</button>
+      </nav>
+      <div class="device-card">
+        <span id="deviceDot" class="dot"></span>
+        <div>
+          <strong id="deviceState">Checking</strong>
+          <small id="deviceSerial">HackRF status</small>
+        </div>
+      </div>
+    </aside>
+
+    <main class="content">
+      <section id="dashboard" class="panel active">
+        <div class="section-head">
+          <div>
+            <h2>Dashboard</h2>
+            <p>Device status, capture totals, and fast presets.</p>
+          </div>
+          <button id="refreshInfo" class="primary">Refresh</button>
+        </div>
+        <div class="grid">
+          <article class="tile"><span>Board</span><strong id="boardValue">-</strong></article>
+          <article class="tile"><span>Firmware</span><strong id="firmwareValue">-</strong></article>
+          <article class="tile"><span>Captures</span><strong id="captureCount">0</strong></article>
+          <article class="tile"><span>Storage</span><strong id="captureBytes">0 B</strong></article>
+        </div>
+        <div id="presetList" class="preset-list"></div>
+      </section>
+
+      <section id="waterfall" class="panel">
+        <div class="section-head">
+          <div>
+            <h2>Waterfall</h2>
+            <p>Real-time FFT rows over SocketIO.</p>
+          </div>
+          <div class="actions">
+            <button id="startWaterfall" class="primary">Start</button>
+            <button id="stopWaterfall">Stop</button>
+          </div>
+        </div>
+        <canvas id="waterfallCanvas" width="900" height="420"></canvas>
+        <div id="waterfallStatus" class="status-line">Idle</div>
+      </section>
+
+      <section id="sweep" class="panel">
+        <div class="section-head">
+          <div>
+            <h2>Frequency Sweep</h2>
+            <p>Run bounded HackRF sweeps and view power rows.</p>
+          </div>
+          <button id="runSweep" class="primary">Run Sweep</button>
+        </div>
+        <div class="form-grid">
+          <label>Start Hz<input id="sweepStart" type="number" value="2400000000"></label>
+          <label>Stop Hz<input id="sweepStop" type="number" value="2500000000"></label>
+          <label>Bin Width<input id="sweepBin" type="number" value="1000000"></label>
+          <label>Dwell ms<input id="sweepDwell" type="number" value="100"></label>
+        </div>
+        <pre id="sweepOutput" class="output">No sweep data.</pre>
+      </section>
+
+      <section id="capture" class="panel">
+        <div class="section-head">
+          <div>
+            <h2>Capture</h2>
+            <p>Record IQ samples and index capture files.</p>
+          </div>
+          <button id="runCapture" class="primary">Capture IQ</button>
+        </div>
+        <div class="form-grid">
+          <label>Frequency<input id="captureFrequency" type="number" value="2437000000"></label>
+          <label>Sample Rate<input id="captureSampleRate" type="number" value="20000000"></label>
+          <label>Duration sec<input id="captureDuration" type="number" value="5"></label>
+          <label>LNA Gain<input id="captureLna" type="number" value="16"></label>
+        </div>
+        <div id="captureStatus" class="status-line">Ready</div>
+        <p><a class="export-link" href="/api/hackrf/captures.csv">Export capture metadata CSV</a></p>
+        <div id="captureList" class="capture-list"></div>
+      </section>
+
+      <section id="settings" class="panel">
+        <div class="section-head">
+          <div>
+            <h2>Settings</h2>
+            <p>Persist local SDR defaults for this browser.</p>
+          </div>
+          <button id="saveSettings" class="primary">Save</button>
+        </div>
+        <div class="form-grid">
+          <label>Default FFT<input id="settingFft" type="number" value="256"></label>
+          <label>Waterfall Floor dB<input id="settingFloor" type="number" value="-120"></label>
+          <label>Theme<select id="settingTheme"><option value="dark">Dark</option><option value="contrast">Contrast</option></select></label>
+        </div>
+        <div id="settingsStatus" class="status-line">Settings are local to this browser.</div>
+      </section>
+    </main>
+  </div>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="./js/api.js"></script>
+  <script src="./js/waterfall.js"></script>
+  <script src="./js/app.js"></script>
+</body>
+</html>
