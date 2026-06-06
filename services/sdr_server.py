@@ -5,11 +5,16 @@ from __future__ import annotations
 
 import os
 import secrets
+import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 
 from flask import Flask, Response, jsonify, request, send_file, send_from_directory
 from flask_socketio import SocketIO, emit
@@ -26,7 +31,6 @@ from sdr.handlers import (
 from sdr.processing import waterfall_row
 
 
-ROOT_DIR = Path(__file__).resolve().parents[1]
 STATIC_DIR = ROOT_DIR / "static" / "sdr"
 CAPTURES_DIR = ROOT_DIR / "captures"
 DB_PATH = CAPTURES_DIR / "index.db"
@@ -53,6 +57,8 @@ def create_app(
     waterfall_flags: dict[str, threading.Event] = {}
 
     @app.get("/")
+    @app.get("/sdr")
+    @app.get("/sdr/")
     def index():
         return send_from_directory(STATIC_DIR, "index.html")
 

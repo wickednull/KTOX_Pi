@@ -4,11 +4,14 @@
 from __future__ import annotations
 
 import json
+import sys
 import tempfile
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 
 class FakeResult:
@@ -137,10 +140,14 @@ def validate_integration() -> None:
     web_html = (ROOT / "web/index.html").read_text(encoding="utf-8")
     web_js = (ROOT / "web/app.js").read_text(encoding="utf-8")
     service = (ROOT / "scripts/ktox-sdr.service").read_text(encoding="utf-8")
+    server = (ROOT / "services/sdr_server.py").read_text(encoding="utf-8")
     requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8")
     require("navSdr" in web_html, "main WebUI SDR nav link missing")
     require("resolveSdrUrl" in web_js, "main WebUI SDR URL helper missing")
+    require("return `http://${host}:8081`;" in web_js, "SDR sidecar link must use plain HTTP on port 8081")
     require("ExecStart=/usr/bin/python3 /root/KTOx/services/sdr_server.py" in service, "systemd ExecStart mismatch")
+    require("sys.path.insert(0, str(ROOT_DIR))" in server, "sdr_server.py must add repo root to sys.path before package imports")
+    require('@app.get("/sdr")' in server and '@app.get("/sdr/")' in server, "SDR server should provide /sdr aliases")
     for dep in ["numpy", "flask-socketio", "python-socketio"]:
         require(dep in requirements, f"missing requirement {dep}")
 

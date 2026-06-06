@@ -681,9 +681,8 @@
   }
 
   function resolveSdrUrl(){
-    const protocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
     const host = window.location.hostname || 'localhost';
-    return `${protocol}//${host}:8081`;
+    return `http://${host}:8081`;
   }
 
   function setShellStatus(txt){

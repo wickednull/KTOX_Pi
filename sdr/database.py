@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import sqlite3
 import time
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 
 class CaptureDatabase:
@@ -14,10 +15,15 @@ class CaptureDatabase:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._init_schema()
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
         conn = sqlite3.connect(self.path)
         conn.row_factory = sqlite3.Row
-        return conn
+        try:
+            yield conn
+            conn.commit()
+        finally:
+            conn.close()
 
     def _init_schema(self) -> None:
         with self._connect() as conn:
