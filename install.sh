@@ -116,6 +116,10 @@ cp -r "$FIRMWARE_DIR/payloads"                         "$KTOX_DIR/"
 [[ -d "$FIRMWARE_DIR/scripts" ]]  && cp -r "$FIRMWARE_DIR/scripts"  "$KTOX_DIR/"
 [[ -d "$FIRMWARE_DIR/config" ]]   && cp -r "$FIRMWARE_DIR/config"   "$KTOX_DIR/"
 [[ -d "$FIRMWARE_DIR/deploy" ]]   && cp -r "$FIRMWARE_DIR/deploy"   "$KTOX_DIR/"
+[[ -d "$FIRMWARE_DIR/sdr" ]]      && cp -r "$FIRMWARE_DIR/sdr"      "$KTOX_DIR/"
+[[ -d "$FIRMWARE_DIR/services" ]] && cp -r "$FIRMWARE_DIR/services" "$KTOX_DIR/"
+[[ -d "$FIRMWARE_DIR/static" ]]   && cp -r "$FIRMWARE_DIR/static"   "$KTOX_DIR/"
+[[ -d "$FIRMWARE_DIR/tools" ]]    && cp -r "$FIRMWARE_DIR/tools"    "$KTOX_DIR/"
 [[ -d "$FIRMWARE_DIR/img" ]]      && cp -r "$FIRMWARE_DIR/img"      "$KTOX_DIR/"
 
 mkdir -p "$KTOX_DIR/img"
@@ -140,6 +144,7 @@ info "KTOx main suite installed"
 # Make scripts executable
 chmod +x "$KTOX_DIR/ktox_device.py"
 [[ -f "$KTOX_DIR/setup_loki.sh" ]] && chmod +x "$KTOX_DIR/setup_loki.sh"
+[[ -f "$KTOX_DIR/scripts/install_sdr.sh" ]] && chmod +x "$KTOX_DIR/scripts/install_sdr.sh"
 mkdir -p "$KTOX_DIR/loot/MITM" "$KTOX_DIR/loot/Nmap" "$KTOX_DIR/loot/payloads"
 mkdir -p "$KTOX_DIR/roms"   # Game Boy / emulator ROMs — never overwritten by OTA
 

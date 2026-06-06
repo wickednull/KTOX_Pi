@@ -275,6 +275,25 @@ sudo bash setup_loki.sh /root/KTOx
 
 This initializes the Loki reconnaissance engine with all dependencies. Once complete, `Payloads → Offensive → Loki Engine` will be available in the LCD menu.
 
+### Step 5 - Set up SDR Suite (optional)
+
+The SDR Suite is a separate HackRF-focused web service on port `8081`. Install it after the main KTOX install has copied the repo to `/root/KTOx`:
+
+```bash
+ssh root@[pi-ip]
+cd /root/KTOx
+sudo bash scripts/install_sdr.sh
+```
+
+The installer installs HackRF packages, Python requirements, creates the `ktox-sdr` systemd unit, reloads systemd, and offers to enable/start the service. After install:
+
+```bash
+sudo systemctl status ktox-sdr --no-pager
+curl -I http://127.0.0.1:8081/
+```
+
+If `sudo systemctl restart ktox-sdr` says `Unit ktox-sdr.service not found`, the SDR service has not been installed yet. Run `sudo bash scripts/install_sdr.sh`.
+
 ### What the installer does
 
 1. Detects `/boot/firmware/config.txt` or `/boot/config.txt` (Bookworm-compatible)

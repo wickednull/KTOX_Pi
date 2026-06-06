@@ -139,15 +139,25 @@ def validate_static_assets() -> None:
 def validate_integration() -> None:
     web_html = (ROOT / "web/index.html").read_text(encoding="utf-8")
     web_js = (ROOT / "web/app.js").read_text(encoding="utf-8")
+    readme = (ROOT / "README.md").read_text(encoding="utf-8", errors="replace")
+    main_installer = (ROOT / "install.sh").read_text(encoding="utf-8", errors="replace")
     service = (ROOT / "scripts/ktox-sdr.service").read_text(encoding="utf-8")
+    installer = (ROOT / "scripts/install_sdr.sh").read_text(encoding="utf-8")
     server = (ROOT / "services/sdr_server.py").read_text(encoding="utf-8")
     requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8")
     require("navSdr" in web_html, "main WebUI SDR nav link missing")
     require("resolveSdrUrl" in web_js, "main WebUI SDR URL helper missing")
     require("return `http://${host}:8081`;" in web_js, "SDR sidecar link must use plain HTTP on port 8081")
     require("ExecStart=/usr/bin/python3 /root/KTOx/services/sdr_server.py" in service, "systemd ExecStart mismatch")
+    require("/etc/systemd/system/ktox-sdr.service" in installer, "SDR installer must install the systemd unit")
+    require("systemctl daemon-reload" in installer, "SDR installer must reload systemd")
+    require("systemctl enable" in installer, "SDR installer must offer service enablement")
+    require("hackrf" in installer and "libhackrf0" in installer, "SDR installer must install HackRF packages")
     require("sys.path.insert(0, str(ROOT_DIR))" in server, "sdr_server.py must add repo root to sys.path before package imports")
     require('@app.get("/sdr")' in server and '@app.get("/sdr/")' in server, "SDR server should provide /sdr aliases")
+    require("scripts/install_sdr.sh" in readme and "ktox-sdr" in readme, "README must document SDR service installation")
+    for folder in ("sdr", "services", "static", "tools"):
+        require(f'"$FIRMWARE_DIR/{folder}"' in main_installer, f"main installer must copy {folder}/")
     for dep in ["numpy", "flask-socketio", "python-socketio"]:
         require(dep in requirements, f"missing requirement {dep}")
 
