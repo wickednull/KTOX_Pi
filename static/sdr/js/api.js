@@ -1,6 +1,15 @@
 (function(){
+  function basePath(){
+    const path = window.location.pathname || '/';
+    return path.startsWith('/sdr') ? '/sdr' : '';
+  }
+
+  function withBase(path){
+    return `${basePath()}${path}`;
+  }
+
   async function requestJson(path, options){
-    const response = await fetch(path, options || {});
+    const response = await fetch(withBase(path), options || {});
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
       throw new Error(data.error || response.statusText || 'request failed');
@@ -8,6 +17,8 @@
     return data;
   }
 
+  window.SdrApiBasePath = basePath;
+  window.SdrApiUrl = withBase;
   window.SdrApi = {
     info: () => requestJson('/api/hackrf/info'),
     presets: () => requestJson('/api/hackrf/presets'),

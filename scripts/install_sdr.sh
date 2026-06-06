@@ -38,6 +38,15 @@ fi
 info "Preparing capture directory"
 mkdir -p "$KTOX_DIR/captures"
 
+if [[ -f "$KTOX_DIR/deploy/caddy/Caddyfile" && -d /etc/caddy ]]; then
+  info "Installing Caddy SDR proxy route"
+  cp "$KTOX_DIR/deploy/caddy/Caddyfile" /etc/caddy/Caddyfile
+  if command -v caddy >/dev/null 2>&1; then
+    caddy validate --config /etc/caddy/Caddyfile || warn "Caddy config validation failed"
+  fi
+  systemctl reload caddy 2>/dev/null || systemctl restart caddy 2>/dev/null || warn "Could not reload Caddy"
+fi
+
 info "Installing systemd unit at $SERVICE_PATH"
 cat > "$SERVICE_PATH" << UNIT
 [Unit]
@@ -100,7 +109,7 @@ else
   warn "hackrf_info is not available"
 fi
 
-info "Done. Open http://<device-ip>:8081/ for the SDR Suite."
+info "Done. Open https://<device-ip>/sdr/ when using the HTTPS WebUI, or http://<device-ip>:8081/ for direct HTTP."
 info "Useful checks:"
 info "  systemctl status ktox-sdr --no-pager"
 info "  journalctl -u ktox-sdr -n 80 --no-pager"

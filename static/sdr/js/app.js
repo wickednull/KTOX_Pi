@@ -1,7 +1,8 @@
 (function(){
   const api = window.SdrApi;
   const waterfall = new window.SdrWaterfall(document.getElementById('waterfallCanvas'));
-  const socket = window.io ? window.io() : null;
+  const socketPath = `${window.SdrApiBasePath ? window.SdrApiBasePath() : ''}/socket.io`;
+  const socket = window.io ? window.io({ path: socketPath }) : null;
   const settingsKey = 'ktox:sdr:settings';
 
   const els = {
@@ -54,7 +55,7 @@
     els.captureCount.textContent = String(captures.length);
     els.captureBytes.textContent = bytes(data.stats && data.stats.total_size);
     els.captureList.innerHTML = captures.length ? captures.map(item => (
-      `<div class="capture-row"><strong>${item.filename}</strong><span>${item.frequency} Hz</span><span>${bytes(item.size)}</span><a href="/api/hackrf/captures/${item.id}/download">Download</a><button data-delete-capture="${item.id}">Delete</button></div>`
+      `<div class="capture-row"><strong>${item.filename}</strong><span>${item.frequency} Hz</span><span>${bytes(item.size)}</span><a href="${window.SdrApiUrl(`/api/hackrf/captures/${item.id}/download`)}">Download</a><button data-delete-capture="${item.id}">Delete</button></div>`
     )).join('') : '<div class="empty">No captures indexed.</div>';
   }
 

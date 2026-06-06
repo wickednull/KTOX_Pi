@@ -682,7 +682,10 @@
 
   function resolveSdrUrl(){
     const host = window.location.hostname || 'localhost';
-    return `http://${host}:8081`;
+    if (window.location.protocol === 'https:') {
+      return `${window.location.origin}/sdr/`;
+    }
+    return `http://${host}:8081/`;
   }
 
   function setShellStatus(txt){

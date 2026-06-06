@@ -290,9 +290,12 @@ The installer installs HackRF packages, Python requirements, creates the `ktox-s
 ```bash
 sudo systemctl status ktox-sdr --no-pager
 curl -I http://127.0.0.1:8081/
+curl -k -I https://127.0.0.1/sdr/
 ```
 
 If `sudo systemctl restart ktox-sdr` says `Unit ktox-sdr.service not found`, the SDR service has not been installed yet. Run `sudo bash scripts/install_sdr.sh`.
+
+When the main WebUI is opened over HTTPS, the SDR Suite link uses the same-origin `/sdr/` proxy instead of requiring browser access to raw port `8081`.
 
 ### What the installer does
 

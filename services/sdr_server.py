@@ -16,7 +16,7 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from flask import Flask, Response, jsonify, request, send_file, send_from_directory
+from flask import Flask, Response, jsonify, redirect, request, send_file, send_from_directory
 from flask_socketio import SocketIO, emit
 
 from sdr.database import CaptureDatabase
@@ -57,10 +57,13 @@ def create_app(
     waterfall_flags: dict[str, threading.Event] = {}
 
     @app.get("/")
-    @app.get("/sdr")
     @app.get("/sdr/")
     def index():
         return send_from_directory(STATIC_DIR, "index.html")
+
+    @app.get("/sdr")
+    def sdr_index_redirect():
+        return redirect("/sdr/")
 
     @app.get("/api/hackrf/info")
     def hackrf_info():

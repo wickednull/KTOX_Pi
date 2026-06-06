@@ -134,6 +134,8 @@ def validate_static_assets() -> None:
     html = (ROOT / "static/sdr/index.html").read_text(encoding="utf-8")
     for token in ["Dashboard", "Waterfall", "Sweep", "Capture", "Settings", "js/api.js", "css/style.css"]:
         require(token in html, f"missing SDR UI token {token!r}")
+    require('href="./api/hackrf/captures.csv"' in html, "SDR export link must be relative for /sdr proxying")
+    require('src="./socket.io/socket.io.js"' in html, "Socket.IO client script must be relative for /sdr proxying")
 
 
 def validate_integration() -> None:
@@ -144,17 +146,26 @@ def validate_integration() -> None:
     service = (ROOT / "scripts/ktox-sdr.service").read_text(encoding="utf-8")
     installer = (ROOT / "scripts/install_sdr.sh").read_text(encoding="utf-8")
     server = (ROOT / "services/sdr_server.py").read_text(encoding="utf-8")
+    caddy = (ROOT / "deploy/caddy/Caddyfile").read_text(encoding="utf-8", errors="replace")
+    sdr_api = (ROOT / "static/sdr/js/api.js").read_text(encoding="utf-8")
+    sdr_app = (ROOT / "static/sdr/js/app.js").read_text(encoding="utf-8")
     requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8")
     require("navSdr" in web_html, "main WebUI SDR nav link missing")
     require("resolveSdrUrl" in web_js, "main WebUI SDR URL helper missing")
-    require("return `http://${host}:8081`;" in web_js, "SDR sidecar link must use plain HTTP on port 8081")
+    require("return `${window.location.origin}/sdr/`;" in web_js, "HTTPS SDR link must use same-origin /sdr/ proxy")
+    require("return `http://${host}:8081/`;" in web_js, "HTTP SDR link must use direct port 8081")
     require("ExecStart=/usr/bin/python3 /root/KTOx/services/sdr_server.py" in service, "systemd ExecStart mismatch")
     require("/etc/systemd/system/ktox-sdr.service" in installer, "SDR installer must install the systemd unit")
+    require("/etc/caddy/Caddyfile" in installer and "systemctl reload caddy" in installer, "SDR installer must install/reload Caddy proxy config when available")
     require("systemctl daemon-reload" in installer, "SDR installer must reload systemd")
     require("systemctl enable" in installer, "SDR installer must offer service enablement")
     require("hackrf" in installer and "libhackrf0" in installer, "SDR installer must install HackRF packages")
     require("sys.path.insert(0, str(ROOT_DIR))" in server, "sdr_server.py must add repo root to sys.path before package imports")
-    require('@app.get("/sdr")' in server and '@app.get("/sdr/")' in server, "SDR server should provide /sdr aliases")
+    require('@app.get("/sdr")' in server and 'redirect("/sdr/")' in server, "SDR server should redirect /sdr to /sdr/")
+    require('@app.get("/sdr/")' in server, "SDR server should provide /sdr/ alias")
+    require("handle_path /sdr*" in caddy and "127.0.0.1:8081" in caddy, "Caddy must proxy /sdr to the SDR sidecar")
+    require("basePath()" in sdr_api and "withBase" in sdr_api, "SDR API client must be prefix-aware")
+    require("socketPath" in sdr_app and "SdrApiBasePath" in sdr_app, "SDR Socket.IO client must be prefix-aware")
     require("scripts/install_sdr.sh" in readme and "ktox-sdr" in readme, "README must document SDR service installation")
     for folder in ("sdr", "services", "static", "tools"):
         require(f'"$FIRMWARE_DIR/{folder}"' in main_installer, f"main installer must copy {folder}/")
