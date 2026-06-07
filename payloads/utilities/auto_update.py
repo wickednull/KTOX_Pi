@@ -19,7 +19,7 @@ then reboots (after LCD/GPIO cleanup).
 # ---------------------------------------------------------------------------
 # 0) Imports & path tweak
 # ---------------------------------------------------------------------------
-import os, sys, time, signal, subprocess, tarfile, shutil
+import os, sys, time, signal, subprocess, tarfile, shutil, tempfile, urllib.request
 from datetime import datetime
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
@@ -48,6 +48,7 @@ SERVICE_NAMES   = ["ktox", "ktox-device", "ktox-webui", "ktox-sdr"]
 GIT_REMOTE      = "origin"
 GIT_BRANCH      = "main"
 DEFAULT_GIT_URL = "https://github.com/wickednull/KTOx_Pi.git"
+DEFAULT_ARCHIVE_URL = "https://codeload.github.com/wickednull/KTOx_Pi/tar.gz/refs/heads/main"
 GIT_TIMEOUT     = 120
 INSTALL_SCRIPT  = "/root/KTOx/install.sh"
 REQUIRED_SDR_FILES = [
@@ -283,6 +284,90 @@ def github_probe(remote_url: str) -> tuple[bool, str]:
         return False, f"github branch {GIT_BRANCH} not found"
     return True, "github reachable"
 
+def _copy_repo_tree(src_root: str, dst_root: str) -> None:
+    skip = {".git", "__pycache__", ".agents", ".codex"}
+    for name in os.listdir(src_root):
+        if name in skip:
+            continue
+        src = os.path.join(src_root, name)
+        dst = os.path.join(dst_root, name)
+        if os.path.isdir(src):
+            shutil.copytree(src, dst, dirs_exist_ok=True)
+        else:
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            shutil.copy2(src, dst)
+
+def _download_archive(archive: str) -> tuple[bool, str]:
+    errors = []
+    try:
+        request = urllib.request.Request(DEFAULT_ARCHIVE_URL, headers={"User-Agent": "KTOX-OTA"})
+        with urllib.request.urlopen(request, timeout=GIT_TIMEOUT) as response, open(archive, "wb") as handle:
+            shutil.copyfileobj(response, handle)
+        if os.path.getsize(archive) > 0:
+            return True, "urllib"
+        errors.append("urllib empty archive")
+    except Exception as exc:
+        errors.append(f"urllib {str(exc)[:80]}")
+
+    for command in (
+        ["curl", "-L", "-A", "KTOX-OTA", "-o", archive, DEFAULT_ARCHIVE_URL],
+        ["wget", "-O", archive, DEFAULT_ARCHIVE_URL],
+    ):
+        try:
+            result = subprocess.run(command, capture_output=True, text=True, timeout=GIT_TIMEOUT)
+        except FileNotFoundError:
+            errors.append(f"{command[0]} missing")
+            continue
+        except subprocess.TimeoutExpired:
+            errors.append(f"{command[0]} timed out")
+            continue
+        if result.returncode == 0 and os.path.isfile(archive) and os.path.getsize(archive) > 0:
+            return True, command[0]
+        errors.append(f"{command[0]} {_short_git_error(result, 'download failed')}")
+    return False, "; ".join(errors)[-240:]
+
+def _find_archive_root(tmp: str) -> str | None:
+    for name in os.listdir(tmp):
+        candidate = os.path.join(tmp, name)
+        if (
+            os.path.isdir(candidate)
+            and os.path.isfile(os.path.join(candidate, "install.sh"))
+            and os.path.isdir(os.path.join(candidate, "payloads"))
+            and os.path.isdir(os.path.join(candidate, "web"))
+        ):
+            return candidate
+    return None
+
+def archive_update() -> tuple[bool, str]:
+    """Fallback update path for devices where GitHub works but git fetch does not."""
+    try:
+        with tempfile.TemporaryDirectory(prefix="ktox-ota-") as tmp:
+            archive = os.path.join(tmp, "main.tar.gz")
+            download_ok, download_msg = _download_archive(archive)
+            if not download_ok:
+                return False, f"archive download failed: {download_msg}"
+            with tarfile.open(archive, "r:gz") as tar:
+                def safe_members():
+                    tmp_abs = os.path.abspath(tmp)
+                    for member in tar.getmembers():
+                        target = os.path.abspath(os.path.join(tmp, member.name))
+                        if target.startswith(tmp_abs + os.sep):
+                            yield member
+                tar.extractall(tmp, members=safe_members())
+            root = _find_archive_root(tmp)
+            if not root:
+                return False, "archive missing repo root"
+            missing_remote = [name for name in REQUIRED_SDR_FILES if not os.path.isfile(os.path.join(root, name))]
+            if missing_remote:
+                return False, f"archive missing {missing_remote[0]}"
+            _copy_repo_tree(root, RASPYJACK_DIR)
+            missing_local = [name for name in REQUIRED_SDR_FILES if not os.path.isfile(os.path.join(RASPYJACK_DIR, name))]
+            if missing_local:
+                return False, f"archive local missing {missing_local[0]}"
+            return True, f"archive fallback OK via {download_msg}"
+    except Exception as exc:
+        return False, f"archive fallback failed: {str(exc)[:120]}"
+
 def git_update() -> tuple[bool, str]:
     """Fast-forward pull the latest changes."""
     try:
@@ -298,8 +383,14 @@ def git_update() -> tuple[bool, str]:
             probe_ok, probe_msg = github_probe(remote_url)
             fetch_msg = _short_git_error(fetch, f"git fetch rc={fetch.returncode}")
             if not probe_ok:
-                return False, f"{probe_msg}; fetch failed: {fetch_msg}"
-            return False, f"fetch failed: {fetch_msg}"
+                archive_ok, archive_msg = archive_update()
+                if archive_ok:
+                    return True, archive_msg
+                return False, f"{probe_msg}; fetch failed: {fetch_msg}; {archive_msg}"
+            archive_ok, archive_msg = archive_update()
+            if archive_ok:
+                return True, archive_msg
+            return False, f"fetch failed: {fetch_msg}; {archive_msg}"
         tree = _git(["ls-tree", "-r", "--name-only", f"{GIT_REMOTE}/{GIT_BRANCH}"], check=True, timeout=GIT_TIMEOUT)
         names = set((tree.stdout or "").splitlines())
         missing_remote = [name for name in REQUIRED_SDR_FILES if name not in names]
