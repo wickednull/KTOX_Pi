@@ -37,7 +37,12 @@
     receiverStatus: document.getElementById('receiverStatus'),
     receiverOutput: document.getElementById('receiverOutput'),
     scanOutput: document.getElementById('scanOutput'),
-    bookmarkList: document.getElementById('bookmarkList')
+    bookmarkList: document.getElementById('bookmarkList'),
+    trunkAgreementStatus: document.getElementById('trunkAgreementStatus'),
+    trunkProfileSelect: document.getElementById('trunkProfileSelect'),
+    trunkProfiles: document.getElementById('trunkProfiles'),
+    trunkStatus: document.getElementById('trunkStatus'),
+    trunkEvents: document.getElementById('trunkEvents')
   };
 
   function bytes(size){
@@ -136,6 +141,11 @@
 
   function pretty(value){
     return JSON.stringify(value, null, 2);
+  }
+
+  function csvNumbers(id){
+    const raw = document.getElementById(id).value || '';
+    return raw.split(',').map(item => item.trim()).filter(Boolean).map(item => Number(item)).filter(item => Number.isFinite(item));
   }
 
   function escapeHtml(value){
@@ -302,6 +312,104 @@
     }
   }
 
+  function renderTrunkProfiles(rows){
+    if (!els.trunkProfileSelect || !els.trunkProfiles) return;
+    els.trunkProfileSelect.innerHTML = rows.length
+      ? rows.map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)} - ${escapeHtml(item.protocol || '')} ${item.control_channel || ''}</option>`).join('')
+      : '<option value="">No trunking profiles saved</option>';
+    els.trunkProfiles.innerHTML = rows.length ? rows.map(item => (
+      `<div class="capture-row"><strong>${escapeHtml(item.name)}</strong><span>${escapeHtml(item.protocol || '')}</span><span>${item.control_channel} Hz</span><span>${escapeHtml(item.decoder || '')}</span><button data-delete-trunk-profile="${escapeHtml(item.id)}">Delete</button></div>`
+    )).join('') : '<div class="empty">No trunking profiles saved.</div>';
+  }
+
+  function renderTrunkEvents(rows){
+    if (!els.trunkEvents) return;
+    els.trunkEvents.innerHTML = rows.length ? rows.map(item => {
+      const status = item.encrypted ? 'encrypted - playback blocked' : (item.status || 'decoded');
+      return `<div class="capture-row trunk-event"><strong>${escapeHtml(status)}</strong><span>${escapeHtml(item.protocol || '')}</span><span>${item.frequency || ''} Hz</span><span>TG ${escapeHtml(item.talkgroup || '-')}</span><span>${escapeHtml(item.message || '')}</span></div>`;
+    }).join('') : '<div class="empty">No trunking events logged.</div>';
+  }
+
+  async function loadTrunking(){
+    if (!els.trunkStatus) return;
+    try {
+      const [agreement, profiles, status, events] = await Promise.all([
+        api.trunkingAgreement(),
+        api.trunkingProfiles(),
+        api.trunkingStatus(),
+        api.trunkingEvents()
+      ]);
+      const accepted = agreement.agreement && agreement.agreement.accepted;
+      els.trunkAgreementStatus.textContent = accepted
+        ? `Accepted by ${agreement.agreement.operator || 'operator'}`
+        : 'Agreement has not been accepted.';
+      renderTrunkProfiles(profiles.profiles || []);
+      renderTrunkEvents(events.events || []);
+      els.trunkStatus.textContent = status.running
+        ? `Running ${status.profile && status.profile.name ? status.profile.name : 'profile'} (${status.decoder_state})`
+        : 'Stopped';
+    } catch (err) {
+      els.trunkStatus.textContent = `Trunking backend unavailable: ${err.message}`;
+    }
+  }
+
+  async function acceptTrunkAgreement(){
+    els.trunkAgreementStatus.textContent = 'Saving agreement...';
+    try {
+      const data = await api.trunkingAcceptAgreement({
+        operator: document.getElementById('trunkOperator').value,
+        organization: document.getElementById('trunkOrganization').value,
+        reference: document.getElementById('trunkReference').value
+      });
+      els.trunkAgreementStatus.textContent = `Accepted by ${data.agreement.operator}`;
+      await loadTrunking();
+    } catch (err) {
+      els.trunkAgreementStatus.textContent = `Agreement failed: ${err.message}`;
+    }
+  }
+
+  async function addTrunkProfile(){
+    els.trunkStatus.textContent = 'Saving trunking profile...';
+    try {
+      await api.trunkingAddProfile({
+        name: document.getElementById('trunkProfileName').value,
+        protocol: document.getElementById('trunkProtocol').value,
+        control_channel: numeric('trunkControlChannel'),
+        voice_channels: csvNumbers('trunkVoiceChannels'),
+        talkgroups_allow: csvNumbers('trunkAllowTalkgroups'),
+        talkgroups_block: csvNumbers('trunkBlockTalkgroups')
+      });
+      await loadTrunking();
+    } catch (err) {
+      els.trunkStatus.textContent = `Profile failed: ${err.message}`;
+    }
+  }
+
+  async function startTrunking(){
+    const profileId = els.trunkProfileSelect && els.trunkProfileSelect.value;
+    if (!profileId) {
+      els.trunkStatus.textContent = 'Create or select a trunking profile first.';
+      return;
+    }
+    els.trunkStatus.textContent = 'Starting trunking session...';
+    try {
+      const data = await api.trunkingStart({ profile_id: profileId });
+      els.trunkStatus.textContent = data.running ? `Running ${data.profile.name}` : 'Stopped';
+      await loadTrunking();
+    } catch (err) {
+      els.trunkStatus.textContent = `Start blocked: ${err.message}`;
+    }
+  }
+
+  async function stopTrunking(){
+    try {
+      await api.trunkingStop();
+      await loadTrunking();
+    } catch (err) {
+      els.trunkStatus.textContent = `Stop failed: ${err.message}`;
+    }
+  }
+
   function startAudio(){
     stopAudio();
     els.audioStatus.textContent = 'Starting receiver...';
@@ -431,6 +539,19 @@
   document.getElementById('stopAudio').addEventListener('click', stopAudio);
   document.getElementById('runReceiverScan').addEventListener('click', runReceiverScan);
   document.getElementById('refreshBookmarks').addEventListener('click', loadBookmarks);
+  document.getElementById('refreshTrunking').addEventListener('click', loadTrunking);
+  document.getElementById('acceptTrunkAgreement').addEventListener('click', acceptTrunkAgreement);
+  document.getElementById('addTrunkProfile').addEventListener('click', addTrunkProfile);
+  document.getElementById('trunkStart').addEventListener('click', startTrunking);
+  document.getElementById('trunkStop').addEventListener('click', stopTrunking);
+  if (els.trunkProfiles) {
+    els.trunkProfiles.addEventListener('click', async (event) => {
+      const del = event.target.closest('[data-delete-trunk-profile]');
+      if (!del) return;
+      await api.trunkingDeleteProfile(del.getAttribute('data-delete-trunk-profile'));
+      await loadTrunking();
+    });
+  }
   if (els.bookmarkList) {
     els.bookmarkList.addEventListener('click', async (event) => {
       const tune = event.target.closest('[data-tune-bookmark]');
@@ -478,4 +599,5 @@
   loadPresets();
   loadSerialPorts();
   loadBookmarks();
+  loadTrunking();
 })();

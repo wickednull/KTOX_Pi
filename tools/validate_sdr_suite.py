@@ -163,6 +163,62 @@ def validate_handlers() -> None:
     require(any(hit["frequency"] == 2400500000 for hit in hits), "scan hit frequency should use bin center")
 
 
+def validate_trunking() -> None:
+    from sdr.trunking import LicensedOperationStore, TrunkingEventLog, TrunkingProfileStore, TrunkingRuntime
+
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+        agreement = LicensedOperationStore(base / "licensed_operation.json")
+        profiles = TrunkingProfileStore(base / "trunking_profiles.json")
+        events = TrunkingEventLog(base / "trunking_events.json")
+        runtime = TrunkingRuntime(agreement, profiles, events)
+
+        profile = profiles.add({
+            "name": "Local P25 test",
+            "protocol": "p25",
+            "control_channel": 851012500,
+            "voice_channels": [851512500, 852012500],
+            "talkgroups_allow": [1001, "dispatch"],
+            "decoder": "op25",
+        })
+        require(profile["id"], "trunking profile should get an id")
+        require(profile["decoder"] == "op25", "P25 profile should use OP25 decoder")
+        require(profiles.list()[0]["control_channel"] == 851012500, "trunking profile should persist")
+
+        try:
+            runtime.start(profile["id"])
+        except PermissionError:
+            pass
+        else:
+            raise AssertionError("trunking runtime must require licensed operation acceptance")
+
+        accepted = agreement.accept({
+            "operator": "KTOX Test Operator",
+            "organization": "Lab",
+            "reference": "training-authorized-unencrypted",
+        })
+        require(accepted["accepted"] is True, "licensed operation acceptance should persist")
+        status = runtime.start(profile["id"])
+        require(status["running"] is True, "trunking runtime should start after acceptance")
+        require(status["profile"]["id"] == profile["id"], "trunking status should include profile")
+        stopped = runtime.stop()
+        require(stopped["running"] is False, "trunking runtime should stop")
+
+        encrypted = events.add({
+            "protocol": "p25",
+            "frequency": 851512500,
+            "talkgroup": "1001",
+            "encrypted": True,
+            "audio_url": "/api/trunking/audio/test.wav",
+            "recording_path": "/tmp/test.wav",
+            "decoded_audio": [0, 1, 2],
+        })
+        require(encrypted["encrypted"] is True, "encrypted trunking event should remain marked encrypted")
+        require(encrypted["status"] == "encrypted", "encrypted trunking event should use encrypted status")
+        for blocked in ("audio_url", "recording_path", "decoded_audio"):
+            require(blocked not in encrypted, f"encrypted trunking event must not expose {blocked}")
+
+
 def validate_server() -> None:
     from services.sdr_server import create_app
     from sdr.database import CaptureDatabase
@@ -238,6 +294,33 @@ def validate_server() -> None:
         bookmarks = client.get("/api/receiver/bookmarks")
         require(bookmarks.status_code == 200, "receiver bookmarks endpoint failed")
         require(bookmarks.get_json()["bookmarks"], "scan with save_hits should create bookmarks")
+        profile = {
+            "name": "Server P25",
+            "protocol": "p25",
+            "control_channel": 851012500,
+            "voice_channels": [851512500],
+        }
+        created_profile = client.post("/api/trunking/profiles", data=json.dumps(profile), content_type="application/json")
+        require(created_profile.status_code == 200, "trunking profile create endpoint failed")
+        profile_id = created_profile.get_json()["profile"]["id"]
+        blocked_start = client.post("/api/trunking/start", data=json.dumps({"profile_id": profile_id}), content_type="application/json")
+        require(blocked_start.status_code == 403, "trunking start must be blocked before licensed operation acceptance")
+        agreement = client.post(
+            "/api/trunking/agreement",
+            data=json.dumps({"operator": "KTOX Test Operator", "organization": "Lab", "reference": "authorized"}),
+            content_type="application/json",
+        )
+        require(agreement.status_code == 200, "trunking agreement endpoint failed")
+        started_trunk = client.post("/api/trunking/start", data=json.dumps({"profile_id": profile_id}), content_type="application/json")
+        require(started_trunk.status_code == 200, "trunking start endpoint failed after agreement")
+        require(started_trunk.get_json()["running"] is True, "trunking start should report running")
+        encrypted = client.post(
+            "/api/trunking/events",
+            data=json.dumps({"protocol": "p25", "encrypted": True, "audio_url": "/bad.wav", "recording_path": "/bad.wav"}),
+            content_type="application/json",
+        )
+        require(encrypted.status_code == 200, "trunking event endpoint failed")
+        require("audio_url" not in encrypted.get_json()["event"], "encrypted trunking API event must block playback URL")
 
 
 def validate_static_assets() -> None:
@@ -253,6 +336,8 @@ def validate_static_assets() -> None:
     html = (ROOT / "static/sdr/index.html").read_text(encoding="utf-8")
     for token in ["Dashboard", "Receiver", "Listen", "NFM", "WFM", "AM", "USB", "LSB", "receiverSpectrum", "receiverWaterfall", "rxStep", "rxBandwidth", "rxSquelch", "receiverStatus", "Scan Range", "Bookmarks", "Connect HackRF", "Test RX/Sweep", "USB / Serial", "Waterfall", "Sweep", "Capture", "Settings", "js/api.js", "css/style.css"]:
         require(token in html, f"missing SDR UI token {token!r}")
+    for token in ["Trunking", "Licensed Operation", "Encrypted traffic is logged", "trunkOperator", "trunkProfileName", "trunkControlChannel", "trunkStart", "trunkEvents"]:
+        require(token in html, f"missing trunking UI token {token!r}")
     require('href="./api/hackrf/captures.csv"' in html, "SDR export link must be relative for /sdr proxying")
     require('src="./socket.io/socket.io.js"' in html, "Socket.IO client script must be relative for /sdr proxying")
     require((ROOT / "static/sdr/socket.io/socket.io.js").exists(), "missing static Socket.IO fallback script")
@@ -286,7 +371,7 @@ def validate_integration() -> None:
     require("wait_for_http" in installer and "journalctl -u ktox-sdr" in installer, "SDR installer must verify HTTP startup and print logs on failure")
     require("systemctl enable" in installer, "SDR installer must offer service enablement")
     require("hackrf" in installer and "libhackrf0" in installer and "usbutils" in installer, "SDR installer must install HackRF and USB probe packages")
-    for required in ("services/sdr_server.py", "static/sdr/index.html", "tools/validate_sdr_suite.py"):
+    for required in ("services/sdr_server.py", "sdr/trunking.py", "static/sdr/index.html", "tools/validate_sdr_suite.py"):
         require(f'require_file "{required}"' in installer, f"SDR installer must verify {required} exists before installing service")
     require("services/sdr_server.py" in diagnostic and "systemctl cat" in diagnostic and "127.0.0.1:8081" in diagnostic, "SDR diagnostic must inspect files, unit, and local port")
     require("sys.path.insert(0, str(ROOT_DIR))" in server, "sdr_server.py must add repo root to sys.path before package imports")
@@ -296,6 +381,9 @@ def validate_integration() -> None:
     require("/api/receiver/start" in server and "ReceiverSession" in server, "sdr_server.py must expose receiver session APIs")
     require("/api/receiver/scan" in server and "scan_hits_from_rows" in server, "sdr_server.py must expose receiver scan API")
     require("/api/receiver/bookmarks" in server and "BookmarkStore" in server, "sdr_server.py must expose bookmark APIs")
+    require("/api/trunking/agreement" in server and "LicensedOperationStore" in server, "sdr_server.py must expose trunking licensed-operation APIs")
+    require("/api/trunking/start" in server and "TrunkingRuntime" in server, "sdr_server.py must expose trunking runtime APIs")
+    require("/api/trunking/events" in server and "TrunkingEventLog" in server, "sdr_server.py must expose trunking event APIs")
     require("/api/hackrf/waterfall-row" in server and "read_iq_samples" in server, "sdr_server.py must expose HTTP waterfall row endpoint")
     require("/api/hackrf/demodulate" in server and "demodulate_audio" in server, "sdr_server.py must expose demodulation endpoint")
     require("/api/hackrf/test" in server and "hardware_test" in server, "sdr_server.py must expose HackRF hardware test endpoint")
@@ -312,10 +400,13 @@ def validate_integration() -> None:
     require("receiverStart" in sdr_app and "receiverFrameLoop" in sdr_app and "receiverAudioLoop" in sdr_app, "SDR app must run receiver session loops")
     require("serialPorts" in sdr_api and "serialProbe" in sdr_api and "testHackrf" in sdr_app, "SDR UI must expose hardware and serial tests")
     require("receiverScan" in sdr_api and "receiverBookmarks" in sdr_api and "runReceiverScan" in sdr_app, "SDR UI must expose scan and bookmark actions")
+    for token in ("trunkingAgreement", "trunkingAcceptAgreement", "trunkingProfiles", "trunkingStart", "trunkingEvents"):
+        require(token in sdr_api, f"SDR API client missing {token}")
+    require("acceptTrunkAgreement" in sdr_app and "renderTrunkEvents" in sdr_app and "startTrunking" in sdr_app, "SDR UI must expose trunking workflow")
     require("scripts/install_sdr.sh" in readme and "scripts/diagnose_sdr.sh" in readme and "ktox-sdr" in readme, "README must document SDR service installation and diagnostics")
     for folder in ("sdr", "services", "static", "tools"):
         require(f'"$FIRMWARE_DIR/{folder}"' in main_installer, f"main installer must copy {folder}/")
-    for required in ("services/sdr_server.py", "sdr/device.py", "sdr/demod.py", "sdr/receiver.py", "sdr/signals.py", "static/sdr/index.html", "tools/validate_sdr_suite.py", "scripts/install_sdr.sh"):
+    for required in ("services/sdr_server.py", "sdr/device.py", "sdr/demod.py", "sdr/receiver.py", "sdr/signals.py", "sdr/trunking.py", "static/sdr/index.html", "tools/validate_sdr_suite.py", "scripts/install_sdr.sh"):
         require(required in ota, f"OTA updater must verify {required}")
     require("ls-tree" in ota and "remote missing" in ota and "local missing" in ota, "OTA updater must diagnose remote/local SDR file gaps")
     for dep in ["numpy", "flask-socketio", "python-socketio"]:
@@ -329,6 +420,7 @@ def main() -> int:
         validate_device,
         validate_receiver,
         validate_handlers,
+        validate_trunking,
         validate_server,
         validate_static_assets,
         validate_integration,

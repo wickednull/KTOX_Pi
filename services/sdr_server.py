@@ -37,6 +37,7 @@ try:
     from sdr.processing import waterfall_row
     from sdr.receiver import ReceiverConfig, ReceiverSession
     from sdr.signals import BookmarkStore, scan_hits_from_rows
+    from sdr.trunking import LicensedOperationStore, TrunkingEventLog, TrunkingProfileStore, TrunkingRuntime
 except Exception as exc:
     Flask = Any
     SocketIO = Any
@@ -124,6 +125,28 @@ class StaticSdrHandler(SimpleHTTPRequestHandler):
                 }
             )
             return
+        if path in {
+            "/api/trunking/agreement",
+            "/sdr/api/trunking/agreement",
+            "/api/trunking/profiles",
+            "/sdr/api/trunking/profiles",
+            "/api/trunking/status",
+            "/sdr/api/trunking/status",
+            "/api/trunking/events",
+            "/sdr/api/trunking/events",
+        }:
+            self.send_json(
+                {
+                    "ok": False,
+                    "running": False,
+                    "agreement": {"accepted": False},
+                    "profiles": [],
+                    "events": [],
+                    "error": f"SDR backend dependencies are not loaded: {SDR_IMPORT_ERROR}",
+                },
+                status=503,
+            )
+            return
         if path in {"/api/serial/ports", "/sdr/api/serial/ports"}:
             self.send_json({"available": False, "pyserial": False, "ports": [], "error": f"SDR backend dependencies are not loaded: {SDR_IMPORT_ERROR}"})
             return
@@ -167,6 +190,16 @@ class StaticSdrHandler(SimpleHTTPRequestHandler):
             "/sdr/api/receiver/audio",
             "/sdr/api/receiver/scan",
             "/sdr/api/receiver/bookmarks",
+            "/api/trunking/agreement",
+            "/sdr/api/trunking/agreement",
+            "/api/trunking/profiles",
+            "/sdr/api/trunking/profiles",
+            "/api/trunking/start",
+            "/sdr/api/trunking/start",
+            "/api/trunking/stop",
+            "/sdr/api/trunking/stop",
+            "/api/trunking/events",
+            "/sdr/api/trunking/events",
         }:
             self.send_json(
                 {
@@ -231,6 +264,10 @@ def create_app(
     db = database or CaptureDatabase(DB_PATH)
     receiver = ReceiverSession(hackrf)
     bookmarks = BookmarkStore(CAPTURES_DIR / "bookmarks.json")
+    trunk_agreement = LicensedOperationStore(CAPTURES_DIR / "licensed_operation.json")
+    trunk_profiles = TrunkingProfileStore(CAPTURES_DIR / "trunking_profiles.json")
+    trunk_events = TrunkingEventLog(CAPTURES_DIR / "trunking_events.json")
+    trunking = TrunkingRuntime(trunk_agreement, trunk_profiles, trunk_events)
     waterfall_flags: dict[str, threading.Event] = {}
 
     @app.get("/")
@@ -375,6 +412,76 @@ def create_app(
                     )
                 )
         return jsonify({"ok": result.get("ok", False), "rows": rows, "hits": hits, "saved": saved, "error": result.get("error", "")})
+
+    @app.get("/api/trunking/agreement")
+    @app.get("/sdr/api/trunking/agreement")
+    def trunking_agreement():
+        return jsonify({"ok": True, "agreement": trunk_agreement.get()})
+
+    @app.post("/api/trunking/agreement")
+    @app.post("/sdr/api/trunking/agreement")
+    def trunking_accept_agreement():
+        try:
+            row = trunk_agreement.accept(request.get_json(silent=True) or {})
+        except (TypeError, ValueError) as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        return jsonify({"ok": True, "agreement": row})
+
+    @app.get("/api/trunking/profiles")
+    @app.get("/sdr/api/trunking/profiles")
+    def trunking_profiles_list():
+        return jsonify({"ok": True, "profiles": trunk_profiles.list()})
+
+    @app.post("/api/trunking/profiles")
+    @app.post("/sdr/api/trunking/profiles")
+    def trunking_profile_add():
+        try:
+            row = trunk_profiles.add(request.get_json(silent=True) or {})
+        except (TypeError, ValueError) as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        return jsonify({"ok": True, "profile": row})
+
+    @app.delete("/api/trunking/profiles/<profile_id>")
+    @app.delete("/sdr/api/trunking/profiles/<profile_id>")
+    def trunking_profile_delete(profile_id: str):
+        return jsonify({"ok": trunk_profiles.delete(profile_id)})
+
+    @app.post("/api/trunking/start")
+    @app.post("/sdr/api/trunking/start")
+    def trunking_start():
+        data = request.get_json(silent=True) or {}
+        try:
+            status = trunking.start(str(data.get("profile_id") or ""))
+        except PermissionError as exc:
+            return jsonify({"ok": False, "error": str(exc), "agreement": trunk_agreement.get()}), 403
+        except (TypeError, ValueError) as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        return jsonify(status)
+
+    @app.post("/api/trunking/stop")
+    @app.post("/sdr/api/trunking/stop")
+    def trunking_stop():
+        return jsonify(trunking.stop())
+
+    @app.get("/api/trunking/status")
+    @app.get("/sdr/api/trunking/status")
+    def trunking_status():
+        return jsonify(trunking.status())
+
+    @app.get("/api/trunking/events")
+    @app.get("/sdr/api/trunking/events")
+    def trunking_events_list():
+        limit = int(request.args.get("limit") or 200)
+        return jsonify({"ok": True, "events": trunk_events.list(limit=limit)})
+
+    @app.post("/api/trunking/events")
+    @app.post("/sdr/api/trunking/events")
+    def trunking_event_add():
+        try:
+            row = trunk_events.add(request.get_json(silent=True) or {})
+        except (TypeError, ValueError) as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        return jsonify({"ok": True, "event": row})
 
     @app.get("/api/hackrf/presets")
     @app.get("/sdr/api/hackrf/presets")

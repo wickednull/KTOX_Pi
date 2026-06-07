@@ -49,6 +49,7 @@ REQUIRED_SDR_FILES = [
     "sdr/demod.py",
     "sdr/receiver.py",
     "sdr/signals.py",
+    "sdr/trunking.py",
     "static/sdr/index.html",
     "tools/validate_sdr_suite.py",
     "scripts/install_sdr.sh",

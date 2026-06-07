@@ -210,6 +210,29 @@ canvas {
   margin-top: 0.8rem;
 }
 
+.trunk-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: 0.8rem;
+}
+
+.trunk-grid > section, .notice {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 1rem;
+}
+
+.notice {
+  display: grid;
+  gap: 0.35rem;
+  margin-bottom: 0.8rem;
+}
+
+.trunk-event span:last-child {
+  overflow-wrap: anywhere;
+}
+
 .compact-head {
   margin-bottom: 0.7rem;
 }
@@ -246,6 +269,6 @@ h3 {
   .app-shell { grid-template-columns: 1fr; }
   .side { border-right: 0; border-bottom: 1px solid var(--border); }
   .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .receiver-tools { grid-template-columns: 1fr; }
+  .receiver-tools, .trunk-grid { grid-template-columns: 1fr; }
   .section-head, .capture-row { grid-template-columns: 1fr; display: grid; }
 }

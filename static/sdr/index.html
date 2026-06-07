@@ -22,6 +22,7 @@
         <button class="tab" data-tab="waterfall">Waterfall</button>
         <button class="tab" data-tab="sweep">Sweep</button>
         <button class="tab" data-tab="capture">Capture</button>
+        <button class="tab" data-tab="trunking">Trunking</button>
         <button class="tab" data-tab="serial">USB / Serial</button>
         <button class="tab" data-tab="settings">Settings</button>
       </nav>
@@ -179,6 +180,67 @@
         <div id="captureStatus" class="status-line">Ready</div>
         <p><a class="export-link" href="./api/hackrf/captures.csv">Export capture metadata CSV</a></p>
         <div id="captureList" class="capture-list"></div>
+      </section>
+
+      <section id="trunking" class="panel">
+        <div class="section-head">
+          <div>
+            <h2>Trunking</h2>
+            <p>P25, DMR, NXDN, and analog profile control for authorized unencrypted monitoring.</p>
+          </div>
+          <div class="actions">
+            <button id="refreshTrunking">Refresh</button>
+            <button id="trunkStart" class="primary">Start</button>
+            <button id="trunkStop">Stop</button>
+          </div>
+        </div>
+        <div class="notice">
+          <strong>Licensed Operation</strong>
+          <span>Encrypted traffic is logged only. KTOX blocks playback and recording metadata for encrypted events.</span>
+        </div>
+        <div class="trunk-grid">
+          <section>
+            <div class="section-head compact-head">
+              <div>
+                <h3>Agreement</h3>
+                <p>Required before a trunked decoder session can start.</p>
+              </div>
+              <button id="acceptTrunkAgreement" class="primary">Accept</button>
+            </div>
+            <div class="form-grid">
+              <label>Operator<input id="trunkOperator" type="text" placeholder="Name or callsign"></label>
+              <label>Organization<input id="trunkOrganization" type="text" placeholder="Agency, lab, or company"></label>
+              <label>Reference<input id="trunkReference" type="text" placeholder="License, op order, or authorization"></label>
+            </div>
+            <div id="trunkAgreementStatus" class="status-line">Agreement has not been accepted.</div>
+          </section>
+          <section>
+            <div class="section-head compact-head">
+              <div>
+                <h3>Profile</h3>
+                <p>Use local frequency and talkgroup data for unencrypted systems.</p>
+              </div>
+              <button id="addTrunkProfile" class="primary">Save Profile</button>
+            </div>
+            <div class="form-grid">
+              <label>Name<input id="trunkProfileName" type="text" value="Local P25"></label>
+              <label>Protocol<select id="trunkProtocol">
+                <option value="p25">P25 Phase 1/2</option>
+                <option value="dmr">DMR</option>
+                <option value="nxdn">NXDN</option>
+                <option value="analog">Analog</option>
+              </select></label>
+              <label>Control Channel Hz<input id="trunkControlChannel" type="number" value="851012500"></label>
+              <label>Voice Channels Hz<input id="trunkVoiceChannels" type="text" placeholder="851512500,852012500"></label>
+              <label>Allow Talkgroups<input id="trunkAllowTalkgroups" type="text" placeholder="1001,1003"></label>
+              <label>Block Talkgroups<input id="trunkBlockTalkgroups" type="text" placeholder="leave blank"></label>
+            </div>
+            <label>Active Profile<select id="trunkProfileSelect"></select></label>
+            <div id="trunkProfiles" class="capture-list"></div>
+          </section>
+        </div>
+        <div id="trunkStatus" class="status-line">Stopped</div>
+        <div id="trunkEvents" class="capture-list">Trunking events will appear here.</div>
       </section>
 
       <section id="serial" class="panel">

@@ -35,6 +35,7 @@ START_SERVICE="${KTOX_SDR_START:-ask}"
 cd "$KTOX_DIR"
 
 require_file "services/sdr_server.py"
+require_file "sdr/trunking.py"
 require_file "static/sdr/index.html"
 require_file "tools/validate_sdr_suite.py"
 

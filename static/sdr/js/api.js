@@ -84,6 +84,32 @@
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload || {})
+    }),
+    trunkingAgreement: () => requestJson('/api/trunking/agreement'),
+    trunkingAcceptAgreement: (payload) => requestJson('/api/trunking/agreement', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload || {})
+    }),
+    trunkingProfiles: () => requestJson('/api/trunking/profiles'),
+    trunkingAddProfile: (payload) => requestJson('/api/trunking/profiles', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload || {})
+    }),
+    trunkingDeleteProfile: (id) => requestJson(`/api/trunking/profiles/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    trunkingStart: (payload) => requestJson('/api/trunking/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload || {})
+    }),
+    trunkingStop: () => requestJson('/api/trunking/stop', { method: 'POST' }),
+    trunkingStatus: () => requestJson('/api/trunking/status'),
+    trunkingEvents: () => requestJson('/api/trunking/events'),
+    trunkingAddEvent: (payload) => requestJson('/api/trunking/events', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload || {})
     })
   };
 })();
