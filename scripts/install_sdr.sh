@@ -8,6 +8,19 @@ require_file() {
   local rel="$1"
   [[ -f "$KTOX_DIR/$rel" ]] || die "Missing $KTOX_DIR/$rel. Copy or pull the current repo files into $KTOX_DIR before installing SDR."
 }
+wait_for_http() {
+  local url="${1:-http://127.0.0.1:8081/}"
+  local tries="${2:-30}"
+  local delay="${3:-1}"
+  local _i
+  for _i in $(seq 1 "$tries"); do
+    if curl -fsS -o /dev/null "$url"; then
+      return 0
+    fi
+    sleep "$delay"
+  done
+  return 1
+}
 
 if [[ "$(id -u)" -ne 0 ]]; then
   die "Run as root: sudo bash scripts/install_sdr.sh"
@@ -92,6 +105,14 @@ fi
 if [[ "$START_SERVICE" =~ ^(1|true|yes|on)$ ]]; then
   info "Starting ktox-sdr"
   systemctl restart ktox-sdr.service
+  if wait_for_http "http://127.0.0.1:8081/" 30 1; then
+    info "SDR Suite is answering on http://127.0.0.1:8081/"
+  else
+    warn "ktox-sdr did not answer on http://127.0.0.1:8081/"
+    systemctl status ktox-sdr --no-pager || true
+    journalctl -u ktox-sdr -n 80 --no-pager || true
+    die "SDR service did not start cleanly"
+  fi
 fi
 
 info "Running no-hardware SDR validation"

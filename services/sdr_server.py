@@ -61,6 +61,14 @@ def create_app(
     def index():
         return send_from_directory(STATIC_DIR, "index.html")
 
+    @app.get("/socket.io/socket.io.js")
+    @app.get("/sdr/socket.io/socket.io.js")
+    def socketio_fallback_script():
+        return Response(
+            "window.io=window.io||function(){return{on:function(){},emit:function(){}}};\n",
+            mimetype="application/javascript",
+        )
+
     @app.get("/sdr")
     def sdr_index_redirect():
         return redirect("/sdr/")
@@ -214,9 +222,23 @@ def create_app(
     return app, socketio
 
 
+def run_socketio(app: Flask, socketio: SocketIO) -> None:
+    host = os.environ.get("KTOX_SDR_HOST", "0.0.0.0")
+    port = int(os.environ.get("KTOX_SDR_PORT", "8081"))
+    try:
+        socketio.run(app, host=host, port=port, allow_unsafe_werkzeug=True)
+    except TypeError as exc:
+        if "allow_unsafe_werkzeug" not in str(exc):
+            raise
+        socketio.run(app, host=host, port=port)
+    except Exception as exc:
+        print(f"[SDR] SocketIO server failed, falling back to Flask: {exc}", flush=True)
+        app.run(host=host, port=port)
+
+
 def main() -> None:
     app, socketio = create_app()
-    socketio.run(app, host="0.0.0.0", port=8081, allow_unsafe_werkzeug=True)
+    run_socketio(app, socketio)
 
 
 if __name__ == "__main__":
