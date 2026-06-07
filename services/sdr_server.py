@@ -98,7 +98,14 @@ class StaticSdrHandler(SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
-        if path in {"/api/hackrf/info", "/sdr/api/hackrf/info", "/api/hackrf/connect", "/sdr/api/hackrf/connect"}:
+        if path in {
+            "/api/hackrf/info",
+            "/sdr/api/hackrf/info",
+            "/api/hackrf/connect",
+            "/sdr/api/hackrf/connect",
+            "/api/hackrf/test",
+            "/sdr/api/hackrf/test",
+        }:
             self.send_json(
                 {
                     "available": False,
@@ -108,6 +115,9 @@ class StaticSdrHandler(SimpleHTTPRequestHandler):
                     "usb": {"available": False, "devices": [], "hackrf": []},
                 }
             )
+            return
+        if path in {"/api/serial/ports", "/sdr/api/serial/ports"}:
+            self.send_json({"available": False, "pyserial": False, "ports": [], "error": f"SDR backend dependencies are not loaded: {SDR_IMPORT_ERROR}"})
             return
         if path in {"/api/hackrf/presets", "/sdr/api/hackrf/presets"}:
             self.send_json(fallback_presets())
@@ -130,7 +140,14 @@ class StaticSdrHandler(SimpleHTTPRequestHandler):
 
     def do_POST(self) -> None:
         path = urlparse(self.path).path
-        if path in {"/api/hackrf/connect", "/sdr/api/hackrf/connect"}:
+        if path in {
+            "/api/hackrf/connect",
+            "/sdr/api/hackrf/connect",
+            "/api/hackrf/test",
+            "/sdr/api/hackrf/test",
+            "/api/serial/probe",
+            "/sdr/api/serial/probe",
+        }:
             self.send_json(
                 {
                     "available": False,
@@ -218,6 +235,28 @@ def create_app(
     @app.post("/sdr/api/hackrf/connect")
     def hackrf_connect():
         return jsonify(hackrf.connect())
+
+    @app.post("/api/hackrf/test")
+    @app.post("/sdr/api/hackrf/test")
+    def hackrf_test():
+        try:
+            data = request.get_json(silent=True) or {}
+            frequency = _int_payload(data, "frequency", 2437000000, 1000000, 6000000000)
+            sample_rate = _int_payload(data, "sample_rate", 20000000, 1000000, 20000000)
+        except (TypeError, ValueError) as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        return jsonify(hackrf.hardware_test(frequency=frequency, sample_rate=sample_rate))
+
+    @app.get("/api/serial/ports")
+    @app.get("/sdr/api/serial/ports")
+    def serial_ports():
+        return jsonify(hackrf.serial_ports())
+
+    @app.post("/api/serial/probe")
+    @app.post("/sdr/api/serial/probe")
+    def serial_probe():
+        data = request.get_json(silent=True) or {}
+        return jsonify(hackrf.serial_probe(str(data.get("port") or ""), int(data.get("baudrate") or 115200)))
 
     @app.get("/api/hackrf/presets")
     @app.get("/sdr/api/hackrf/presets")

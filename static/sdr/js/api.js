@@ -22,6 +22,17 @@
   window.SdrApi = {
     info: () => requestJson('/api/hackrf/info'),
     connect: () => requestJson('/api/hackrf/connect', { method: 'POST' }),
+    test: (payload) => requestJson('/api/hackrf/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload || {})
+    }),
+    serialPorts: () => requestJson('/api/serial/ports'),
+    serialProbe: (payload) => requestJson('/api/serial/probe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload || {})
+    }),
     presets: () => requestJson('/api/hackrf/presets'),
     captures: () => requestJson('/api/hackrf/captures'),
     deleteCapture: (id) => requestJson(`/api/hackrf/captures/${encodeURIComponent(id)}`, { method: 'DELETE' }),

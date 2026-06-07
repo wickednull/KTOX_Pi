@@ -21,6 +21,7 @@
         <button class="tab" data-tab="waterfall">Waterfall</button>
         <button class="tab" data-tab="sweep">Sweep</button>
         <button class="tab" data-tab="capture">Capture</button>
+        <button class="tab" data-tab="serial">USB / Serial</button>
         <button class="tab" data-tab="settings">Settings</button>
       </nav>
       <div class="device-card">
@@ -41,6 +42,7 @@
           </div>
           <div class="actions">
             <button id="connectHackrf" class="primary">Connect HackRF</button>
+            <button id="testHackrf">Test RX/Sweep</button>
             <button id="refreshInfo">Refresh</button>
           </div>
         </div>
@@ -59,7 +61,7 @@
         <div class="section-head">
           <div>
             <h2>Waterfall</h2>
-            <p>Real-time FFT rows over SocketIO.</p>
+            <p>Live FFT rows pulled from HackRF RX samples.</p>
           </div>
           <div class="actions">
             <button id="startWaterfall" class="primary">Start</button>
@@ -104,6 +106,24 @@
         <div id="captureStatus" class="status-line">Ready</div>
         <p><a class="export-link" href="./api/hackrf/captures.csv">Export capture metadata CSV</a></p>
         <div id="captureList" class="capture-list"></div>
+      </section>
+
+      <section id="serial" class="panel">
+        <div class="section-head">
+          <div>
+            <h2>USB / Serial</h2>
+            <p>Inspect serial-style USB devices. HackRF itself is controlled through libhackrf, not a serial TTY.</p>
+          </div>
+          <button id="refreshSerial" class="primary">Refresh Ports</button>
+        </div>
+        <div class="form-grid">
+          <label>Serial Port<select id="serialPort"></select></label>
+          <label>Baud Rate<input id="serialBaud" type="number" value="115200"></label>
+        </div>
+        <div class="actions">
+          <button id="probeSerial" class="primary">Probe Serial</button>
+        </div>
+        <pre id="serialStatus" class="output compact">Serial ports will appear here.</pre>
       </section>
 
       <section id="settings" class="panel">

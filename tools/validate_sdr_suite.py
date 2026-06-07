@@ -142,6 +142,14 @@ def validate_server() -> None:
         )
         require(waterfall.status_code == 200, "waterfall row endpoint failed")
         require(len(waterfall.get_json()["row"]) == 256, "waterfall row endpoint returned wrong row size")
+        hardware = client.post(
+            "/api/hackrf/test",
+            data=json.dumps({"frequency": 2437000000, "sample_rate": 20000000}),
+            content_type="application/json",
+        )
+        require(hardware.status_code == 200, "hardware test endpoint failed")
+        require("rx" in hardware.get_json() and "sweep" in hardware.get_json(), "hardware test should include RX and sweep results")
+        require(client.get("/api/serial/ports").status_code == 200, "serial ports endpoint failed")
 
 
 def validate_static_assets() -> None:
@@ -155,7 +163,7 @@ def validate_static_assets() -> None:
     for rel in required:
         require((ROOT / rel).exists(), f"missing {rel}")
     html = (ROOT / "static/sdr/index.html").read_text(encoding="utf-8")
-    for token in ["Dashboard", "Connect HackRF", "Waterfall", "Sweep", "Capture", "Settings", "js/api.js", "css/style.css"]:
+    for token in ["Dashboard", "Connect HackRF", "Test RX/Sweep", "USB / Serial", "Waterfall", "Sweep", "Capture", "Settings", "js/api.js", "css/style.css"]:
         require(token in html, f"missing SDR UI token {token!r}")
     require('href="./api/hackrf/captures.csv"' in html, "SDR export link must be relative for /sdr proxying")
     require('src="./socket.io/socket.io.js"' in html, "Socket.IO client script must be relative for /sdr proxying")
@@ -198,11 +206,14 @@ def validate_integration() -> None:
     require("run_static_sdr_server" in server and "ThreadingHTTPServer" in server, "sdr_server.py must serve the page even when backend imports fail")
     require("/api/hackrf/connect" in server and "hackrf.connect()" in server, "sdr_server.py must expose explicit HackRF connect endpoint")
     require("/api/hackrf/waterfall-row" in server and "read_iq_samples" in server, "sdr_server.py must expose HTTP waterfall row endpoint")
+    require("/api/hackrf/test" in server and "hardware_test" in server, "sdr_server.py must expose HackRF hardware test endpoint")
+    require("/api/serial/ports" in server and "/api/serial/probe" in server, "sdr_server.py must expose serial port endpoints")
     require('@app.get("/sdr")' in server and 'redirect("/sdr/")' in server, "SDR server should redirect /sdr to /sdr/")
     require('@app.get("/sdr/")' in server, "SDR server should provide /sdr/ alias")
     require("basePath()" in sdr_api and "withBase" in sdr_api, "SDR API client must be prefix-aware")
     require("socketPath" in sdr_app and "SdrApiBasePath" in sdr_app, "SDR Socket.IO client must be prefix-aware")
     require("waterfallRow" in sdr_api and "pollWaterfall" in sdr_app, "SDR UI must support HTTP waterfall polling")
+    require("serialPorts" in sdr_api and "serialProbe" in sdr_api and "testHackrf" in sdr_app, "SDR UI must expose hardware and serial tests")
     require("scripts/install_sdr.sh" in readme and "scripts/diagnose_sdr.sh" in readme and "ktox-sdr" in readme, "README must document SDR service installation and diagnostics")
     for folder in ("sdr", "services", "static", "tools"):
         require(f'"$FIRMWARE_DIR/{folder}"' in main_installer, f"main installer must copy {folder}/")

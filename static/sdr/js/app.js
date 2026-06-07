@@ -22,7 +22,10 @@
     waterfallStatus: document.getElementById('waterfallStatus'),
     settingsStatus: document.getElementById('settingsStatus'),
     connectStatus: document.getElementById('connectStatus'),
-    usbStatus: document.getElementById('usbStatus')
+    usbStatus: document.getElementById('usbStatus'),
+    serialPort: document.getElementById('serialPort'),
+    serialBaud: document.getElementById('serialBaud'),
+    serialStatus: document.getElementById('serialStatus')
   };
 
   function bytes(size){
@@ -119,6 +122,67 @@
     return Number(document.getElementById(id).value);
   }
 
+  function pretty(value){
+    return JSON.stringify(value, null, 2);
+  }
+
+  function escapeHtml(value){
+    return String(value == null ? '' : value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  async function testHackrf(){
+    els.connectStatus.textContent = 'Running HackRF RX and sweep test...';
+    try {
+      const data = await api.test({
+        frequency: numeric('captureFrequency') || 2437000000,
+        sample_rate: numeric('captureSampleRate') || 20000000
+      });
+      setDevice(data.connect || {});
+      els.usbStatus.textContent = pretty(data);
+      els.connectStatus.textContent = data.ok ? 'HackRF RX and sweep test passed.' : 'HackRF test failed; see details below.';
+    } catch (err) {
+      els.connectStatus.textContent = `HackRF test failed: ${err.message}`;
+    }
+  }
+
+  async function loadSerialPorts(){
+    if (!els.serialPort || !els.serialStatus) return;
+    els.serialStatus.textContent = 'Scanning serial ports...';
+    try {
+      const data = await api.serialPorts();
+      const ports = data.ports || [];
+      els.serialPort.innerHTML = ports.length
+        ? ports.map(port => `<option value="${escapeHtml(port.device)}">${escapeHtml(port.device)} - ${escapeHtml(port.description || port.product || 'serial device')}</option>`).join('')
+        : '<option value="">No serial ports found</option>';
+      els.serialStatus.textContent = pretty(data);
+    } catch (err) {
+      els.serialPort.innerHTML = '<option value="">Serial backend unavailable</option>';
+      els.serialStatus.textContent = `Serial scan failed: ${err.message}`;
+    }
+  }
+
+  async function probeSerial(){
+    if (!els.serialPort || !els.serialStatus) return;
+    const port = els.serialPort.value;
+    if (!port) {
+      els.serialStatus.textContent = 'No serial port selected.';
+      return;
+    }
+    els.serialStatus.textContent = `Opening ${port}...`;
+    try {
+      els.serialStatus.textContent = pretty(await api.serialProbe({
+        port,
+        baudrate: Number(els.serialBaud.value) || 115200
+      }));
+    } catch (err) {
+      els.serialStatus.textContent = `Serial probe failed: ${err.message}`;
+    }
+  }
+
   async function runSweep(){
     els.sweepOutput.textContent = 'Running sweep...';
     try {
@@ -211,8 +275,11 @@
 
   document.getElementById('refreshInfo').addEventListener('click', loadInfo);
   document.getElementById('connectHackrf').addEventListener('click', connectHackrf);
+  document.getElementById('testHackrf').addEventListener('click', testHackrf);
   document.getElementById('runSweep').addEventListener('click', runSweep);
   document.getElementById('runCapture').addEventListener('click', runCapture);
+  document.getElementById('refreshSerial').addEventListener('click', loadSerialPorts);
+  document.getElementById('probeSerial').addEventListener('click', probeSerial);
   els.captureList.addEventListener('click', async (event) => {
     const button = event.target.closest('[data-delete-capture]');
     if (!button) return;
@@ -243,4 +310,5 @@
   loadInfo();
   loadCaptures();
   loadPresets();
+  loadSerialPorts();
 })();

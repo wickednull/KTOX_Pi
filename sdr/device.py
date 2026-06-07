@@ -5,6 +5,7 @@ from __future__ import annotations
 import shutil
 import subprocess
 import threading
+from glob import glob
 from pathlib import Path
 from typing import Any
 
@@ -204,7 +205,8 @@ class HackRFManager:
         sample_rate: int = 20000000,
         sample_count: int = 512,
     ) -> dict:
-        byte_count = max(2, int(sample_count) * 2)
+        samples_to_read = max(1, int(sample_count))
+        byte_count = samples_to_read * 2
         args = [
             "hackrf_transfer",
             "-r",
@@ -214,7 +216,7 @@ class HackRFManager:
             "-s",
             str(int(sample_rate)),
             "-n",
-            str(byte_count),
+            str(samples_to_read),
         ]
         try:
             if self.runner is subprocess:
@@ -232,7 +234,75 @@ class HackRFManager:
         if result.returncode != 0:
             return {"ok": False, "error": err or "hackrf_transfer failed", "samples": []}
         samples = [(byte - 256 if byte > 127 else byte) / 128.0 for byte in raw[:byte_count]]
-        return {"ok": True, "samples": samples}
+        return {"ok": True, "samples": samples, "bytes": len(raw), "requested_samples": samples_to_read}
+
+    def hardware_test(
+        self,
+        frequency: int = 2437000000,
+        sample_rate: int = 20000000,
+    ) -> dict:
+        info = self.connect()
+        rx = self.read_iq_samples(frequency, sample_rate=sample_rate, sample_count=256)
+        sweep_start = max(1000000, int(frequency) - 5000000)
+        sweep_stop = min(6000000000, int(frequency) + 5000000)
+        sweep = self.run_sweep(sweep_start, sweep_stop, bin_width=1000000)
+        return {
+            "ok": bool(info.get("connected")) and bool(rx.get("ok")) and bool(sweep.get("ok")),
+            "connect": info,
+            "rx": {key: value for key, value in rx.items() if key != "samples"},
+            "sweep": {
+                "ok": sweep.get("ok", False),
+                "error": sweep.get("error", ""),
+                "stdout_preview": (sweep.get("stdout") or "")[:1000],
+            },
+        }
+
+    def serial_ports(self) -> dict:
+        try:
+            from serial.tools import list_ports
+        except Exception as exc:
+            devices = sorted(set(glob("/dev/ttyUSB*") + glob("/dev/ttyACM*") + glob("/dev/serial/by-id/*")))
+            return {
+                "available": bool(devices),
+                "pyserial": False,
+                "error": str(exc),
+                "ports": [{"device": device, "description": "serial device"} for device in devices],
+            }
+        ports = []
+        for port in list_ports.comports():
+            ports.append(
+                {
+                    "device": port.device,
+                    "name": port.name,
+                    "description": port.description,
+                    "hwid": port.hwid,
+                    "vid": port.vid,
+                    "pid": port.pid,
+                    "serial_number": port.serial_number,
+                    "manufacturer": port.manufacturer,
+                    "product": port.product,
+                }
+            )
+        return {"available": bool(ports), "pyserial": True, "ports": ports}
+
+    def serial_probe(self, port: str, baudrate: int = 115200) -> dict:
+        if not port:
+            return {"ok": False, "error": "serial port is required"}
+        try:
+            import serial
+        except Exception as exc:
+            return {"ok": False, "error": f"pyserial unavailable: {exc}"}
+        try:
+            with serial.Serial(port=port, baudrate=int(baudrate), timeout=0.5, write_timeout=0.5) as handle:
+                return {
+                    "ok": True,
+                    "port": port,
+                    "baudrate": int(baudrate),
+                    "open": handle.is_open,
+                    "in_waiting": int(getattr(handle, "in_waiting", 0)),
+                }
+        except Exception as exc:
+            return {"ok": False, "port": port, "baudrate": int(baudrate), "error": str(exc)}
 
     def start_rx_stream(self, args: list[str]) -> subprocess.Popen:
         with self._lock:
