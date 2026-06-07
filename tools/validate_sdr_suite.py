@@ -145,6 +145,7 @@ def validate_integration() -> None:
     main_installer = (ROOT / "install.sh").read_text(encoding="utf-8", errors="replace")
     service = (ROOT / "scripts/ktox-sdr.service").read_text(encoding="utf-8")
     installer = (ROOT / "scripts/install_sdr.sh").read_text(encoding="utf-8")
+    diagnostic = (ROOT / "scripts/diagnose_sdr.sh").read_text(encoding="utf-8")
     server = (ROOT / "services/sdr_server.py").read_text(encoding="utf-8")
     sdr_api = (ROOT / "static/sdr/js/api.js").read_text(encoding="utf-8")
     sdr_app = (ROOT / "static/sdr/js/app.js").read_text(encoding="utf-8")
@@ -159,12 +160,13 @@ def validate_integration() -> None:
     require("hackrf" in installer and "libhackrf0" in installer, "SDR installer must install HackRF packages")
     for required in ("services/sdr_server.py", "static/sdr/index.html", "tools/validate_sdr_suite.py"):
         require(f'require_file "{required}"' in installer, f"SDR installer must verify {required} exists before installing service")
+    require("services/sdr_server.py" in diagnostic and "systemctl cat" in diagnostic and "127.0.0.1:8081" in diagnostic, "SDR diagnostic must inspect files, unit, and local port")
     require("sys.path.insert(0, str(ROOT_DIR))" in server, "sdr_server.py must add repo root to sys.path before package imports")
     require('@app.get("/sdr")' in server and 'redirect("/sdr/")' in server, "SDR server should redirect /sdr to /sdr/")
     require('@app.get("/sdr/")' in server, "SDR server should provide /sdr/ alias")
     require("basePath()" in sdr_api and "withBase" in sdr_api, "SDR API client must be prefix-aware")
     require("socketPath" in sdr_app and "SdrApiBasePath" in sdr_app, "SDR Socket.IO client must be prefix-aware")
-    require("scripts/install_sdr.sh" in readme and "ktox-sdr" in readme, "README must document SDR service installation")
+    require("scripts/install_sdr.sh" in readme and "scripts/diagnose_sdr.sh" in readme and "ktox-sdr" in readme, "README must document SDR service installation and diagnostics")
     for folder in ("sdr", "services", "static", "tools"):
         require(f'"$FIRMWARE_DIR/{folder}"' in main_installer, f"main installer must copy {folder}/")
     for dep in ["numpy", "flask-socketio", "python-socketio"]:

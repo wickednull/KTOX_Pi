@@ -294,6 +294,14 @@ curl -I http://127.0.0.1:8081/
 
 If `sudo systemctl restart ktox-sdr` says `Unit ktox-sdr.service not found`, the SDR service has not been installed yet. Run `sudo bash scripts/install_sdr.sh`.
 
+If the service is installed but the page still cannot be reached, run:
+
+```bash
+sudo bash scripts/diagnose_sdr.sh
+```
+
+The diagnostic checks whether `services/sdr_server.py`, the static SDR UI, the systemd unit, and port `8081` are present on the device.
+
 ### What the installer does
 
 1. Detects `/boot/firmware/config.txt` or `/boot/config.txt` (Bookworm-compatible)

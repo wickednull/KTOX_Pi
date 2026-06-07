@@ -145,6 +145,7 @@ info "KTOx main suite installed"
 chmod +x "$KTOX_DIR/ktox_device.py"
 [[ -f "$KTOX_DIR/setup_loki.sh" ]] && chmod +x "$KTOX_DIR/setup_loki.sh"
 [[ -f "$KTOX_DIR/scripts/install_sdr.sh" ]] && chmod +x "$KTOX_DIR/scripts/install_sdr.sh"
+[[ -f "$KTOX_DIR/scripts/diagnose_sdr.sh" ]] && chmod +x "$KTOX_DIR/scripts/diagnose_sdr.sh"
 mkdir -p "$KTOX_DIR/loot/MITM" "$KTOX_DIR/loot/Nmap" "$KTOX_DIR/loot/payloads"
 mkdir -p "$KTOX_DIR/roms"   # Game Boy / emulator ROMs — never overwritten by OTA
 
