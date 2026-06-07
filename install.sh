@@ -89,6 +89,9 @@ fi
 # ── KTOx files ────────────────────────────────────────────────────────────────
 step "Installing KTOx to $KTOX_DIR..."
 mkdir -p "$KTOX_DIR"
+if [[ "$(readlink -f "$FIRMWARE_DIR")" == "$(readlink -f "$KTOX_DIR")" ]]; then
+    info "Install source is already $KTOX_DIR; skipping file copy"
+else
 # Core system files (from root or ktox_pi)
 for f in ktox_device.py LCD_1in44.py LCD_Config.py ktox_input.py ktox_lcd.py ktox_payload_runner.py; do
     if [ -f "$FIRMWARE_DIR/$f" ]; then
@@ -136,6 +139,7 @@ for f in "${KTOX_SUITE[@]}"; do
     [[ -f "$FIRMWARE_DIR/$f" ]] && cp "$FIRMWARE_DIR/$f" "$KTOX_DIR/" && info "Copied $f"
 done
 [[ -d "$FIRMWARE_DIR/assets" ]] && cp -r "$FIRMWARE_DIR/assets" "$KTOX_DIR/"
+fi
 info "KTOx main suite installed"
 
 # Install Python dependencies from requirements.txt
