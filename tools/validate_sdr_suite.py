@@ -48,6 +48,14 @@ class FakeRunner:
         return FakeResult()
 
 
+class FakeDecoderTools:
+    def __init__(self, available: dict[str, str] | None = None):
+        self.available = available or {}
+
+    def which(self, name: str) -> str | None:
+        return self.available.get(name)
+
+
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise AssertionError(message)
@@ -164,14 +172,15 @@ def validate_handlers() -> None:
 
 
 def validate_trunking() -> None:
-    from sdr.trunking import LicensedOperationStore, TrunkingEventLog, TrunkingProfileStore, TrunkingRuntime
+    from sdr.trunking import DecoderToolchain, LicensedOperationStore, TrunkingEventLog, TrunkingProfileStore, TrunkingRuntime
 
     with tempfile.TemporaryDirectory() as tmp:
         base = Path(tmp)
         agreement = LicensedOperationStore(base / "licensed_operation.json")
         profiles = TrunkingProfileStore(base / "trunking_profiles.json")
         events = TrunkingEventLog(base / "trunking_events.json")
-        runtime = TrunkingRuntime(agreement, profiles, events)
+        toolchain = DecoderToolchain(base / "decoder", locator=FakeDecoderTools({"multi_rx.py": "/opt/op25/op25/gr-op25_repeater/apps/multi_rx.py", "dsd-fme": "/usr/local/bin/dsd-fme"}))
+        runtime = TrunkingRuntime(agreement, profiles, events, toolchain=toolchain)
 
         profile = profiles.add({
             "name": "Local P25 test",
@@ -184,6 +193,13 @@ def validate_trunking() -> None:
         require(profile["id"], "trunking profile should get an id")
         require(profile["decoder"] == "op25", "P25 profile should use OP25 decoder")
         require(profiles.list()[0]["control_channel"] == 851012500, "trunking profile should persist")
+        plan = toolchain.plan(profile)
+        require(plan["engine"] == "op25", "P25 command plan should use OP25")
+        require("--nocrypt" in plan["args"], "OP25 command plan must silence encrypted audio")
+        require(Path(plan["config_path"]).exists(), "OP25 command plan should write config JSON")
+        op25_config = json.loads(Path(plan["config_path"]).read_text(encoding="utf-8"))
+        require(op25_config["trunking"]["chans"][0]["crypt_behavior"] == 2, "OP25 config must use encrypted-call skip behavior")
+        require(op25_config["devices"][0]["args"] == "hackrf=0", "OP25 config should default to HackRF source args")
 
         try:
             runtime.start(profile["id"])
@@ -201,8 +217,20 @@ def validate_trunking() -> None:
         status = runtime.start(profile["id"])
         require(status["running"] is True, "trunking runtime should start after acceptance")
         require(status["profile"]["id"] == profile["id"], "trunking status should include profile")
+        require(status["decoder_state"] == "planned", "trunking runtime should attach decoder plan when tool exists")
+        require(status["decoder_plan"]["engine"] == "op25", "trunking status should expose decoder plan")
         stopped = runtime.stop()
         require(stopped["running"] is False, "trunking runtime should stop")
+
+        dmr_profile = profiles.add({
+            "name": "Local DMR test",
+            "protocol": "dmr",
+            "control_channel": 452500000,
+            "decoder": "dsd-fme",
+        })
+        dmr_plan = toolchain.plan(dmr_profile)
+        require(dmr_plan["engine"] == "dsd-fme", "DMR command plan should use DSD-FME")
+        require("-fd" in dmr_plan["args"], "DSD-FME DMR plan should request DMR decode mode")
 
         encrypted = events.add({
             "protocol": "p25",
@@ -217,6 +245,8 @@ def validate_trunking() -> None:
         require(encrypted["status"] == "encrypted", "encrypted trunking event should use encrypted status")
         for blocked in ("audio_url", "recording_path", "decoded_audio"):
             require(blocked not in encrypted, f"encrypted trunking event must not expose {blocked}")
+        missing = DecoderToolchain(base / "missing", locator=FakeDecoderTools({})).status()
+        require(missing["op25"]["available"] is False and missing["dsd_fme"]["available"] is False, "decoder status should report missing engines")
 
 
 def validate_server() -> None:
@@ -336,7 +366,7 @@ def validate_static_assets() -> None:
     html = (ROOT / "static/sdr/index.html").read_text(encoding="utf-8")
     for token in ["Dashboard", "Receiver", "Listen", "NFM", "WFM", "AM", "USB", "LSB", "receiverSpectrum", "receiverWaterfall", "rxStep", "rxBandwidth", "rxSquelch", "receiverStatus", "Scan Range", "Bookmarks", "Connect HackRF", "Test RX/Sweep", "USB / Serial", "Waterfall", "Sweep", "Capture", "Settings", "js/api.js", "css/style.css"]:
         require(token in html, f"missing SDR UI token {token!r}")
-    for token in ["Trunking", "Licensed Operation", "Encrypted traffic is logged", "trunkOperator", "trunkProfileName", "trunkControlChannel", "trunkStart", "trunkEvents"]:
+    for token in ["Trunking", "Licensed Operation", "Encrypted traffic is logged", "trunkOperator", "trunkProfileName", "trunkControlChannel", "trunkStart", "trunkDecoderStatus", "trunkEvents"]:
         require(token in html, f"missing trunking UI token {token!r}")
     require('href="./api/hackrf/captures.csv"' in html, "SDR export link must be relative for /sdr proxying")
     require('src="./socket.io/socket.io.js"' in html, "Socket.IO client script must be relative for /sdr proxying")
@@ -382,7 +412,7 @@ def validate_integration() -> None:
     require("/api/receiver/scan" in server and "scan_hits_from_rows" in server, "sdr_server.py must expose receiver scan API")
     require("/api/receiver/bookmarks" in server and "BookmarkStore" in server, "sdr_server.py must expose bookmark APIs")
     require("/api/trunking/agreement" in server and "LicensedOperationStore" in server, "sdr_server.py must expose trunking licensed-operation APIs")
-    require("/api/trunking/start" in server and "TrunkingRuntime" in server, "sdr_server.py must expose trunking runtime APIs")
+    require("/api/trunking/start" in server and "TrunkingRuntime" in server and "DecoderToolchain" in server, "sdr_server.py must expose trunking runtime APIs")
     require("/api/trunking/events" in server and "TrunkingEventLog" in server, "sdr_server.py must expose trunking event APIs")
     require("/api/hackrf/waterfall-row" in server and "read_iq_samples" in server, "sdr_server.py must expose HTTP waterfall row endpoint")
     require("/api/hackrf/demodulate" in server and "demodulate_audio" in server, "sdr_server.py must expose demodulation endpoint")
@@ -402,7 +432,7 @@ def validate_integration() -> None:
     require("receiverScan" in sdr_api and "receiverBookmarks" in sdr_api and "runReceiverScan" in sdr_app, "SDR UI must expose scan and bookmark actions")
     for token in ("trunkingAgreement", "trunkingAcceptAgreement", "trunkingProfiles", "trunkingStart", "trunkingEvents"):
         require(token in sdr_api, f"SDR API client missing {token}")
-    require("acceptTrunkAgreement" in sdr_app and "renderTrunkEvents" in sdr_app and "startTrunking" in sdr_app, "SDR UI must expose trunking workflow")
+    require("acceptTrunkAgreement" in sdr_app and "renderTrunkEvents" in sdr_app and "startTrunking" in sdr_app and "decoder_tools" in sdr_app, "SDR UI must expose trunking workflow and decoder status")
     require("scripts/install_sdr.sh" in readme and "scripts/diagnose_sdr.sh" in readme and "ktox-sdr" in readme, "README must document SDR service installation and diagnostics")
     for folder in ("sdr", "services", "static", "tools"):
         require(f'"$FIRMWARE_DIR/{folder}"' in main_installer, f"main installer must copy {folder}/")

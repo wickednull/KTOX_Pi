@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import time
 import uuid
 from pathlib import Path
@@ -16,6 +17,11 @@ DEFAULT_DECODER = {
     "dmr": "dsd-fme",
     "nxdn": "dsd-fme",
     "analog": "internal",
+}
+DSD_PROTOCOL_FLAGS = {
+    "dmr": "-fd",
+    "nxdn": "-fn",
+    "p25": "-f1",
 }
 
 
@@ -33,6 +39,11 @@ def _write_json(path: Path, data: Any) -> None:
     path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+class SystemToolLocator:
+    def which(self, name: str) -> str | None:
+        return shutil.which(name)
+
+
 def _int_list(value: Any) -> list[int | str]:
     if value in (None, ""):
         return []
@@ -47,6 +58,16 @@ def _int_list(value: Any) -> list[int | str]:
         except (TypeError, ValueError):
             rows.append(str(item).strip())
     return rows
+
+
+def _mhz_list(values: list[int | str]) -> str:
+    out = []
+    for value in values:
+        try:
+            out.append(f"{int(value) / 1000000:.6f}".rstrip("0").rstrip("."))
+        except (TypeError, ValueError):
+            continue
+    return ",".join(out)
 
 
 class LicensedOperationStore:
@@ -183,6 +204,130 @@ class TrunkingEventLog:
         return row
 
 
+class DecoderToolchain:
+    """Builds external decoder command plans without attempting encrypted decode."""
+
+    def __init__(self, work_dir: str | Path, locator: Any | None = None):
+        self.work_dir = Path(work_dir)
+        self.locator = locator or SystemToolLocator()
+
+    def _which(self, name: str) -> str | None:
+        found = self.locator.which(name)
+        return str(found) if found else None
+
+    def status(self) -> dict[str, Any]:
+        op25 = self._which("multi_rx.py") or self._which("rx.py")
+        dsd_fme = self._which("dsd-fme")
+        return {
+            "op25": {"available": bool(op25), "path": op25 or "", "preferred": "multi_rx.py"},
+            "dsd_fme": {"available": bool(dsd_fme), "path": dsd_fme or "", "preferred": "dsd-fme"},
+        }
+
+    def plan(self, profile: dict[str, Any]) -> dict[str, Any]:
+        protocol = str(profile.get("protocol") or "").lower()
+        decoder = str(profile.get("decoder") or DEFAULT_DECODER.get(protocol, "")).lower()
+        if decoder == "op25" or protocol == "p25":
+            return self._op25_plan(profile)
+        if decoder == "dsd-fme" or protocol in {"dmr", "nxdn"}:
+            return self._dsd_fme_plan(profile)
+        return {
+            "engine": decoder or "internal",
+            "available": True,
+            "args": [],
+            "message": "No external decoder engine is required for this profile.",
+        }
+
+    def _op25_plan(self, profile: dict[str, Any]) -> dict[str, Any]:
+        binary = self._which("multi_rx.py") or self._which("rx.py")
+        profile_id = str(profile.get("id") or uuid.uuid4().hex)
+        config_path = self.work_dir / f"op25-{profile_id}.json"
+        self.work_dir.mkdir(parents=True, exist_ok=True)
+        sysname = str(profile.get("name") or "ktox-p25")
+        control_channels = [int(profile.get("control_channel") or 0)] + [int(item) for item in profile.get("voice_channels") or [] if int(item) > 0]
+        config = {
+            "channels": [
+                {
+                    "name": sysname,
+                    "device": "sdr0",
+                    "trunking_sysname": sysname,
+                    "demod_type": "cqpsk",
+                    "cqpsk_tracking": True,
+                    "destination": "udp://127.0.0.1:23456",
+                    "excess_bw": 0.2,
+                    "filter_type": "rc",
+                    "if_rate": 24000,
+                    "plot": "",
+                    "symbol_rate": 4800,
+                    "enable_analog": "off",
+                    "blacklist": "",
+                    "whitelist": "",
+                }
+            ],
+            "devices": [
+                {
+                    "args": str(profile.get("device_args") or "hackrf=0"),
+                    "gains": str(profile.get("gains") or "LNA:32"),
+                    "gain_mode": False,
+                    "name": "sdr0",
+                    "offset": 0,
+                    "ppm": float(profile.get("ppm") or 0.0),
+                    "rate": int(profile.get("sample_rate") or 2400000),
+                    "usable_bw_pct": 0.85,
+                    "tunable": True,
+                }
+            ],
+            "trunking": {
+                "module": "tk_p25.py",
+                "chans": [
+                    {
+                        "nac": "0x0",
+                        "sysname": sysname,
+                        "control_channel_list": _mhz_list(control_channels),
+                        "tgid_tags_file": "",
+                        "whitelist": "",
+                        "blacklist": "",
+                        "tdma_cc": True,
+                        "crypt_behavior": 2,
+                    }
+                ],
+            },
+            "audio": {
+                "module": "sockaudio.py",
+                "instances": [{"instance_name": "", "device_name": "pulse", "udp_port": 23426, "audio_gain": 1.0, "number_channels": 1}],
+            },
+            "terminal": {
+                "module": "terminal.py",
+                "terminal_type": "http:127.0.0.1:8082",
+                "http_plot_interval": 1.0,
+                "tuning_step_large": 1200,
+                "tuning_step_small": 100,
+            },
+        }
+        _write_json(config_path, config)
+        args = [binary or "multi_rx.py", "-c", str(config_path), "--nocrypt"]
+        return {
+            "engine": "op25",
+            "available": bool(binary),
+            "binary": binary or "",
+            "config_path": str(config_path),
+            "args": args,
+            "message": "OP25 plan generated with encrypted audio silenced.",
+        }
+
+    def _dsd_fme_plan(self, profile: dict[str, Any]) -> dict[str, Any]:
+        binary = self._which("dsd-fme")
+        protocol = str(profile.get("protocol") or "").lower()
+        mode = DSD_PROTOCOL_FLAGS.get(protocol, "-fa")
+        args = [binary or "dsd-fme", mode, "-i", "-"]
+        return {
+            "engine": "dsd-fme",
+            "available": bool(binary),
+            "binary": binary or "",
+            "args": args,
+            "message": "DSD-FME plan generated for baseband audio from KTOX receiver pipeline.",
+        }
+
+
 class TrunkingRuntime:
     """Tracks the requested trunked decoder session state."""
 
@@ -191,21 +336,30 @@ class TrunkingRuntime:
         agreement: LicensedOperationStore,
         profiles: TrunkingProfileStore,
         events: TrunkingEventLog,
+        toolchain: DecoderToolchain | None = None,
     ):
         self.agreement = agreement
         self.profiles = profiles
         self.events = events
+        self.toolchain = toolchain or DecoderToolchain(Path("captures") / "decoders")
         self.running = False
         self.profile: dict[str, Any] | None = None
         self.started_at = 0.0
+        self.decoder_plan: dict[str, Any] | None = None
 
     def status(self) -> dict[str, Any]:
+        if self.running and self.decoder_plan:
+            decoder_state = "planned" if self.decoder_plan.get("available") else "decoder-tool-missing"
+        else:
+            decoder_state = "stopped"
         return {
             "ok": True,
             "running": self.running,
             "profile": self.profile,
             "started_at": self.started_at,
-            "decoder_state": "waiting-for-engine" if self.running else "stopped",
+            "decoder_state": decoder_state,
+            "decoder_plan": self.decoder_plan,
+            "decoder_tools": self.toolchain.status(),
             "agreement": self.agreement.get(),
         }
 
@@ -215,6 +369,7 @@ class TrunkingRuntime:
         profile = self.profiles.get(profile_id)
         if not profile:
             raise ValueError("trunking profile not found")
+        self.decoder_plan = self.toolchain.plan(profile)
         self.running = True
         self.profile = profile
         self.started_at = time.time()
@@ -223,7 +378,7 @@ class TrunkingRuntime:
             "frequency": profile.get("control_channel"),
             "status": "started",
             "source": "ktox",
-            "message": f"Started {profile.get('decoder')} control session for {profile.get('name')}",
+            "message": f"Planned {profile.get('decoder')} control session for {profile.get('name')}",
         })
         return self.status()
 
@@ -239,4 +394,5 @@ class TrunkingRuntime:
         self.running = False
         self.profile = None
         self.started_at = 0.0
+        self.decoder_plan = None
         return self.status()

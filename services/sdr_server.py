@@ -37,7 +37,7 @@ try:
     from sdr.processing import waterfall_row
     from sdr.receiver import ReceiverConfig, ReceiverSession
     from sdr.signals import BookmarkStore, scan_hits_from_rows
-    from sdr.trunking import LicensedOperationStore, TrunkingEventLog, TrunkingProfileStore, TrunkingRuntime
+    from sdr.trunking import DecoderToolchain, LicensedOperationStore, TrunkingEventLog, TrunkingProfileStore, TrunkingRuntime
 except Exception as exc:
     Flask = Any
     SocketIO = Any
@@ -267,7 +267,12 @@ def create_app(
     trunk_agreement = LicensedOperationStore(CAPTURES_DIR / "licensed_operation.json")
     trunk_profiles = TrunkingProfileStore(CAPTURES_DIR / "trunking_profiles.json")
     trunk_events = TrunkingEventLog(CAPTURES_DIR / "trunking_events.json")
-    trunking = TrunkingRuntime(trunk_agreement, trunk_profiles, trunk_events)
+    trunking = TrunkingRuntime(
+        trunk_agreement,
+        trunk_profiles,
+        trunk_events,
+        toolchain=DecoderToolchain(CAPTURES_DIR / "decoders"),
+    )
     waterfall_flags: dict[str, threading.Event] = {}
 
     @app.get("/")

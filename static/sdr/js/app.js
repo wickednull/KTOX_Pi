@@ -42,6 +42,7 @@
     trunkProfileSelect: document.getElementById('trunkProfileSelect'),
     trunkProfiles: document.getElementById('trunkProfiles'),
     trunkStatus: document.getElementById('trunkStatus'),
+    trunkDecoderStatus: document.getElementById('trunkDecoderStatus'),
     trunkEvents: document.getElementById('trunkEvents')
   };
 
@@ -348,8 +349,17 @@
       els.trunkStatus.textContent = status.running
         ? `Running ${status.profile && status.profile.name ? status.profile.name : 'profile'} (${status.decoder_state})`
         : 'Stopped';
+      if (els.trunkDecoderStatus) {
+        els.trunkDecoderStatus.textContent = pretty({
+          engines: status.decoder_tools || {},
+          active_plan: status.decoder_plan || null
+        });
+      }
     } catch (err) {
       els.trunkStatus.textContent = `Trunking backend unavailable: ${err.message}`;
+      if (els.trunkDecoderStatus) {
+        els.trunkDecoderStatus.textContent = `Decoder engine status unavailable: ${err.message}`;
+      }
     }
   }
 

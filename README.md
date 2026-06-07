@@ -277,7 +277,7 @@ This initializes the Loki reconnaissance engine with all dependencies. Once comp
 
 ### Step 5 - Set up SDR Suite (optional)
 
-The SDR Suite is a separate HackRF-focused browser receiver on port `8081`. It provides receiver controls, spectrum/waterfall frames, demodulated browser audio, captures, and diagnostics. Install it after the main KTOX install has copied the repo to `/root/KTOx`:
+The SDR Suite is a separate HackRF-focused browser receiver on port `8081`. It provides receiver controls, spectrum/waterfall frames, demodulated browser audio, captures, diagnostics, and a trunking control tab for authorized unencrypted systems. Install it after the main KTOX install has copied the repo to `/root/KTOx`:
 
 ```bash
 ssh root@[pi-ip]
@@ -301,6 +301,16 @@ sudo bash scripts/diagnose_sdr.sh
 ```
 
 The diagnostic checks whether `services/sdr_server.py`, the static SDR UI, the systemd unit, and port `8081` are present on the device.
+
+Trunking decode support is gated behind the Licensed Operation agreement in the SDR page. KTOX only supports unencrypted monitoring. Encrypted calls are logged as encrypted and playback/recording metadata is blocked.
+
+Decoder engine requirements:
+
+- HackRF receiver control: `hackrf`, `libhackrf0`, `usbutils`, `python3-numpy`, and the Python packages from `requirements.txt`.
+- P25 Phase 1/2 command planning: OP25/boatbod `multi_rx.py` or `rx.py` available in `PATH`.
+- DMR/NXDN command planning: `dsd-fme` available in `PATH`.
+
+The Trunking tab reports OP25 and DSD-FME availability under decoder engine status. If an engine is missing, the profile and event log still work, but the status will show the missing engine instead of pretending audio decode is active.
 
 ### What the installer does
 
@@ -334,6 +344,7 @@ The diagnostic checks whether `services/sdr_server.py`, the static SDR UI, the s
 | `ktox.service` | `ktox_device.py` — LCD firmware, menu controller | — |
 | `ktox-device.service` | `device_server.py` — WebSocket server | 8765 |
 | `ktox-webui.service` | `web_server.py` — HTTP WebUI | 8080 |
+| `ktox-sdr.service` | `services/sdr_server.py` — SDR Suite sidecar | 8081 |
 
 ```bash
 # Status

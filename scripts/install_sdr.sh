@@ -130,6 +130,21 @@ else
   warn "hackrf_info is not available"
 fi
 
+info "Checking optional trunking decoder engines"
+if command -v multi_rx.py >/dev/null 2>&1; then
+  info "OP25 multi_rx.py found: $(command -v multi_rx.py)"
+elif command -v rx.py >/dev/null 2>&1; then
+  info "OP25 rx.py found: $(command -v rx.py)"
+else
+  warn "OP25 not found in PATH; P25 trunking profiles will show decoder-tool-missing until OP25 is installed"
+fi
+
+if command -v dsd-fme >/dev/null 2>&1; then
+  info "DSD-FME found: $(command -v dsd-fme)"
+else
+  warn "dsd-fme not found in PATH; DMR/NXDN profiles will show decoder-tool-missing until DSD-FME is installed"
+fi
+
 info "Done. Open http://<device-ip>:8081/ for the SDR Suite."
 info "Useful checks:"
 info "  systemctl status ktox-sdr --no-pager"
