@@ -2502,7 +2502,17 @@
     loadDiscordWebhook();
     loadTailscaleSettings();
   });
-  if (navSdr) navSdr.href = resolveSdrUrl();
+  if (navSdr) {
+    navSdr.href = resolveSdrUrl();
+    navSdr.addEventListener('click', (event) => {
+      const target = resolveSdrUrl();
+      navSdr.href = target;
+      if (event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) {
+        event.preventDefault();
+        window.open(target, '_blank', 'noopener,noreferrer');
+      }
+    });
+  }
   if (navPayloadStudio) navPayloadStudio.href = './ide.html' + getForwardSearch();
   themeButtons.forEach(btn => {
     btn.addEventListener('click', () => {

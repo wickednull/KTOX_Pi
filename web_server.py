@@ -938,8 +938,22 @@ class KTOxHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(WEB_DIR), **kwargs)
 
+    def _redirect_to_sdr_suite(self):
+        forwarded_host = (self.headers.get("X-Forwarded-Host") or "").strip()
+        raw_host = forwarded_host or (self.headers.get("Host") or "").strip()
+        host = raw_host.rsplit(":", 1)[0] if ":" in raw_host and not raw_host.endswith("]") else raw_host
+        host = host.strip("[]") or "ktox.local"
+        target = f"http://{host}:8081/"
+        self.send_response(HTTPStatus.FOUND)
+        self.send_header("Location", target)
+        self.end_headers()
+
     def do_GET(self):
         parsed = urlparse(self.path)
+        if parsed.path == "/sdr-suite":
+            self._redirect_to_sdr_suite()
+            return
+
         if parsed.path == "/ide":
             self.path = "/ide.html" + (f"?{parsed.query}" if parsed.query else "")
             super().do_GET()
