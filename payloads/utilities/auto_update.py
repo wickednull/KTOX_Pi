@@ -23,15 +23,20 @@ import os, sys, time, signal, subprocess, tarfile, shutil
 from datetime import datetime
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+DIAGNOSE_ONLY = "--diagnose" in sys.argv
 
 # ---------------------------- Third-party libs ----------------------------
-import RPi.GPIO as GPIO
-import LCD_1in44, LCD_Config
-from PIL import Image, ImageDraw, ImageFont
-from _display_helper import ScaledDraw
+if not DIAGNOSE_ONLY:
+    import RPi.GPIO as GPIO
+    import LCD_1in44, LCD_Config
+    from PIL import Image, ImageDraw, ImageFont
+    from _display_helper import ScaledDraw
 
-# Shared input helper (WebUI virtual + GPIO)
-from _input_helper import get_button
+    # Shared input helper (WebUI virtual + GPIO)
+    from _input_helper import get_button
+else:
+    GPIO = LCD_1in44 = LCD_Config = Image = ImageDraw = ImageFont = ScaledDraw = None
+    get_button = None
 
 # ---------------------------------------------------------------------------
 # 1) Constants
@@ -42,6 +47,8 @@ BACKUP_DIR      = "/root"
 SERVICE_NAMES   = ["ktox", "ktox-device", "ktox-webui", "ktox-sdr"]
 GIT_REMOTE      = "origin"
 GIT_BRANCH      = "main"
+DEFAULT_GIT_URL = "https://github.com/wickednull/KTOx_Pi.git"
+GIT_TIMEOUT     = 120
 INSTALL_SCRIPT  = "/root/KTOx/install.sh"
 REQUIRED_SDR_FILES = [
     "services/sdr_server.py",
@@ -61,16 +68,21 @@ PINS = {"KEY1": 21, "KEY3": 16}
 # ---------------------------------------------------------------------------
 # 2) Hardware init
 # ---------------------------------------------------------------------------
-GPIO.setmode(GPIO.BCM)
-for p in PINS.values():
-    GPIO.setup(p, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+if not DIAGNOSE_ONLY:
+    GPIO.setmode(GPIO.BCM)
+    for p in PINS.values():
+        GPIO.setup(p, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
-LCD = LCD_1in44.LCD()
-LCD.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
-LCD.LCD_Clear()
+    LCD = LCD_1in44.LCD()
+    LCD.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
+    LCD.LCD_Clear()
 
-WIDTH, HEIGHT = LCD.width, LCD.height
-FONT = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", int(10 * LCD_1in44.LCD_SCALE))
+    WIDTH, HEIGHT = LCD.width, LCD.height
+    FONT = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", int(10 * LCD_1in44.LCD_SCALE))
+else:
+    LCD = None
+    WIDTH = HEIGHT = 0
+    FONT = None
 
 # ---------------------------------------------------------------------------
 # 3) Helper to show centred text
@@ -97,6 +109,8 @@ def show(lines, *, invert=False, spacing=2):
 # ---------------------------------------------------------------------------
 
 def pressed() -> str | None:
+    if DIAGNOSE_ONLY:
+        return None
     return get_button(PINS, GPIO)
 
 # ---------------------------------------------------------------------------
@@ -208,41 +222,117 @@ def restore_custom_payloads(backup_dir: str) -> tuple[bool, str]:
     except Exception as exc:
         return False, str(exc)
 
+def _short_git_error(result: subprocess.CompletedProcess | None = None, fallback: str = "") -> str:
+    if result is None:
+        return fallback[:160]
+    msg = ((result.stderr or "").strip() or (result.stdout or "").strip() or fallback).strip()
+    lines = [line.strip() for line in msg.splitlines() if line.strip()]
+    return (lines[-1] if lines else fallback)[:160]
+
+def _git(args: list[str], *, check: bool = False, timeout: int = GIT_TIMEOUT) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["git", "-C", RASPYJACK_DIR, *args],
+        check=check,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+
+def ensure_git_remote() -> tuple[bool, str]:
+    """Ensure the OTA checkout has a usable origin remote and safe.directory entry."""
+    try:
+        subprocess.run(
+            ["git", "config", "--global", "--add", "safe.directory", RASPYJACK_DIR],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        remote = _git(["remote", "get-url", GIT_REMOTE], check=False, timeout=20)
+        url = (remote.stdout or "").strip()
+        if remote.returncode != 0 or not url:
+            added = _git(["remote", "add", GIT_REMOTE, DEFAULT_GIT_URL], check=False, timeout=20)
+            if added.returncode != 0:
+                set_url = _git(["remote", "set-url", GIT_REMOTE, DEFAULT_GIT_URL], check=False, timeout=20)
+                if set_url.returncode != 0:
+                    return False, f"remote repair failed: {_short_git_error(set_url)}"
+            return True, DEFAULT_GIT_URL
+        return True, url
+    except subprocess.TimeoutExpired:
+        return False, "git remote check timed out"
+    except Exception as exc:
+        return False, f"git remote check failed: {exc}"
+
+def github_probe(remote_url: str) -> tuple[bool, str]:
+    """Probe GitHub independently so fetch failures are not mislabeled as no internet."""
+    try:
+        result = subprocess.run(
+            ["git", "ls-remote", "--heads", remote_url or DEFAULT_GIT_URL, GIT_BRANCH],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=GIT_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        return False, "github probe timed out"
+    except Exception as exc:
+        return False, f"github probe failed: {exc}"
+    if result.returncode != 0:
+        return False, f"github probe failed: {_short_git_error(result, 'ls-remote failed')}"
+    if f"refs/heads/{GIT_BRANCH}" not in (result.stdout or ""):
+        return False, f"github branch {GIT_BRANCH} not found"
+    return True, "github reachable"
+
 def git_update() -> tuple[bool, str]:
     """Fast-forward pull the latest changes."""
     try:
-        remote = subprocess.run(
-            ["git", "-C", RASPYJACK_DIR, "remote", "get-url", GIT_REMOTE],
-            check=False, capture_output=True, text=True
+        ok, remote_url = ensure_git_remote()
+        if not ok:
+            return False, remote_url
+        fetch = _git(
+            ["fetch", "--prune", GIT_REMOTE, f"{GIT_BRANCH}:refs/remotes/{GIT_REMOTE}/{GIT_BRANCH}"],
+            check=False,
+            timeout=GIT_TIMEOUT,
         )
-        subprocess.run(
-            ["git", "-C", RASPYJACK_DIR, "fetch", GIT_REMOTE],
-            check=True, capture_output=True, text=True
-        )
-        tree = subprocess.run(
-            ["git", "-C", RASPYJACK_DIR, "ls-tree", "-r", "--name-only", f"{GIT_REMOTE}/{GIT_BRANCH}"],
-            check=True, capture_output=True, text=True
-        )
+        if fetch.returncode != 0:
+            probe_ok, probe_msg = github_probe(remote_url)
+            fetch_msg = _short_git_error(fetch, f"git fetch rc={fetch.returncode}")
+            if not probe_ok:
+                return False, f"{probe_msg}; fetch failed: {fetch_msg}"
+            return False, f"fetch failed: {fetch_msg}"
+        tree = _git(["ls-tree", "-r", "--name-only", f"{GIT_REMOTE}/{GIT_BRANCH}"], check=True, timeout=GIT_TIMEOUT)
         names = set((tree.stdout or "").splitlines())
         missing_remote = [name for name in REQUIRED_SDR_FILES if name not in names]
         if missing_remote:
-            url = (remote.stdout or "").strip() or GIT_REMOTE
-            return False, f"remote missing {missing_remote[0]} ({url})"
-        subprocess.run(
-            ["git", "-C", RASPYJACK_DIR, "reset", "--hard", f"{GIT_REMOTE}/{GIT_BRANCH}"],
-            check=True, capture_output=True, text=True
-        )
+            return False, f"remote missing {missing_remote[0]} ({remote_url})"
+        _git(["reset", "--hard", f"{GIT_REMOTE}/{GIT_BRANCH}"], check=True, timeout=GIT_TIMEOUT)
         missing_local = [name for name in REQUIRED_SDR_FILES if not os.path.isfile(os.path.join(RASPYJACK_DIR, name))]
         if missing_local:
-            head = subprocess.run(
-                ["git", "-C", RASPYJACK_DIR, "rev-parse", "--short", "HEAD"],
-                check=False, capture_output=True, text=True
-            )
+            head = _git(["rev-parse", "--short", "HEAD"], check=False, timeout=20)
             return False, f"local missing {missing_local[0]} after {(head.stdout or '').strip()}"
         return True, "OK"
     except subprocess.CalledProcessError as exc:
         msg = (exc.stderr or "").strip() or f"git error {exc.returncode}"
         return False, msg
+    except subprocess.TimeoutExpired:
+        return False, "git update timed out"
+
+def diagnose_git_update() -> list[str]:
+    lines = ["KTOX OTA diagnostics"]
+    ok, remote_url = ensure_git_remote()
+    lines.append(f"remote: {'ok' if ok else 'fail'} {remote_url}")
+    if ok:
+        probe_ok, probe_msg = github_probe(remote_url)
+        lines.append(f"github: {'ok' if probe_ok else 'fail'} {probe_msg}")
+    branch = _git(["branch", "--show-current"], check=False, timeout=20)
+    lines.append(f"branch: {(branch.stdout or '').strip() or _short_git_error(branch, 'unknown')}")
+    head = _git(["rev-parse", "--short", "HEAD"], check=False, timeout=20)
+    lines.append(f"head: {(head.stdout or '').strip() or _short_git_error(head, 'unknown')}")
+    remote_head = _git(["rev-parse", "--short", f"{GIT_REMOTE}/{GIT_BRANCH}"], check=False, timeout=20)
+    lines.append(f"remote-head: {(remote_head.stdout or '').strip() or _short_git_error(remote_head, 'not fetched')}")
+    missing_local = [name for name in REQUIRED_SDR_FILES if not os.path.isfile(os.path.join(RASPYJACK_DIR, name))]
+    lines.append(f"required-files: {'ok' if not missing_local else 'missing ' + missing_local[0]}")
+    return lines
 
 def restart_service() -> tuple[bool, str]:
     for svc in SERVICE_NAMES:
@@ -290,6 +380,11 @@ def do_reboot_now() -> tuple[bool, str]:
 # ---------------------------------------------------------------------------
 # 6) Main
 # ---------------------------------------------------------------------------
+
+if DIAGNOSE_ONLY:
+    for line in diagnose_git_update():
+        print(line)
+    raise SystemExit(0)
 
 running = True
 should_reboot = False
