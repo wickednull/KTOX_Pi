@@ -143,6 +143,7 @@ def validate_integration() -> None:
     web_js = (ROOT / "web/app.js").read_text(encoding="utf-8")
     readme = (ROOT / "README.md").read_text(encoding="utf-8", errors="replace")
     main_installer = (ROOT / "install.sh").read_text(encoding="utf-8", errors="replace")
+    ota = (ROOT / "payloads/utilities/auto_update.py").read_text(encoding="utf-8", errors="replace")
     service = (ROOT / "scripts/ktox-sdr.service").read_text(encoding="utf-8")
     installer = (ROOT / "scripts/install_sdr.sh").read_text(encoding="utf-8")
     diagnostic = (ROOT / "scripts/diagnose_sdr.sh").read_text(encoding="utf-8")
@@ -169,6 +170,9 @@ def validate_integration() -> None:
     require("scripts/install_sdr.sh" in readme and "scripts/diagnose_sdr.sh" in readme and "ktox-sdr" in readme, "README must document SDR service installation and diagnostics")
     for folder in ("sdr", "services", "static", "tools"):
         require(f'"$FIRMWARE_DIR/{folder}"' in main_installer, f"main installer must copy {folder}/")
+    for required in ("services/sdr_server.py", "sdr/device.py", "static/sdr/index.html", "tools/validate_sdr_suite.py", "scripts/install_sdr.sh"):
+        require(required in ota, f"OTA updater must verify {required}")
+    require("ls-tree" in ota and "remote missing" in ota and "local missing" in ota, "OTA updater must diagnose remote/local SDR file gaps")
     for dep in ["numpy", "flask-socketio", "python-socketio"]:
         require(dep in requirements, f"missing requirement {dep}")
 

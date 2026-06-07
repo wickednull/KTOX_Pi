@@ -39,10 +39,17 @@ from _input_helper import get_button
 RASPYJACK_DIR   = "/root/KTOx"
 PAYLOADS_DIR    = "/root/KTOx/payloads"
 BACKUP_DIR      = "/root"
-SERVICE_NAMES   = ["ktox", "ktox-device", "ktox-webui"]
+SERVICE_NAMES   = ["ktox", "ktox-device", "ktox-webui", "ktox-sdr"]
 GIT_REMOTE      = "origin"
 GIT_BRANCH      = "main"
 INSTALL_SCRIPT  = "/root/KTOx/install.sh"
+REQUIRED_SDR_FILES = [
+    "services/sdr_server.py",
+    "sdr/device.py",
+    "static/sdr/index.html",
+    "tools/validate_sdr_suite.py",
+    "scripts/install_sdr.sh",
+]
 
 PINS = {"KEY1": 21, "KEY3": 16}
 
@@ -199,14 +206,34 @@ def restore_custom_payloads(backup_dir: str) -> tuple[bool, str]:
 def git_update() -> tuple[bool, str]:
     """Fast-forward pull the latest changes."""
     try:
+        remote = subprocess.run(
+            ["git", "-C", RASPYJACK_DIR, "remote", "get-url", GIT_REMOTE],
+            check=False, capture_output=True, text=True
+        )
         subprocess.run(
             ["git", "-C", RASPYJACK_DIR, "fetch", GIT_REMOTE],
             check=True, capture_output=True, text=True
         )
+        tree = subprocess.run(
+            ["git", "-C", RASPYJACK_DIR, "ls-tree", "-r", "--name-only", f"{GIT_REMOTE}/{GIT_BRANCH}"],
+            check=True, capture_output=True, text=True
+        )
+        names = set((tree.stdout or "").splitlines())
+        missing_remote = [name for name in REQUIRED_SDR_FILES if name not in names]
+        if missing_remote:
+            url = (remote.stdout or "").strip() or GIT_REMOTE
+            return False, f"remote missing {missing_remote[0]} ({url})"
         subprocess.run(
             ["git", "-C", RASPYJACK_DIR, "reset", "--hard", f"{GIT_REMOTE}/{GIT_BRANCH}"],
             check=True, capture_output=True, text=True
         )
+        missing_local = [name for name in REQUIRED_SDR_FILES if not os.path.isfile(os.path.join(RASPYJACK_DIR, name))]
+        if missing_local:
+            head = subprocess.run(
+                ["git", "-C", RASPYJACK_DIR, "rev-parse", "--short", "HEAD"],
+                check=False, capture_output=True, text=True
+            )
+            return False, f"local missing {missing_local[0]} after {(head.stdout or '').strip()}"
         return True, "OK"
     except subprocess.CalledProcessError as exc:
         msg = (exc.stderr or "").strip() or f"git error {exc.returncode}"
@@ -215,6 +242,12 @@ def git_update() -> tuple[bool, str]:
 def restart_service() -> tuple[bool, str]:
     for svc in SERVICE_NAMES:
         try:
+            exists = subprocess.run(
+                ["systemctl", "list-unit-files", f"{svc}.service", "--no-legend"],
+                check=False, capture_output=True, text=True
+            )
+            if svc == "ktox-sdr" and not (exists.stdout or "").strip():
+                continue
             subprocess.run(["systemctl", "restart", svc], check=True)
         except subprocess.CalledProcessError as exc:
             return False, f"{svc} {exc.returncode}"
