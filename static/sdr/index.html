@@ -39,7 +39,10 @@
             <h2>Dashboard</h2>
             <p>Device status, capture totals, and fast presets.</p>
           </div>
-          <button id="refreshInfo" class="primary">Refresh</button>
+          <div class="actions">
+            <button id="connectHackrf" class="primary">Connect HackRF</button>
+            <button id="refreshInfo">Refresh</button>
+          </div>
         </div>
         <div class="grid">
           <article class="tile"><span>Board</span><strong id="boardValue">-</strong></article>
@@ -47,6 +50,8 @@
           <article class="tile"><span>Captures</span><strong id="captureCount">0</strong></article>
           <article class="tile"><span>Storage</span><strong id="captureBytes">0 B</strong></article>
         </div>
+        <div id="connectStatus" class="status-line">Connect a HackRF over USB, then press Connect HackRF.</div>
+        <pre id="usbStatus" class="output compact">USB status will appear here.</pre>
         <div id="presetList" class="preset-list"></div>
       </section>
 

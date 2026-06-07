@@ -42,10 +42,10 @@ info "Installing SDR dependencies"
 if command -v apt-get >/dev/null 2>&1; then
   apt-get update -qq
   apt-get install -y --no-install-recommends \
-    hackrf libhackrf0 \
+    hackrf libhackrf0 usbutils \
     python3 python3-pip python3-numpy
 else
-  warn "apt-get not found; install hackrf, libhackrf0, python3, python3-pip, and python3-numpy manually"
+  warn "apt-get not found; install hackrf, libhackrf0, usbutils, python3, python3-pip, and python3-numpy manually"
 fi
 
 info "Installing Python requirements"

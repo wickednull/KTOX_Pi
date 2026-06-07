@@ -171,6 +171,11 @@ canvas {
   padding: 1rem;
   overflow: auto;
 }
+.output.compact {
+  min-height: 120px;
+  margin-bottom: 1rem;
+  white-space: pre-wrap;
+}
 
 .status-line, .empty {
   color: var(--muted);

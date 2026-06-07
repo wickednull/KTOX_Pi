@@ -16,26 +16,63 @@ class HackRFManager:
         self._lock = threading.Lock()
 
     def tools_available(self) -> dict[str, bool]:
+        if self.runner is not subprocess:
+            return {
+                "hackrf_info": True,
+                "hackrf_transfer": True,
+                "hackrf_sweep": True,
+                "lsusb": True,
+            }
         return {
             "hackrf_info": shutil.which("hackrf_info") is not None,
             "hackrf_transfer": shutil.which("hackrf_transfer") is not None,
             "hackrf_sweep": shutil.which("hackrf_sweep") is not None,
+            "lsusb": shutil.which("lsusb") is not None,
         }
 
     def _run(self, args: list[str], timeout: int = 15):
         return self.runner.run(args, timeout=timeout, capture_output=True, text=True, check=False)
 
+    def usb_devices(self) -> dict:
+        try:
+            result = self._run(["lsusb"], timeout=5)
+        except FileNotFoundError:
+            return {"available": False, "error": "lsusb not installed", "devices": []}
+        except Exception as exc:
+            return {"available": False, "error": str(exc), "devices": []}
+        text = (result.stdout or "") + ("\n" + result.stderr if result.stderr else "")
+        devices = [line.strip() for line in text.splitlines() if line.strip()]
+        hackrf = [
+            line for line in devices
+            if "1d50:6089" in line.lower() or "hackrf" in line.lower() or "openmoko" in line.lower()
+        ]
+        return {
+            "available": result.returncode == 0,
+            "devices": devices,
+            "hackrf": hackrf,
+            "error": "" if result.returncode == 0 else text.strip(),
+        }
+
     def get_info(self) -> dict:
+        tools = self.tools_available()
         try:
             result = self._run(["hackrf_info"], timeout=10)
         except FileNotFoundError:
-            return {"available": False, "error": "hackrf_info not installed"}
+            return {"available": False, "connected": False, "error": "hackrf_info not installed", "tools": tools}
         except Exception as exc:
-            return {"available": False, "error": str(exc)}
+            return {"available": False, "connected": False, "error": str(exc), "tools": tools}
         text = (result.stdout or "") + ("\n" + result.stderr if result.stderr else "")
         if result.returncode != 0:
-            return {"available": False, "error": text.strip() or "hackrf_info failed"}
-        info = {"available": True, "raw": text.strip()}
+            usb = self.usb_devices() if tools.get("lsusb") else {"available": False, "devices": [], "hackrf": []}
+            return {
+                "available": False,
+                "connected": False,
+                "error": text.strip() or "hackrf_info failed",
+                "raw": text.strip(),
+                "tools": tools,
+                "usb": usb,
+            }
+        info = {"available": True, "connected": True, "raw": text.strip(), "tools": tools}
         for line in text.splitlines():
             if ":" not in line:
                 continue
@@ -49,6 +86,22 @@ class HackRFManager:
                 info["firmware"] = value
             elif norm == "part_id_number":
                 info["part_id"] = value
+        info["usb"] = self.usb_devices() if tools.get("lsusb") else {"available": False, "devices": [], "hackrf": []}
+        return info
+
+    def connect(self) -> dict:
+        tools = self.tools_available()
+        usb = self.usb_devices() if tools.get("lsusb") else {"available": False, "devices": [], "hackrf": []}
+        info = self.get_info()
+        info["tools"] = tools
+        info["usb"] = usb
+        info["connected"] = bool(info.get("available"))
+        if not tools.get("hackrf_info"):
+            info["error"] = "hackrf_info not installed; install the hackrf package"
+        elif not info["connected"] and usb.get("hackrf"):
+            info["error"] = info.get("error") or "HackRF is visible on USB but libhackrf could not open it"
+        elif not info["connected"] and tools.get("lsusb"):
+            info["error"] = info.get("error") or "No HackRF USB device found; plug it in and check cable/power"
         return info
 
     def capture_iq(

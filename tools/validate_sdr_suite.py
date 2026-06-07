@@ -37,6 +37,8 @@ class FakeRunner:
                     "Part ID Number: 0xa000cb3c 0x0065475f\n"
                 )
             )
+        if args and args[0] == "lsusb":
+            return FakeResult(stdout="Bus 001 Device 004: ID 1d50:6089 OpenMoko, Inc. HackRF One\n")
         if args and args[0] == "hackrf_sweep":
             return FakeResult(
                 stdout="2026-05-29, 00:00:00, 2400000000, 2401000000, 1000000, 1, -55.0, -42.0\n"
@@ -85,7 +87,11 @@ def validate_device() -> None:
     manager = HackRFManager(runner=runner)
     info = manager.get_info()
     require(info["available"] is True, "fake HackRF should be available")
+    require(info["connected"] is True, "fake HackRF should be connected")
     require(info["serial_number"] == "0000000000000000", "serial parse failed")
+    connected = manager.connect()
+    require(connected["connected"] is True, "connect should report HackRF connected")
+    require(connected["usb"]["hackrf"], "connect should include USB HackRF match")
     require(runner.calls[0][0] == "hackrf_info", "hackrf_info was not called")
 
 
@@ -114,6 +120,9 @@ def validate_server() -> None:
         app, _socketio = create_app(testing=True, manager=manager, database=db)
         client = app.test_client()
         require(client.get("/api/hackrf/info").status_code == 200, "info endpoint failed")
+        connect = client.post("/api/hackrf/connect")
+        require(connect.status_code == 200, "connect endpoint failed")
+        require(connect.get_json()["connected"] is True, "connect endpoint should report connected fake HackRF")
         require(client.get("/api/hackrf/captures").status_code == 200, "captures endpoint failed")
         require(client.get("/api/hackrf/presets").status_code == 200, "presets endpoint failed")
         payload = {"start": 2400000000, "stop": 2401000000, "bin_width": 1000000, "dwell_ms": 10}
@@ -132,10 +141,11 @@ def validate_static_assets() -> None:
     for rel in required:
         require((ROOT / rel).exists(), f"missing {rel}")
     html = (ROOT / "static/sdr/index.html").read_text(encoding="utf-8")
-    for token in ["Dashboard", "Waterfall", "Sweep", "Capture", "Settings", "js/api.js", "css/style.css"]:
+    for token in ["Dashboard", "Connect HackRF", "Waterfall", "Sweep", "Capture", "Settings", "js/api.js", "css/style.css"]:
         require(token in html, f"missing SDR UI token {token!r}")
     require('href="./api/hackrf/captures.csv"' in html, "SDR export link must be relative for /sdr proxying")
     require('src="./socket.io/socket.io.js"' in html, "Socket.IO client script must be relative for /sdr proxying")
+    require((ROOT / "static/sdr/socket.io/socket.io.js").exists(), "missing static Socket.IO fallback script")
 
 
 def validate_integration() -> None:
@@ -159,12 +169,14 @@ def validate_integration() -> None:
     require("systemctl daemon-reload" in installer, "SDR installer must reload systemd")
     require("wait_for_http" in installer and "journalctl -u ktox-sdr" in installer, "SDR installer must verify HTTP startup and print logs on failure")
     require("systemctl enable" in installer, "SDR installer must offer service enablement")
-    require("hackrf" in installer and "libhackrf0" in installer, "SDR installer must install HackRF packages")
+    require("hackrf" in installer and "libhackrf0" in installer and "usbutils" in installer, "SDR installer must install HackRF and USB probe packages")
     for required in ("services/sdr_server.py", "static/sdr/index.html", "tools/validate_sdr_suite.py"):
         require(f'require_file "{required}"' in installer, f"SDR installer must verify {required} exists before installing service")
     require("services/sdr_server.py" in diagnostic and "systemctl cat" in diagnostic and "127.0.0.1:8081" in diagnostic, "SDR diagnostic must inspect files, unit, and local port")
     require("sys.path.insert(0, str(ROOT_DIR))" in server, "sdr_server.py must add repo root to sys.path before package imports")
     require("def run_socketio" in server and "except TypeError" in server and "allow_unsafe_werkzeug" in server, "sdr_server.py must tolerate Flask-SocketIO run argument differences")
+    require("run_static_sdr_server" in server and "ThreadingHTTPServer" in server, "sdr_server.py must serve the page even when backend imports fail")
+    require("/api/hackrf/connect" in server and "hackrf.connect()" in server, "sdr_server.py must expose explicit HackRF connect endpoint")
     require('@app.get("/sdr")' in server and 'redirect("/sdr/")' in server, "SDR server should redirect /sdr to /sdr/")
     require('@app.get("/sdr/")' in server, "SDR server should provide /sdr/ alias")
     require("basePath()" in sdr_api and "withBase" in sdr_api, "SDR API client must be prefix-aware")

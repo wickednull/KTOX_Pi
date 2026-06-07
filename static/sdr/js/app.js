@@ -3,6 +3,7 @@
   const waterfall = new window.SdrWaterfall(document.getElementById('waterfallCanvas'));
   const socketPath = `${window.SdrApiBasePath ? window.SdrApiBasePath() : ''}/socket.io`;
   const socket = window.io ? window.io({ path: socketPath }) : null;
+  const socketStub = !socket || !!socket.__ktoxStub;
   const settingsKey = 'ktox:sdr:settings';
 
   const els = {
@@ -18,7 +19,9 @@
     captureStatus: document.getElementById('captureStatus'),
     captureList: document.getElementById('captureList'),
     waterfallStatus: document.getElementById('waterfallStatus'),
-    settingsStatus: document.getElementById('settingsStatus')
+    settingsStatus: document.getElementById('settingsStatus'),
+    connectStatus: document.getElementById('connectStatus'),
+    usbStatus: document.getElementById('usbStatus')
   };
 
   function bytes(size){
@@ -33,12 +36,31 @@
   }
 
   function setDevice(info){
-    const ok = !!info.available;
+    const ok = !!(info.connected || info.available);
     els.deviceDot.classList.toggle('ok', ok);
     els.deviceState.textContent = ok ? 'HackRF online' : 'HackRF unavailable';
     els.deviceSerial.textContent = ok ? (info.serial_number || 'serial unknown') : (info.error || 'not detected');
     els.boardValue.textContent = info.board || '-';
     els.firmwareValue.textContent = info.firmware || '-';
+    if (els.connectStatus) {
+      els.connectStatus.textContent = ok ? 'HackRF connected and ready.' : (info.error || 'HackRF is not connected.');
+    }
+    if (els.usbStatus) {
+      const tools = info.tools || {};
+      const usb = info.usb || {};
+      const lines = [
+        `hackrf_info: ${tools.hackrf_info ? 'found' : 'missing'}`,
+        `hackrf_transfer: ${tools.hackrf_transfer ? 'found' : 'missing'}`,
+        `hackrf_sweep: ${tools.hackrf_sweep ? 'found' : 'missing'}`,
+        `lsusb: ${tools.lsusb ? 'found' : 'missing'}`,
+        `USB HackRF matches: ${(usb.hackrf || []).length}`
+      ];
+      if ((usb.hackrf || []).length) {
+        lines.push('');
+        lines.push(...usb.hackrf);
+      }
+      els.usbStatus.textContent = lines.join('\n');
+    }
   }
 
   async function loadInfo(){
@@ -49,18 +71,43 @@
     }
   }
 
+  async function connectHackrf(){
+    els.connectStatus.textContent = 'Checking HackRF USB connection...';
+    try {
+      setDevice(await api.connect());
+    } catch (err) {
+      setDevice({ available: false, connected: false, error: err.message, tools: {}, usb: { hackrf: [] } });
+    }
+  }
+
   async function loadCaptures(){
-    const data = await api.captures();
-    const captures = data.captures || [];
-    els.captureCount.textContent = String(captures.length);
-    els.captureBytes.textContent = bytes(data.stats && data.stats.total_size);
-    els.captureList.innerHTML = captures.length ? captures.map(item => (
-      `<div class="capture-row"><strong>${item.filename}</strong><span>${item.frequency} Hz</span><span>${bytes(item.size)}</span><a href="${window.SdrApiUrl(`/api/hackrf/captures/${item.id}/download`)}">Download</a><button data-delete-capture="${item.id}">Delete</button></div>`
-    )).join('') : '<div class="empty">No captures indexed.</div>';
+    try {
+      const data = await api.captures();
+      const captures = data.captures || [];
+      els.captureCount.textContent = String(captures.length);
+      els.captureBytes.textContent = bytes(data.stats && data.stats.total_size);
+      els.captureList.innerHTML = captures.length ? captures.map(item => (
+        `<div class="capture-row"><strong>${item.filename}</strong><span>${item.frequency} Hz</span><span>${bytes(item.size)}</span><a href="${window.SdrApiUrl(`/api/hackrf/captures/${item.id}/download`)}">Download</a><button data-delete-capture="${item.id}">Delete</button></div>`
+      )).join('') : '<div class="empty">No captures indexed.</div>';
+    } catch (err) {
+      els.captureCount.textContent = '0';
+      els.captureBytes.textContent = '0 B';
+      els.captureList.innerHTML = `<div class="empty">Capture backend unavailable: ${err.message}</div>`;
+    }
   }
 
   async function loadPresets(){
-    const presets = await api.presets();
+    let presets;
+    try {
+      presets = await api.presets();
+    } catch (err) {
+      presets = {
+        ism: { label: 'ISM / Wi-Fi', frequencies: [2400000000, 2437000000, 2462000000] },
+        adsb: { label: 'ADS-B', frequencies: [1090000000] },
+        fm: { label: 'FM Broadcast', frequencies: [88100000, 98100000, 107900000] },
+        weather: { label: 'NOAA Weather', frequencies: [162400000, 162550000] }
+      };
+    }
     els.presetList.innerHTML = Object.keys(presets).map(key => {
       const group = presets[key];
       return `<article><strong>${group.label}</strong><span>${(group.frequencies || []).length} presets</span></article>`;
@@ -130,6 +177,7 @@
   });
 
   document.getElementById('refreshInfo').addEventListener('click', loadInfo);
+  document.getElementById('connectHackrf').addEventListener('click', connectHackrf);
   document.getElementById('runSweep').addEventListener('click', runSweep);
   document.getElementById('runCapture').addEventListener('click', runCapture);
   els.captureList.addEventListener('click', async (event) => {
@@ -142,13 +190,19 @@
   document.getElementById('saveSettings').addEventListener('click', saveSettings);
   document.getElementById('startWaterfall').addEventListener('click', () => {
     waterfall.clear();
-    if (socket) socket.emit('start_waterfall', { fft_size: numeric('settingFft') || 256 });
+    if (socket && !socketStub) {
+      socket.emit('start_waterfall', { fft_size: numeric('settingFft') || 256 });
+      els.waterfallStatus.textContent = 'Starting stream...';
+    } else {
+      els.waterfallStatus.textContent = 'Waterfall backend unavailable';
+    }
   });
   document.getElementById('stopWaterfall').addEventListener('click', () => {
-    if (socket) socket.emit('stop_waterfall');
+    if (socket && !socketStub) socket.emit('stop_waterfall');
+    els.waterfallStatus.textContent = 'Idle';
   });
 
-  if (socket) {
+  if (socket && !socketStub) {
     socket.on('waterfall_row', data => {
       waterfall.push(data.row || []);
       els.waterfallStatus.textContent = 'Streaming';
@@ -159,10 +213,12 @@
     socket.on('connect_error', () => {
       els.waterfallStatus.textContent = 'Socket unavailable';
     });
+  } else {
+    els.waterfallStatus.textContent = 'Waterfall backend unavailable';
   }
 
   loadSettings();
   loadInfo();
-  loadCaptures().catch(() => {});
-  loadPresets().catch(() => {});
+  loadCaptures();
+  loadPresets();
 })();

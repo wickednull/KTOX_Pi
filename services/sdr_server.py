@@ -9,31 +9,165 @@ import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+import json
+import mimetypes
 from pathlib import Path
+from urllib.parse import unquote, urlparse
 from typing import Any
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from flask import Flask, Response, jsonify, redirect, request, send_file, send_from_directory
-from flask_socketio import SocketIO, emit
+try:
+    from flask import Flask, Response, jsonify, redirect, request, send_file, send_from_directory
+    from flask_socketio import SocketIO, emit
 
-from sdr.database import CaptureDatabase
-from sdr.device import HackRFManager
-from sdr.handlers import (
-    build_capture_path,
-    capture_metadata,
-    capture_stats,
-    get_frequency_presets,
-    parse_hackrf_sweep,
-)
-from sdr.processing import waterfall_row
+    from sdr.database import CaptureDatabase
+    from sdr.device import HackRFManager
+    from sdr.handlers import (
+        build_capture_path,
+        capture_metadata,
+        capture_stats,
+        get_frequency_presets,
+        parse_hackrf_sweep,
+    )
+    from sdr.processing import waterfall_row
+except Exception as exc:
+    Flask = Any
+    SocketIO = Any
+    SDR_IMPORT_ERROR = exc
+else:
+    SDR_IMPORT_ERROR = None
 
 
 STATIC_DIR = ROOT_DIR / "static" / "sdr"
 CAPTURES_DIR = ROOT_DIR / "captures"
 DB_PATH = CAPTURES_DIR / "index.db"
+
+
+def host_port() -> tuple[str, int]:
+    return os.environ.get("KTOX_SDR_HOST", "0.0.0.0"), int(os.environ.get("KTOX_SDR_PORT", "8081"))
+
+
+def fallback_presets() -> dict[str, dict[str, Any]]:
+    return {
+        "ism": {"label": "ISM / Wi-Fi", "frequencies": [2400000000, 2437000000, 2462000000]},
+        "adsb": {"label": "ADS-B", "frequencies": [1090000000]},
+        "fm": {"label": "FM Broadcast", "frequencies": [88100000, 98100000, 107900000]},
+        "weather": {"label": "NOAA Weather", "frequencies": [162400000, 162550000]},
+    }
+
+
+class StaticSdrHandler(SimpleHTTPRequestHandler):
+    """Keep the SDR page available even when optional backend dependencies are missing."""
+
+    def translate_path(self, path: str) -> str:
+        parsed_path = urlparse(path).path
+        if parsed_path in {"", "/", "/sdr", "/sdr/"}:
+            return str(STATIC_DIR / "index.html")
+        if parsed_path.startswith("/sdr/"):
+            parsed_path = parsed_path[4:]
+        relative = unquote(parsed_path).lstrip("/")
+        target = (STATIC_DIR / relative).resolve()
+        try:
+            target.relative_to(STATIC_DIR.resolve())
+        except ValueError:
+            return str(STATIC_DIR / "index.html")
+        return str(target)
+
+    def log_message(self, format: str, *args: Any) -> None:
+        print(f"[SDR] {self.address_string()} - {format % args}", flush=True)
+
+    def send_json(self, payload: dict[str, Any], status: int = 200) -> None:
+        body = json.dumps(payload).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self) -> None:
+        path = urlparse(self.path).path
+        if path == "/socket.io/socket.io.js" or path == "/sdr/socket.io/socket.io.js":
+            body = b"window.io=window.io||function(){return{__ktoxStub:true,on:function(){},emit:function(){}}};\n"
+            self.send_response(200)
+            self.send_header("Content-Type", "application/javascript")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if path in {"/api/hackrf/info", "/sdr/api/hackrf/info", "/api/hackrf/connect", "/sdr/api/hackrf/connect"}:
+            self.send_json(
+                {
+                    "available": False,
+                    "connected": False,
+                    "error": f"SDR backend dependencies are not loaded: {SDR_IMPORT_ERROR}",
+                    "tools": {},
+                    "usb": {"available": False, "devices": [], "hackrf": []},
+                }
+            )
+            return
+        if path in {"/api/hackrf/presets", "/sdr/api/hackrf/presets"}:
+            self.send_json(fallback_presets())
+            return
+        if path in {"/api/hackrf/captures", "/sdr/api/hackrf/captures"}:
+            self.send_json({"captures": [], "stats": {"total_size": 0}})
+            return
+        if path in {"/api/hackrf/captures.csv", "/sdr/api/hackrf/captures.csv"}:
+            body = b"id,filename,frequency,sample_rate,timestamp,size,notes\n"
+            self.send_response(200)
+            self.send_header("Content-Type", "text/csv")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        mimetype, _ = mimetypes.guess_type(self.translate_path(path))
+        if mimetype:
+            self.extensions_map[Path(path).suffix] = mimetype
+        super().do_GET()
+
+    def do_POST(self) -> None:
+        path = urlparse(self.path).path
+        if path in {"/api/hackrf/connect", "/sdr/api/hackrf/connect"}:
+            self.send_json(
+                {
+                    "available": False,
+                    "connected": False,
+                    "error": f"SDR backend dependencies are not loaded: {SDR_IMPORT_ERROR}",
+                    "tools": {},
+                    "usb": {"available": False, "devices": [], "hackrf": []},
+                }
+            )
+            return
+        if path in {
+            "/api/hackrf/sweep",
+            "/api/hackrf/frequency-sweep",
+            "/api/hackrf/capture",
+            "/sdr/api/hackrf/sweep",
+            "/sdr/api/hackrf/frequency-sweep",
+            "/sdr/api/hackrf/capture",
+        }:
+            self.send_json(
+                {
+                    "ok": False,
+                    "error": f"SDR backend dependencies are not loaded: {SDR_IMPORT_ERROR}",
+                },
+                status=503,
+            )
+            return
+        self.send_error(404)
+
+    def do_DELETE(self) -> None:
+        self.send_json({"ok": False, "error": "capture backend is not available"}, status=503)
+
+
+def run_static_sdr_server() -> None:
+    host, port = host_port()
+    print(f"[SDR] Starting static SDR Suite fallback on http://{host}:{port}/", flush=True)
+    print(f"[SDR] Backend disabled because imports failed: {SDR_IMPORT_ERROR}", flush=True)
+    ThreadingHTTPServer((host, port), StaticSdrHandler).serve_forever()
 
 
 def _int_payload(data: dict, key: str, default: int, min_value: int, max_value: int) -> int:
@@ -65,7 +199,7 @@ def create_app(
     @app.get("/sdr/socket.io/socket.io.js")
     def socketio_fallback_script():
         return Response(
-            "window.io=window.io||function(){return{on:function(){},emit:function(){}}};\n",
+            "window.io=window.io||function(){return{__ktoxStub:true,on:function(){},emit:function(){}}};\n",
             mimetype="application/javascript",
         )
 
@@ -74,19 +208,28 @@ def create_app(
         return redirect("/sdr/")
 
     @app.get("/api/hackrf/info")
+    @app.get("/sdr/api/hackrf/info")
     def hackrf_info():
         return jsonify(hackrf.get_info() | {"tools": hackrf.tools_available()})
 
+    @app.post("/api/hackrf/connect")
+    @app.post("/sdr/api/hackrf/connect")
+    def hackrf_connect():
+        return jsonify(hackrf.connect())
+
     @app.get("/api/hackrf/presets")
+    @app.get("/sdr/api/hackrf/presets")
     def presets():
         return jsonify(get_frequency_presets())
 
     @app.get("/api/hackrf/captures")
+    @app.get("/sdr/api/hackrf/captures")
     def captures():
         rows = db.list_captures()
         return jsonify({"captures": rows, "stats": capture_stats(rows)})
 
     @app.get("/api/hackrf/captures.csv")
+    @app.get("/sdr/api/hackrf/captures.csv")
     def captures_csv():
         rows = db.list_captures()
         lines = ["id,filename,frequency,sample_rate,timestamp,size,notes"]
@@ -98,6 +241,7 @@ def create_app(
         return Response("\n".join(lines) + "\n", mimetype="text/csv")
 
     @app.get("/api/hackrf/captures/<int:capture_id>/download")
+    @app.get("/sdr/api/hackrf/captures/<int:capture_id>/download")
     def capture_download(capture_id: int):
         row = db.get_capture(capture_id)
         if not row:
@@ -108,6 +252,7 @@ def create_app(
         return send_file(target, as_attachment=True, download_name=target.name)
 
     @app.delete("/api/hackrf/captures/<int:capture_id>")
+    @app.delete("/sdr/api/hackrf/captures/<int:capture_id>")
     def capture_delete(capture_id: int):
         row = db.get_capture(capture_id)
         if not row:
@@ -118,6 +263,7 @@ def create_app(
         return jsonify({"ok": db.delete_capture(capture_id)})
 
     @app.post("/api/hackrf/capture")
+    @app.post("/sdr/api/hackrf/capture")
     def capture():
         try:
             data = request.get_json(silent=True) or {}
@@ -144,7 +290,9 @@ def create_app(
         return jsonify({"ok": True, "queued": True, "filename": capture_path.name})
 
     @app.route("/api/hackrf/frequency-sweep", methods=["GET", "POST"])
+    @app.route("/sdr/api/hackrf/frequency-sweep", methods=["GET", "POST"])
     @app.post("/api/hackrf/sweep")
+    @app.post("/sdr/api/hackrf/sweep")
     def sweep():
         try:
             data = request.args.to_dict() if request.method == "GET" else (request.get_json(silent=True) or {})
@@ -223,8 +371,7 @@ def create_app(
 
 
 def run_socketio(app: Flask, socketio: SocketIO) -> None:
-    host = os.environ.get("KTOX_SDR_HOST", "0.0.0.0")
-    port = int(os.environ.get("KTOX_SDR_PORT", "8081"))
+    host, port = host_port()
     try:
         socketio.run(app, host=host, port=port, allow_unsafe_werkzeug=True)
     except TypeError as exc:
@@ -237,6 +384,9 @@ def run_socketio(app: Flask, socketio: SocketIO) -> None:
 
 
 def main() -> None:
+    if SDR_IMPORT_ERROR is not None:
+        run_static_sdr_server()
+        return
     app, socketio = create_app()
     run_socketio(app, socketio)
 

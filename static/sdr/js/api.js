@@ -21,6 +21,7 @@
   window.SdrApiUrl = withBase;
   window.SdrApi = {
     info: () => requestJson('/api/hackrf/info'),
+    connect: () => requestJson('/api/hackrf/connect', { method: 'POST' }),
     presets: () => requestJson('/api/hackrf/presets'),
     captures: () => requestJson('/api/hackrf/captures'),
     deleteCapture: (id) => requestJson(`/api/hackrf/captures/${encodeURIComponent(id)}`, { method: 'DELETE' }),
