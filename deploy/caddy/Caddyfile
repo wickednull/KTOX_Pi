@@ -64,15 +64,6 @@ https://0.0.0.0 {
         }
     }
 
-    # ── Optional HackRF SDR Suite sidecar ──
-    handle_path /sdr* {
-        reverse_proxy 127.0.0.1:8081 {
-            header_up X-Forwarded-Proto {scheme}
-            header_up X-Forwarded-Host {host}
-            header_up X-Real-IP {remote_host}
-        }
-    }
-
     # ── API Endpoint (Future Expansion Ready) ──
     @api {
         path /api/*

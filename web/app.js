@@ -682,9 +682,6 @@
 
   function resolveSdrUrl(){
     const host = window.location.hostname || 'localhost';
-    if (window.location.protocol === 'https:') {
-      return `${window.location.origin}/sdr/`;
-    }
     return `http://${host}:8081/`;
   }
 

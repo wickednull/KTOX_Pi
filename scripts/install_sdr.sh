@@ -4,6 +4,10 @@ set -euo pipefail
 info() { echo "[SDR] $*"; }
 warn() { echo "[SDR] WARNING: $*" >&2; }
 die() { echo "[SDR] ERROR: $*" >&2; exit 1; }
+require_file() {
+  local rel="$1"
+  [[ -f "$KTOX_DIR/$rel" ]] || die "Missing $KTOX_DIR/$rel. Copy or pull the current repo files into $KTOX_DIR before installing SDR."
+}
 
 if [[ "$(id -u)" -ne 0 ]]; then
   die "Run as root: sudo bash scripts/install_sdr.sh"
@@ -16,6 +20,10 @@ ENABLE_SERVICE="${KTOX_SDR_ENABLE:-ask}"
 START_SERVICE="${KTOX_SDR_START:-ask}"
 
 cd "$KTOX_DIR"
+
+require_file "services/sdr_server.py"
+require_file "static/sdr/index.html"
+require_file "tools/validate_sdr_suite.py"
 
 info "Installing SDR dependencies"
 if command -v apt-get >/dev/null 2>&1; then
@@ -37,15 +45,6 @@ fi
 
 info "Preparing capture directory"
 mkdir -p "$KTOX_DIR/captures"
-
-if [[ -f "$KTOX_DIR/deploy/caddy/Caddyfile" && -d /etc/caddy ]]; then
-  info "Installing Caddy SDR proxy route"
-  cp "$KTOX_DIR/deploy/caddy/Caddyfile" /etc/caddy/Caddyfile
-  if command -v caddy >/dev/null 2>&1; then
-    caddy validate --config /etc/caddy/Caddyfile || warn "Caddy config validation failed"
-  fi
-  systemctl reload caddy 2>/dev/null || systemctl restart caddy 2>/dev/null || warn "Could not reload Caddy"
-fi
 
 info "Installing systemd unit at $SERVICE_PATH"
 cat > "$SERVICE_PATH" << UNIT
@@ -109,7 +108,7 @@ else
   warn "hackrf_info is not available"
 fi
 
-info "Done. Open https://<device-ip>/sdr/ when using the HTTPS WebUI, or http://<device-ip>:8081/ for direct HTTP."
+info "Done. Open http://<device-ip>:8081/ for the SDR Suite."
 info "Useful checks:"
 info "  systemctl status ktox-sdr --no-pager"
 info "  journalctl -u ktox-sdr -n 80 --no-pager"
