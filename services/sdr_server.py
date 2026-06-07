@@ -25,6 +25,7 @@ try:
     from flask_socketio import SocketIO, emit
 
     from sdr.database import CaptureDatabase
+    from sdr.decoders import UtilityDecoderPlanner, UtilityDecoderStatus, UtilityEventLog
     from sdr.demod import demodulate_audio
     from sdr.diagnostics import build_sdr_diagnostics
     from sdr.device import HackRFManager
@@ -37,7 +38,7 @@ try:
     )
     from sdr.processing import waterfall_row
     from sdr.receiver import ReceiverConfig, ReceiverSession
-    from sdr.signals import BookmarkStore, scan_hits_from_rows
+    from sdr.signals import ActivityStore, AlertRuleStore, BookmarkStore, scan_hits_from_rows
     from sdr.trunking import DecoderToolchain, LicensedOperationStore, TalkgroupAliasStore, TrunkingEventLog, TrunkingProfileStore, TrunkingRuntime
 except Exception as exc:
     Flask = Any
@@ -58,10 +59,13 @@ def host_port() -> tuple[str, int]:
 
 def fallback_presets() -> dict[str, dict[str, Any]]:
     return {
-        "ism": {"label": "ISM / Wi-Fi", "frequencies": [2400000000, 2437000000, 2462000000]},
-        "adsb": {"label": "ADS-B", "frequencies": [1090000000]},
-        "fm": {"label": "FM Broadcast", "frequencies": [88100000, 98100000, 107900000]},
-        "weather": {"label": "NOAA Weather", "frequencies": [162400000, 162550000]},
+        "weather": {"label": "NOAA Weather", "mode": "nfm", "bandwidth": 12500, "sample_rate": 2000000, "step": 25000, "frequencies": [{"label": "WX 1", "hz": 162550000}, {"label": "WX 2", "hz": 162400000}]},
+        "airband": {"label": "Airband", "mode": "am", "bandwidth": 25000, "sample_rate": 2000000, "step": 25000, "frequencies": [{"label": "Emergency 121.500", "hz": 121500000}, {"label": "Civil Airband", "start": 118000000, "stop": 137000000}]},
+        "public_safety": {"label": "Public Safety", "mode": "nfm", "bandwidth": 12500, "sample_rate": 2000000, "step": 12500, "frequencies": [{"label": "VHF Public Safety", "start": 150000000, "stop": 174000000}, {"label": "800 MHz Public Safety", "start": 851000000, "stop": 869000000}]},
+        "ham_2m": {"label": "Ham Radio 2m", "mode": "nfm", "bandwidth": 12500, "sample_rate": 2000000, "step": 5000, "frequencies": [{"label": "2m Calling", "hz": 146520000}, {"label": "APRS", "hz": 144390000}]},
+        "adsb": {"label": "ADS-B", "mode": "raw", "bandwidth": 2000000, "sample_rate": 2000000, "step": 1000000, "frequencies": [{"label": "1090ES", "hz": 1090000000}]},
+        "fm": {"label": "FM Broadcast", "mode": "wfm", "bandwidth": 180000, "sample_rate": 2400000, "step": 200000, "frequencies": [{"label": "88-108 MHz", "start": 88000000, "stop": 108000000}, {"label": "98.1", "hz": 98100000}]},
+        "wifi_2g": {"label": "WiFi 2.4 GHz", "mode": "raw", "bandwidth": 20000000, "sample_rate": 20000000, "step": 5000000, "frequencies": [{"label": "CH 6", "hz": 2437000000}]},
     }
 
 
@@ -108,6 +112,8 @@ class StaticSdrHandler(SimpleHTTPRequestHandler):
             "/sdr/api/hackrf/info",
             "/api/hackrf/connect",
             "/sdr/api/hackrf/connect",
+            "/api/hackrf/readiness",
+            "/sdr/api/hackrf/readiness",
             "/api/hackrf/test",
             "/sdr/api/hackrf/test",
             "/api/receiver/status",
@@ -135,6 +141,10 @@ class StaticSdrHandler(SimpleHTTPRequestHandler):
             "/sdr/api/trunking/status",
             "/api/trunking/events",
             "/sdr/api/trunking/events",
+            "/api/decoders/plan",
+            "/sdr/api/decoders/plan",
+            "/api/decoders/events",
+            "/sdr/api/decoders/events",
         }:
             self.send_json(
                 {
@@ -175,6 +185,8 @@ class StaticSdrHandler(SimpleHTTPRequestHandler):
         if path in {
             "/api/hackrf/connect",
             "/sdr/api/hackrf/connect",
+            "/api/hackrf/readiness",
+            "/sdr/api/hackrf/readiness",
             "/api/hackrf/test",
             "/sdr/api/hackrf/test",
             "/api/serial/probe",
@@ -185,12 +197,14 @@ class StaticSdrHandler(SimpleHTTPRequestHandler):
             "/api/receiver/audio",
             "/api/receiver/scan",
             "/api/receiver/bookmarks",
+            "/api/receiver/bookmarks/import",
             "/sdr/api/receiver/start",
             "/sdr/api/receiver/stop",
             "/sdr/api/receiver/frame",
             "/sdr/api/receiver/audio",
             "/sdr/api/receiver/scan",
             "/sdr/api/receiver/bookmarks",
+            "/sdr/api/receiver/bookmarks/import",
             "/api/trunking/agreement",
             "/sdr/api/trunking/agreement",
             "/api/trunking/profiles",
@@ -264,11 +278,16 @@ def create_app(
     hackrf = manager or HackRFManager()
     db = database or CaptureDatabase(DB_PATH)
     receiver = ReceiverSession(hackrf)
+    activity = ActivityStore(CAPTURES_DIR / "receiver_activity.json")
+    alerts = AlertRuleStore(CAPTURES_DIR / "receiver_alert_rules.json", CAPTURES_DIR / "receiver_alert_events.json")
     bookmarks = BookmarkStore(CAPTURES_DIR / "bookmarks.json")
     trunk_agreement = LicensedOperationStore(CAPTURES_DIR / "licensed_operation.json")
     trunk_profiles = TrunkingProfileStore(CAPTURES_DIR / "trunking_profiles.json")
     trunk_events = TrunkingEventLog(CAPTURES_DIR / "trunking_events.json")
     trunk_aliases = TalkgroupAliasStore(CAPTURES_DIR / "trunking_aliases.json")
+    utility_decoders = UtilityDecoderStatus()
+    utility_planner = UtilityDecoderPlanner()
+    utility_events = UtilityEventLog(CAPTURES_DIR / "utility_decoder_events.json")
     trunking = TrunkingRuntime(
         trunk_agreement,
         trunk_profiles,
@@ -314,6 +333,19 @@ def create_app(
         except (TypeError, ValueError) as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
         return jsonify(hackrf.hardware_test(frequency=frequency, sample_rate=sample_rate))
+
+    @app.post("/api/hackrf/readiness")
+    @app.post("/sdr/api/hackrf/readiness")
+    def hackrf_readiness():
+        try:
+            data = request.get_json(silent=True) or {}
+            frequency = _int_payload(data, "frequency", 2437000000, 1000000, 6000000000)
+            sample_rate = _int_payload(data, "sample_rate", 2000000, 1000000, 20000000)
+            sample_count = _int_payload(data, "sample_count", 4096, 64, 1048576)
+        except (TypeError, ValueError) as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        result = hackrf.readiness_check(frequency=frequency, sample_rate=sample_rate, sample_count=sample_count)
+        return jsonify(result)
 
     @app.get("/api/serial/ports")
     @app.get("/sdr/api/serial/ports")
@@ -380,7 +412,71 @@ def create_app(
         except (TypeError, ValueError) as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
         result = receiver.frame()
+        if result.get("ok"):
+            try:
+                event = activity.add({
+                    "frequency": result.get("frequency") or receiver.config.frequency,
+                    "mode": receiver.config.mode,
+                    "peak_db": result.get("peak_db", -120.0),
+                    "squelch_open": bool(result.get("squelch_open")),
+                    "source": "receiver",
+                })
+                alerts.evaluate(event)
+            except (TypeError, ValueError):
+                pass
         return jsonify(result), 200 if result.get("ok") else 503
+
+    @app.get("/api/receiver/activity")
+    @app.get("/sdr/api/receiver/activity")
+    def receiver_activity():
+        min_peak_arg = request.args.get("min_peak")
+        min_peak = float(min_peak_arg) if min_peak_arg not in (None, "") else None
+        return jsonify({
+            "ok": True,
+            "events": activity.list(
+                limit=int(request.args.get("limit") or 200),
+                min_peak=min_peak,
+                query=str(request.args.get("q") or ""),
+            ),
+            "summary": activity.summary(),
+        })
+
+    @app.get("/api/receiver/activity.csv")
+    @app.get("/sdr/api/receiver/activity.csv")
+    def receiver_activity_csv():
+        return Response(activity.to_csv(), mimetype="text/csv")
+
+    @app.get("/api/receiver/alerts")
+    @app.get("/sdr/api/receiver/alerts")
+    def receiver_alerts():
+        return jsonify({
+            "ok": True,
+            "rules": alerts.rules(),
+            "events": alerts.events(
+                limit=int(request.args.get("limit") or 200),
+                query=str(request.args.get("q") or ""),
+            ),
+            "summary": alerts.summary(),
+        })
+
+    @app.post("/api/receiver/alerts/rules")
+    @app.post("/sdr/api/receiver/alerts/rules")
+    def receiver_alert_rule_add():
+        try:
+            rule = alerts.add_rule(request.get_json(silent=True) or {})
+        except (TypeError, ValueError) as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        return jsonify({"ok": True, "rule": rule})
+
+    @app.delete("/api/receiver/alerts/rules/<rule_id>")
+    @app.delete("/sdr/api/receiver/alerts/rules/<rule_id>")
+    def receiver_alert_rule_delete(rule_id: str):
+        return jsonify({"ok": alerts.delete_rule(rule_id)})
+
+    @app.get("/api/receiver/alerts.csv")
+    @app.get("/sdr/api/receiver/alerts.csv")
+    def receiver_alerts_csv():
+        return Response(alerts.events_csv(), mimetype="text/csv")
 
     @app.post("/api/receiver/audio")
     @app.post("/sdr/api/receiver/audio")
@@ -397,7 +493,19 @@ def create_app(
     @app.get("/api/receiver/bookmarks")
     @app.get("/sdr/api/receiver/bookmarks")
     def receiver_bookmarks():
-        return jsonify({"ok": True, "bookmarks": bookmarks.list()})
+        return jsonify({
+            "ok": True,
+            "bookmarks": bookmarks.list(
+                category=request.args.get("category") or None,
+                query=request.args.get("q") or None,
+            ),
+            "categories": bookmarks.categories(),
+        })
+
+    @app.get("/api/receiver/bookmarks.json")
+    @app.get("/sdr/api/receiver/bookmarks.json")
+    def receiver_bookmarks_export():
+        return Response(bookmarks.export_json(), mimetype="application/json")
 
     @app.post("/api/receiver/bookmarks")
     @app.post("/sdr/api/receiver/bookmarks")
@@ -407,6 +515,15 @@ def create_app(
         except (TypeError, ValueError) as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
         return jsonify({"ok": True, "bookmark": row})
+
+    @app.post("/api/receiver/bookmarks/import")
+    @app.post("/sdr/api/receiver/bookmarks/import")
+    def receiver_bookmarks_import():
+        try:
+            result = bookmarks.import_json(request.get_json(silent=True) or {})
+        except (TypeError, ValueError) as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        return jsonify(result)
 
     @app.delete("/api/receiver/bookmarks/<bookmark_id>")
     @app.delete("/sdr/api/receiver/bookmarks/<bookmark_id>")
@@ -438,6 +555,7 @@ def create_app(
                             "mode": data.get("mode") or receiver.config.mode,
                             "sample_rate": data.get("sample_rate") or receiver.config.sample_rate,
                             "bandwidth": receiver.config.bandwidth,
+                            "category": "scan",
                             "source": "scan",
                             "notes": f"{hit['power_db']} dB",
                         }
@@ -572,6 +690,44 @@ def create_app(
     def trunking_events_csv():
         trunking.collect_decoder_events()
         return Response(trunk_events.to_csv(), mimetype="text/csv")
+
+    @app.get("/api/decoders/status")
+    @app.get("/sdr/api/decoders/status")
+    def utility_decoder_status():
+        return jsonify({"ok": True, "decoders": utility_decoders.status(), "summary": utility_events.summary()})
+
+    @app.post("/api/decoders/plan")
+    @app.post("/sdr/api/decoders/plan")
+    def utility_decoder_plan():
+        try:
+            plan = utility_planner.plan(request.get_json(silent=True) or {})
+        except (TypeError, ValueError) as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        return jsonify(plan)
+
+    @app.get("/api/decoders/events")
+    @app.get("/sdr/api/decoders/events")
+    def utility_decoder_events():
+        rows = utility_events.list(
+            limit=int(request.args.get("limit") or 200),
+            decoder=str(request.args.get("decoder") or ""),
+            query=str(request.args.get("q") or ""),
+        )
+        return jsonify({"ok": True, "events": rows, "summary": utility_events.summary()})
+
+    @app.get("/api/decoders/events.csv")
+    @app.get("/sdr/api/decoders/events.csv")
+    def utility_decoder_events_csv():
+        return Response(utility_events.to_csv(), mimetype="text/csv")
+
+    @app.post("/api/decoders/events")
+    @app.post("/sdr/api/decoders/events")
+    def utility_decoder_event_add():
+        try:
+            row = utility_events.add(request.get_json(silent=True) or {})
+        except (TypeError, ValueError) as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        return jsonify({"ok": True, "event": row})
 
     @app.post("/api/trunking/events")
     @app.post("/sdr/api/trunking/events")

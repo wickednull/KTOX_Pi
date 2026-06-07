@@ -7,11 +7,16 @@
   const socket = window.io ? window.io({ path: socketPath }) : null;
   const socketStub = !socket || !!socket.__ktoxStub;
   const settingsKey = 'ktox:sdr:settings';
+  const vfoKey = 'ktox:sdr:vfos';
   let waterfallTimer = null;
   let audioCtx = null;
   let audioTimer = null;
   let receiverFrameTimer = null;
   let audioNextTime = 0;
+  let lastActivityRefresh = 0;
+  let vfos = [];
+  let activeVfoId = null;
+  let vfoActivity = [];
 
   const els = {
     deviceDot: document.getElementById('deviceDot'),
@@ -31,6 +36,7 @@
     diagnosticsOutput: document.getElementById('diagnosticsOutput'),
     connectStatus: document.getElementById('connectStatus'),
     usbStatus: document.getElementById('usbStatus'),
+    readinessOutput: document.getElementById('readinessOutput'),
     serialPort: document.getElementById('serialPort'),
     serialBaud: document.getElementById('serialBaud'),
     serialStatus: document.getElementById('serialStatus'),
@@ -38,8 +44,23 @@
     receiverSignal: document.getElementById('receiverSignal'),
     receiverStatus: document.getElementById('receiverStatus'),
     receiverOutput: document.getElementById('receiverOutput'),
+    vfoList: document.getElementById('vfoList'),
+    vfoActivity: document.getElementById('vfoActivity'),
+    vfoImportFile: document.getElementById('vfoImportFile'),
+    activitySummary: document.getElementById('activitySummary'),
+    activityList: document.getElementById('activityList'),
+    activityMinPeak: document.getElementById('activityMinPeak'),
+    activitySearch: document.getElementById('activitySearch'),
+    alertSummary: document.getElementById('alertSummary'),
+    alertRules: document.getElementById('alertRules'),
+    alertEvents: document.getElementById('alertEvents'),
     scanOutput: document.getElementById('scanOutput'),
+    bookmarkSearch: document.getElementById('bookmarkSearch'),
+    bookmarkCategory: document.getElementById('bookmarkCategory'),
     bookmarkList: document.getElementById('bookmarkList'),
+    decoderStatus: document.getElementById('decoderStatus'),
+    decoderEvents: document.getElementById('decoderEvents'),
+    decoderPlanOutput: document.getElementById('decoderPlanOutput'),
     trunkAgreementStatus: document.getElementById('trunkAgreementStatus'),
     trunkProfileSelect: document.getElementById('trunkProfileSelect'),
     trunkProfiles: document.getElementById('trunkProfiles'),
@@ -128,15 +149,27 @@
       presets = await api.presets();
     } catch (err) {
       presets = {
-        ism: { label: 'ISM / Wi-Fi', frequencies: [2400000000, 2437000000, 2462000000] },
-        adsb: { label: 'ADS-B', frequencies: [1090000000] },
-        fm: { label: 'FM Broadcast', frequencies: [88100000, 98100000, 107900000] },
-        weather: { label: 'NOAA Weather', frequencies: [162400000, 162550000] }
+        weather: { label: 'NOAA Weather', mode: 'nfm', bandwidth: 12500, sample_rate: 2000000, step: 25000, frequencies: [{ label: 'WX 1', hz: 162550000 }, { label: 'WX 2', hz: 162400000 }] },
+        airband: { label: 'Airband', mode: 'am', bandwidth: 25000, sample_rate: 2000000, step: 25000, frequencies: [{ label: 'Emergency', hz: 121500000 }, { label: 'Civil Airband', start: 118000000, stop: 137000000 }] },
+        fm: { label: 'FM Broadcast', mode: 'wfm', bandwidth: 180000, sample_rate: 2400000, step: 200000, frequencies: [{ label: '88-108 MHz', start: 88000000, stop: 108000000 }, { label: '98.1', hz: 98100000 }] },
+        adsb: { label: 'ADS-B', mode: 'raw', bandwidth: 2000000, sample_rate: 2000000, step: 1000000, frequencies: [{ label: '1090ES', hz: 1090000000 }] }
       };
     }
     els.presetList.innerHTML = Object.keys(presets).map(key => {
       const group = presets[key];
-      return `<article><strong>${group.label}</strong><span>${(group.frequencies || []).length} presets</span></article>`;
+      const mode = group.mode || (key === 'fm' ? 'wfm' : 'nfm');
+      const buttons = (group.frequencies || []).map(raw => {
+        const item = typeof raw === 'number' ? { hz: raw, label: mhz(raw) } : raw;
+        const itemMode = item.mode || mode;
+        const bandwidth = item.bandwidth || group.bandwidth || 12500;
+        const sampleRate = item.sample_rate || group.sample_rate || 2000000;
+        const step = item.step || group.step || 12500;
+        if (item.hz) {
+          return `<button data-preset-frequency="${Number(item.hz)}" data-preset-mode="${escapeHtml(itemMode)}" data-preset-bandwidth="${Number(bandwidth)}" data-preset-sample-rate="${Number(sampleRate)}" data-preset-step="${Number(step)}">${escapeHtml(item.label || mhz(item.hz))}</button>`;
+        }
+        return `<button data-preset-start="${Number(item.start)}" data-preset-stop="${Number(item.stop)}" data-preset-mode="${escapeHtml(itemMode)}" data-preset-bandwidth="${Number(bandwidth)}" data-preset-sample-rate="${Number(sampleRate)}" data-preset-step="${Number(step)}">${escapeHtml(item.label || `${mhz(item.start)}-${mhz(item.stop)}`)}</button>`;
+      }).join('');
+      return `<article><strong>${escapeHtml(group.label)}</strong><span>${(group.frequencies || []).length} presets · ${escapeHtml(String(mode).toUpperCase())}</span><div class="preset-buttons">${buttons}</div></article>`;
     }).join('');
   }
 
@@ -148,9 +181,394 @@
     return JSON.stringify(value, null, 2);
   }
 
+  function mhz(value){
+    return `${(Number(value) / 1000000).toFixed(3)} MHz`;
+  }
+
+  function tuneFrequency(frequency, mode){
+    const value = Number(frequency);
+    if (!Number.isFinite(value) || value <= 0) return;
+    document.getElementById('rxFrequency').value = String(Math.round(value));
+    document.getElementById('captureFrequency').value = String(Math.round(value));
+    if (document.getElementById('decoderFrequency')) {
+      document.getElementById('decoderFrequency').value = String(Math.round(value));
+    }
+    if (document.getElementById('alertRuleFrequency')) {
+      document.getElementById('alertRuleFrequency').value = String(Math.round(value));
+    }
+    document.getElementById('sweepStart').value = String(Math.max(1000000, Math.round(value - 5000000)));
+    document.getElementById('sweepStop').value = String(Math.min(6000000000, Math.round(value + 5000000)));
+    if (mode && document.getElementById('rxMode')) {
+      document.getElementById('rxMode').value = mode;
+    }
+    if (mode && document.getElementById('decoderMode') && ['nfm', 'wfm', 'am'].includes(mode)) {
+      document.getElementById('decoderMode').value = mode;
+    }
+    if (els.receiverStatus) els.receiverStatus.textContent = `Tuned ${mhz(value)}`;
+    if (els.audioStatus) els.audioStatus.textContent = `Ready at ${mhz(value)}`;
+  }
+
+  function applyPresetDefaults(button){
+    if (!button) return;
+    const mode = button.getAttribute('data-preset-mode');
+    const bandwidth = Number(button.getAttribute('data-preset-bandwidth'));
+    const sampleRate = Number(button.getAttribute('data-preset-sample-rate'));
+    const step = Number(button.getAttribute('data-preset-step'));
+    if (mode && document.getElementById('rxMode')) document.getElementById('rxMode').value = mode;
+    if (Number.isFinite(bandwidth) && bandwidth > 0) document.getElementById('rxBandwidth').value = String(bandwidth);
+    if (Number.isFinite(sampleRate) && sampleRate > 0) document.getElementById('rxSampleRate').value = String(sampleRate);
+    if (Number.isFinite(step) && step > 0) document.getElementById('rxStep').value = String(step);
+  }
+
+  function applyPresetRange(button){
+    applyPresetDefaults(button);
+    const start = Number(button.getAttribute('data-preset-start'));
+    const stop = Number(button.getAttribute('data-preset-stop'));
+    if (!Number.isFinite(start) || !Number.isFinite(stop) || stop <= start) return;
+    document.getElementById('scanStart').value = String(Math.round(start));
+    document.getElementById('scanStop').value = String(Math.round(stop));
+    document.getElementById('sweepStart').value = String(Math.round(start));
+    document.getElementById('sweepStop').value = String(Math.round(stop));
+    tuneFrequency(Math.round((start + stop) / 2), button.getAttribute('data-preset-mode') || 'nfm');
+    if (els.receiverStatus) els.receiverStatus.textContent = `Range loaded ${mhz(start)}-${mhz(stop)}`;
+  }
+
+  function currentReceiverSettings(){
+    return {
+      frequency: numeric('rxFrequency') || 162550000,
+      sample_rate: numeric('rxSampleRate') || 2000000,
+      mode: document.getElementById('rxMode').value || 'nfm',
+      bandwidth: numeric('rxBandwidth') || 12500,
+      squelch: numeric('rxSquelch') || -90,
+      lna_gain: numeric('rxLna') || 16,
+      vga_gain: numeric('rxVga') || 20
+    };
+  }
+
+  function defaultVfos(){
+    return [
+      { id: 'vfo-weather', label: 'NOAA 162.550', frequency: 162550000, mode: 'nfm', bandwidth: 12500, squelch: -90, activity: 0 },
+      { id: 'vfo-fm', label: 'FM 98.100', frequency: 98100000, mode: 'wfm', bandwidth: 180000, squelch: -95, activity: 0 },
+      { id: 'vfo-adsb', label: 'ADS-B 1090', frequency: 1090000000, mode: 'raw', bandwidth: 2000000, squelch: -80, activity: 0 }
+    ];
+  }
+
+  function saveVfos(){
+    localStorage.setItem(vfoKey, JSON.stringify({
+      activeVfoId,
+      vfos,
+      activity: vfoActivity.slice(0, 40)
+    }));
+  }
+
+  function loadVfos(){
+    try {
+      const saved = JSON.parse(localStorage.getItem(vfoKey) || '{}');
+      vfos = Array.isArray(saved.vfos) && saved.vfos.length ? saved.vfos : defaultVfos();
+      activeVfoId = saved.activeVfoId || (vfos[0] && vfos[0].id) || null;
+      vfoActivity = Array.isArray(saved.activity) ? saved.activity.slice(0, 40) : [];
+    } catch {
+      vfos = defaultVfos();
+      activeVfoId = vfos[0] && vfos[0].id;
+      vfoActivity = [];
+    }
+    renderVfos();
+  }
+
+  function vfoById(id){
+    return vfos.find(item => item.id === id) || null;
+  }
+
+  function applyVfoToControls(vfo){
+    if (!vfo) return;
+    tuneFrequency(vfo.frequency, vfo.mode || 'nfm');
+    if (document.getElementById('rxBandwidth')) document.getElementById('rxBandwidth').value = String(vfo.bandwidth || 12500);
+    if (document.getElementById('rxSquelch')) document.getElementById('rxSquelch').value = String(vfo.squelch == null ? -90 : vfo.squelch);
+    if (document.getElementById('rxSampleRate')) document.getElementById('rxSampleRate').value = String(vfo.sample_rate || 2000000);
+  }
+
+  function addVfo(){
+    const settings = currentReceiverSettings();
+    const id = `vfo-${Date.now().toString(36)}`;
+    const label = `${mhz(settings.frequency)} ${String(settings.mode || 'nfm').toUpperCase()}`;
+    vfos.unshift(Object.assign({ id, label, activity: 0, created_at: new Date().toISOString() }, settings));
+    activeVfoId = id;
+    vfoActivity.unshift(`${new Date().toLocaleTimeString()} added ${label}`);
+    vfoActivity = vfoActivity.slice(0, 40);
+    saveVfos();
+    renderVfos();
+  }
+
+  function exportVfos(){
+    downloadJson('ktox-sdr-vfo-group.json', {
+      schema: 'ktox-sdr-vfo-group-v1',
+      exported_at: new Date().toISOString(),
+      activeVfoId,
+      vfos
+    });
+  }
+
+  async function importVfos(){
+    if (els.vfoActivity) els.vfoActivity.textContent = 'Importing VFO group...';
+    try {
+      const payload = await readJsonFile('vfoImportFile');
+      const rows = Array.isArray(payload.vfos) ? payload.vfos : (Array.isArray(payload) ? payload : []);
+      if (!rows.length) throw new Error('vfos list is required');
+      vfos = rows
+        .filter(row => row && Number(row.frequency) > 0)
+        .map((row, index) => Object.assign({
+          id: row.id || `vfo-import-${Date.now().toString(36)}-${index}`,
+          label: row.label || mhz(row.frequency),
+          mode: row.mode || 'nfm',
+          bandwidth: row.bandwidth || 12500,
+          squelch: row.squelch == null ? -90 : row.squelch,
+          activity: Number(row.activity || 0)
+        }, row));
+      if (!vfos.length) throw new Error('no valid VFO rows found');
+      activeVfoId = payload.activeVfoId || vfos[0].id;
+      vfoActivity.unshift(`${new Date().toLocaleTimeString()} imported ${vfos.length} VFOs`);
+      vfoActivity = vfoActivity.slice(0, 40);
+      saveVfos();
+      renderVfos();
+      applyVfoToControls(vfoById(activeVfoId));
+    } catch (err) {
+      if (els.vfoActivity) els.vfoActivity.textContent = `VFO import failed: ${err.message}`;
+    }
+  }
+
+  function selectVfo(id){
+    const vfo = vfoById(id);
+    if (!vfo) return;
+    activeVfoId = id;
+    applyVfoToControls(vfo);
+    vfoActivity.unshift(`${new Date().toLocaleTimeString()} selected ${vfo.label || mhz(vfo.frequency)}`);
+    vfoActivity = vfoActivity.slice(0, 40);
+    saveVfos();
+    renderVfos();
+  }
+
+  function deleteVfo(id){
+    vfos = vfos.filter(item => item.id !== id);
+    if (!vfos.length) {
+      vfos = defaultVfos();
+    }
+    if (activeVfoId === id) {
+      activeVfoId = vfos[0] && vfos[0].id;
+      applyVfoToControls(vfoById(activeVfoId));
+    }
+    saveVfos();
+    renderVfos();
+  }
+
+  function recordVfoActivity(frame){
+    const active = vfoById(activeVfoId);
+    if (!active || !frame) return;
+    const peak = Number(frame.peak_db == null ? -120 : frame.peak_db);
+    active.frequency = Number(frame.frequency || numeric('rxFrequency') || active.frequency);
+    active.mode = document.getElementById('rxMode').value || active.mode || 'nfm';
+    active.bandwidth = numeric('rxBandwidth') || active.bandwidth || 12500;
+    active.squelch = numeric('rxSquelch');
+    active.last_peak = peak;
+    active.last_seen = new Date().toISOString();
+    active.squelch_open = !!frame.squelch_open;
+    if (frame.squelch_open) {
+      active.activity = Number(active.activity || 0) + 1;
+      active.last_open = active.last_seen;
+      vfoActivity.unshift(`${new Date().toLocaleTimeString()} ${active.label || mhz(active.frequency)} opened at ${peak.toFixed(1)} dB`);
+      vfoActivity = vfoActivity.slice(0, 40);
+    }
+    saveVfos();
+    renderVfos();
+  }
+
+  function renderVfos(){
+    if (!els.vfoList) return;
+    const sorted = vfos.slice().sort((a, b) => {
+      if (a.id === activeVfoId) return -1;
+      if (b.id === activeVfoId) return 1;
+      return Number(b.activity || 0) - Number(a.activity || 0);
+    });
+    els.vfoList.innerHTML = sorted.map((item) => {
+      const active = item.id === activeVfoId;
+      const status = item.squelch_open ? 'Live' : 'Idle';
+      const peak = item.last_peak == null ? 'no signal' : `${Number(item.last_peak).toFixed(1)} dB`;
+      return `<article class="vfo-row ${active ? 'active' : ''}">
+        <div class="vfo-main">
+          <strong>${escapeHtml(item.label || mhz(item.frequency))}</strong>
+          <span>${mhz(item.frequency)} · ${escapeHtml(String(item.mode || 'nfm').toUpperCase())} · ${Number(item.bandwidth || 0)} Hz</span>
+        </div>
+        <div class="vfo-meter">
+          <span class="${item.squelch_open ? 'live' : ''}">${status}</span>
+          <strong>${peak}</strong>
+          <span>${Number(item.activity || 0)} opens</span>
+        </div>
+        <div class="vfo-actions">
+          <button data-select-vfo="${escapeHtml(item.id)}">${active ? 'Active' : 'Tune'}</button>
+          <button data-delete-vfo="${escapeHtml(item.id)}">Delete</button>
+        </div>
+      </article>`;
+    }).join('');
+    if (els.vfoActivity) {
+      els.vfoActivity.textContent = vfoActivity.length ? vfoActivity.join('\n') : 'No VFO activity yet.';
+    }
+  }
+
+  function renderActivity(data){
+    if (!els.activityList) return;
+    const summary = data.summary || {};
+    const top = summary.top_frequencies || [];
+    if (els.activitySummary) {
+      els.activitySummary.innerHTML = [
+        `<article class="tile"><span>Total Events</span><strong>${Number(summary.total_events || 0)}</strong></article>`,
+        `<article class="tile"><span>Open Squelch</span><strong>${Number(summary.open_events || 0)}</strong></article>`,
+        `<article class="tile"><span>Tracked Frequencies</span><strong>${top.length}</strong></article>`,
+        `<article class="tile"><span>Best Peak</span><strong>${top.length ? `${Number(top[0].best_peak_db || -120).toFixed(1)} dB` : '-'}</strong></article>`
+      ].join('');
+    }
+    const rows = data.events || [];
+    els.activityList.innerHTML = rows.length ? rows.map(item => (
+      `<div class="capture-row activity-row">
+        <strong>${mhz(item.frequency)}</strong>
+        <span>${escapeHtml(String(item.mode || 'nfm').toUpperCase())}</span>
+        <span>${Number(item.peak_db || -120).toFixed(1)} dB</span>
+        <span>${item.squelch_open ? 'open' : 'closed'}</span>
+        <button data-promote-activity="vfo" data-frequency="${item.frequency}" data-mode="${escapeHtml(item.mode || 'nfm')}">Promote VFO</button>
+        <button data-promote-activity="bookmark" data-frequency="${item.frequency}" data-mode="${escapeHtml(item.mode || 'nfm')}">Promote Bookmark</button>
+      </div>`
+    )).join('') : '<div class="empty">No receiver activity recorded yet.</div>';
+  }
+
+  async function loadActivity(){
+    if (!els.activityList) return;
+    try {
+      const params = {};
+      if (els.activityMinPeak && els.activityMinPeak.value !== '') params.min_peak = els.activityMinPeak.value;
+      if (els.activitySearch && els.activitySearch.value.trim()) params.q = els.activitySearch.value.trim();
+      renderActivity(await api.receiverActivity(params));
+    } catch (err) {
+      els.activityList.innerHTML = `<div class="empty">Activity load failed: ${escapeHtml(err.message)}</div>`;
+    }
+  }
+
+  async function promoteActivity(kind, frequency, mode){
+    const value = Number(frequency);
+    if (!Number.isFinite(value) || value <= 0) return;
+    tuneFrequency(value, mode || 'nfm');
+    if (kind === 'bookmark') {
+      await api.receiverBookmarkAdd({
+        label: `Activity ${mhz(value)}`,
+        frequency: value,
+        mode: mode || 'nfm',
+        category: 'activity',
+        source: 'activity-intelligence'
+      });
+      await loadBookmarks();
+      return;
+    }
+    const settings = currentReceiverSettings();
+    const id = `vfo-activity-${Date.now().toString(36)}`;
+    vfos.unshift(Object.assign({ id, label: `Activity ${mhz(value)}`, activity: 0, source: 'activity-intelligence' }, settings));
+    activeVfoId = id;
+    saveVfos();
+    renderVfos();
+  }
+
+  function renderAlerts(data){
+    if (!els.alertRules || !els.alertEvents) return;
+    const summary = data.summary || {};
+    if (els.alertSummary) {
+      els.alertSummary.innerHTML = [
+        `<article class="tile"><span>Rules</span><strong>${Number(summary.total_rules || 0)}</strong></article>`,
+        `<article class="tile"><span>Enabled</span><strong>${Number(summary.enabled_rules || 0)}</strong></article>`,
+        `<article class="tile"><span>Alerts</span><strong>${Number(summary.total_alerts || 0)}</strong></article>`,
+        `<article class="tile"><span>Last Alert</span><strong>${summary.last_alert ? new Date(Number(summary.last_alert) * 1000).toLocaleTimeString() : '-'}</strong></article>`
+      ].join('');
+    }
+    const rules = data.rules || [];
+    els.alertRules.innerHTML = rules.length ? rules.map(rule => (
+      `<div class="capture-row">
+        <strong>${escapeHtml(rule.label)}</strong>
+        <span>${mhz(rule.frequency)}</span>
+        <span>${Number(rule.min_peak_db || -60).toFixed(1)} dB</span>
+        <span>±${Number(rule.tolerance_hz || 0)} Hz</span>
+        <button data-delete-alert-rule="${escapeHtml(rule.id)}">Delete</button>
+      </div>`
+    )).join('') : '<div class="empty">No watch rules saved.</div>';
+    const events = data.events || [];
+    els.alertEvents.innerHTML = events.length ? events.map(event => (
+      `<div class="capture-row activity-row">
+        <strong>${escapeHtml(event.label || '')}</strong>
+        <span>${mhz(event.frequency)}</span>
+        <span>${Number(event.peak_db || -120).toFixed(1)} dB</span>
+        <span>${event.squelch_open ? 'open' : 'closed'}</span>
+        <button data-promote-activity="vfo" data-frequency="${event.frequency}" data-mode="${escapeHtml(event.mode || 'nfm')}">Promote VFO</button>
+        <button data-promote-activity="bookmark" data-frequency="${event.frequency}" data-mode="${escapeHtml(event.mode || 'nfm')}">Promote Bookmark</button>
+      </div>`
+    )).join('') : '<div class="empty">No alert events yet.</div>';
+  }
+
+  async function loadAlerts(){
+    if (!els.alertRules) return;
+    try {
+      renderAlerts(await api.receiverAlerts());
+    } catch (err) {
+      els.alertRules.innerHTML = `<div class="empty">Alert load failed: ${escapeHtml(err.message)}</div>`;
+      if (els.alertEvents) els.alertEvents.innerHTML = '<div class="empty">Alert events unavailable.</div>';
+    }
+  }
+
+  async function saveAlertRule(){
+    try {
+      await api.receiverAlertRuleAdd({
+        label: document.getElementById('alertRuleLabel').value,
+        frequency: numeric('alertRuleFrequency') || numeric('rxFrequency') || 162550000,
+        mode: document.getElementById('rxMode').value || 'nfm',
+        tolerance_hz: numeric('alertRuleTolerance') || 12500,
+        min_peak_db: numeric('alertRuleMinPeak') || -60,
+        require_open: true,
+        enabled: true
+      });
+      await loadAlerts();
+    } catch (err) {
+      if (els.alertRules) els.alertRules.innerHTML = `<div class="empty">Watch save failed: ${escapeHtml(err.message)}</div>`;
+    }
+  }
+
   function csvNumbers(id){
     const raw = document.getElementById(id).value || '';
     return raw.split(',').map(item => item.trim()).filter(Boolean).map(item => Number(item)).filter(item => Number.isFinite(item));
+  }
+
+  function readJsonFile(inputId){
+    const input = document.getElementById(inputId);
+    const file = input && input.files && input.files[0];
+    if (!file) {
+      return Promise.reject(new Error('Choose a JSON file first.'));
+    }
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          resolve(JSON.parse(String(reader.result || '{}')));
+        } catch (err) {
+          reject(new Error(`Invalid JSON: ${err.message}`));
+        }
+      };
+      reader.onerror = () => reject(new Error('File read failed.'));
+      reader.readAsText(file);
+    });
+  }
+
+  function downloadJson(filename, payload){
+    const blob = new Blob([JSON.stringify(payload, null, 2) + '\n'], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
   }
 
   function escapeHtml(value){
@@ -173,6 +591,38 @@
       els.connectStatus.textContent = data.ok ? 'HackRF RX and sweep test passed.' : 'HackRF test failed; see details below.';
     } catch (err) {
       els.connectStatus.textContent = `HackRF test failed: ${err.message}`;
+    }
+  }
+
+  async function runReadiness(){
+    if (els.readinessOutput) {
+      els.readinessOutput.textContent = 'Checking HackRF RX readiness...';
+    }
+    if (els.connectStatus) {
+      els.connectStatus.textContent = 'Reading test IQ samples from HackRF...';
+    }
+    try {
+      const data = await api.readiness({
+        frequency: numeric('rxFrequency') || numeric('captureFrequency') || 2437000000,
+        sample_rate: numeric('rxSampleRate') || 2000000,
+        sample_count: 4096
+      });
+      setDevice(data.info || {});
+      if (els.readinessOutput) {
+        els.readinessOutput.textContent = pretty(data);
+      }
+      if (els.connectStatus) {
+        els.connectStatus.textContent = data.ok
+          ? 'HackRF RX is working. IQ samples were read successfully.'
+          : `HackRF is not ready: ${(data.next_steps || [data.error || 'unknown issue']).join(' ')}`;
+      }
+    } catch (err) {
+      if (els.readinessOutput) {
+        els.readinessOutput.textContent = `Readiness failed: ${err.message}`;
+      }
+      if (els.connectStatus) {
+        els.connectStatus.textContent = `HackRF readiness failed: ${err.message}`;
+      }
     }
   }
 
@@ -238,6 +688,13 @@
     }, extra || {});
   }
 
+  function receiverAudioPayload(){
+    return receiverPayload({
+      sample_count: 1048576,
+      audio_rate: 48000
+    });
+  }
+
   async function receiverFrameLoop(){
     try {
       const data = await api.receiverFrame(receiverPayload({ sample_count: 4096 }));
@@ -253,6 +710,12 @@
         squelch_open: data.squelch_open,
         peaks: data.peaks || []
       });
+      recordVfoActivity(data);
+      if (Date.now() - lastActivityRefresh > 2500) {
+        lastActivityRefresh = Date.now();
+        loadActivity();
+        loadAlerts();
+      }
     } catch (err) {
       els.receiverStatus.textContent = `Frame failed: ${err.message}`;
     }
@@ -260,7 +723,7 @@
 
   async function receiverAudioLoop(){
     try {
-      const data = await api.receiverAudio(receiverPayload());
+      const data = await api.receiverAudio(receiverAudioPayload());
       if (!data.ok) throw new Error(data.error || 'demodulation failed');
       const samples = data.audio || [];
       if (!samples.length) throw new Error('demodulator returned no audio');
@@ -278,13 +741,16 @@
       audioNextTime = Math.max(audioNextTime, audioCtx.currentTime + 0.02);
       source.start(audioNextTime);
       audioNextTime += buffer.duration;
-      els.audioStatus.textContent = `Playing ${String(data.mode || '').toUpperCase()} at ${data.frequency} Hz`;
+      const queued = Math.max(0, audioNextTime - audioCtx.currentTime);
+      els.audioStatus.textContent = `Playing ${String(data.mode || '').toUpperCase()} at ${data.frequency} Hz - ${Number(data.duration_sec || buffer.duration).toFixed(2)}s chunk, ${queued.toFixed(2)}s queued`;
       els.receiverOutput.textContent = pretty({
         mode: data.mode,
         frequency: data.frequency,
         sample_rate: data.sample_rate,
         audio_rate: data.audio_rate,
-        audio_samples: samples.length
+        audio_samples: samples.length,
+        duration_sec: data.duration_sec,
+        queued_sec: queued
       });
     } catch (err) {
       stopAudio();
@@ -296,13 +762,105 @@
   async function loadBookmarks(){
     if (!els.bookmarkList) return;
     try {
-      const data = await api.receiverBookmarks();
+      const params = {};
+      if (els.bookmarkSearch && els.bookmarkSearch.value.trim()) params.q = els.bookmarkSearch.value.trim();
+      if (els.bookmarkCategory && els.bookmarkCategory.value) params.category = els.bookmarkCategory.value;
+      const data = await api.receiverBookmarks(params);
       const rows = data.bookmarks || [];
+      if (els.bookmarkCategory) {
+        const selected = els.bookmarkCategory.value;
+        const categories = data.categories || [];
+        els.bookmarkCategory.innerHTML = '<option value="">All categories</option>' + categories.map(category => (
+          `<option value="${escapeHtml(category)}">${escapeHtml(category)}</option>`
+        )).join('');
+        els.bookmarkCategory.value = categories.includes(selected) ? selected : '';
+      }
       els.bookmarkList.innerHTML = rows.length ? rows.map((item) => (
-        `<div class="capture-row"><strong>${escapeHtml(item.label)}</strong><span>${item.frequency} Hz</span><span>${escapeHtml(item.mode || 'nfm')}</span><button data-tune-bookmark="${item.frequency}" data-mode="${escapeHtml(item.mode || 'nfm')}">Tune</button><button data-delete-bookmark="${escapeHtml(item.id)}">Delete</button></div>`
+        `<div class="capture-row"><strong>${escapeHtml(item.label)}</strong><span>${item.frequency} Hz</span><span>${escapeHtml(item.category || 'general')}</span><span>${escapeHtml(item.mode || 'nfm')}</span><button data-tune-bookmark="${item.frequency}" data-mode="${escapeHtml(item.mode || 'nfm')}">Tune</button><button data-delete-bookmark="${escapeHtml(item.id)}">Delete</button></div>`
       )).join('') : '<div class="empty">No bookmarks saved.</div>';
     } catch (err) {
       els.bookmarkList.innerHTML = `<div class="empty">Bookmark load failed: ${escapeHtml(err.message)}</div>`;
+    }
+  }
+
+  async function importBookmarks(){
+    if (!els.bookmarkList) return;
+    els.bookmarkList.innerHTML = '<div class="empty">Importing bookmarks...</div>';
+    try {
+      const payload = await readJsonFile('bookmarkImportFile');
+      const result = await api.receiverBookmarksImport(payload);
+      els.bookmarkList.innerHTML = `<div class="empty">Imported ${Number(result.imported || 0)} bookmarks.</div>`;
+      await loadBookmarks();
+    } catch (err) {
+      els.bookmarkList.innerHTML = `<div class="empty">Bookmark import failed: ${escapeHtml(err.message)}</div>`;
+    }
+  }
+
+  function renderDecoderStatus(data){
+    if (!els.decoderStatus) return;
+    const decoders = data.decoders || {};
+    const rows = Object.keys(decoders).map(key => {
+      const item = decoders[key];
+      return `<div class="capture-row decoder-row ${item.available ? 'clear' : 'encrypted'}">
+        <strong>${escapeHtml(item.label || key)}</strong>
+        <span>${item.available ? 'available' : 'missing'}</span>
+        <span>${escapeHtml(item.tool || '')}</span>
+        <span>${escapeHtml((item.modes || []).join(', '))}</span>
+        <span>${escapeHtml(item.path || item.notes || '')}</span>
+      </div>`;
+    });
+    els.decoderStatus.innerHTML = rows.length ? rows.join('') : '<div class="empty">No decoder status available.</div>';
+  }
+
+  function renderDecoderEvents(data){
+    if (!els.decoderEvents) return;
+    const rows = data.events || [];
+    els.decoderEvents.innerHTML = rows.length ? rows.map(item => (
+      `<div class="capture-row decoder-row ${item.encrypted ? 'encrypted' : 'clear'}">
+        <strong>${escapeHtml(item.decoder || '')}</strong>
+        <span>${item.frequency || ''} Hz</span>
+        <span>${escapeHtml(item.status || '')}</span>
+        <span>${escapeHtml(item.capcode || item.station || item.program_id || '')}</span>
+        <span>${escapeHtml(item.message || item.radiotext || item.text || '')}</span>
+      </div>`
+    )).join('') : '<div class="empty">No decoder events yet.</div>';
+  }
+
+  async function loadDecoders(){
+    if (!els.decoderStatus) return;
+    try {
+      const [status, events] = await Promise.all([
+        api.decoderStatus(),
+        api.decoderEvents({
+          decoder: document.getElementById('decoderType') && document.getElementById('decoderType').value,
+          q: document.getElementById('decoderEventSearch') && document.getElementById('decoderEventSearch').value.trim()
+        })
+      ]);
+      renderDecoderStatus(status);
+      renderDecoderEvents(events);
+    } catch (err) {
+      els.decoderStatus.innerHTML = `<div class="empty">Decoder status failed: ${escapeHtml(err.message)}</div>`;
+      if (els.decoderEvents) els.decoderEvents.innerHTML = '<div class="empty">Decoder events unavailable.</div>';
+    }
+  }
+
+  async function planDecoder(){
+    if (!els.decoderPlanOutput) return;
+    const frequency = numeric('decoderFrequency') || numeric('rxFrequency') || 152480000;
+    const mode = document.getElementById('decoderMode').value || document.getElementById('rxMode').value || 'nfm';
+    els.decoderPlanOutput.textContent = 'Building decoder plan...';
+    try {
+      const plan = await api.decoderPlan({
+        decoder: document.getElementById('decoderType').value,
+        frequency,
+        mode,
+        sample_rate: numeric('rxSampleRate') || 2000000,
+        audio_rate: 48000
+      });
+      els.decoderPlanOutput.textContent = pretty(plan);
+      await loadDecoders();
+    } catch (err) {
+      els.decoderPlanOutput.textContent = `Decoder plan failed: ${err.message}`;
     }
   }
 
@@ -458,6 +1016,18 @@
     }
   }
 
+  async function importTrunkProfiles(){
+    els.trunkStatus.textContent = 'Importing trunking profiles...';
+    try {
+      const payload = await readJsonFile('trunkProfileImportFile');
+      const result = await api.trunkingProfilesImport(payload);
+      els.trunkStatus.textContent = `Imported ${result.imported || 0} profiles.`;
+      await loadTrunking();
+    } catch (err) {
+      els.trunkStatus.textContent = `Profile import failed: ${err.message}`;
+    }
+  }
+
   async function startTrunking(){
     const profileId = els.trunkProfileSelect && els.trunkProfileSelect.value;
     if (!profileId) {
@@ -497,6 +1067,18 @@
     }
   }
 
+  async function importTrunkAliases(){
+    els.trunkStatus.textContent = 'Importing trunking aliases...';
+    try {
+      const payload = await readJsonFile('trunkAliasImportFile');
+      const result = await api.trunkingAliasesImport(payload);
+      els.trunkStatus.textContent = `Imported ${result.imported || 0} aliases.`;
+      await loadTrunking();
+    } catch (err) {
+      els.trunkStatus.textContent = `Alias import failed: ${err.message}`;
+    }
+  }
+
   function startAudio(){
     stopAudio();
     els.audioStatus.textContent = 'Starting receiver...';
@@ -505,7 +1087,7 @@
       receiverFrameLoop();
       receiverFrameTimer = setInterval(receiverFrameLoop, 700);
       receiverAudioLoop();
-      audioTimer = setInterval(receiverAudioLoop, 900);
+      audioTimer = setInterval(receiverAudioLoop, 450);
     }).catch((err) => {
       els.audioStatus.textContent = `Receiver failed: ${err.message}`;
     });
@@ -617,6 +1199,7 @@
 
   document.getElementById('refreshInfo').addEventListener('click', loadInfo);
   document.getElementById('connectHackrf').addEventListener('click', connectHackrf);
+  document.getElementById('readinessHackrf').addEventListener('click', runReadiness);
   document.getElementById('testHackrf').addEventListener('click', testHackrf);
   document.getElementById('runSweep').addEventListener('click', runSweep);
   document.getElementById('runCapture').addEventListener('click', runCapture);
@@ -625,15 +1208,26 @@
   document.getElementById('refreshDiagnostics').addEventListener('click', loadDiagnostics);
   document.getElementById('startAudio').addEventListener('click', startAudio);
   document.getElementById('stopAudio').addEventListener('click', stopAudio);
+  document.getElementById('addVfo').addEventListener('click', addVfo);
+  document.getElementById('exportVfos').addEventListener('click', exportVfos);
+  document.getElementById('importVfos').addEventListener('click', importVfos);
+  document.getElementById('refreshActivity').addEventListener('click', loadActivity);
+  document.getElementById('refreshAlerts').addEventListener('click', loadAlerts);
+  document.getElementById('saveAlertRule').addEventListener('click', saveAlertRule);
   document.getElementById('runReceiverScan').addEventListener('click', runReceiverScan);
   document.getElementById('refreshBookmarks').addEventListener('click', loadBookmarks);
+  document.getElementById('importBookmarks').addEventListener('click', importBookmarks);
+  document.getElementById('refreshDecoders').addEventListener('click', loadDecoders);
+  document.getElementById('planDecoder').addEventListener('click', planDecoder);
   document.getElementById('refreshTrunking').addEventListener('click', loadTrunking);
   document.getElementById('acceptTrunkAgreement').addEventListener('click', acceptTrunkAgreement);
   document.getElementById('addTrunkProfile').addEventListener('click', addTrunkProfile);
+  document.getElementById('trunkImportProfiles').addEventListener('click', importTrunkProfiles);
   document.getElementById('trunkStart').addEventListener('click', startTrunking);
   document.getElementById('trunkStop').addEventListener('click', stopTrunking);
   document.getElementById('applyTrunkFilter').addEventListener('click', loadTrunking);
   document.getElementById('saveTrunkAlias').addEventListener('click', saveTrunkAlias);
+  document.getElementById('trunkImportAliases').addEventListener('click', importTrunkAliases);
   if (els.trunkProfiles) {
     els.trunkProfiles.addEventListener('click', async (event) => {
       const del = event.target.closest('[data-delete-trunk-profile]');
@@ -657,6 +1251,67 @@
       }
     });
   }
+  if (els.bookmarkSearch) {
+    els.bookmarkSearch.addEventListener('input', () => loadBookmarks());
+  }
+  if (els.bookmarkCategory) {
+    els.bookmarkCategory.addEventListener('change', () => loadBookmarks());
+  }
+  if (document.getElementById('decoderType')) {
+    document.getElementById('decoderType').addEventListener('change', () => loadDecoders());
+  }
+  if (document.getElementById('decoderEventSearch')) {
+    document.getElementById('decoderEventSearch').addEventListener('input', () => loadDecoders());
+  }
+  if (els.vfoList) {
+    els.vfoList.addEventListener('click', (event) => {
+      const select = event.target.closest('[data-select-vfo]');
+      if (select) {
+        selectVfo(select.getAttribute('data-select-vfo'));
+        return;
+      }
+      const del = event.target.closest('[data-delete-vfo]');
+      if (del) {
+        deleteVfo(del.getAttribute('data-delete-vfo'));
+      }
+    });
+  }
+  if (els.activityList) {
+    els.activityList.addEventListener('click', async (event) => {
+      const button = event.target.closest('[data-promote-activity]');
+      if (!button) return;
+      await promoteActivity(
+        button.getAttribute('data-promote-activity'),
+        button.getAttribute('data-frequency'),
+        button.getAttribute('data-mode') || 'nfm'
+      );
+    });
+  }
+  if (els.alertRules) {
+    els.alertRules.addEventListener('click', async (event) => {
+      const del = event.target.closest('[data-delete-alert-rule]');
+      if (!del) return;
+      await api.receiverAlertRuleDelete(del.getAttribute('data-delete-alert-rule'));
+      await loadAlerts();
+    });
+  }
+  if (els.alertEvents) {
+    els.alertEvents.addEventListener('click', async (event) => {
+      const button = event.target.closest('[data-promote-activity]');
+      if (!button) return;
+      await promoteActivity(
+        button.getAttribute('data-promote-activity'),
+        button.getAttribute('data-frequency'),
+        button.getAttribute('data-mode') || 'nfm'
+      );
+    });
+  }
+  if (els.activityMinPeak) {
+    els.activityMinPeak.addEventListener('change', () => loadActivity());
+  }
+  if (els.activitySearch) {
+    els.activitySearch.addEventListener('input', () => loadActivity());
+  }
   els.captureList.addEventListener('click', async (event) => {
     const button = event.target.closest('[data-delete-capture]');
     if (!button) return;
@@ -667,6 +1322,19 @@
   document.getElementById('saveSettings').addEventListener('click', saveSettings);
   document.getElementById('startWaterfall').addEventListener('click', startWaterfall);
   document.getElementById('stopWaterfall').addEventListener('click', stopWaterfall);
+  if (els.presetList) {
+    els.presetList.addEventListener('click', (event) => {
+      const rangeButton = event.target.closest('[data-preset-start]');
+      if (rangeButton) {
+        applyPresetRange(rangeButton);
+        return;
+      }
+      const button = event.target.closest('[data-preset-frequency]');
+      if (!button) return;
+      applyPresetDefaults(button);
+      tuneFrequency(button.getAttribute('data-preset-frequency'), button.getAttribute('data-preset-mode') || 'nfm');
+    });
+  }
 
   if (socket && !socketStub) {
     socket.on('waterfall_row', data => {
@@ -684,11 +1352,15 @@
   }
 
   loadSettings();
+  loadVfos();
   loadInfo();
   loadCaptures();
   loadPresets();
   loadSerialPorts();
   loadBookmarks();
+  loadActivity();
+  loadAlerts();
+  loadDecoders();
   loadTrunking();
   loadDiagnostics();
 })();

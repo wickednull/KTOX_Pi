@@ -9,6 +9,8 @@ from glob import glob
 from pathlib import Path
 from typing import Any
 
+from sdr.processing import power_spectrum
+
 
 class HackRFManager:
     def __init__(self, runner: Any | None = None):
@@ -261,6 +263,57 @@ class HackRFManager:
                 "error": sweep.get("error", ""),
                 "stdout_preview": (sweep.get("stdout") or "")[:1000],
             },
+        }
+
+    def readiness_check(
+        self,
+        frequency: int = 2437000000,
+        sample_rate: int = 2000000,
+        sample_count: int = 4096,
+    ) -> dict:
+        """Return a practical HackRF readiness report for the browser UI."""
+
+        tools = self.tools_available()
+        usb = self.usb_devices() if tools.get("lsusb") else {"available": False, "devices": [], "hackrf": []}
+        info = self.connect()
+        rx = self.read_iq_samples(
+            int(frequency),
+            sample_rate=int(sample_rate),
+            sample_count=max(64, int(sample_count)),
+        )
+        samples = rx.get("samples") or []
+        powers = power_spectrum(samples, fft_size=min(512, max(64, len(samples) // 2))) if samples else []
+        peak_db = max(powers) if powers else None
+        avg_db = (sum(powers) / len(powers)) if powers else None
+        signal = {
+            "frequency": int(frequency),
+            "sample_rate": int(sample_rate),
+            "sample_count": len(samples),
+            "peak_db": peak_db,
+            "average_db": avg_db,
+            "has_iq": bool(samples),
+        }
+        next_steps: list[str] = []
+        if not tools.get("hackrf_info"):
+            next_steps.append("Install the hackrf package so hackrf_info is available.")
+        if not tools.get("hackrf_transfer"):
+            next_steps.append("Install the hackrf package so hackrf_transfer is available.")
+        if tools.get("lsusb") and not usb.get("hackrf"):
+            next_steps.append("HackRF is not visible on USB. Check cable, power, and USB passthrough.")
+        if not info.get("connected"):
+            next_steps.append(info.get("error") or "hackrf_info cannot open the HackRF.")
+        if not rx.get("ok"):
+            next_steps.append(rx.get("error") or "hackrf_transfer could not read IQ samples.")
+        if not next_steps:
+            next_steps.append("HackRF is connected and RX sample reads are working.")
+        return {
+            "ok": bool(info.get("connected")) and bool(rx.get("ok")) and bool(samples),
+            "tools": tools,
+            "usb": usb,
+            "info": info,
+            "rx": {key: value for key, value in rx.items() if key != "samples"},
+            "signal": signal,
+            "next_steps": next_steps,
         }
 
     def serial_ports(self) -> dict:

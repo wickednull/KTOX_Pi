@@ -41,5 +41,43 @@ fi
 section "Local HTTP check"
 curl -I --max-time 3 http://127.0.0.1:8081/ 2>&1 || true
 
+section "HackRF tools"
+for tool in hackrf_info hackrf_transfer hackrf_sweep lsusb; do
+  if command -v "$tool" >/dev/null 2>&1; then
+    echo "$tool: $(command -v "$tool")"
+  else
+    echo "$tool: MISSING"
+  fi
+done
+
+section "USB HackRF detection"
+if command -v lsusb >/dev/null 2>&1; then
+  lsusb | grep -Ei '1d50:6089|hackrf|openmoko' || echo "No HackRF USB match found"
+else
+  echo "lsusb is not installed"
+fi
+
+section "hackrf_info"
+if command -v hackrf_info >/dev/null 2>&1; then
+  hackrf_info 2>&1 || true
+else
+  echo "hackrf_info is not installed"
+fi
+
+section "SDR readiness API"
+curl -fsS --max-time 20 \
+  -H 'Content-Type: application/json' \
+  -d '{"frequency":2437000000,"sample_rate":2000000,"sample_count":4096}' \
+  http://127.0.0.1:8081/api/hackrf/readiness 2>&1 || true
+
+section "Trunking decoder tools"
+for tool in multi_rx.py rx.py dsd-fme; do
+  if command -v "$tool" >/dev/null 2>&1; then
+    echo "$tool: $(command -v "$tool")"
+  else
+    echo "$tool: MISSING"
+  fi
+done
+
 section "Recent SDR logs"
 journalctl -u "$SERVICE" -n 40 --no-pager 2>/dev/null || true

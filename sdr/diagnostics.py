@@ -30,6 +30,7 @@ def build_sdr_diagnostics(
     events: Any,
 ) -> dict[str, Any]:
     hackrf = manager.connect()
+    readiness = manager.readiness_check()
     trunk_status = trunking.status()
     required = _file_status(required_files)
     captures = Path(captures_dir)
@@ -40,6 +41,8 @@ def build_sdr_diagnostics(
     next_steps: list[str] = []
     if not hackrf.get("connected"):
         next_steps.append(hackrf.get("error") or "Connect HackRF over USB and verify hackrf_info can open it.")
+    if not readiness.get("ok"):
+        next_steps.extend(readiness.get("next_steps") or ["HackRF is connected but RX sample reads are not working."])
     if required["missing"]:
         next_steps.append("Run OTA update again or pull the current repo; required SDR files are missing.")
     if not decoder_tools.get("op25", {}).get("available"):
@@ -50,8 +53,9 @@ def build_sdr_diagnostics(
         next_steps.append("SDR Suite prerequisites are present. Start with Receiver, then Trunking profiles.")
 
     return {
-        "ok": bool(hackrf.get("connected")) and not required["missing"],
+        "ok": bool(hackrf.get("connected")) and bool(readiness.get("ok")) and not required["missing"],
         "hackrf": hackrf,
+        "readiness": readiness,
         "receiver": receiver_status,
         "trunking": trunk_status,
         "decoder_tools": decoder_tools,

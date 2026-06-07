@@ -22,6 +22,7 @@
         <button class="tab" data-tab="waterfall">Waterfall</button>
         <button class="tab" data-tab="sweep">Sweep</button>
         <button class="tab" data-tab="capture">Capture</button>
+        <button class="tab" data-tab="decoders">Decoders</button>
         <button class="tab" data-tab="trunking">Trunking</button>
         <button class="tab" data-tab="serial">USB / Serial</button>
         <button class="tab" data-tab="diagnostics">Diagnostics</button>
@@ -45,6 +46,7 @@
           </div>
           <div class="actions">
             <button id="connectHackrf" class="primary">Connect HackRF</button>
+            <button id="readinessHackrf">RX Readiness</button>
             <button id="testHackrf">Test RX/Sweep</button>
             <button id="refreshInfo">Refresh</button>
           </div>
@@ -57,6 +59,7 @@
         </div>
         <div id="connectStatus" class="status-line">Connect a HackRF over USB, then press Connect HackRF.</div>
         <pre id="usbStatus" class="output compact">USB status will appear here.</pre>
+        <pre id="readinessOutput" class="output compact">RX readiness results will appear here.</pre>
         <div id="presetList" class="preset-list"></div>
       </section>
 
@@ -91,6 +94,70 @@
           </div>
         </div>
         <div id="audioStatus" class="status-line">Idle</div>
+        <div class="vfo-deck">
+          <div class="section-head compact-head">
+            <div>
+              <h3>VFO Deck</h3>
+              <p>Save monitored frequencies, jump between them, and track live receiver activity.</p>
+            </div>
+            <div class="actions">
+              <input id="vfoImportFile" class="hidden-file" type="file" accept="application/json,.json">
+              <button id="exportVfos">Export VFOs</button>
+              <button id="importVfos">Import VFOs</button>
+              <button id="addVfo" class="primary">Add VFO</button>
+            </div>
+          </div>
+          <div id="vfoList" class="vfo-list"></div>
+          <pre id="vfoActivity" class="output compact">VFO activity will appear here.</pre>
+        </div>
+        <div class="vfo-deck">
+          <div class="section-head compact-head">
+            <div>
+              <h3>Activity Intelligence</h3>
+              <p>Persistent signal history ranked across receiver sessions.</p>
+            </div>
+            <div class="actions">
+              <a class="export-link" href="./api/receiver/activity.csv">Export Activity</a>
+              <button id="refreshActivity">Refresh Activity</button>
+            </div>
+          </div>
+          <div class="bookmark-filters">
+            <label>Min Peak dB<input id="activityMinPeak" type="number" value="-120"></label>
+            <label>Search<input id="activitySearch" type="search" placeholder="frequency, mode, source"></label>
+          </div>
+          <div id="activitySummary" class="grid"></div>
+          <div id="activityList" class="capture-list">Activity will appear here. Promote strong hits into VFOs or bookmarks.</div>
+        </div>
+        <div class="vfo-deck">
+          <div class="section-head compact-head">
+            <div>
+              <h3>Watch Rules</h3>
+              <p>Trigger persistent alerts when watched frequencies open above threshold.</p>
+            </div>
+            <div class="actions">
+              <a class="export-link" href="./api/receiver/alerts.csv">Export Alerts</a>
+              <button id="refreshAlerts">Refresh Alerts</button>
+              <button id="saveAlertRule" class="primary">Save Watch</button>
+            </div>
+          </div>
+          <div class="form-grid">
+            <label>Label<input id="alertRuleLabel" type="text" value="New watch"></label>
+            <label>Frequency Hz<input id="alertRuleFrequency" type="number" value="162550000"></label>
+            <label>Tolerance Hz<input id="alertRuleTolerance" type="number" value="25000"></label>
+            <label>Min Peak dB<input id="alertRuleMinPeak" type="number" value="-60"></label>
+          </div>
+          <div id="alertSummary" class="grid"></div>
+          <div class="receiver-tools">
+            <section>
+              <div class="section-head compact-head"><h3>Rules</h3></div>
+              <div id="alertRules" class="capture-list">Watch rules will appear here.</div>
+            </section>
+            <section>
+              <div class="section-head compact-head"><h3>Alerts</h3></div>
+              <div id="alertEvents" class="capture-list">Alert events will appear here.</div>
+            </section>
+          </div>
+        </div>
         <div class="receiver-grid">
           <section class="receiver-plot">
             <div class="plot-head"><strong>Spectrum</strong><span id="receiverSignal">No signal</span></div>
@@ -124,7 +191,16 @@
                 <h3>Bookmarks</h3>
                 <p>Saved frequencies for quick tuning and evidence context.</p>
               </div>
-              <button id="refreshBookmarks">Refresh</button>
+              <div class="actions">
+                <a id="bookmarkExport" class="export-link" href="./api/receiver/bookmarks.json">Export</a>
+                <input id="bookmarkImportFile" class="hidden-file" type="file" accept="application/json,.json">
+                <button id="importBookmarks">Import Bookmarks</button>
+                <button id="refreshBookmarks">Refresh</button>
+              </div>
+            </div>
+            <div class="bookmark-filters">
+              <label>Search<input id="bookmarkSearch" type="search" placeholder="frequency, note, category"></label>
+              <label>Category<select id="bookmarkCategory"><option value="">All categories</option></select></label>
             </div>
             <div id="bookmarkList" class="capture-list">Bookmarks will appear here.</div>
           </section>
@@ -183,6 +259,65 @@
         <div id="captureList" class="capture-list"></div>
       </section>
 
+      <section id="decoders" class="panel">
+        <div class="section-head">
+          <div>
+            <h2>Decoders</h2>
+            <p>POCSAG, RDS, and clear voice transcription workbench for authorized signals.</p>
+          </div>
+          <div class="actions">
+            <button id="refreshDecoders">Refresh</button>
+            <button id="planDecoder" class="primary">Plan Decoder</button>
+          </div>
+        </div>
+        <div class="notice">
+          <strong>Clear Signals Only</strong>
+          <span>Encrypted traffic is logged only and is not sent to playback, transcription, or bypass tools.</span>
+        </div>
+        <div class="trunk-grid">
+          <section>
+            <div class="section-head compact-head">
+              <div>
+                <h3>Decoder Setup</h3>
+                <p>Build a decoder plan from the active receiver settings.</p>
+              </div>
+              <a class="export-link" href="./api/decoders/events.csv">Export decoder CSV</a>
+            </div>
+            <div class="form-grid">
+              <label>Decoder<select id="decoderType">
+                <option value="pocsag">POCSAG</option>
+                <option value="rds">RDS</option>
+                <option value="transcription">Transcription</option>
+              </select></label>
+              <label>Frequency Hz<input id="decoderFrequency" type="number" value="152480000"></label>
+              <label>Mode<select id="decoderMode">
+                <option value="nfm">NFM</option>
+                <option value="wfm">WFM</option>
+                <option value="am">AM</option>
+              </select></label>
+              <label>Event Search<input id="decoderEventSearch" type="search" placeholder="capcode, station, text"></label>
+            </div>
+            <pre id="decoderPlanOutput" class="output compact">Decoder plan will appear here.</pre>
+          </section>
+          <section>
+            <div class="section-head compact-head">
+              <div>
+                <h3>Tool Status</h3>
+                <p>Required decoder engines installed on the device.</p>
+              </div>
+            </div>
+            <div id="decoderStatus" class="capture-list">Decoder status will appear here.</div>
+          </section>
+        </div>
+        <div class="section-head compact-head">
+          <div>
+            <h3>Decoder Events</h3>
+            <p>Pager, RDS, and transcription events saved by the SDR Suite.</p>
+          </div>
+        </div>
+        <div id="decoderEvents" class="capture-list">Decoder events will appear here.</div>
+      </section>
+
       <section id="trunking" class="panel">
         <div class="section-head">
           <div>
@@ -223,6 +358,8 @@
               </div>
               <div class="actions">
                 <a id="trunkExportProfiles" class="export-link" href="./api/trunking/profiles.json">Export Profiles</a>
+                <input id="trunkProfileImportFile" class="hidden-file" type="file" accept="application/json,.json">
+                <button id="trunkImportProfiles">Import Profiles</button>
                 <button id="addTrunkProfile" class="primary">Save Profile</button>
               </div>
             </div>
@@ -278,6 +415,8 @@
               </div>
               <div class="actions">
                 <a id="trunkExportAliases" class="export-link" href="./api/trunking/aliases.json">Export Aliases</a>
+                <input id="trunkAliasImportFile" class="hidden-file" type="file" accept="application/json,.json">
+                <button id="trunkImportAliases">Import Aliases</button>
                 <button id="saveTrunkAlias" class="primary">Save Alias</button>
               </div>
             </div>

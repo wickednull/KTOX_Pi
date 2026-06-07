@@ -113,6 +113,7 @@ p, small, span { color: var(--muted); }
 }
 
 .actions { display: flex; gap: 0.5rem; }
+.hidden-file { max-width: 13rem; padding: 0.45rem; }
 
 .grid {
   display: grid;
@@ -135,6 +136,18 @@ p, small, span { color: var(--muted); }
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 0.8rem;
+}
+
+.preset-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-top: 0.7rem;
+}
+
+.preset-buttons button {
+  padding: 0.45rem 0.55rem;
+  font-size: 0.84rem;
 }
 
 .form-grid {
@@ -185,9 +198,16 @@ canvas {
 .capture-list { display: grid; gap: 0.6rem; }
 .capture-row {
   display: grid;
-  grid-template-columns: 1fr auto auto auto auto;
+  grid-template-columns: minmax(0, 1fr) repeat(5, auto);
   gap: 0.8rem;
   align-items: center;
+}
+
+.bookmark-filters {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(160px, 0.45fr);
+  gap: 0.7rem;
+  margin-bottom: 0.8rem;
 }
 
 .receiver-toolbar {
@@ -201,6 +221,63 @@ canvas {
 .receiver-grid {
   display: grid;
   gap: 0.8rem;
+}
+
+.vfo-deck {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(2, 6, 23, 0.58);
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.vfo-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 0.7rem;
+  margin-bottom: 0.8rem;
+}
+
+.vfo-row {
+  display: grid;
+  gap: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.78);
+  padding: 0.9rem;
+}
+
+.vfo-row.active {
+  border-color: rgba(34, 211, 238, 0.65);
+  box-shadow: inset 0 0 0 1px rgba(34, 211, 238, 0.16);
+}
+
+.vfo-main,
+.vfo-meter {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.vfo-main strong,
+.vfo-meter strong {
+  overflow-wrap: anywhere;
+}
+
+.vfo-meter {
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  font-size: 0.9rem;
+}
+
+.vfo-meter .live {
+  color: var(--green);
+  font-weight: 700;
+}
+
+.vfo-actions {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.5rem;
 }
 
 .receiver-tools {
@@ -237,8 +314,13 @@ canvas {
   border-color: rgba(248, 113, 113, 0.42);
 }
 
-.trunk-event.clear {
+.trunk-event.clear,
+.decoder-row.clear {
   border-color: rgba(52, 211, 153, 0.34);
+}
+
+.decoder-row.encrypted {
+  border-color: rgba(248, 113, 113, 0.42);
 }
 
 .trunk-summary-row {
@@ -281,6 +363,7 @@ h3 {
   .app-shell { grid-template-columns: 1fr; }
   .side { border-right: 0; border-bottom: 1px solid var(--border); }
   .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .receiver-tools, .trunk-grid { grid-template-columns: 1fr; }
+  .receiver-tools, .trunk-grid, .bookmark-filters { grid-template-columns: 1fr; }
+  .vfo-meter, .vfo-actions { grid-template-columns: 1fr; }
   .section-head, .capture-row { grid-template-columns: 1fr; display: grid; }
 }

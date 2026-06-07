@@ -93,4 +93,5 @@ def demodulate_audio(
         "audio_rate": int(audio_rate),
         "mode": mode.lower(),
         "samples": len(audio),
+        "duration_sec": (len(audio) / float(audio_rate)) if audio_rate else 0.0,
     }

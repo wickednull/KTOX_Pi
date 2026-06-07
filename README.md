@@ -317,7 +317,7 @@ Use the SDR Suite `Diagnostics` tab after OTA or install. It reports HackRF USB/
 - event filters by talkgroup, source, encrypted state, and text
 - talkgroup/source aliases
 - CSV export for event history
-- JSON export for trunking profiles and aliases
+- JSON import/export for trunking profiles and aliases
 
 ### What the installer does
 

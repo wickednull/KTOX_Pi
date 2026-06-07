@@ -107,6 +107,7 @@ def validate_processing() -> None:
     audio = demodulate_audio([0, 1, 1, 0] * 2048, sample_rate=2000000, mode="nfm")
     require(audio["audio"], "demodulator should produce audio samples")
     require(audio["audio_rate"] == 48000, "demodulator audio rate mismatch")
+    require(audio["duration_sec"] > 0, "demodulator should report audio duration")
 
 
 def validate_database() -> None:
@@ -145,6 +146,11 @@ def validate_device() -> None:
     require(["hackrf_sweep", "-f", "2400:2500", "-w", "1000000", "-1"] in runner.calls, "hackrf_sweep should receive MHz range")
     row = manager.read_iq_samples(2437000000, sample_count=256)
     require(row["ok"] is True and len(row["samples"]) == 512, "read_iq_samples should return IQ bytes")
+    readiness = manager.readiness_check(frequency=2437000000, sample_rate=2000000, sample_count=256)
+    require(readiness["ok"] is True, "readiness check should pass with fake HackRF")
+    require(readiness["rx"]["bytes"] > 0, "readiness check should prove RX bytes were read")
+    require(readiness["signal"]["sample_count"] == 512, "readiness check should report interleaved IQ sample count")
+    require(readiness["next_steps"][0] == "HackRF is connected and RX sample reads are working.", "readiness next steps should report working RX")
     require(runner.calls[0][0] == "hackrf_info", "hackrf_info was not called")
 
 
@@ -179,13 +185,14 @@ def validate_receiver() -> None:
     audio = session.audio()
     require(audio["ok"] is True, "receiver audio should succeed")
     require(audio["audio"], "receiver audio should include samples")
+    require(audio["duration_sec"] > 0, "receiver audio should include duration metadata")
     stopped = session.stop()
     require(stopped["running"] is False, "receiver should stop")
 
 
 def validate_handlers() -> None:
     from sdr.handlers import build_capture_path, get_frequency_presets, parse_hackrf_sweep
-    from sdr.signals import BookmarkStore, scan_hits_from_rows
+    from sdr.signals import ActivityStore, AlertRuleStore, BookmarkStore, scan_hits_from_rows
 
     with tempfile.TemporaryDirectory() as tmp:
         captures_dir = Path(tmp).resolve()
@@ -195,9 +202,42 @@ def validate_handlers() -> None:
         store = BookmarkStore(captures_dir / "bookmarks.json")
         created = store.add({"label": "NOAA test", "frequency": 162550000, "mode": "nfm"})
         require(created["id"], "bookmark should get an id")
+        require(created["category"] == "general", "bookmark should default to general category")
         require(store.list()[0]["label"] == "NOAA test", "bookmark list should include created bookmark")
+        categorized = store.add({"label": "Airband test", "frequency": 121500000, "mode": "am", "category": "airband"})
+        require(store.categories() == ["airband", "general"], "bookmark categories should be sorted")
+        exported = store.export_json()
+        require("bookmarks" in exported and "Airband test" in exported, "bookmark export should include JSON payload")
+        imported = BookmarkStore(captures_dir / "imported_bookmarks.json")
+        import_result = imported.import_json(exported)
+        require(import_result["imported"] == 2, "bookmark import should report imported count")
+        require(imported.list(category="airband")[0]["id"] == categorized["id"], "bookmark import should restore categories")
+        require(imported.list(query="noaa")[0]["frequency"] == 162550000, "bookmark list should filter by query")
         require(store.delete(created["id"]) is True, "bookmark delete should return true")
-    require("wifi_2g" in get_frequency_presets(), "wifi preset group missing")
+        activity = ActivityStore(captures_dir / "activity.json")
+        activity.add({"frequency": 162550000, "mode": "nfm", "peak_db": -42.5, "squelch_open": True, "source": "receiver"})
+        activity.add({"frequency": 162550000, "mode": "nfm", "peak_db": -55.0, "squelch_open": False, "source": "receiver"})
+        activity.add({"frequency": 121500000, "mode": "am", "peak_db": -38.0, "squelch_open": True, "source": "scan"})
+        require(activity.summary()["total_events"] == 3, "activity summary should count events")
+        require(activity.summary()["top_frequencies"][0]["frequency"] == 162550000, "activity summary should rank repeated frequencies first")
+        require(activity.list(min_peak=-40)[0]["frequency"] == 121500000, "activity list should filter by minimum peak")
+        require("frequency,mode,peak_db,squelch_open,source" in activity.to_csv(), "activity CSV should include stable headers")
+        alerts = AlertRuleStore(captures_dir / "alert_rules.json", captures_dir / "alert_events.json")
+        rule = alerts.add_rule({"label": "NOAA open", "frequency": 162550000, "tolerance_hz": 25000, "min_peak_db": -50})
+        require(rule["enabled"] is True and rule["frequency"] == 162550000, "alert rule should persist enabled frequency watch")
+        matched = alerts.evaluate({"frequency": 162551000, "peak_db": -42.5, "squelch_open": True, "mode": "nfm"})
+        require(matched and matched[0]["rule_id"] == rule["id"], "alert rule should trigger inside tolerance and threshold")
+        require(alerts.evaluate({"frequency": 162551000, "peak_db": -80.0, "squelch_open": True}) == [], "alert rule should not trigger below threshold")
+        require(alerts.summary()["total_alerts"] == 1, "alert summary should count triggered events")
+        require("rule_id,label,frequency,peak_db" in alerts.events_csv(), "alert event CSV should include stable headers")
+    presets = get_frequency_presets()
+    for group in ("weather", "airband", "marine", "rail", "ham_2m", "ham_70cm", "public_safety", "fm", "adsb", "ais", "ism_433", "ism_915", "wifi_2g"):
+        require(group in presets, f"preset group missing {group}")
+        require(presets[group]["frequencies"], f"preset group {group} should include frequencies")
+        require("mode" in presets[group] and "bandwidth" in presets[group] and "sample_rate" in presets[group], f"preset group {group} should include receiver defaults")
+    require(any(item.get("hz") == 162550000 for item in presets["weather"]["frequencies"]), "weather presets should include NOAA 162.550")
+    require(any(item.get("start") == 118000000 and item.get("stop") == 137000000 for item in presets["airband"]["frequencies"]), "airband presets should include scan range")
+    require(any(item.get("hz") == 1090000000 for item in presets["adsb"]["frequencies"]), "ADS-B presets should include 1090 MHz")
     rows = parse_hackrf_sweep("2026-05-29, 00:00:00, 2400000000, 2401000000, 1000000, 1, -55.0, -42.0")
     require(rows[0]["start_hz"] == 2400000000, "sweep start parse failed")
     require(rows[0]["powers_db"] == [-55.0, -42.0], "sweep powers parse failed")
@@ -338,6 +378,46 @@ def validate_trunking() -> None:
         require(missing_status["process"]["running"] is False, "missing decoder engine must not start a process")
 
 
+def validate_utility_decoders() -> None:
+    from sdr.decoders import UtilityDecoderPlanner, UtilityDecoderStatus, UtilityEventLog
+
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+        status = UtilityDecoderStatus(locator=FakeDecoderTools({
+            "multimon-ng": "/usr/bin/multimon-ng",
+            "redsea": "/usr/bin/redsea",
+            "whisper": "/usr/local/bin/whisper",
+        })).status()
+        require(status["pocsag"]["available"] is True, "POCSAG decoder should detect multimon-ng")
+        require(status["rds"]["available"] is True, "RDS decoder should detect redsea")
+        require(status["transcription"]["available"] is True, "transcription decoder should detect whisper")
+
+        planner = UtilityDecoderPlanner(locator=FakeDecoderTools({"multimon-ng": "/usr/bin/multimon-ng"}))
+        pocsag = planner.plan({
+            "decoder": "pocsag",
+            "frequency": 152480000,
+            "mode": "nfm",
+            "sample_rate": 2000000,
+            "audio_rate": 48000,
+        })
+        require(pocsag["ok"] is True and pocsag["decoder"] == "pocsag", "POCSAG plan should be valid when multimon-ng exists")
+        require("multimon-ng" in " ".join(pocsag["args"]) and "POCSAG1200" in pocsag["args"], "POCSAG plan should use multimon-ng POCSAG1200")
+        missing_rds = planner.plan({"decoder": "rds", "frequency": 98100000, "mode": "wfm"})
+        require(missing_rds["ok"] is False and missing_rds["state"] == "decoder-tool-missing", "RDS plan should report missing redsea")
+
+        events = UtilityEventLog(base / "utility_events.json")
+        pager = events.add({"decoder": "pocsag", "frequency": 152480000, "capcode": "12345", "message": "test page"})
+        require(pager["decoder"] == "pocsag" and pager["encrypted"] is False, "POCSAG event should persist as clear utility event")
+        events.add({"decoder": "rds", "frequency": 98100000, "station": "KTOX", "radiotext": "test station"})
+        transcript = events.add({"decoder": "transcription", "frequency": 162550000, "text": "weather alert"})
+        require(events.summary()["total_events"] == 3, "utility event summary should count decoder events")
+        require(any(row["decoder"] == "rds" for row in events.list(decoder="rds")), "utility events should filter by decoder")
+        require(events.list(query="weather")[0]["id"] == transcript["id"], "utility events should filter by query")
+        csv_text = events.to_csv()
+        require("timestamp,decoder,frequency,status,encrypted,message" in csv_text, "utility decoder CSV should include stable headers")
+        require("test page" in csv_text and "KTOX" in csv_text, "utility decoder CSV should include event values")
+
+
 def validate_diagnostics() -> None:
     from sdr.diagnostics import build_sdr_diagnostics
     from sdr.device import HackRFManager
@@ -363,6 +443,7 @@ def validate_diagnostics() -> None:
         )
         require(report["ok"] is True, "diagnostics should mark fake hardware path ok")
         require(report["hackrf"]["connected"] is True, "diagnostics should include HackRF connection")
+        require(report["readiness"]["ok"] is True, "diagnostics should include HackRF RX readiness")
         require(report["decoder_tools"]["op25"]["available"] is True, "diagnostics should include decoder tool status")
         require(report["event_summary"]["total_events"] == 0, "diagnostics should include trunking event summary")
         require(report["required_files"]["missing"] == [], "diagnostics should include required file status")
@@ -370,14 +451,29 @@ def validate_diagnostics() -> None:
 
 
 def validate_server() -> None:
-    from services.sdr_server import create_app
+    import services.sdr_server as sdr_server
     from sdr.database import CaptureDatabase
     from sdr.device import HackRFManager
+
+    if sdr_server.SDR_IMPORT_ERROR is not None:
+        server = (ROOT / "services/sdr_server.py").read_text(encoding="utf-8")
+        for route in (
+            "/api/hackrf/info",
+            "/api/hackrf/connect",
+            "/api/hackrf/readiness",
+            "/api/hackrf/test",
+            "/api/receiver/start",
+            "/api/receiver/frame",
+            "/api/trunking/start",
+            "/api/diagnostics",
+        ):
+            require(route in server, f"server source missing route {route}")
+        return
 
     with tempfile.TemporaryDirectory() as tmp:
         db = CaptureDatabase(Path(tmp) / "index.db")
         manager = HackRFManager(runner=FakeRunner())
-        app, _socketio = create_app(testing=True, manager=manager, database=db)
+        app, _socketio = sdr_server.create_app(testing=True, manager=manager, database=db)
         client = app.test_client()
         require(client.get("/api/hackrf/info").status_code == 200, "info endpoint failed")
         connect = client.post("/api/hackrf/connect")
@@ -409,6 +505,13 @@ def validate_server() -> None:
         )
         require(hardware.status_code == 200, "hardware test endpoint failed")
         require("rx" in hardware.get_json() and "sweep" in hardware.get_json(), "hardware test should include RX and sweep results")
+        readiness = client.post(
+            "/api/hackrf/readiness",
+            data=json.dumps({"frequency": 2437000000, "sample_rate": 2000000, "sample_count": 256}),
+            content_type="application/json",
+        )
+        require(readiness.status_code == 200, "readiness endpoint failed")
+        require(readiness.get_json()["ok"] is True, "readiness endpoint should pass for fake HackRF")
         require(client.get("/api/serial/ports").status_code == 200, "serial ports endpoint failed")
         receiver_payload = {
             "frequency": 162550000,
@@ -444,6 +547,32 @@ def validate_server() -> None:
         bookmarks = client.get("/api/receiver/bookmarks")
         require(bookmarks.status_code == 200, "receiver bookmarks endpoint failed")
         require(bookmarks.get_json()["bookmarks"], "scan with save_hits should create bookmarks")
+        bookmark_payload = {"label": "Server airband", "frequency": 121500000, "mode": "am", "category": "airband"}
+        added_bookmark = client.post("/api/receiver/bookmarks", data=json.dumps(bookmark_payload), content_type="application/json")
+        require(added_bookmark.status_code == 200, "receiver bookmark create endpoint failed")
+        categorized_bookmarks = client.get("/api/receiver/bookmarks?category=airband&q=server")
+        require(categorized_bookmarks.status_code == 200 and categorized_bookmarks.get_json()["bookmarks"], "receiver bookmarks endpoint should filter category and query")
+        bookmarks_export = client.get("/api/receiver/bookmarks.json")
+        require(bookmarks_export.status_code == 200 and "bookmarks" in bookmarks_export.get_data(as_text=True), "receiver bookmark export endpoint failed")
+        imported_bookmarks = client.post("/api/receiver/bookmarks/import", data=bookmarks_export.get_data(), content_type="application/json")
+        require(imported_bookmarks.status_code == 200 and imported_bookmarks.get_json()["imported"] >= 1, "receiver bookmark import endpoint failed")
+        activity = client.get("/api/receiver/activity")
+        require(activity.status_code == 200 and activity.get_json()["summary"]["total_events"] >= 1, "receiver activity endpoint should report frame activity")
+        activity_filtered = client.get("/api/receiver/activity?min_peak=-40")
+        require(activity_filtered.status_code == 200 and "events" in activity_filtered.get_json(), "receiver activity endpoint should filter events")
+        activity_csv = client.get("/api/receiver/activity.csv")
+        require(activity_csv.status_code == 200 and "text/csv" in activity_csv.content_type, "receiver activity CSV endpoint failed")
+        alert_rule = client.post(
+            "/api/receiver/alerts/rules",
+            data=json.dumps({"label": "Server NOAA", "frequency": 162550000, "tolerance_hz": 25000, "min_peak_db": -90}),
+            content_type="application/json",
+        )
+        require(alert_rule.status_code == 200 and alert_rule.get_json()["rule"]["id"], "receiver alert rule create endpoint failed")
+        client.post("/api/receiver/frame", data=json.dumps(receiver_payload), content_type="application/json")
+        alerts = client.get("/api/receiver/alerts")
+        require(alerts.status_code == 200 and alerts.get_json()["rules"] and alerts.get_json()["events"], "receiver alerts endpoint should return rules and events")
+        alerts_csv = client.get("/api/receiver/alerts.csv")
+        require(alerts_csv.status_code == 200 and "text/csv" in alerts_csv.content_type, "receiver alerts CSV endpoint failed")
         profile = {
             "name": "Server P25",
             "protocol": "p25",
@@ -482,6 +611,24 @@ def validate_server() -> None:
         require(alias.status_code == 200, "trunking alias endpoint failed")
         filtered_events = client.get("/api/trunking/events?talkgroup=1001&encrypted=1")
         require(filtered_events.status_code == 200, "trunking filtered events endpoint failed")
+        decoder_status = client.get("/api/decoders/status")
+        require(decoder_status.status_code == 200 and "pocsag" in decoder_status.get_json()["decoders"], "decoder status endpoint failed")
+        decoder_plan = client.post(
+            "/api/decoders/plan",
+            data=json.dumps({"decoder": "pocsag", "frequency": 152480000, "mode": "nfm"}),
+            content_type="application/json",
+        )
+        require(decoder_plan.status_code == 200 and "decoder" in decoder_plan.get_json(), "decoder plan endpoint failed")
+        decoder_event = client.post(
+            "/api/decoders/events",
+            data=json.dumps({"decoder": "rds", "frequency": 98100000, "station": "KTOX"}),
+            content_type="application/json",
+        )
+        require(decoder_event.status_code == 200 and decoder_event.get_json()["event"]["decoder"] == "rds", "decoder event endpoint failed")
+        decoder_events = client.get("/api/decoders/events?decoder=rds")
+        require(decoder_events.status_code == 200 and decoder_events.get_json()["events"], "decoder events endpoint should filter by decoder")
+        decoder_csv = client.get("/api/decoders/events.csv")
+        require(decoder_csv.status_code == 200 and "text/csv" in decoder_csv.content_type, "decoder events CSV endpoint failed")
         profiles_export = client.get("/api/trunking/profiles.json")
         require(profiles_export.status_code == 200 and "profiles" in profiles_export.get_data(as_text=True), "trunking profile export endpoint failed")
         aliases_export = client.get("/api/trunking/aliases.json")
@@ -502,9 +649,9 @@ def validate_static_assets() -> None:
     for rel in required:
         require((ROOT / rel).exists(), f"missing {rel}")
     html = (ROOT / "static/sdr/index.html").read_text(encoding="utf-8")
-    for token in ["Dashboard", "Receiver", "Listen", "NFM", "WFM", "AM", "USB", "LSB", "receiverSpectrum", "receiverWaterfall", "rxStep", "rxBandwidth", "rxSquelch", "receiverStatus", "Scan Range", "Bookmarks", "Connect HackRF", "Test RX/Sweep", "USB / Serial", "Diagnostics", "diagnosticsOutput", "Waterfall", "Sweep", "Capture", "Settings", "js/api.js", "css/style.css"]:
+    for token in ["Dashboard", "Receiver", "Listen", "NFM", "WFM", "AM", "USB", "LSB", "receiverSpectrum", "receiverWaterfall", "rxStep", "rxBandwidth", "rxSquelch", "receiverStatus", "VFO Deck", "Add VFO", "Export VFOs", "Import VFOs", "vfoList", "vfoActivity", "Activity Intelligence", "activityList", "activitySummary", "activityMinPeak", "Promote", "Watch Rules", "alertRuleLabel", "alertRules", "alertEvents", "Save Watch", "Scan Range", "Bookmarks", "bookmarkSearch", "bookmarkCategory", "bookmarkImportFile", "Import Bookmarks", "Decoders", "POCSAG", "RDS", "Transcription", "decoderStatus", "decoderEvents", "decoderPlanOutput", "Connect HackRF", "RX Readiness", "readinessOutput", "Test RX/Sweep", "USB / Serial", "Diagnostics", "diagnosticsOutput", "Waterfall", "Sweep", "Capture", "Settings", "js/api.js", "css/style.css"]:
         require(token in html, f"missing SDR UI token {token!r}")
-    for token in ["Trunking", "Licensed Operation", "Encrypted traffic is logged", "trunkOperator", "trunkProfileName", "trunkControlChannel", "trunkStart", "trunkSummary", "trunkEventFilter", "trunkEncryptedFilter", "trunkAliasKey", "trunkExportCsv", "trunkExportProfiles", "trunkExportAliases", "trunkProcessStatus", "trunkDecoderStatus", "trunkEvents"]:
+    for token in ["Trunking", "Licensed Operation", "Encrypted traffic is logged", "trunkOperator", "trunkProfileName", "trunkControlChannel", "trunkStart", "trunkSummary", "trunkEventFilter", "trunkEncryptedFilter", "trunkAliasKey", "trunkExportCsv", "trunkExportProfiles", "trunkImportProfiles", "trunkProfileImportFile", "trunkExportAliases", "trunkImportAliases", "trunkAliasImportFile", "trunkProcessStatus", "trunkDecoderStatus", "trunkEvents"]:
         require(token in html, f"missing trunking UI token {token!r}")
     require('href="./api/hackrf/captures.csv"' in html, "SDR export link must be relative for /sdr proxying")
     require('src="./socket.io/socket.io.js"' in html, "Socket.IO client script must be relative for /sdr proxying")
@@ -542,17 +689,23 @@ def validate_integration() -> None:
     for required in ("services/sdr_server.py", "sdr/diagnostics.py", "sdr/trunking.py", "static/sdr/index.html", "tools/validate_sdr_suite.py"):
         require(f'require_file "{required}"' in installer, f"SDR installer must verify {required} exists before installing service")
     require("services/sdr_server.py" in diagnostic and "systemctl cat" in diagnostic and "127.0.0.1:8081" in diagnostic, "SDR diagnostic must inspect files, unit, and local port")
+    require("hackrf_info" in diagnostic and "lsusb" in diagnostic and "/api/hackrf/readiness" in diagnostic, "SDR diagnostic must inspect HackRF tools, USB, and readiness endpoint")
+    require("multi_rx.py" in diagnostic and "dsd-fme" in diagnostic, "SDR diagnostic must inspect trunking decoder tools")
     require("sys.path.insert(0, str(ROOT_DIR))" in server, "sdr_server.py must add repo root to sys.path before package imports")
     require("def run_socketio" in server and "except TypeError" in server and "allow_unsafe_werkzeug" in server, "sdr_server.py must tolerate Flask-SocketIO run argument differences")
     require("run_static_sdr_server" in server and "ThreadingHTTPServer" in server, "sdr_server.py must serve the page even when backend imports fail")
     require("/api/hackrf/connect" in server and "hackrf.connect()" in server, "sdr_server.py must expose explicit HackRF connect endpoint")
+    require("/api/hackrf/readiness" in server and "readiness_check" in server, "sdr_server.py must expose HackRF readiness endpoint")
     require("/api/receiver/start" in server and "ReceiverSession" in server, "sdr_server.py must expose receiver session APIs")
     require("/api/receiver/scan" in server and "scan_hits_from_rows" in server, "sdr_server.py must expose receiver scan API")
     require("/api/receiver/bookmarks" in server and "BookmarkStore" in server, "sdr_server.py must expose bookmark APIs")
+    require("/api/receiver/activity" in server and "ActivityStore" in server, "sdr_server.py must expose persistent receiver activity APIs")
+    require("/api/receiver/alerts" in server and "AlertRuleStore" in server, "sdr_server.py must expose persistent receiver alert APIs")
     require("/api/trunking/agreement" in server and "LicensedOperationStore" in server, "sdr_server.py must expose trunking licensed-operation APIs")
     require("/api/trunking/start" in server and "TrunkingRuntime" in server and "DecoderToolchain" in server, "sdr_server.py must expose trunking runtime APIs")
     require("/api/trunking/events" in server and "TrunkingEventLog" in server, "sdr_server.py must expose trunking event APIs")
     require("/api/trunking/summary" in server and "/api/trunking/events.csv" in server and "/api/trunking/aliases" in server and "/api/trunking/profiles.json" in server and "/api/trunking/aliases.json" in server, "sdr_server.py must expose trunking analytics, aliases, and exports")
+    require("/api/decoders/status" in server and "/api/decoders/events" in server and "/api/decoders/plan" in server and "UtilityDecoderPlanner" in server, "sdr_server.py must expose utility decoder status, events, and plans")
     require("collect_decoder_events" in server, "sdr_server.py must collect decoder telemetry for status/events")
     require("/api/hackrf/waterfall-row" in server and "read_iq_samples" in server, "sdr_server.py must expose HTTP waterfall row endpoint")
     require("/api/hackrf/demodulate" in server and "demodulate_audio" in server, "sdr_server.py must expose demodulation endpoint")
@@ -569,12 +722,25 @@ def validate_integration() -> None:
     require("SdrSpectrum" in (ROOT / "static/sdr/js/waterfall.js").read_text(encoding="utf-8"), "SDR rendering helper must expose SdrSpectrum")
     require("demodulate" in sdr_api and "AudioContext" in sdr_app, "SDR UI must support browser demodulated audio playback")
     require("receiverStart" in sdr_app and "receiverFrameLoop" in sdr_app and "receiverAudioLoop" in sdr_app, "SDR app must run receiver session loops")
+    require("receiverAudioPayload" in sdr_app and "sample_count: 1048576" in sdr_app, "SDR app must request long enough audio chunks for stable playback")
+    require("audioTimer = setInterval(receiverAudioLoop, 450)" in sdr_app, "SDR app should poll audio often enough for continuous playback")
+    require("duration_sec" in sdr_app and "audioNextTime - audioCtx.currentTime" in sdr_app, "SDR app should report audio buffer duration/latency")
+    require("readiness" in sdr_api and "runReadiness" in sdr_app and "readinessOutput" in sdr_app, "SDR UI must expose HackRF readiness checks")
+    require("data-preset-frequency" in sdr_app and "tuneFrequency" in sdr_app, "SDR preset cards should tune the receiver")
+    require("data-preset-start" in sdr_app and "applyPresetRange" in sdr_app and "applyPresetDefaults" in sdr_app, "SDR preset cards should support scan ranges and receiver defaults")
+    require("vfos" in sdr_app and "renderVfos" in sdr_app and "addVfo" in sdr_app and "selectVfo" in sdr_app and "recordVfoActivity" in sdr_app, "SDR app must expose multi-VFO deck and activity tracking")
     require("serialPorts" in sdr_api and "serialProbe" in sdr_api and "testHackrf" in sdr_app, "SDR UI must expose hardware and serial tests")
     require("diagnostics" in sdr_api and "loadDiagnostics" in sdr_app, "SDR UI must expose diagnostics")
-    require("receiverScan" in sdr_api and "receiverBookmarks" in sdr_api and "runReceiverScan" in sdr_app, "SDR UI must expose scan and bookmark actions")
-    for token in ("trunkingAgreement", "trunkingAcceptAgreement", "trunkingProfiles", "trunkingStart", "trunkingEvents"):
+    require("receiverBookmarksImport" in sdr_api and "receiverBookmarksExportUrl" in sdr_api, "SDR API client must expose bookmark import/export")
+    require("receiverScan" in sdr_api and "receiverBookmarks" in sdr_api and "runReceiverScan" in sdr_app and "bookmarkSearch" in sdr_app and "importBookmarks" in sdr_app, "SDR UI must expose scan and bookmark actions")
+    require("receiverActivity" in sdr_api and "loadActivity" in sdr_app and "renderActivity" in sdr_app and "promoteActivity" in sdr_app, "SDR UI must expose persistent RF activity intelligence")
+    require("receiverAlerts" in sdr_api and "receiverAlertRuleAdd" in sdr_api and "loadAlerts" in sdr_app and "saveAlertRule" in sdr_app and "renderAlerts" in sdr_app, "SDR UI must expose persistent RF watch rules and alerts")
+    require("exportVfos" in sdr_app and "importVfos" in sdr_app and "downloadJson" in sdr_app, "SDR UI must support VFO group import/export")
+    require("decoderStatus" in sdr_api and "decoderPlan" in sdr_api and "decoderEvents" in sdr_api, "SDR API client must expose utility decoder endpoints")
+    require("loadDecoders" in sdr_app and "planDecoder" in sdr_app and "renderDecoderEvents" in sdr_app, "SDR UI must expose utility decoder workflow")
+    for token in ("trunkingAgreement", "trunkingAcceptAgreement", "trunkingProfiles", "trunkingProfilesImport", "trunkingAliasesImport", "trunkingStart", "trunkingEvents"):
         require(token in sdr_api, f"SDR API client missing {token}")
-    require("acceptTrunkAgreement" in sdr_app and "renderTrunkEvents" in sdr_app and "startTrunking" in sdr_app and "decoder_tools" in sdr_app and "trunkProcessStatus" in sdr_app and "renderTrunkSummary" in sdr_app and "saveTrunkAlias" in sdr_app and "trunkingEvents" in sdr_app and "SRC" in sdr_app, "SDR UI must expose trunking workflow and decoder status")
+    require("acceptTrunkAgreement" in sdr_app and "renderTrunkEvents" in sdr_app and "startTrunking" in sdr_app and "decoder_tools" in sdr_app and "trunkProcessStatus" in sdr_app and "renderTrunkSummary" in sdr_app and "saveTrunkAlias" in sdr_app and "importTrunkProfiles" in sdr_app and "importTrunkAliases" in sdr_app and "readJsonFile" in sdr_app and "trunkingEvents" in sdr_app and "SRC" in sdr_app, "SDR UI must expose trunking workflow, imports, and decoder status")
     require(".trunk-event.encrypted" in (ROOT / "static/sdr/css/style.css").read_text(encoding="utf-8"), "SDR UI must visually distinguish encrypted trunking events")
     require("scripts/install_sdr.sh" in readme and "scripts/diagnose_sdr.sh" in readme and "ktox-sdr" in readme, "README must document SDR service installation and diagnostics")
     for folder in ("sdr", "services", "static", "tools"):
@@ -594,6 +760,7 @@ def main() -> int:
         validate_receiver,
         validate_handlers,
         validate_trunking,
+        validate_utility_decoders,
         validate_diagnostics,
         validate_server,
         validate_static_assets,

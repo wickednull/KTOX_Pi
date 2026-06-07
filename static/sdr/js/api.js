@@ -22,6 +22,11 @@
   window.SdrApi = {
     info: () => requestJson('/api/hackrf/info'),
     connect: () => requestJson('/api/hackrf/connect', { method: 'POST' }),
+    readiness: (payload) => requestJson('/api/hackrf/readiness', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload || {})
+    }),
     test: (payload) => requestJson('/api/hackrf/test', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -56,13 +61,36 @@
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload || {})
     }),
-    receiverBookmarks: () => requestJson('/api/receiver/bookmarks'),
+    receiverBookmarks: (params) => {
+      const query = new URLSearchParams(params || {}).toString();
+      return requestJson(`/api/receiver/bookmarks${query ? `?${query}` : ''}`);
+    },
     receiverBookmarkAdd: (payload) => requestJson('/api/receiver/bookmarks', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload || {})
     }),
+    receiverBookmarksImport: (payload) => requestJson('/api/receiver/bookmarks/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload || {})
+    }),
+    receiverBookmarksExportUrl: () => withBase('/api/receiver/bookmarks.json'),
     receiverBookmarkDelete: (id) => requestJson(`/api/receiver/bookmarks/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    receiverActivity: (params) => {
+      const query = new URLSearchParams(params || {}).toString();
+      return requestJson(`/api/receiver/activity${query ? `?${query}` : ''}`);
+    },
+    receiverAlerts: (params) => {
+      const query = new URLSearchParams(params || {}).toString();
+      return requestJson(`/api/receiver/alerts${query ? `?${query}` : ''}`);
+    },
+    receiverAlertRuleAdd: (payload) => requestJson('/api/receiver/alerts/rules', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload || {})
+    }),
+    receiverAlertRuleDelete: (id) => requestJson(`/api/receiver/alerts/rules/${encodeURIComponent(id)}`, { method: 'DELETE' }),
     presets: () => requestJson('/api/hackrf/presets'),
     captures: () => requestJson('/api/hackrf/captures'),
     deleteCapture: (id) => requestJson(`/api/hackrf/captures/${encodeURIComponent(id)}`, { method: 'DELETE' }),
@@ -98,6 +126,11 @@
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload || {})
     }),
+    trunkingProfilesImport: (payload) => requestJson('/api/trunking/profiles/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload || {})
+    }),
     trunkingDeleteProfile: (id) => requestJson(`/api/trunking/profiles/${encodeURIComponent(id)}`, { method: 'DELETE' }),
     trunkingStart: (payload) => requestJson('/api/trunking/start', {
       method: 'POST',
@@ -117,7 +150,27 @@
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload || {})
     }),
+    trunkingAliasesImport: (payload) => requestJson('/api/trunking/aliases/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload || {})
+    }),
     trunkingAddEvent: (payload) => requestJson('/api/trunking/events', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload || {})
+    }),
+    decoderStatus: () => requestJson('/api/decoders/status'),
+    decoderPlan: (payload) => requestJson('/api/decoders/plan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload || {})
+    }),
+    decoderEvents: (params) => {
+      const query = new URLSearchParams(params || {}).toString();
+      return requestJson(`/api/decoders/events${query ? `?${query}` : ''}`);
+    },
+    decoderAddEvent: (payload) => requestJson('/api/decoders/events', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload || {})
