@@ -50,6 +50,18 @@
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload || {})
     }),
+    receiverScan: (payload) => requestJson('/api/receiver/scan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload || {})
+    }),
+    receiverBookmarks: () => requestJson('/api/receiver/bookmarks'),
+    receiverBookmarkAdd: (payload) => requestJson('/api/receiver/bookmarks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload || {})
+    }),
+    receiverBookmarkDelete: (id) => requestJson(`/api/receiver/bookmarks/${encodeURIComponent(id)}`, { method: 'DELETE' }),
     presets: () => requestJson('/api/hackrf/presets'),
     captures: () => requestJson('/api/hackrf/captures'),
     deleteCapture: (id) => requestJson(`/api/hackrf/captures/${encodeURIComponent(id)}`, { method: 'DELETE' }),

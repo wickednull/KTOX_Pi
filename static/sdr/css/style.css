@@ -203,6 +203,22 @@ canvas {
   gap: 0.8rem;
 }
 
+.receiver-tools {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.7fr);
+  gap: 0.8rem;
+  margin-top: 0.8rem;
+}
+
+.compact-head {
+  margin-bottom: 0.7rem;
+}
+
+h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
 .receiver-plot {
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -230,5 +246,6 @@ canvas {
   .app-shell { grid-template-columns: 1fr; }
   .side { border-right: 0; border-bottom: 1px solid var(--border); }
   .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .receiver-tools { grid-template-columns: 1fr; }
   .section-head, .capture-row { grid-template-columns: 1fr; display: grid; }
 }

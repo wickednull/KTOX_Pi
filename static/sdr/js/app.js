@@ -35,7 +35,9 @@
     audioStatus: document.getElementById('audioStatus'),
     receiverSignal: document.getElementById('receiverSignal'),
     receiverStatus: document.getElementById('receiverStatus'),
-    receiverOutput: document.getElementById('receiverOutput')
+    receiverOutput: document.getElementById('receiverOutput'),
+    scanOutput: document.getElementById('scanOutput'),
+    bookmarkList: document.getElementById('bookmarkList')
   };
 
   function bytes(size){
@@ -263,6 +265,43 @@
     }
   }
 
+  async function loadBookmarks(){
+    if (!els.bookmarkList) return;
+    try {
+      const data = await api.receiverBookmarks();
+      const rows = data.bookmarks || [];
+      els.bookmarkList.innerHTML = rows.length ? rows.map((item) => (
+        `<div class="capture-row"><strong>${escapeHtml(item.label)}</strong><span>${item.frequency} Hz</span><span>${escapeHtml(item.mode || 'nfm')}</span><button data-tune-bookmark="${item.frequency}" data-mode="${escapeHtml(item.mode || 'nfm')}">Tune</button><button data-delete-bookmark="${escapeHtml(item.id)}">Delete</button></div>`
+      )).join('') : '<div class="empty">No bookmarks saved.</div>';
+    } catch (err) {
+      els.bookmarkList.innerHTML = `<div class="empty">Bookmark load failed: ${escapeHtml(err.message)}</div>`;
+    }
+  }
+
+  async function runReceiverScan(){
+    if (!els.scanOutput) return;
+    els.scanOutput.textContent = 'Scanning...';
+    try {
+      const data = await api.receiverScan({
+        start: numeric('scanStart') || 88000000,
+        stop: numeric('scanStop') || 108000000,
+        threshold_db: numeric('scanThreshold') || -50,
+        save_hits: document.getElementById('scanSave').value === '1',
+        mode: document.getElementById('rxMode').value || 'nfm',
+        sample_rate: numeric('rxSampleRate') || 2000000
+      });
+      els.scanOutput.textContent = pretty({
+        ok: data.ok,
+        hits: data.hits || [],
+        saved: data.saved || [],
+        error: data.error || ''
+      });
+      await loadBookmarks();
+    } catch (err) {
+      els.scanOutput.textContent = `Scan failed: ${err.message}`;
+    }
+  }
+
   function startAudio(){
     stopAudio();
     els.audioStatus.textContent = 'Starting receiver...';
@@ -390,6 +429,23 @@
   document.getElementById('probeSerial').addEventListener('click', probeSerial);
   document.getElementById('startAudio').addEventListener('click', startAudio);
   document.getElementById('stopAudio').addEventListener('click', stopAudio);
+  document.getElementById('runReceiverScan').addEventListener('click', runReceiverScan);
+  document.getElementById('refreshBookmarks').addEventListener('click', loadBookmarks);
+  if (els.bookmarkList) {
+    els.bookmarkList.addEventListener('click', async (event) => {
+      const tune = event.target.closest('[data-tune-bookmark]');
+      if (tune) {
+        document.getElementById('rxFrequency').value = tune.getAttribute('data-tune-bookmark') || '';
+        document.getElementById('rxMode').value = tune.getAttribute('data-mode') || 'nfm';
+        return;
+      }
+      const del = event.target.closest('[data-delete-bookmark]');
+      if (del) {
+        await api.receiverBookmarkDelete(del.getAttribute('data-delete-bookmark'));
+        await loadBookmarks();
+      }
+    });
+  }
   els.captureList.addEventListener('click', async (event) => {
     const button = event.target.closest('[data-delete-capture]');
     if (!button) return;
@@ -421,4 +477,5 @@
   loadCaptures();
   loadPresets();
   loadSerialPorts();
+  loadBookmarks();
 })();

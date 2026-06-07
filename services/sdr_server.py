@@ -36,6 +36,7 @@ try:
     )
     from sdr.processing import waterfall_row
     from sdr.receiver import ReceiverConfig, ReceiverSession
+    from sdr.signals import BookmarkStore, scan_hits_from_rows
 except Exception as exc:
     Flask = Any
     SocketIO = Any
@@ -158,10 +159,14 @@ class StaticSdrHandler(SimpleHTTPRequestHandler):
             "/api/receiver/stop",
             "/api/receiver/frame",
             "/api/receiver/audio",
+            "/api/receiver/scan",
+            "/api/receiver/bookmarks",
             "/sdr/api/receiver/start",
             "/sdr/api/receiver/stop",
             "/sdr/api/receiver/frame",
             "/sdr/api/receiver/audio",
+            "/sdr/api/receiver/scan",
+            "/sdr/api/receiver/bookmarks",
         }:
             self.send_json(
                 {
@@ -225,6 +230,7 @@ def create_app(
     hackrf = manager or HackRFManager()
     db = database or CaptureDatabase(DB_PATH)
     receiver = ReceiverSession(hackrf)
+    bookmarks = BookmarkStore(CAPTURES_DIR / "bookmarks.json")
     waterfall_flags: dict[str, threading.Event] = {}
 
     @app.get("/")
@@ -318,6 +324,57 @@ def create_app(
             return jsonify({"ok": False, "error": str(exc)}), 400
         result = receiver.audio()
         return jsonify(result), 200 if result.get("ok") else 503
+
+    @app.get("/api/receiver/bookmarks")
+    @app.get("/sdr/api/receiver/bookmarks")
+    def receiver_bookmarks():
+        return jsonify({"ok": True, "bookmarks": bookmarks.list()})
+
+    @app.post("/api/receiver/bookmarks")
+    @app.post("/sdr/api/receiver/bookmarks")
+    def receiver_bookmark_add():
+        try:
+            row = bookmarks.add(request.get_json(silent=True) or {})
+        except (TypeError, ValueError) as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        return jsonify({"ok": True, "bookmark": row})
+
+    @app.delete("/api/receiver/bookmarks/<bookmark_id>")
+    @app.delete("/sdr/api/receiver/bookmarks/<bookmark_id>")
+    def receiver_bookmark_delete(bookmark_id: str):
+        return jsonify({"ok": bookmarks.delete(bookmark_id)})
+
+    @app.post("/api/receiver/scan")
+    @app.post("/sdr/api/receiver/scan")
+    def receiver_scan():
+        try:
+            data = request.get_json(silent=True) or {}
+            start = _int_payload(data, "start", 88000000, 1000000, 6000000000)
+            stop = _int_payload(data, "stop", 108000000, start + 1, 6000000000)
+            bin_width = _int_payload(data, "bin_width", 1000000, 1000, 20000000)
+            threshold = float(data.get("threshold_db", -50))
+        except (TypeError, ValueError) as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        result = hackrf.run_sweep(start, stop, bin_width=bin_width)
+        rows = parse_hackrf_sweep(result.get("stdout", ""))
+        hits = scan_hits_from_rows(rows, threshold_db=threshold)
+        saved = []
+        if data.get("save_hits"):
+            for hit in hits[:25]:
+                saved.append(
+                    bookmarks.add(
+                        {
+                            "label": f"Scan hit {hit['frequency']} Hz",
+                            "frequency": hit["frequency"],
+                            "mode": data.get("mode") or receiver.config.mode,
+                            "sample_rate": data.get("sample_rate") or receiver.config.sample_rate,
+                            "bandwidth": receiver.config.bandwidth,
+                            "source": "scan",
+                            "notes": f"{hit['power_db']} dB",
+                        }
+                    )
+                )
+        return jsonify({"ok": result.get("ok", False), "rows": rows, "hits": hits, "saved": saved, "error": result.get("error", "")})
 
     @app.get("/api/hackrf/presets")
     @app.get("/sdr/api/hackrf/presets")

@@ -143,16 +143,24 @@ def validate_receiver() -> None:
 
 def validate_handlers() -> None:
     from sdr.handlers import build_capture_path, get_frequency_presets, parse_hackrf_sweep
+    from sdr.signals import BookmarkStore, scan_hits_from_rows
 
     with tempfile.TemporaryDirectory() as tmp:
         captures_dir = Path(tmp).resolve()
         path = build_capture_path(captures_dir, frequency=2437000000)
         require(path.parent == captures_dir, "capture path escaped capture root")
         require(path.name.endswith(".bin"), "capture filename should use .bin")
+        store = BookmarkStore(captures_dir / "bookmarks.json")
+        created = store.add({"label": "NOAA test", "frequency": 162550000, "mode": "nfm"})
+        require(created["id"], "bookmark should get an id")
+        require(store.list()[0]["label"] == "NOAA test", "bookmark list should include created bookmark")
+        require(store.delete(created["id"]) is True, "bookmark delete should return true")
     require("wifi_2g" in get_frequency_presets(), "wifi preset group missing")
     rows = parse_hackrf_sweep("2026-05-29, 00:00:00, 2400000000, 2401000000, 1000000, 1, -55.0, -42.0")
     require(rows[0]["start_hz"] == 2400000000, "sweep start parse failed")
     require(rows[0]["powers_db"] == [-55.0, -42.0], "sweep powers parse failed")
+    hits = scan_hits_from_rows(rows, threshold_db=-60)
+    require(any(hit["frequency"] == 2400500000 for hit in hits), "scan hit frequency should use bin center")
 
 
 def validate_server() -> None:
@@ -220,6 +228,16 @@ def validate_server() -> None:
         stopped = client.post("/api/receiver/stop")
         require(stopped.status_code == 200, "receiver stop endpoint failed")
         require(stopped.get_json()["running"] is False, "receiver stop should report stopped")
+        scan = client.post(
+            "/api/receiver/scan",
+            data=json.dumps({"start": 2400000000, "stop": 2500000000, "threshold_db": -50, "save_hits": True}),
+            content_type="application/json",
+        )
+        require(scan.status_code == 200, "receiver scan endpoint failed")
+        require(scan.get_json()["hits"], "receiver scan should return hits")
+        bookmarks = client.get("/api/receiver/bookmarks")
+        require(bookmarks.status_code == 200, "receiver bookmarks endpoint failed")
+        require(bookmarks.get_json()["bookmarks"], "scan with save_hits should create bookmarks")
 
 
 def validate_static_assets() -> None:
@@ -233,7 +251,7 @@ def validate_static_assets() -> None:
     for rel in required:
         require((ROOT / rel).exists(), f"missing {rel}")
     html = (ROOT / "static/sdr/index.html").read_text(encoding="utf-8")
-    for token in ["Dashboard", "Receiver", "Listen", "NFM", "WFM", "AM", "USB", "LSB", "receiverSpectrum", "receiverWaterfall", "rxStep", "rxBandwidth", "rxSquelch", "receiverStatus", "Connect HackRF", "Test RX/Sweep", "USB / Serial", "Waterfall", "Sweep", "Capture", "Settings", "js/api.js", "css/style.css"]:
+    for token in ["Dashboard", "Receiver", "Listen", "NFM", "WFM", "AM", "USB", "LSB", "receiverSpectrum", "receiverWaterfall", "rxStep", "rxBandwidth", "rxSquelch", "receiverStatus", "Scan Range", "Bookmarks", "Connect HackRF", "Test RX/Sweep", "USB / Serial", "Waterfall", "Sweep", "Capture", "Settings", "js/api.js", "css/style.css"]:
         require(token in html, f"missing SDR UI token {token!r}")
     require('href="./api/hackrf/captures.csv"' in html, "SDR export link must be relative for /sdr proxying")
     require('src="./socket.io/socket.io.js"' in html, "Socket.IO client script must be relative for /sdr proxying")
@@ -276,6 +294,8 @@ def validate_integration() -> None:
     require("run_static_sdr_server" in server and "ThreadingHTTPServer" in server, "sdr_server.py must serve the page even when backend imports fail")
     require("/api/hackrf/connect" in server and "hackrf.connect()" in server, "sdr_server.py must expose explicit HackRF connect endpoint")
     require("/api/receiver/start" in server and "ReceiverSession" in server, "sdr_server.py must expose receiver session APIs")
+    require("/api/receiver/scan" in server and "scan_hits_from_rows" in server, "sdr_server.py must expose receiver scan API")
+    require("/api/receiver/bookmarks" in server and "BookmarkStore" in server, "sdr_server.py must expose bookmark APIs")
     require("/api/hackrf/waterfall-row" in server and "read_iq_samples" in server, "sdr_server.py must expose HTTP waterfall row endpoint")
     require("/api/hackrf/demodulate" in server and "demodulate_audio" in server, "sdr_server.py must expose demodulation endpoint")
     require("/api/hackrf/test" in server and "hardware_test" in server, "sdr_server.py must expose HackRF hardware test endpoint")
@@ -291,10 +311,11 @@ def validate_integration() -> None:
     require("demodulate" in sdr_api and "AudioContext" in sdr_app, "SDR UI must support browser demodulated audio playback")
     require("receiverStart" in sdr_app and "receiverFrameLoop" in sdr_app and "receiverAudioLoop" in sdr_app, "SDR app must run receiver session loops")
     require("serialPorts" in sdr_api and "serialProbe" in sdr_api and "testHackrf" in sdr_app, "SDR UI must expose hardware and serial tests")
+    require("receiverScan" in sdr_api and "receiverBookmarks" in sdr_api and "runReceiverScan" in sdr_app, "SDR UI must expose scan and bookmark actions")
     require("scripts/install_sdr.sh" in readme and "scripts/diagnose_sdr.sh" in readme and "ktox-sdr" in readme, "README must document SDR service installation and diagnostics")
     for folder in ("sdr", "services", "static", "tools"):
         require(f'"$FIRMWARE_DIR/{folder}"' in main_installer, f"main installer must copy {folder}/")
-    for required in ("services/sdr_server.py", "sdr/device.py", "sdr/demod.py", "sdr/receiver.py", "static/sdr/index.html", "tools/validate_sdr_suite.py", "scripts/install_sdr.sh"):
+    for required in ("services/sdr_server.py", "sdr/device.py", "sdr/demod.py", "sdr/receiver.py", "sdr/signals.py", "static/sdr/index.html", "tools/validate_sdr_suite.py", "scripts/install_sdr.sh"):
         require(required in ota, f"OTA updater must verify {required}")
     require("ls-tree" in ota and "remote missing" in ota and "local missing" in ota, "OTA updater must diagnose remote/local SDR file gaps")
     for dep in ["numpy", "flask-socketio", "python-socketio"]:

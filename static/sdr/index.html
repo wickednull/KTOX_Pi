@@ -99,6 +99,34 @@
             <canvas id="receiverWaterfall" width="1100" height="420"></canvas>
           </section>
         </div>
+        <div class="receiver-tools">
+          <section>
+            <div class="section-head compact-head">
+              <div>
+                <h3>Scan Range</h3>
+                <p>Find strong sweep hits and optionally save them as bookmarks.</p>
+              </div>
+              <button id="runReceiverScan" class="primary">Scan</button>
+            </div>
+            <div class="form-grid">
+              <label>Start Hz<input id="scanStart" type="number" value="88000000"></label>
+              <label>Stop Hz<input id="scanStop" type="number" value="108000000"></label>
+              <label>Threshold dB<input id="scanThreshold" type="number" value="-50"></label>
+              <label>Save Hits<select id="scanSave"><option value="1">Yes</option><option value="0">No</option></select></label>
+            </div>
+            <pre id="scanOutput" class="output compact">Scan hits will appear here.</pre>
+          </section>
+          <section>
+            <div class="section-head compact-head">
+              <div>
+                <h3>Bookmarks</h3>
+                <p>Saved frequencies for quick tuning and evidence context.</p>
+              </div>
+              <button id="refreshBookmarks">Refresh</button>
+            </div>
+            <div id="bookmarkList" class="capture-list">Bookmarks will appear here.</div>
+          </section>
+        </div>
         <pre id="receiverOutput" class="output compact">Receiver status will appear here.</pre>
       </section>
 
