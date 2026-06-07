@@ -25,6 +25,8 @@ def main() -> int:
     require("safe.directory" in text, "auto_update.py should tolerate root-owned Git safe.directory issues")
     require("fetch" in text, "auto_update.py should fetch the repository")
     require("refs/remotes/{GIT_REMOTE}/{GIT_BRANCH}" in text, "fetch should update the exact origin/main ref")
+    require("def resolve_fetched_ref(" in text, "auto_update.py should resolve the fetched commit after fetch")
+    require('"FETCH_HEAD"' in text, "auto_update.py should fall back to FETCH_HEAD when origin/main is missing")
     require("github probe failed" in text, "fetch failures should report probe errors, not only generic connection text")
     require("fetch failed:" in text, "fetch failures should report git fetch stderr")
     require("def archive_update(" in text, "auto_update.py should support non-git GitHub archive fallback")

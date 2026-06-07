@@ -260,6 +260,14 @@ def archive_update() -> tuple[bool, str]:
         return False, f"archive fallback failed: {str(exc)[:100]}"
 
 
+def resolve_fetched_ref() -> tuple[bool, str]:
+    for ref in (f"refs/remotes/{REMOTE}/{BRANCH}", "FETCH_HEAD", f"{REMOTE}/{BRANCH}"):
+        rc, msg = _run(["git", "-C", KTOX_DIR, "rev-parse", "--verify", f"{ref}^{{commit}}"], timeout=20)
+        if rc == 0 and msg:
+            return True, msg.splitlines()[-1].strip()
+    return False, "fetched ref missing"
+
+
 def git_update() -> tuple[bool, str]:
     ok, remote_msg = ensure_git_remote()
     if not ok:
@@ -274,15 +282,25 @@ def git_update() -> tuple[bool, str]:
             return True, archive_msg
         return False, f"{probe_msg}; fetch failed: {short_msg(msg, f'rc={rc}')}; {archive_msg}"
 
-    rc, msg = _run(["git", "-C", KTOX_DIR, "ls-tree", "-r", "--name-only", f"{REMOTE}/{BRANCH}"])
+    ref_ok, fetched_ref = resolve_fetched_ref()
+    if not ref_ok:
+        archive_ok, archive_msg = archive_update()
+        if archive_ok:
+            return True, archive_msg
+        return False, f"{fetched_ref}; fetch output: {short_msg(msg, 'no fetch output')}; {archive_msg}"
+
+    rc, msg = _run(["git", "-C", KTOX_DIR, "ls-tree", "-r", "--name-only", fetched_ref])
     if rc != 0:
-        return False, f"tree failed: {short_msg(msg, f'rc={rc}')}"
+        archive_ok, archive_msg = archive_update()
+        if archive_ok:
+            return True, archive_msg
+        return False, f"tree failed: {short_msg(msg, f'rc={rc}')}; {archive_msg}"
     names = set(msg.splitlines())
     missing = [name for name in REQUIRED_FILES if name not in names]
     if missing:
         return False, f"remote missing {missing[0]} ({remote_msg})"
 
-    rc, msg = _run(["git", "-C", KTOX_DIR, "reset", "--hard", f"{REMOTE}/{BRANCH}"])
+    rc, msg = _run(["git", "-C", KTOX_DIR, "reset", "--hard", fetched_ref])
     if rc != 0:
         return False, f"reset failed: {short_msg(msg, f'rc={rc}')}"
     return True, "git reset OK"

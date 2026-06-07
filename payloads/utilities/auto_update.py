@@ -368,6 +368,13 @@ def archive_update() -> tuple[bool, str]:
     except Exception as exc:
         return False, f"archive fallback failed: {str(exc)[:120]}"
 
+def resolve_fetched_ref() -> tuple[bool, str]:
+    for ref in (f"refs/remotes/{GIT_REMOTE}/{GIT_BRANCH}", "FETCH_HEAD", f"{GIT_REMOTE}/{GIT_BRANCH}"):
+        result = _git(["rev-parse", "--verify", f"{ref}^{{commit}}"], check=False, timeout=20)
+        if result.returncode == 0 and (result.stdout or "").strip():
+            return True, (result.stdout or "").splitlines()[-1].strip()
+    return False, "fetched ref missing"
+
 def git_update() -> tuple[bool, str]:
     """Fast-forward pull the latest changes."""
     try:
@@ -391,12 +398,23 @@ def git_update() -> tuple[bool, str]:
             if archive_ok:
                 return True, archive_msg
             return False, f"fetch failed: {fetch_msg}; {archive_msg}"
-        tree = _git(["ls-tree", "-r", "--name-only", f"{GIT_REMOTE}/{GIT_BRANCH}"], check=True, timeout=GIT_TIMEOUT)
+        ref_ok, fetched_ref = resolve_fetched_ref()
+        if not ref_ok:
+            archive_ok, archive_msg = archive_update()
+            if archive_ok:
+                return True, archive_msg
+            return False, f"{fetched_ref}; fetch output: {_short_git_error(fetch, 'no fetch output')}; {archive_msg}"
+        tree = _git(["ls-tree", "-r", "--name-only", fetched_ref], check=False, timeout=GIT_TIMEOUT)
+        if tree.returncode != 0:
+            archive_ok, archive_msg = archive_update()
+            if archive_ok:
+                return True, archive_msg
+            return False, f"tree failed: {_short_git_error(tree, f'rc={tree.returncode}')}; {archive_msg}"
         names = set((tree.stdout or "").splitlines())
         missing_remote = [name for name in REQUIRED_SDR_FILES if name not in names]
         if missing_remote:
             return False, f"remote missing {missing_remote[0]} ({remote_url})"
-        _git(["reset", "--hard", f"{GIT_REMOTE}/{GIT_BRANCH}"], check=True, timeout=GIT_TIMEOUT)
+        _git(["reset", "--hard", fetched_ref], check=True, timeout=GIT_TIMEOUT)
         missing_local = [name for name in REQUIRED_SDR_FILES if not os.path.isfile(os.path.join(RASPYJACK_DIR, name))]
         if missing_local:
             head = _git(["rev-parse", "--short", "HEAD"], check=False, timeout=20)
