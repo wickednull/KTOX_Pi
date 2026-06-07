@@ -44,7 +44,7 @@ class FakeRunner:
                 stdout="2026-05-29, 00:00:00, 2400000000, 2401000000, 1000000, 1, -55.0, -42.0\n"
             )
         if args and args[0] == "hackrf_transfer":
-            return FakeResult(stdout="\x00\x40\x80\xc0" * 256)
+            return FakeResult(stdout="\x00\x40\x80\xc0" * 4096)
         return FakeResult()
 
 
@@ -55,12 +55,16 @@ def require(condition: bool, message: str) -> None:
 
 def validate_processing() -> None:
     from sdr import processing
+    from sdr.demod import demodulate_audio
 
     row = processing.waterfall_row([1, 0, -1, 0] * 128, fft_size=256)
     require(len(row) == 256, "waterfall row should match fft size")
     require(all(0 <= point <= 255 for point in row), "waterfall row values should be byte-scaled")
     peaks = processing.detect_peaks([0, 1, 5, 1, 0], threshold=3)
     require(peaks == [{"bin": 2, "power": 5.0}], f"unexpected peak result: {peaks!r}")
+    audio = demodulate_audio([0, 1, 1, 0] * 2048, sample_rate=2000000, mode="nfm")
+    require(audio["audio"], "demodulator should produce audio samples")
+    require(audio["audio_rate"] == 48000, "demodulator audio rate mismatch")
 
 
 def validate_database() -> None:
@@ -100,6 +104,41 @@ def validate_device() -> None:
     row = manager.read_iq_samples(2437000000, sample_count=256)
     require(row["ok"] is True and len(row["samples"]) == 512, "read_iq_samples should return IQ bytes")
     require(runner.calls[0][0] == "hackrf_info", "hackrf_info was not called")
+
+
+def validate_receiver() -> None:
+    from sdr.device import HackRFManager
+    from sdr.receiver import ReceiverConfig, ReceiverSession
+
+    manager = HackRFManager(runner=FakeRunner())
+    config = ReceiverConfig.from_payload({
+        "frequency": 162550000,
+        "sample_rate": 2000000,
+        "mode": "nfm",
+        "fft_size": 256,
+        "audio_rate": 48000,
+        "sample_count": 4096,
+        "lna_gain": 16,
+        "vga_gain": 20,
+        "squelch": -80,
+        "bandwidth": 12500,
+    })
+    require(config.frequency == 162550000, "receiver config frequency mismatch")
+    require(config.mode == "nfm", "receiver mode should normalize to lowercase")
+
+    session = ReceiverSession(manager)
+    status = session.start(config)
+    require(status["running"] is True, "receiver should start")
+    require(status["config"]["frequency"] == 162550000, "receiver status should include config")
+    frame = session.frame()
+    require(frame["ok"] is True, "receiver frame should succeed")
+    require(len(frame["spectrum"]) == 256, "receiver spectrum size mismatch")
+    require(len(frame["waterfall"]) == 256, "receiver waterfall size mismatch")
+    audio = session.audio()
+    require(audio["ok"] is True, "receiver audio should succeed")
+    require(audio["audio"], "receiver audio should include samples")
+    stopped = session.stop()
+    require(stopped["running"] is False, "receiver should stop")
 
 
 def validate_handlers() -> None:
@@ -142,6 +181,13 @@ def validate_server() -> None:
         )
         require(waterfall.status_code == 200, "waterfall row endpoint failed")
         require(len(waterfall.get_json()["row"]) == 256, "waterfall row endpoint returned wrong row size")
+        demod = client.post(
+            "/api/hackrf/demodulate",
+            data=json.dumps({"frequency": 162550000, "sample_rate": 2000000, "mode": "nfm", "sample_count": 4096}),
+            content_type="application/json",
+        )
+        require(demod.status_code == 200, "demodulate endpoint failed")
+        require(demod.get_json()["audio"], "demodulate endpoint should return audio")
         hardware = client.post(
             "/api/hackrf/test",
             data=json.dumps({"frequency": 2437000000, "sample_rate": 20000000}),
@@ -150,6 +196,30 @@ def validate_server() -> None:
         require(hardware.status_code == 200, "hardware test endpoint failed")
         require("rx" in hardware.get_json() and "sweep" in hardware.get_json(), "hardware test should include RX and sweep results")
         require(client.get("/api/serial/ports").status_code == 200, "serial ports endpoint failed")
+        receiver_payload = {
+            "frequency": 162550000,
+            "sample_rate": 2000000,
+            "mode": "nfm",
+            "fft_size": 256,
+            "sample_count": 4096,
+            "lna_gain": 16,
+            "vga_gain": 20,
+            "squelch": -90,
+            "bandwidth": 12500,
+        }
+        started = client.post("/api/receiver/start", data=json.dumps(receiver_payload), content_type="application/json")
+        require(started.status_code == 200, "receiver start endpoint failed")
+        require(started.get_json()["running"] is True, "receiver start should report running")
+        require(client.get("/api/receiver/status").status_code == 200, "receiver status endpoint failed")
+        frame = client.post("/api/receiver/frame", data=json.dumps({"fft_size": 256}), content_type="application/json")
+        require(frame.status_code == 200, "receiver frame endpoint failed")
+        require(frame.get_json()["spectrum"], "receiver frame should include spectrum")
+        audio = client.post("/api/receiver/audio", data=json.dumps({"sample_count": 4096}), content_type="application/json")
+        require(audio.status_code == 200, "receiver audio endpoint failed")
+        require(audio.get_json()["audio"], "receiver audio should include samples")
+        stopped = client.post("/api/receiver/stop")
+        require(stopped.status_code == 200, "receiver stop endpoint failed")
+        require(stopped.get_json()["running"] is False, "receiver stop should report stopped")
 
 
 def validate_static_assets() -> None:
@@ -163,7 +233,7 @@ def validate_static_assets() -> None:
     for rel in required:
         require((ROOT / rel).exists(), f"missing {rel}")
     html = (ROOT / "static/sdr/index.html").read_text(encoding="utf-8")
-    for token in ["Dashboard", "Connect HackRF", "Test RX/Sweep", "USB / Serial", "Waterfall", "Sweep", "Capture", "Settings", "js/api.js", "css/style.css"]:
+    for token in ["Dashboard", "Receiver", "Listen", "NFM", "WFM", "AM", "USB", "LSB", "receiverSpectrum", "receiverWaterfall", "rxStep", "rxBandwidth", "rxSquelch", "receiverStatus", "Connect HackRF", "Test RX/Sweep", "USB / Serial", "Waterfall", "Sweep", "Capture", "Settings", "js/api.js", "css/style.css"]:
         require(token in html, f"missing SDR UI token {token!r}")
     require('href="./api/hackrf/captures.csv"' in html, "SDR export link must be relative for /sdr proxying")
     require('src="./socket.io/socket.io.js"' in html, "Socket.IO client script must be relative for /sdr proxying")
@@ -205,7 +275,9 @@ def validate_integration() -> None:
     require("def run_socketio" in server and "except TypeError" in server and "allow_unsafe_werkzeug" in server, "sdr_server.py must tolerate Flask-SocketIO run argument differences")
     require("run_static_sdr_server" in server and "ThreadingHTTPServer" in server, "sdr_server.py must serve the page even when backend imports fail")
     require("/api/hackrf/connect" in server and "hackrf.connect()" in server, "sdr_server.py must expose explicit HackRF connect endpoint")
+    require("/api/receiver/start" in server and "ReceiverSession" in server, "sdr_server.py must expose receiver session APIs")
     require("/api/hackrf/waterfall-row" in server and "read_iq_samples" in server, "sdr_server.py must expose HTTP waterfall row endpoint")
+    require("/api/hackrf/demodulate" in server and "demodulate_audio" in server, "sdr_server.py must expose demodulation endpoint")
     require("/api/hackrf/test" in server and "hardware_test" in server, "sdr_server.py must expose HackRF hardware test endpoint")
     require("/api/serial/ports" in server and "/api/serial/probe" in server, "sdr_server.py must expose serial port endpoints")
     require('@app.get("/sdr")' in server and 'redirect("/sdr/")' in server, "SDR server should redirect /sdr to /sdr/")
@@ -213,11 +285,16 @@ def validate_integration() -> None:
     require("basePath()" in sdr_api and "withBase" in sdr_api, "SDR API client must be prefix-aware")
     require("socketPath" in sdr_app and "SdrApiBasePath" in sdr_app, "SDR Socket.IO client must be prefix-aware")
     require("waterfallRow" in sdr_api and "pollWaterfall" in sdr_app, "SDR UI must support HTTP waterfall polling")
+    for token in ("receiverStart", "receiverStop", "receiverStatus", "receiverFrame", "receiverAudio"):
+        require(token in sdr_api, f"SDR API client missing {token}")
+    require("SdrSpectrum" in (ROOT / "static/sdr/js/waterfall.js").read_text(encoding="utf-8"), "SDR rendering helper must expose SdrSpectrum")
+    require("demodulate" in sdr_api and "AudioContext" in sdr_app, "SDR UI must support browser demodulated audio playback")
+    require("receiverStart" in sdr_app and "receiverFrameLoop" in sdr_app and "receiverAudioLoop" in sdr_app, "SDR app must run receiver session loops")
     require("serialPorts" in sdr_api and "serialProbe" in sdr_api and "testHackrf" in sdr_app, "SDR UI must expose hardware and serial tests")
     require("scripts/install_sdr.sh" in readme and "scripts/diagnose_sdr.sh" in readme and "ktox-sdr" in readme, "README must document SDR service installation and diagnostics")
     for folder in ("sdr", "services", "static", "tools"):
         require(f'"$FIRMWARE_DIR/{folder}"' in main_installer, f"main installer must copy {folder}/")
-    for required in ("services/sdr_server.py", "sdr/device.py", "static/sdr/index.html", "tools/validate_sdr_suite.py", "scripts/install_sdr.sh"):
+    for required in ("services/sdr_server.py", "sdr/device.py", "sdr/demod.py", "sdr/receiver.py", "static/sdr/index.html", "tools/validate_sdr_suite.py", "scripts/install_sdr.sh"):
         require(required in ota, f"OTA updater must verify {required}")
     require("ls-tree" in ota and "remote missing" in ota and "local missing" in ota, "OTA updater must diagnose remote/local SDR file gaps")
     for dep in ["numpy", "flask-socketio", "python-socketio"]:
@@ -229,6 +306,7 @@ def main() -> int:
         validate_processing,
         validate_database,
         validate_device,
+        validate_receiver,
         validate_handlers,
         validate_server,
         validate_static_assets,

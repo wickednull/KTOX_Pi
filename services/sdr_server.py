@@ -25,6 +25,7 @@ try:
     from flask_socketio import SocketIO, emit
 
     from sdr.database import CaptureDatabase
+    from sdr.demod import demodulate_audio
     from sdr.device import HackRFManager
     from sdr.handlers import (
         build_capture_path,
@@ -34,6 +35,7 @@ try:
         parse_hackrf_sweep,
     )
     from sdr.processing import waterfall_row
+    from sdr.receiver import ReceiverConfig, ReceiverSession
 except Exception as exc:
     Flask = Any
     SocketIO = Any
@@ -105,11 +107,16 @@ class StaticSdrHandler(SimpleHTTPRequestHandler):
             "/sdr/api/hackrf/connect",
             "/api/hackrf/test",
             "/sdr/api/hackrf/test",
+            "/api/receiver/status",
+            "/sdr/api/receiver/status",
         }:
             self.send_json(
                 {
+                    "ok": False,
                     "available": False,
                     "connected": False,
+                    "running": False,
+                    "config": {},
                     "error": f"SDR backend dependencies are not loaded: {SDR_IMPORT_ERROR}",
                     "tools": {},
                     "usb": {"available": False, "devices": [], "hackrf": []},
@@ -147,6 +154,14 @@ class StaticSdrHandler(SimpleHTTPRequestHandler):
             "/sdr/api/hackrf/test",
             "/api/serial/probe",
             "/sdr/api/serial/probe",
+            "/api/receiver/start",
+            "/api/receiver/stop",
+            "/api/receiver/frame",
+            "/api/receiver/audio",
+            "/sdr/api/receiver/start",
+            "/sdr/api/receiver/stop",
+            "/sdr/api/receiver/frame",
+            "/sdr/api/receiver/audio",
         }:
             self.send_json(
                 {
@@ -163,10 +178,12 @@ class StaticSdrHandler(SimpleHTTPRequestHandler):
             "/api/hackrf/frequency-sweep",
             "/api/hackrf/capture",
             "/api/hackrf/waterfall-row",
+            "/api/hackrf/demodulate",
             "/sdr/api/hackrf/sweep",
             "/sdr/api/hackrf/frequency-sweep",
             "/sdr/api/hackrf/capture",
             "/sdr/api/hackrf/waterfall-row",
+            "/sdr/api/hackrf/demodulate",
         }:
             self.send_json(
                 {
@@ -207,6 +224,7 @@ def create_app(
     executor = ThreadPoolExecutor(max_workers=2)
     hackrf = manager or HackRFManager()
     db = database or CaptureDatabase(DB_PATH)
+    receiver = ReceiverSession(hackrf)
     waterfall_flags: dict[str, threading.Event] = {}
 
     @app.get("/")
@@ -257,6 +275,49 @@ def create_app(
     def serial_probe():
         data = request.get_json(silent=True) or {}
         return jsonify(hackrf.serial_probe(str(data.get("port") or ""), int(data.get("baudrate") or 115200)))
+
+    @app.post("/api/receiver/start")
+    @app.post("/sdr/api/receiver/start")
+    def receiver_start():
+        try:
+            config = ReceiverConfig.from_payload(request.get_json(silent=True) or {})
+        except (TypeError, ValueError) as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        return jsonify(receiver.start(config) | {"ok": True})
+
+    @app.post("/api/receiver/stop")
+    @app.post("/sdr/api/receiver/stop")
+    def receiver_stop():
+        return jsonify(receiver.stop() | {"ok": True})
+
+    @app.get("/api/receiver/status")
+    @app.get("/sdr/api/receiver/status")
+    def receiver_status():
+        return jsonify(receiver.status() | {"ok": True})
+
+    @app.post("/api/receiver/frame")
+    @app.post("/sdr/api/receiver/frame")
+    def receiver_frame():
+        try:
+            payload = request.get_json(silent=True) or {}
+            if payload:
+                receiver.start(ReceiverConfig.from_payload(receiver.config.as_dict() | payload))
+        except (TypeError, ValueError) as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        result = receiver.frame()
+        return jsonify(result), 200 if result.get("ok") else 503
+
+    @app.post("/api/receiver/audio")
+    @app.post("/sdr/api/receiver/audio")
+    def receiver_audio():
+        try:
+            payload = request.get_json(silent=True) or {}
+            if payload:
+                receiver.start(ReceiverConfig.from_payload(receiver.config.as_dict() | payload))
+        except (TypeError, ValueError) as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        result = receiver.audio()
+        return jsonify(result), 200 if result.get("ok") else 503
 
     @app.get("/api/hackrf/presets")
     @app.get("/sdr/api/hackrf/presets")
@@ -358,6 +419,34 @@ def create_app(
         if not result.get("ok"):
             return jsonify(result), 503
         return jsonify({"ok": True, "row": waterfall_row(result.get("samples", []), fft_size=fft_size), "ts": time.time()})
+
+    @app.post("/api/hackrf/demodulate")
+    @app.post("/sdr/api/hackrf/demodulate")
+    def demodulate_once():
+        try:
+            data = request.get_json(silent=True) or {}
+            frequency = _int_payload(data, "frequency", 162550000, 1000000, 6000000000)
+            sample_rate = _int_payload(data, "sample_rate", 2000000, 1000000, 20000000)
+            sample_count = _int_payload(data, "sample_count", 131072, 4096, 1048576)
+            lna_gain = _int_payload(data, "lna_gain", 16, 0, 40)
+            vga_gain = _int_payload(data, "vga_gain", 20, 0, 62)
+            audio_rate = _int_payload(data, "audio_rate", 48000, 8000, 96000)
+            mode = str(data.get("mode") or "nfm").lower()
+        except (TypeError, ValueError) as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        if mode not in {"nfm", "wfm", "fm", "am", "usb", "lsb", "cw", "raw"}:
+            return jsonify({"ok": False, "error": "unsupported demodulation mode"}), 400
+        result = hackrf.read_iq_samples(
+            frequency,
+            sample_rate=sample_rate,
+            sample_count=sample_count,
+            lna_gain=lna_gain,
+            vga_gain=vga_gain,
+        )
+        if not result.get("ok"):
+            return jsonify(result), 503
+        audio = demodulate_audio(result.get("samples", []), sample_rate=sample_rate, mode=mode, audio_rate=audio_rate)
+        return jsonify({"ok": True, "frequency": frequency, "sample_rate": sample_rate, **audio})
 
     @socketio.on("start_waterfall")
     def start_waterfall(data: dict[str, Any] | None = None):

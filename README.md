@@ -277,7 +277,7 @@ This initializes the Loki reconnaissance engine with all dependencies. Once comp
 
 ### Step 5 - Set up SDR Suite (optional)
 
-The SDR Suite is a separate HackRF-focused web service on port `8081`. Install it after the main KTOX install has copied the repo to `/root/KTOx`:
+The SDR Suite is a separate HackRF-focused browser receiver on port `8081`. It provides receiver controls, spectrum/waterfall frames, demodulated browser audio, captures, and diagnostics. Install it after the main KTOX install has copied the repo to `/root/KTOx`:
 
 ```bash
 ssh root@[pi-ip]

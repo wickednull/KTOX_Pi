@@ -190,6 +190,42 @@ canvas {
   align-items: center;
 }
 
+.receiver-toolbar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.7rem;
+  align-items: end;
+  margin-bottom: 1rem;
+}
+
+.receiver-grid {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.receiver-plot {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  overflow: hidden;
+}
+
+.plot-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.7rem 0.9rem;
+  border-bottom: 1px solid var(--border);
+}
+
+#receiverSpectrum {
+  height: 240px;
+}
+
+#receiverWaterfall {
+  height: min(46vh, 420px);
+}
+
 @media (max-width: 760px) {
   .app-shell { grid-template-columns: 1fr; }
   .side { border-right: 0; border-bottom: 1px solid var(--border); }

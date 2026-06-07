@@ -33,6 +33,23 @@
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload || {})
     }),
+    receiverStart: (payload) => requestJson('/api/receiver/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload || {})
+    }),
+    receiverStop: () => requestJson('/api/receiver/stop', { method: 'POST' }),
+    receiverStatus: () => requestJson('/api/receiver/status'),
+    receiverFrame: (payload) => requestJson('/api/receiver/frame', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload || {})
+    }),
+    receiverAudio: (payload) => requestJson('/api/receiver/audio', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload || {})
+    }),
     presets: () => requestJson('/api/hackrf/presets'),
     captures: () => requestJson('/api/hackrf/captures'),
     deleteCapture: (id) => requestJson(`/api/hackrf/captures/${encodeURIComponent(id)}`, { method: 'DELETE' }),
@@ -50,6 +67,11 @@
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
+    }),
+    demodulate: (payload) => requestJson('/api/hackrf/demodulate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload || {})
     })
   };
 })();

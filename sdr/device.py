@@ -204,6 +204,8 @@ class HackRFManager:
         frequency: int,
         sample_rate: int = 20000000,
         sample_count: int = 512,
+        lna_gain: int | None = None,
+        vga_gain: int | None = None,
     ) -> dict:
         samples_to_read = max(1, int(sample_count))
         byte_count = samples_to_read * 2
@@ -218,6 +220,10 @@ class HackRFManager:
             "-n",
             str(samples_to_read),
         ]
+        if lna_gain is not None:
+            args.extend(["-l", str(int(lna_gain))])
+        if vga_gain is not None:
+            args.extend(["-g", str(int(vga_gain))])
         try:
             if self.runner is subprocess:
                 result = self.runner.run(args, timeout=10, capture_output=True, check=False)

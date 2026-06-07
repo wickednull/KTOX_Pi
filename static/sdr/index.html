@@ -17,7 +17,8 @@
         </div>
       </div>
       <nav class="tabs" aria-label="SDR sections">
-        <button class="tab active" data-tab="dashboard">Dashboard</button>
+        <button class="tab" data-tab="dashboard">Dashboard</button>
+        <button class="tab active" data-tab="receiver">Receiver</button>
         <button class="tab" data-tab="waterfall">Waterfall</button>
         <button class="tab" data-tab="sweep">Sweep</button>
         <button class="tab" data-tab="capture">Capture</button>
@@ -34,7 +35,7 @@
     </aside>
 
     <main class="content">
-      <section id="dashboard" class="panel active">
+      <section id="dashboard" class="panel">
         <div class="section-head">
           <div>
             <h2>Dashboard</h2>
@@ -55,6 +56,50 @@
         <div id="connectStatus" class="status-line">Connect a HackRF over USB, then press Connect HackRF.</div>
         <pre id="usbStatus" class="output compact">USB status will appear here.</pre>
         <div id="presetList" class="preset-list"></div>
+      </section>
+
+      <section id="receiver" class="panel active">
+        <div class="receiver-toolbar">
+          <label>Frequency Hz<input id="rxFrequency" type="number" value="162550000"></label>
+          <label>Step Hz<input id="rxStep" type="number" value="12500"></label>
+          <label>Sample Rate<select id="rxSampleRate">
+            <option value="2000000">2 MSPS</option>
+            <option value="4000000">4 MSPS</option>
+            <option value="8000000">8 MSPS</option>
+            <option value="10000000">10 MSPS</option>
+            <option value="20000000">20 MSPS</option>
+          </select></label>
+          <label>Mode<select id="rxMode">
+            <option value="nfm">NFM</option>
+            <option value="wfm">WFM</option>
+            <option value="am">AM</option>
+            <option value="usb">USB</option>
+            <option value="lsb">LSB</option>
+            <option value="cw">CW</option>
+            <option value="raw">RAW</option>
+          </select></label>
+          <label>Bandwidth Hz<input id="rxBandwidth" type="number" value="12500"></label>
+          <label>Squelch dB<input id="rxSquelch" type="number" value="-90"></label>
+          <label>LNA<input id="rxLna" type="number" value="16"></label>
+          <label>VGA<input id="rxVga" type="number" value="20"></label>
+          <label>Volume<input id="rxVolume" type="range" min="0" max="100" value="70"></label>
+          <div class="actions">
+            <button id="startAudio" class="primary">Listen</button>
+            <button id="stopAudio">Stop</button>
+          </div>
+        </div>
+        <div id="audioStatus" class="status-line">Idle</div>
+        <div class="receiver-grid">
+          <section class="receiver-plot">
+            <div class="plot-head"><strong>Spectrum</strong><span id="receiverSignal">No signal</span></div>
+            <canvas id="receiverSpectrum" width="1100" height="240"></canvas>
+          </section>
+          <section class="receiver-plot">
+            <div class="plot-head"><strong>Waterfall</strong><span id="receiverStatus">Idle</span></div>
+            <canvas id="receiverWaterfall" width="1100" height="420"></canvas>
+          </section>
+        </div>
+        <pre id="receiverOutput" class="output compact">Receiver status will appear here.</pre>
       </section>
 
       <section id="waterfall" class="panel">

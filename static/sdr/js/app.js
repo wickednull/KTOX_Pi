@@ -1,11 +1,17 @@
 (function(){
   const api = window.SdrApi;
   const waterfall = new window.SdrWaterfall(document.getElementById('waterfallCanvas'));
+  const receiverSpectrum = new window.SdrSpectrum(document.getElementById('receiverSpectrum'));
+  const receiverWaterfall = new window.SdrWaterfall(document.getElementById('receiverWaterfall'));
   const socketPath = `${window.SdrApiBasePath ? window.SdrApiBasePath() : ''}/socket.io`;
   const socket = window.io ? window.io({ path: socketPath }) : null;
   const socketStub = !socket || !!socket.__ktoxStub;
   const settingsKey = 'ktox:sdr:settings';
   let waterfallTimer = null;
+  let audioCtx = null;
+  let audioTimer = null;
+  let receiverFrameTimer = null;
+  let audioNextTime = 0;
 
   const els = {
     deviceDot: document.getElementById('deviceDot'),
@@ -25,7 +31,11 @@
     usbStatus: document.getElementById('usbStatus'),
     serialPort: document.getElementById('serialPort'),
     serialBaud: document.getElementById('serialBaud'),
-    serialStatus: document.getElementById('serialStatus')
+    serialStatus: document.getElementById('serialStatus'),
+    audioStatus: document.getElementById('audioStatus'),
+    receiverSignal: document.getElementById('receiverSignal'),
+    receiverStatus: document.getElementById('receiverStatus'),
+    receiverOutput: document.getElementById('receiverOutput')
   };
 
   function bytes(size){
@@ -183,6 +193,104 @@
     }
   }
 
+  function receiverPayload(extra){
+    return Object.assign({
+      frequency: numeric('rxFrequency') || 162550000,
+      sample_rate: numeric('rxSampleRate') || 2000000,
+      mode: document.getElementById('rxMode').value || 'nfm',
+      lna_gain: numeric('rxLna') || 16,
+      vga_gain: numeric('rxVga') || 20,
+      bandwidth: numeric('rxBandwidth') || 12500,
+      squelch: numeric('rxSquelch') || -90,
+      fft_size: 512,
+      sample_count: 131072,
+      audio_rate: 48000
+    }, extra || {});
+  }
+
+  async function receiverFrameLoop(){
+    try {
+      const data = await api.receiverFrame(receiverPayload({ sample_count: 4096 }));
+      if (!data.ok) throw new Error(data.error || 'receiver frame failed');
+      receiverSpectrum.draw(data.spectrum || [], data.peaks || []);
+      receiverWaterfall.push(data.waterfall || []);
+      els.receiverStatus.textContent = data.squelch_open ? 'Signal' : 'Below squelch';
+      els.receiverSignal.textContent = `${Number(data.peak_db || -120).toFixed(1)} dB peak`;
+      els.receiverOutput.textContent = pretty({
+        frequency: data.frequency,
+        sample_rate: data.sample_rate,
+        peak_db: data.peak_db,
+        squelch_open: data.squelch_open,
+        peaks: data.peaks || []
+      });
+    } catch (err) {
+      els.receiverStatus.textContent = `Frame failed: ${err.message}`;
+    }
+  }
+
+  async function receiverAudioLoop(){
+    try {
+      const data = await api.receiverAudio(receiverPayload());
+      if (!data.ok) throw new Error(data.error || 'demodulation failed');
+      const samples = data.audio || [];
+      if (!samples.length) throw new Error('demodulator returned no audio');
+      const rate = data.audio_rate || 48000;
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: rate });
+      const buffer = audioCtx.createBuffer(1, samples.length, rate);
+      const channel = buffer.getChannelData(0);
+      const volume = (Number(document.getElementById('rxVolume').value) || 70) / 100;
+      samples.forEach((sample, index) => {
+        channel[index] = Math.max(-1, Math.min(1, Number(sample) || 0)) * volume;
+      });
+      const source = audioCtx.createBufferSource();
+      source.buffer = buffer;
+      source.connect(audioCtx.destination);
+      audioNextTime = Math.max(audioNextTime, audioCtx.currentTime + 0.02);
+      source.start(audioNextTime);
+      audioNextTime += buffer.duration;
+      els.audioStatus.textContent = `Playing ${String(data.mode || '').toUpperCase()} at ${data.frequency} Hz`;
+      els.receiverOutput.textContent = pretty({
+        mode: data.mode,
+        frequency: data.frequency,
+        sample_rate: data.sample_rate,
+        audio_rate: data.audio_rate,
+        audio_samples: samples.length
+      });
+    } catch (err) {
+      stopAudio();
+      els.audioStatus.textContent = `Audio failed: ${err.message}`;
+      els.receiverOutput.textContent = err.message;
+    }
+  }
+
+  function startAudio(){
+    stopAudio();
+    els.audioStatus.textContent = 'Starting receiver...';
+    audioNextTime = 0;
+    api.receiverStart(receiverPayload()).then(() => {
+      receiverFrameLoop();
+      receiverFrameTimer = setInterval(receiverFrameLoop, 700);
+      receiverAudioLoop();
+      audioTimer = setInterval(receiverAudioLoop, 900);
+    }).catch((err) => {
+      els.audioStatus.textContent = `Receiver failed: ${err.message}`;
+    });
+  }
+
+  function stopAudio(){
+    if (audioTimer) {
+      clearInterval(audioTimer);
+      audioTimer = null;
+    }
+    if (receiverFrameTimer) {
+      clearInterval(receiverFrameTimer);
+      receiverFrameTimer = null;
+    }
+    api.receiverStop().catch(() => {});
+    els.audioStatus.textContent = 'Idle';
+    if (els.receiverStatus) els.receiverStatus.textContent = 'Idle';
+  }
+
   async function runSweep(){
     els.sweepOutput.textContent = 'Running sweep...';
     try {
@@ -280,6 +388,8 @@
   document.getElementById('runCapture').addEventListener('click', runCapture);
   document.getElementById('refreshSerial').addEventListener('click', loadSerialPorts);
   document.getElementById('probeSerial').addEventListener('click', probeSerial);
+  document.getElementById('startAudio').addEventListener('click', startAudio);
+  document.getElementById('stopAudio').addEventListener('click', stopAudio);
   els.captureList.addEventListener('click', async (event) => {
     const button = event.target.closest('[data-delete-capture]');
     if (!button) return;
