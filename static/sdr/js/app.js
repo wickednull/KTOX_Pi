@@ -5,6 +5,7 @@
   const socket = window.io ? window.io({ path: socketPath }) : null;
   const socketStub = !socket || !!socket.__ktoxStub;
   const settingsKey = 'ktox:sdr:settings';
+  let waterfallTimer = null;
 
   const els = {
     deviceDot: document.getElementById('deviceDot'),
@@ -134,7 +135,7 @@
   }
 
   async function runCapture(){
-    els.captureStatus.textContent = 'Capture queued...';
+    els.captureStatus.textContent = 'Capturing IQ...';
     try {
       const data = await api.capture({
         frequency: numeric('captureFrequency'),
@@ -143,11 +144,43 @@
         lna_gain: numeric('captureLna'),
         vga_gain: 20
       });
-      els.captureStatus.textContent = data.queued ? `Queued ${data.filename}` : 'Capture complete';
-      setTimeout(loadCaptures, 1200);
+      els.captureStatus.textContent = data.ok ? `Capture saved: ${data.filename}` : `Capture failed: ${data.error || 'unknown error'}`;
+      await loadCaptures();
     } catch (err) {
       els.captureStatus.textContent = `Capture failed: ${err.message}`;
     }
+  }
+
+  function stopWaterfall(){
+    if (waterfallTimer) {
+      clearInterval(waterfallTimer);
+      waterfallTimer = null;
+    }
+    if (socket && !socketStub) socket.emit('stop_waterfall');
+    els.waterfallStatus.textContent = 'Idle';
+  }
+
+  async function pollWaterfall(){
+    try {
+      const data = await api.waterfallRow({
+        fft_size: numeric('settingFft') || 256,
+        frequency: numeric('captureFrequency') || 2437000000,
+        sample_rate: numeric('captureSampleRate') || 20000000
+      });
+      waterfall.push(data.row || []);
+      els.waterfallStatus.textContent = 'Streaming';
+    } catch (err) {
+      stopWaterfall();
+      els.waterfallStatus.textContent = `Waterfall failed: ${err.message}`;
+    }
+  }
+
+  function startWaterfall(){
+    stopWaterfall();
+    waterfall.clear();
+    els.waterfallStatus.textContent = 'Starting stream...';
+    pollWaterfall();
+    waterfallTimer = setInterval(pollWaterfall, 700);
   }
 
   function loadSettings(){
@@ -188,19 +221,8 @@
     await loadCaptures();
   });
   document.getElementById('saveSettings').addEventListener('click', saveSettings);
-  document.getElementById('startWaterfall').addEventListener('click', () => {
-    waterfall.clear();
-    if (socket && !socketStub) {
-      socket.emit('start_waterfall', { fft_size: numeric('settingFft') || 256 });
-      els.waterfallStatus.textContent = 'Starting stream...';
-    } else {
-      els.waterfallStatus.textContent = 'Waterfall backend unavailable';
-    }
-  });
-  document.getElementById('stopWaterfall').addEventListener('click', () => {
-    if (socket && !socketStub) socket.emit('stop_waterfall');
-    els.waterfallStatus.textContent = 'Idle';
-  });
+  document.getElementById('startWaterfall').addEventListener('click', startWaterfall);
+  document.getElementById('stopWaterfall').addEventListener('click', stopWaterfall);
 
   if (socket && !socketStub) {
     socket.on('waterfall_row', data => {
@@ -214,7 +236,7 @@
       els.waterfallStatus.textContent = 'Socket unavailable';
     });
   } else {
-    els.waterfallStatus.textContent = 'Waterfall backend unavailable';
+    els.waterfallStatus.textContent = 'Ready';
   }
 
   loadSettings();

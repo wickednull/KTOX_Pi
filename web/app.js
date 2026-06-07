@@ -681,8 +681,9 @@
   }
 
   function resolveSdrUrl(){
-    const host = window.location.hostname || 'localhost';
-    return `http://${host}:8081/`;
+    const host = window.location.hostname || window.location.host.split(':')[0];
+    const targetHost = host || 'ktox.local';
+    return `http://${targetHost}:8081/`;
   }
 
   function setShellStatus(txt){

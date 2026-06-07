@@ -43,6 +43,8 @@ class FakeRunner:
             return FakeResult(
                 stdout="2026-05-29, 00:00:00, 2400000000, 2401000000, 1000000, 1, -55.0, -42.0\n"
             )
+        if args and args[0] == "hackrf_transfer":
+            return FakeResult(stdout="\x00\x40\x80\xc0" * 256)
         return FakeResult()
 
 
@@ -92,6 +94,11 @@ def validate_device() -> None:
     connected = manager.connect()
     require(connected["connected"] is True, "connect should report HackRF connected")
     require(connected["usb"]["hackrf"], "connect should include USB HackRF match")
+    sweep = manager.run_sweep(2400000000, 2500000000)
+    require(sweep["ok"] is True, "fake sweep should work")
+    require(["hackrf_sweep", "-f", "2400:2500", "-w", "1000000", "-1"] in runner.calls, "hackrf_sweep should receive MHz range")
+    row = manager.read_iq_samples(2437000000, sample_count=256)
+    require(row["ok"] is True and len(row["samples"]) == 512, "read_iq_samples should return IQ bytes")
     require(runner.calls[0][0] == "hackrf_info", "hackrf_info was not called")
 
 
@@ -128,6 +135,13 @@ def validate_server() -> None:
         payload = {"start": 2400000000, "stop": 2401000000, "bin_width": 1000000, "dwell_ms": 10}
         response = client.post("/api/hackrf/sweep", data=json.dumps(payload), content_type="application/json")
         require(response.status_code == 200, "sweep endpoint failed")
+        waterfall = client.post(
+            "/api/hackrf/waterfall-row",
+            data=json.dumps({"frequency": 2437000000, "sample_rate": 20000000, "fft_size": 256}),
+            content_type="application/json",
+        )
+        require(waterfall.status_code == 200, "waterfall row endpoint failed")
+        require(len(waterfall.get_json()["row"]) == 256, "waterfall row endpoint returned wrong row size")
 
 
 def validate_static_assets() -> None:
@@ -163,7 +177,8 @@ def validate_integration() -> None:
     requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8")
     require("navSdr" in web_html, "main WebUI SDR nav link missing")
     require("resolveSdrUrl" in web_js, "main WebUI SDR URL helper missing")
-    require("return `http://${host}:8081/`;" in web_js, "SDR link must use direct port 8081")
+    require('href="http://localhost:8081"' not in web_html, "main WebUI SDR link must not hardcode localhost")
+    require("return `http://${targetHost}:8081/`;" in web_js, "SDR link must use current WebUI host on direct port 8081")
     require("ExecStart=/usr/bin/python3 /root/KTOx/services/sdr_server.py" in service, "systemd ExecStart mismatch")
     require("/etc/systemd/system/ktox-sdr.service" in installer, "SDR installer must install the systemd unit")
     require("systemctl daemon-reload" in installer, "SDR installer must reload systemd")
@@ -177,10 +192,12 @@ def validate_integration() -> None:
     require("def run_socketio" in server and "except TypeError" in server and "allow_unsafe_werkzeug" in server, "sdr_server.py must tolerate Flask-SocketIO run argument differences")
     require("run_static_sdr_server" in server and "ThreadingHTTPServer" in server, "sdr_server.py must serve the page even when backend imports fail")
     require("/api/hackrf/connect" in server and "hackrf.connect()" in server, "sdr_server.py must expose explicit HackRF connect endpoint")
+    require("/api/hackrf/waterfall-row" in server and "read_iq_samples" in server, "sdr_server.py must expose HTTP waterfall row endpoint")
     require('@app.get("/sdr")' in server and 'redirect("/sdr/")' in server, "SDR server should redirect /sdr to /sdr/")
     require('@app.get("/sdr/")' in server, "SDR server should provide /sdr/ alias")
     require("basePath()" in sdr_api and "withBase" in sdr_api, "SDR API client must be prefix-aware")
     require("socketPath" in sdr_app and "SdrApiBasePath" in sdr_app, "SDR Socket.IO client must be prefix-aware")
+    require("waterfallRow" in sdr_api and "pollWaterfall" in sdr_app, "SDR UI must support HTTP waterfall polling")
     require("scripts/install_sdr.sh" in readme and "scripts/diagnose_sdr.sh" in readme and "ktox-sdr" in readme, "README must document SDR service installation and diagnostics")
     for folder in ("sdr", "services", "static", "tools"):
         require(f'"$FIRMWARE_DIR/{folder}"' in main_installer, f"main installer must copy {folder}/")

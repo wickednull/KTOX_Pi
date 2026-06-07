@@ -178,10 +178,12 @@ class HackRFManager:
         bin_width: int = 1000000,
         dwell_ms: int = 100,
     ) -> dict:
+        start_mhz = max(1, int(round(int(start_hz) / 1000000)))
+        stop_mhz = max(start_mhz + 1, int(round(int(stop_hz) / 1000000)))
         args = [
             "hackrf_sweep",
             "-f",
-            f"{int(start_hz)}:{int(stop_hz)}",
+            f"{start_mhz}:{stop_mhz}",
             "-w",
             str(int(bin_width)),
             "-1",
@@ -195,6 +197,42 @@ class HackRFManager:
             "stdout": result.stdout or "",
             "error": "" if result.returncode == 0 else (result.stderr or "hackrf_sweep failed"),
         }
+
+    def read_iq_samples(
+        self,
+        frequency: int,
+        sample_rate: int = 20000000,
+        sample_count: int = 512,
+    ) -> dict:
+        byte_count = max(2, int(sample_count) * 2)
+        args = [
+            "hackrf_transfer",
+            "-r",
+            "-",
+            "-f",
+            str(int(frequency)),
+            "-s",
+            str(int(sample_rate)),
+            "-n",
+            str(byte_count),
+        ]
+        try:
+            if self.runner is subprocess:
+                result = self.runner.run(args, timeout=10, capture_output=True, check=False)
+                raw = result.stdout or b""
+                err = (result.stderr or b"").decode("utf-8", errors="replace").strip()
+            else:
+                result = self._run(args, timeout=10)
+                raw = (result.stdout or "").encode("latin1", errors="ignore")
+                err = result.stderr or ""
+        except FileNotFoundError:
+            return {"ok": False, "error": "hackrf_transfer not installed", "samples": []}
+        except Exception as exc:
+            return {"ok": False, "error": str(exc), "samples": []}
+        if result.returncode != 0:
+            return {"ok": False, "error": err or "hackrf_transfer failed", "samples": []}
+        samples = [(byte - 256 if byte > 127 else byte) / 128.0 for byte in raw[:byte_count]]
+        return {"ok": True, "samples": samples}
 
     def start_rx_stream(self, args: list[str]) -> subprocess.Popen:
         with self._lock:

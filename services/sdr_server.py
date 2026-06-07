@@ -145,9 +145,11 @@ class StaticSdrHandler(SimpleHTTPRequestHandler):
             "/api/hackrf/sweep",
             "/api/hackrf/frequency-sweep",
             "/api/hackrf/capture",
+            "/api/hackrf/waterfall-row",
             "/sdr/api/hackrf/sweep",
             "/sdr/api/hackrf/frequency-sweep",
             "/sdr/api/hackrf/capture",
+            "/sdr/api/hackrf/waterfall-row",
         }:
             self.send_json(
                 {
@@ -284,10 +286,7 @@ def create_app(
                 db.insert_capture(**meta)
             return result
 
-        if testing:
-            return jsonify(job())
-        executor.submit(job)
-        return jsonify({"ok": True, "queued": True, "filename": capture_path.name})
+        return jsonify(job() | {"filename": capture_path.name})
 
     @app.route("/api/hackrf/frequency-sweep", methods=["GET", "POST"])
     @app.route("/sdr/api/hackrf/frequency-sweep", methods=["GET", "POST"])
@@ -305,6 +304,21 @@ def create_app(
         result = hackrf.run_sweep(start, stop, bin_width=bin_width, dwell_ms=dwell_ms)
         rows = parse_hackrf_sweep(result.get("stdout", ""))
         return jsonify({"ok": result.get("ok", False), "rows": rows, "error": result.get("error", "")})
+
+    @app.post("/api/hackrf/waterfall-row")
+    @app.post("/sdr/api/hackrf/waterfall-row")
+    def waterfall_row_once():
+        try:
+            data = request.get_json(silent=True) or {}
+            fft_size = _int_payload(data, "fft_size", 256, 64, 4096)
+            frequency = _int_payload(data, "frequency", 2437000000, 1000000, 6000000000)
+            sample_rate = _int_payload(data, "sample_rate", 20000000, 1000000, 20000000)
+        except (TypeError, ValueError) as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        result = hackrf.read_iq_samples(frequency, sample_rate=sample_rate, sample_count=fft_size)
+        if not result.get("ok"):
+            return jsonify(result), 503
+        return jsonify({"ok": True, "row": waterfall_row(result.get("samples", []), fft_size=fft_size), "ts": time.time()})
 
     @socketio.on("start_waterfall")
     def start_waterfall(data: dict[str, Any] | None = None):
