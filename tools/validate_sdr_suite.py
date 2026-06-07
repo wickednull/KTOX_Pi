@@ -56,6 +56,40 @@ class FakeDecoderTools:
         return self.available.get(name)
 
 
+class FakeDecoderProcess:
+    def __init__(self, args, lines=None):
+        self.args = list(args)
+        self.pid = 4242
+        self.terminated = False
+        self.lines = list(lines or [])
+
+    def poll(self):
+        return None if not self.terminated else 0
+
+    def terminate(self):
+        self.terminated = True
+
+    def wait(self, timeout=None):
+        self.terminated = True
+        return 0
+
+    def kill(self):
+        self.terminated = True
+
+
+class FakeDecoderLauncher:
+    def __init__(self):
+        self.started = []
+
+    def start(self, args, cwd=None, env=None):
+        proc = FakeDecoderProcess(args, lines=[
+            "op25 tg=1001 src=2002 freq=851.512500 encrypted algid=0x80",
+            "dsd-fme DMR voice TG=3101 SRC=4455 FREQ=452.500000",
+        ])
+        self.started.append({"args": list(args), "cwd": cwd, "env": env, "process": proc})
+        return proc
+
+
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise AssertionError(message)
@@ -172,15 +206,18 @@ def validate_handlers() -> None:
 
 
 def validate_trunking() -> None:
-    from sdr.trunking import DecoderToolchain, LicensedOperationStore, TrunkingEventLog, TrunkingProfileStore, TrunkingRuntime
+    from sdr.trunking import DecoderLogParser, DecoderProcessManager, DecoderToolchain, LicensedOperationStore, TalkgroupAliasStore, TrunkingEventLog, TrunkingProfileStore, TrunkingRuntime
 
     with tempfile.TemporaryDirectory() as tmp:
         base = Path(tmp)
         agreement = LicensedOperationStore(base / "licensed_operation.json")
         profiles = TrunkingProfileStore(base / "trunking_profiles.json")
+        aliases = TalkgroupAliasStore(base / "trunking_aliases.json")
         events = TrunkingEventLog(base / "trunking_events.json")
         toolchain = DecoderToolchain(base / "decoder", locator=FakeDecoderTools({"multi_rx.py": "/opt/op25/op25/gr-op25_repeater/apps/multi_rx.py", "dsd-fme": "/usr/local/bin/dsd-fme"}))
-        runtime = TrunkingRuntime(agreement, profiles, events, toolchain=toolchain)
+        launcher = FakeDecoderLauncher()
+        process_manager = DecoderProcessManager(launcher=launcher)
+        runtime = TrunkingRuntime(agreement, profiles, events, toolchain=toolchain, process_manager=process_manager)
 
         profile = profiles.add({
             "name": "Local P25 test",
@@ -193,6 +230,12 @@ def validate_trunking() -> None:
         require(profile["id"], "trunking profile should get an id")
         require(profile["decoder"] == "op25", "P25 profile should use OP25 decoder")
         require(profiles.list()[0]["control_channel"] == 851012500, "trunking profile should persist")
+        exported_profiles = profiles.export_json()
+        require("Local P25 test" in exported_profiles and "profiles" in exported_profiles, "trunking profile export should include profiles")
+        imported_profiles = TrunkingProfileStore(base / "imported_profiles.json")
+        import_result = imported_profiles.import_json(exported_profiles)
+        require(import_result["imported"] == 1, "trunking profile import should report imported count")
+        require(imported_profiles.list()[0]["name"] == "Local P25 test", "trunking profile import should restore profile")
         plan = toolchain.plan(profile)
         require(plan["engine"] == "op25", "P25 command plan should use OP25")
         require("--nocrypt" in plan["args"], "OP25 command plan must silence encrypted audio")
@@ -200,6 +243,14 @@ def validate_trunking() -> None:
         op25_config = json.loads(Path(plan["config_path"]).read_text(encoding="utf-8"))
         require(op25_config["trunking"]["chans"][0]["crypt_behavior"] == 2, "OP25 config must use encrypted-call skip behavior")
         require(op25_config["devices"][0]["args"] == "hackrf=0", "OP25 config should default to HackRF source args")
+        parsed_encrypted = DecoderLogParser.parse("op25 tg=1001 src=2002 freq=851.512500 encrypted algid=0x80")
+        require(parsed_encrypted["encrypted"] is True, "decoder parser should mark encrypted calls")
+        require(parsed_encrypted["talkgroup"] == "1001", "decoder parser should extract talkgroup")
+        require(parsed_encrypted["source"] == "2002", "decoder parser should extract source")
+        require(parsed_encrypted["frequency"] == 851512500, "decoder parser should convert MHz frequency to Hz")
+        parsed_clear = DecoderLogParser.parse("dsd-fme DMR voice TG=3101 SRC=4455 FREQ=452.500000")
+        require(parsed_clear["protocol"] == "dmr", "decoder parser should detect DMR")
+        require(parsed_clear["encrypted"] is False, "decoder parser should not mark clear voice encrypted")
 
         try:
             runtime.start(profile["id"])
@@ -219,8 +270,18 @@ def validate_trunking() -> None:
         require(status["profile"]["id"] == profile["id"], "trunking status should include profile")
         require(status["decoder_state"] == "planned", "trunking runtime should attach decoder plan when tool exists")
         require(status["decoder_plan"]["engine"] == "op25", "trunking status should expose decoder plan")
+        require(status["process"]["running"] is True and status["process"]["pid"] == 4242, "trunking runtime should start decoder process")
+        require(launcher.started[0]["args"][0] == "/opt/op25/op25/gr-op25_repeater/apps/multi_rx.py", "decoder launcher should receive planned command")
+        collected = runtime.collect_decoder_events()
+        require(len(collected) == 2, "runtime should collect decoder telemetry events")
+        require(collected[0]["encrypted"] is True and "audio_url" not in collected[0], "encrypted telemetry event must not expose audio")
+        require(collected[1]["protocol"] == "dmr" and collected[1]["talkgroup"] == "3101", "clear telemetry event should include DMR talkgroup")
+        launcher.started[0]["process"].terminated = True
+        require(runtime.status()["running"] is False, "runtime should report stopped when decoder process exits")
+        status = runtime.start(profile["id"])
         stopped = runtime.stop()
         require(stopped["running"] is False, "trunking runtime should stop")
+        require(stopped["process"]["running"] is False, "trunking runtime should stop decoder process")
 
         dmr_profile = profiles.add({
             "name": "Local DMR test",
@@ -245,8 +306,67 @@ def validate_trunking() -> None:
         require(encrypted["status"] == "encrypted", "encrypted trunking event should use encrypted status")
         for blocked in ("audio_url", "recording_path", "decoded_audio"):
             require(blocked not in encrypted, f"encrypted trunking event must not expose {blocked}")
+        events.add({"protocol": "p25", "frequency": 851512500, "talkgroup": "1001", "source": "2002", "encrypted": False, "status": "voice"})
+        events.add({"protocol": "dmr", "frequency": 452500000, "talkgroup": "3101", "source": "4455", "encrypted": False, "status": "voice"})
+        summary = events.summary()
+        require(summary["total_events"] >= 5, "trunking summary should include total event count")
+        require(summary["encrypted_events"] >= 1, "trunking summary should count encrypted events")
+        require(summary["clear_events"] >= 2, "trunking summary should count clear events")
+        require(summary["talkgroups"][0]["talkgroup"], "trunking summary should include talkgroup rows")
+        require(any(row["talkgroup"] == "1001" and row["encrypted"] >= 1 for row in summary["talkgroups"]), "trunking summary should aggregate encrypted talkgroup counts")
+        csv_text = events.to_csv()
+        require("timestamp,protocol,frequency,talkgroup,source,status,encrypted,message" in csv_text, "trunking CSV should include stable headers")
+        require("1001" in csv_text and "encrypted" in csv_text, "trunking CSV should include event rows")
+        aliases.upsert({"kind": "talkgroup", "key": "1001", "label": "Dispatch", "color": "#ff0040"})
+        aliases.upsert({"kind": "source", "key": "2002", "label": "Unit 2002"})
+        exported_aliases = aliases.export_json()
+        imported_aliases = TalkgroupAliasStore(base / "imported_aliases.json")
+        alias_import = imported_aliases.import_json(exported_aliases)
+        require(alias_import["imported"] == 2, "alias import should report imported count")
+        labeled = aliases.apply(events.list(limit=20))
+        require(any(row.get("talkgroup_label") == "Dispatch" for row in labeled), "alias store should label talkgroup events")
+        require(any(row.get("source_label") == "Unit 2002" for row in labeled), "alias store should label source events")
+        filtered = events.list(limit=20, talkgroup="1001", encrypted=True)
+        require(filtered and all(row["talkgroup"] == "1001" and row["encrypted"] is True for row in filtered), "event log should filter by encrypted talkgroup")
+        search_rows = events.list(limit=20, query="voice")
+        require(search_rows and all("voice" in str(row).lower() for row in search_rows), "event log should filter by query text")
         missing = DecoderToolchain(base / "missing", locator=FakeDecoderTools({})).status()
         require(missing["op25"]["available"] is False and missing["dsd_fme"]["available"] is False, "decoder status should report missing engines")
+        missing_runtime = TrunkingRuntime(agreement, profiles, events, toolchain=DecoderToolchain(base / "missing", locator=FakeDecoderTools({})), process_manager=DecoderProcessManager(launcher=FakeDecoderLauncher()))
+        missing_status = missing_runtime.start(profile["id"])
+        require(missing_status["decoder_state"] == "decoder-tool-missing", "runtime should not launch missing decoder engine")
+        require(missing_status["process"]["running"] is False, "missing decoder engine must not start a process")
+
+
+def validate_diagnostics() -> None:
+    from sdr.diagnostics import build_sdr_diagnostics
+    from sdr.device import HackRFManager
+    from sdr.trunking import DecoderToolchain, LicensedOperationStore, TalkgroupAliasStore, TrunkingEventLog, TrunkingProfileStore, TrunkingRuntime
+
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+        manager = HackRFManager(runner=FakeRunner())
+        agreement = LicensedOperationStore(base / "agreement.json")
+        profiles = TrunkingProfileStore(base / "profiles.json")
+        events = TrunkingEventLog(base / "events.json")
+        aliases = TalkgroupAliasStore(base / "aliases.json")
+        toolchain = DecoderToolchain(base / "decoders", locator=FakeDecoderTools({"multi_rx.py": "/opt/op25/multi_rx.py"}))
+        runtime = TrunkingRuntime(agreement, profiles, events, toolchain=toolchain)
+        report = build_sdr_diagnostics(
+            manager=manager,
+            receiver_status={"running": False, "config": {"frequency": 162550000}},
+            trunking=runtime,
+            captures_dir=base,
+            required_files=[ROOT / "services/sdr_server.py", ROOT / "static/sdr/index.html"],
+            aliases=aliases,
+            events=events,
+        )
+        require(report["ok"] is True, "diagnostics should mark fake hardware path ok")
+        require(report["hackrf"]["connected"] is True, "diagnostics should include HackRF connection")
+        require(report["decoder_tools"]["op25"]["available"] is True, "diagnostics should include decoder tool status")
+        require(report["event_summary"]["total_events"] == 0, "diagnostics should include trunking event summary")
+        require(report["required_files"]["missing"] == [], "diagnostics should include required file status")
+        require(report["next_steps"], "diagnostics should include actionable next steps")
 
 
 def validate_server() -> None:
@@ -351,6 +471,24 @@ def validate_server() -> None:
         )
         require(encrypted.status_code == 200, "trunking event endpoint failed")
         require("audio_url" not in encrypted.get_json()["event"], "encrypted trunking API event must block playback URL")
+        summary = client.get("/api/trunking/summary")
+        require(summary.status_code == 200, "trunking summary endpoint failed")
+        require("talkgroups" in summary.get_json()["summary"], "trunking summary endpoint should return talkgroups")
+        alias = client.post(
+            "/api/trunking/aliases",
+            data=json.dumps({"kind": "talkgroup", "key": "1001", "label": "Dispatch"}),
+            content_type="application/json",
+        )
+        require(alias.status_code == 200, "trunking alias endpoint failed")
+        filtered_events = client.get("/api/trunking/events?talkgroup=1001&encrypted=1")
+        require(filtered_events.status_code == 200, "trunking filtered events endpoint failed")
+        profiles_export = client.get("/api/trunking/profiles.json")
+        require(profiles_export.status_code == 200 and "profiles" in profiles_export.get_data(as_text=True), "trunking profile export endpoint failed")
+        aliases_export = client.get("/api/trunking/aliases.json")
+        require(aliases_export.status_code == 200 and "aliases" in aliases_export.get_data(as_text=True), "trunking alias export endpoint failed")
+        export = client.get("/api/trunking/events.csv")
+        require(export.status_code == 200, "trunking CSV export endpoint failed")
+        require("text/csv" in export.content_type, "trunking CSV export should use CSV content type")
 
 
 def validate_static_assets() -> None:
@@ -364,9 +502,9 @@ def validate_static_assets() -> None:
     for rel in required:
         require((ROOT / rel).exists(), f"missing {rel}")
     html = (ROOT / "static/sdr/index.html").read_text(encoding="utf-8")
-    for token in ["Dashboard", "Receiver", "Listen", "NFM", "WFM", "AM", "USB", "LSB", "receiverSpectrum", "receiverWaterfall", "rxStep", "rxBandwidth", "rxSquelch", "receiverStatus", "Scan Range", "Bookmarks", "Connect HackRF", "Test RX/Sweep", "USB / Serial", "Waterfall", "Sweep", "Capture", "Settings", "js/api.js", "css/style.css"]:
+    for token in ["Dashboard", "Receiver", "Listen", "NFM", "WFM", "AM", "USB", "LSB", "receiverSpectrum", "receiverWaterfall", "rxStep", "rxBandwidth", "rxSquelch", "receiverStatus", "Scan Range", "Bookmarks", "Connect HackRF", "Test RX/Sweep", "USB / Serial", "Diagnostics", "diagnosticsOutput", "Waterfall", "Sweep", "Capture", "Settings", "js/api.js", "css/style.css"]:
         require(token in html, f"missing SDR UI token {token!r}")
-    for token in ["Trunking", "Licensed Operation", "Encrypted traffic is logged", "trunkOperator", "trunkProfileName", "trunkControlChannel", "trunkStart", "trunkDecoderStatus", "trunkEvents"]:
+    for token in ["Trunking", "Licensed Operation", "Encrypted traffic is logged", "trunkOperator", "trunkProfileName", "trunkControlChannel", "trunkStart", "trunkSummary", "trunkEventFilter", "trunkEncryptedFilter", "trunkAliasKey", "trunkExportCsv", "trunkExportProfiles", "trunkExportAliases", "trunkProcessStatus", "trunkDecoderStatus", "trunkEvents"]:
         require(token in html, f"missing trunking UI token {token!r}")
     require('href="./api/hackrf/captures.csv"' in html, "SDR export link must be relative for /sdr proxying")
     require('src="./socket.io/socket.io.js"' in html, "Socket.IO client script must be relative for /sdr proxying")
@@ -401,7 +539,7 @@ def validate_integration() -> None:
     require("wait_for_http" in installer and "journalctl -u ktox-sdr" in installer, "SDR installer must verify HTTP startup and print logs on failure")
     require("systemctl enable" in installer, "SDR installer must offer service enablement")
     require("hackrf" in installer and "libhackrf0" in installer and "usbutils" in installer, "SDR installer must install HackRF and USB probe packages")
-    for required in ("services/sdr_server.py", "sdr/trunking.py", "static/sdr/index.html", "tools/validate_sdr_suite.py"):
+    for required in ("services/sdr_server.py", "sdr/diagnostics.py", "sdr/trunking.py", "static/sdr/index.html", "tools/validate_sdr_suite.py"):
         require(f'require_file "{required}"' in installer, f"SDR installer must verify {required} exists before installing service")
     require("services/sdr_server.py" in diagnostic and "systemctl cat" in diagnostic and "127.0.0.1:8081" in diagnostic, "SDR diagnostic must inspect files, unit, and local port")
     require("sys.path.insert(0, str(ROOT_DIR))" in server, "sdr_server.py must add repo root to sys.path before package imports")
@@ -414,10 +552,13 @@ def validate_integration() -> None:
     require("/api/trunking/agreement" in server and "LicensedOperationStore" in server, "sdr_server.py must expose trunking licensed-operation APIs")
     require("/api/trunking/start" in server and "TrunkingRuntime" in server and "DecoderToolchain" in server, "sdr_server.py must expose trunking runtime APIs")
     require("/api/trunking/events" in server and "TrunkingEventLog" in server, "sdr_server.py must expose trunking event APIs")
+    require("/api/trunking/summary" in server and "/api/trunking/events.csv" in server and "/api/trunking/aliases" in server and "/api/trunking/profiles.json" in server and "/api/trunking/aliases.json" in server, "sdr_server.py must expose trunking analytics, aliases, and exports")
+    require("collect_decoder_events" in server, "sdr_server.py must collect decoder telemetry for status/events")
     require("/api/hackrf/waterfall-row" in server and "read_iq_samples" in server, "sdr_server.py must expose HTTP waterfall row endpoint")
     require("/api/hackrf/demodulate" in server and "demodulate_audio" in server, "sdr_server.py must expose demodulation endpoint")
     require("/api/hackrf/test" in server and "hardware_test" in server, "sdr_server.py must expose HackRF hardware test endpoint")
     require("/api/serial/ports" in server and "/api/serial/probe" in server, "sdr_server.py must expose serial port endpoints")
+    require("/api/diagnostics" in server and "build_sdr_diagnostics" in server, "sdr_server.py must expose SDR diagnostics endpoint")
     require('@app.get("/sdr")' in server and 'redirect("/sdr/")' in server, "SDR server should redirect /sdr to /sdr/")
     require('@app.get("/sdr/")' in server, "SDR server should provide /sdr/ alias")
     require("basePath()" in sdr_api and "withBase" in sdr_api, "SDR API client must be prefix-aware")
@@ -429,14 +570,16 @@ def validate_integration() -> None:
     require("demodulate" in sdr_api and "AudioContext" in sdr_app, "SDR UI must support browser demodulated audio playback")
     require("receiverStart" in sdr_app and "receiverFrameLoop" in sdr_app and "receiverAudioLoop" in sdr_app, "SDR app must run receiver session loops")
     require("serialPorts" in sdr_api and "serialProbe" in sdr_api and "testHackrf" in sdr_app, "SDR UI must expose hardware and serial tests")
+    require("diagnostics" in sdr_api and "loadDiagnostics" in sdr_app, "SDR UI must expose diagnostics")
     require("receiverScan" in sdr_api and "receiverBookmarks" in sdr_api and "runReceiverScan" in sdr_app, "SDR UI must expose scan and bookmark actions")
     for token in ("trunkingAgreement", "trunkingAcceptAgreement", "trunkingProfiles", "trunkingStart", "trunkingEvents"):
         require(token in sdr_api, f"SDR API client missing {token}")
-    require("acceptTrunkAgreement" in sdr_app and "renderTrunkEvents" in sdr_app and "startTrunking" in sdr_app and "decoder_tools" in sdr_app, "SDR UI must expose trunking workflow and decoder status")
+    require("acceptTrunkAgreement" in sdr_app and "renderTrunkEvents" in sdr_app and "startTrunking" in sdr_app and "decoder_tools" in sdr_app and "trunkProcessStatus" in sdr_app and "renderTrunkSummary" in sdr_app and "saveTrunkAlias" in sdr_app and "trunkingEvents" in sdr_app and "SRC" in sdr_app, "SDR UI must expose trunking workflow and decoder status")
+    require(".trunk-event.encrypted" in (ROOT / "static/sdr/css/style.css").read_text(encoding="utf-8"), "SDR UI must visually distinguish encrypted trunking events")
     require("scripts/install_sdr.sh" in readme and "scripts/diagnose_sdr.sh" in readme and "ktox-sdr" in readme, "README must document SDR service installation and diagnostics")
     for folder in ("sdr", "services", "static", "tools"):
         require(f'"$FIRMWARE_DIR/{folder}"' in main_installer, f"main installer must copy {folder}/")
-    for required in ("services/sdr_server.py", "sdr/device.py", "sdr/demod.py", "sdr/receiver.py", "sdr/signals.py", "sdr/trunking.py", "static/sdr/index.html", "tools/validate_sdr_suite.py", "scripts/install_sdr.sh"):
+    for required in ("services/sdr_server.py", "sdr/device.py", "sdr/demod.py", "sdr/receiver.py", "sdr/signals.py", "sdr/trunking.py", "sdr/diagnostics.py", "static/sdr/index.html", "tools/validate_sdr_suite.py", "scripts/install_sdr.sh"):
         require(required in ota, f"OTA updater must verify {required}")
     require("ls-tree" in ota and "remote missing" in ota and "local missing" in ota, "OTA updater must diagnose remote/local SDR file gaps")
     for dep in ["numpy", "flask-socketio", "python-socketio"]:
@@ -451,6 +594,7 @@ def main() -> int:
         validate_receiver,
         validate_handlers,
         validate_trunking,
+        validate_diagnostics,
         validate_server,
         validate_static_assets,
         validate_integration,

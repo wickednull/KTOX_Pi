@@ -233,6 +233,18 @@ canvas {
   overflow-wrap: anywhere;
 }
 
+.trunk-event.encrypted {
+  border-color: rgba(248, 113, 113, 0.42);
+}
+
+.trunk-event.clear {
+  border-color: rgba(52, 211, 153, 0.34);
+}
+
+.trunk-summary-row {
+  grid-template-columns: 1fr auto auto auto auto;
+}
+
 .compact-head {
   margin-bottom: 0.7rem;
 }

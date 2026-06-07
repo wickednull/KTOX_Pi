@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
+import subprocess
 import time
 import uuid
+from csv import DictWriter
+from io import StringIO
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +27,9 @@ DSD_PROTOCOL_FLAGS = {
     "nxdn": "-fn",
     "p25": "-f1",
 }
+TG_RE = re.compile(r"\b(?:tg|tgid|talkgroup)\s*[=:]?\s*([A-Za-z0-9._-]+)", re.IGNORECASE)
+SRC_RE = re.compile(r"\b(?:src|source|srcaddr|sourceaddr)\s*[=:]?\s*([A-Za-z0-9._-]+)", re.IGNORECASE)
+FREQ_RE = re.compile(r"\b(?:freq|frequency)\s*[=:]?\s*([0-9]+(?:\.[0-9]+)?)", re.IGNORECASE)
 
 
 def _read_json(path: Path, fallback: Any) -> Any:
@@ -42,6 +49,46 @@ def _write_json(path: Path, data: Any) -> None:
 class SystemToolLocator:
     def which(self, name: str) -> str | None:
         return shutil.which(name)
+
+
+class SubprocessLauncher:
+    def start(self, args: list[str], cwd: str | Path | None = None, env: dict[str, str] | None = None):
+        return subprocess.Popen(
+            args,
+            cwd=str(cwd) if cwd else None,
+            env=env,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+
+
+def _read_process_lines(proc: Any, limit: int = 50) -> list[str]:
+    if hasattr(proc, "lines"):
+        lines = list(getattr(proc, "lines")[:limit])
+        del getattr(proc, "lines")[: len(lines)]
+        return lines
+    stdout = getattr(proc, "stdout", None)
+    if not stdout:
+        return []
+    rows: list[str] = []
+    for _ in range(limit):
+        try:
+            line = stdout.readline()
+        except Exception:
+            break
+        if not line:
+            break
+        rows.append(str(line).strip())
+    return rows
+
+
+def _frequency_to_hz(value: str) -> int:
+    number = float(value)
+    if number < 100000:
+        return int(number * 1000000)
+    return int(number)
 
 
 def _int_list(value: Any) -> list[int | str]:
@@ -164,6 +211,22 @@ class TrunkingProfileStore:
         _write_json(self.path, kept)
         return True
 
+    def export_json(self) -> str:
+        return json.dumps({"version": 1, "profiles": self.list()}, indent=2, sort_keys=True) + "\n"
+
+    def import_json(self, text: str | dict[str, Any]) -> dict[str, Any]:
+        data = json.loads(text) if isinstance(text, str) else text
+        rows = data.get("profiles") if isinstance(data, dict) else data
+        if not isinstance(rows, list):
+            raise ValueError("profiles import must contain a profiles list")
+        imported = 0
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            self.add(row)
+            imported += 1
+        return {"ok": True, "imported": imported}
+
 
 class TrunkingEventLog:
     """Stores decoder events while blocking playback metadata for encrypted traffic."""
@@ -175,9 +238,61 @@ class TrunkingEventLog:
         data = _read_json(self.path, [])
         return data if isinstance(data, list) else []
 
-    def list(self, limit: int = 200) -> list[dict[str, Any]]:
+    def list(self, limit: int = 200, talkgroup: str = "", source: str = "", encrypted: bool | None = None, query: str = "") -> list[dict[str, Any]]:
         rows = sorted(self._read(), key=lambda row: float(row.get("timestamp") or 0), reverse=True)
+        if talkgroup:
+            rows = [row for row in rows if str(row.get("talkgroup") or "") == str(talkgroup)]
+        if source:
+            rows = [row for row in rows if str(row.get("source") or "") == str(source)]
+        if encrypted is not None:
+            rows = [row for row in rows if bool(row.get("encrypted")) is bool(encrypted)]
+        if query:
+            needle = str(query).lower()
+            rows = [row for row in rows if needle in json.dumps(row, sort_keys=True).lower()]
         return rows[: max(1, int(limit))]
+
+    def summary(self) -> dict[str, Any]:
+        rows = self._read()
+        talkgroups: dict[str, dict[str, Any]] = {}
+        sources: dict[str, dict[str, Any]] = {}
+        encrypted_count = 0
+        for row in rows:
+            encrypted = bool(row.get("encrypted"))
+            if encrypted:
+                encrypted_count += 1
+            tg = str(row.get("talkgroup") or "")
+            if tg:
+                item = talkgroups.setdefault(
+                    tg,
+                    {"talkgroup": tg, "events": 0, "clear": 0, "encrypted": 0, "last_frequency": 0, "last_seen": 0.0},
+                )
+                item["events"] += 1
+                item["encrypted" if encrypted else "clear"] += 1
+                item["last_frequency"] = int(row.get("frequency") or item["last_frequency"] or 0)
+                item["last_seen"] = max(float(row.get("timestamp") or 0), float(item.get("last_seen") or 0))
+            source = str(row.get("source") or "")
+            if source and source != "decoder":
+                src = sources.setdefault(source, {"source": source, "events": 0, "encrypted": 0, "last_talkgroup": "", "last_seen": 0.0})
+                src["events"] += 1
+                src["encrypted"] += 1 if encrypted else 0
+                src["last_talkgroup"] = tg or src["last_talkgroup"]
+                src["last_seen"] = max(float(row.get("timestamp") or 0), float(src.get("last_seen") or 0))
+        return {
+            "total_events": len(rows),
+            "clear_events": len(rows) - encrypted_count,
+            "encrypted_events": encrypted_count,
+            "talkgroups": sorted(talkgroups.values(), key=lambda item: (int(item["events"]), float(item["last_seen"])), reverse=True),
+            "sources": sorted(sources.values(), key=lambda item: (int(item["events"]), float(item["last_seen"])), reverse=True),
+        }
+
+    def to_csv(self) -> str:
+        fields = ["timestamp", "protocol", "frequency", "talkgroup", "source", "status", "encrypted", "message"]
+        out = StringIO()
+        writer = DictWriter(out, fieldnames=fields, extrasaction="ignore", lineterminator="\n")
+        writer.writeheader()
+        for row in sorted(self._read(), key=lambda item: float(item.get("timestamp") or 0)):
+            writer.writerow({field: row.get(field, "") for field in fields})
+        return out.getvalue()
 
     def add(self, payload: dict[str, Any]) -> dict[str, Any]:
         encrypted = bool(payload.get("encrypted")) or str(payload.get("status") or "").lower() == "encrypted"
@@ -202,6 +317,101 @@ class TrunkingEventLog:
         rows.append(row)
         _write_json(self.path, rows[-1000:])
         return row
+
+
+class TalkgroupAliasStore:
+    """Stores display labels for talkgroups and source IDs."""
+
+    def __init__(self, path: str | Path):
+        self.path = Path(path)
+
+    def _read(self) -> list[dict[str, Any]]:
+        data = _read_json(self.path, [])
+        return data if isinstance(data, list) else []
+
+    def list(self) -> list[dict[str, Any]]:
+        return sorted(self._read(), key=lambda row: (str(row.get("kind") or ""), str(row.get("key") or "")))
+
+    def upsert(self, payload: dict[str, Any]) -> dict[str, Any]:
+        kind = str(payload.get("kind") or "talkgroup").lower().strip()
+        if kind not in {"talkgroup", "source"}:
+            raise ValueError("alias kind must be talkgroup or source")
+        key = str(payload.get("key") or "").strip()
+        label = str(payload.get("label") or "").strip()
+        if not key or not label:
+            raise ValueError("alias key and label are required")
+        row = {
+            "kind": kind,
+            "key": key,
+            "label": label,
+            "color": str(payload.get("color") or ""),
+            "notes": str(payload.get("notes") or ""),
+            "updated_at": time.time(),
+        }
+        rows = [item for item in self._read() if not (item.get("kind") == kind and item.get("key") == key)]
+        rows.append(row)
+        _write_json(self.path, rows)
+        return row
+
+    def apply(self, events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        lookup = {(row.get("kind"), row.get("key")): row for row in self._read()}
+        labeled = []
+        for event in events:
+            row = dict(event)
+            tg_alias = lookup.get(("talkgroup", str(row.get("talkgroup") or "")))
+            source_alias = lookup.get(("source", str(row.get("source") or "")))
+            if tg_alias:
+                row["talkgroup_label"] = tg_alias.get("label") or ""
+                row["talkgroup_color"] = tg_alias.get("color") or ""
+            if source_alias:
+                row["source_label"] = source_alias.get("label") or ""
+            labeled.append(row)
+        return labeled
+
+    def export_json(self) -> str:
+        return json.dumps({"version": 1, "aliases": self.list()}, indent=2, sort_keys=True) + "\n"
+
+    def import_json(self, text: str | dict[str, Any]) -> dict[str, Any]:
+        data = json.loads(text) if isinstance(text, str) else text
+        rows = data.get("aliases") if isinstance(data, dict) else data
+        if not isinstance(rows, list):
+            raise ValueError("aliases import must contain an aliases list")
+        imported = 0
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            self.upsert(row)
+            imported += 1
+        return {"ok": True, "imported": imported}
+
+
+class DecoderLogParser:
+    """Converts OP25/DSD-FME style text lines into KTOX event rows."""
+
+    @staticmethod
+    def parse(line: str) -> dict[str, Any]:
+        raw = str(line or "").strip()
+        lowered = raw.lower()
+        protocol = ""
+        if "dmr" in lowered:
+            protocol = "dmr"
+        elif "nxdn" in lowered:
+            protocol = "nxdn"
+        elif "p25" in lowered or "op25" in lowered:
+            protocol = "p25"
+        encrypted = any(token in lowered for token in ("encrypted", "enc ", "algid", "privacy"))
+        tg = TG_RE.search(raw)
+        src = SRC_RE.search(raw)
+        freq = FREQ_RE.search(raw)
+        return {
+            "protocol": protocol,
+            "frequency": _frequency_to_hz(freq.group(1)) if freq else 0,
+            "talkgroup": tg.group(1) if tg else "",
+            "source": src.group(1) if src else "decoder",
+            "encrypted": encrypted,
+            "status": "encrypted" if encrypted else "voice",
+            "message": raw,
+        }
 
 
 class DecoderToolchain:
@@ -328,6 +538,67 @@ class DecoderToolchain:
         }
 
 
+class DecoderProcessManager:
+    """Owns the external decoder process lifecycle."""
+
+    def __init__(self, launcher: Any | None = None):
+        self.launcher = launcher or SubprocessLauncher()
+        self.process: Any | None = None
+        self.plan: dict[str, Any] | None = None
+        self.started_at = 0.0
+        self.last_error = ""
+
+    def start(self, plan: dict[str, Any]) -> dict[str, Any]:
+        self.stop()
+        self.plan = plan
+        self.last_error = ""
+        if not plan.get("available"):
+            return self.status()
+        args = [str(item) for item in plan.get("args") or [] if str(item)]
+        if not args:
+            self.last_error = "decoder command plan has no args"
+            return self.status()
+        try:
+            cwd = str(Path(plan.get("config_path")).parent) if plan.get("config_path") else None
+            self.process = self.launcher.start(args, cwd=cwd)
+            self.started_at = time.time()
+        except Exception as exc:
+            self.process = None
+            self.started_at = 0.0
+            self.last_error = str(exc)
+        return self.status()
+
+    def stop(self) -> dict[str, Any]:
+        proc = self.process
+        if proc and proc.poll() is None:
+            try:
+                proc.terminate()
+                proc.wait(timeout=5)
+            except Exception:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+        self.process = None
+        self.started_at = 0.0
+        return self.status()
+
+    def status(self) -> dict[str, Any]:
+        running = bool(self.process and self.process.poll() is None)
+        return {
+            "running": running,
+            "pid": int(getattr(self.process, "pid", 0) or 0) if running else 0,
+            "started_at": self.started_at if running else 0.0,
+            "engine": str((self.plan or {}).get("engine") or ""),
+            "error": self.last_error,
+        }
+
+    def read_lines(self, limit: int = 50) -> list[str]:
+        if not self.process or self.process.poll() is not None:
+            return []
+        return _read_process_lines(self.process, limit=limit)
+
+
 class TrunkingRuntime:
     """Tracks the requested trunked decoder session state."""
 
@@ -337,17 +608,22 @@ class TrunkingRuntime:
         profiles: TrunkingProfileStore,
         events: TrunkingEventLog,
         toolchain: DecoderToolchain | None = None,
+        process_manager: DecoderProcessManager | None = None,
     ):
         self.agreement = agreement
         self.profiles = profiles
         self.events = events
         self.toolchain = toolchain or DecoderToolchain(Path("captures") / "decoders")
+        self.process_manager = process_manager or DecoderProcessManager()
         self.running = False
         self.profile: dict[str, Any] | None = None
         self.started_at = 0.0
         self.decoder_plan: dict[str, Any] | None = None
 
     def status(self) -> dict[str, Any]:
+        process_status = self.process_manager.status()
+        if self.running and self.decoder_plan and self.decoder_plan.get("available") and not process_status.get("running"):
+            self.running = False
         if self.running and self.decoder_plan:
             decoder_state = "planned" if self.decoder_plan.get("available") else "decoder-tool-missing"
         else:
@@ -360,6 +636,7 @@ class TrunkingRuntime:
             "decoder_state": decoder_state,
             "decoder_plan": self.decoder_plan,
             "decoder_tools": self.toolchain.status(),
+            "process": process_status,
             "agreement": self.agreement.get(),
         }
 
@@ -370,6 +647,7 @@ class TrunkingRuntime:
         if not profile:
             raise ValueError("trunking profile not found")
         self.decoder_plan = self.toolchain.plan(profile)
+        process_status = self.process_manager.start(self.decoder_plan)
         self.running = True
         self.profile = profile
         self.started_at = time.time()
@@ -378,9 +656,22 @@ class TrunkingRuntime:
             "frequency": profile.get("control_channel"),
             "status": "started",
             "source": "ktox",
-            "message": f"Planned {profile.get('decoder')} control session for {profile.get('name')}",
+            "message": (
+                f"Started {profile.get('decoder')} control session for {profile.get('name')}"
+                if process_status.get("running")
+                else f"Planned {profile.get('decoder')} control session for {profile.get('name')}"
+            ),
         })
         return self.status()
+
+    def collect_decoder_events(self, limit: int = 50) -> list[dict[str, Any]]:
+        collected: list[dict[str, Any]] = []
+        for line in self.process_manager.read_lines(limit=limit):
+            parsed = DecoderLogParser.parse(line)
+            if not parsed.get("protocol") and not parsed.get("talkgroup") and not parsed.get("frequency"):
+                continue
+            collected.append(self.events.add(parsed))
+        return collected
 
     def stop(self) -> dict[str, Any]:
         if self.running and self.profile:
@@ -391,6 +682,7 @@ class TrunkingRuntime:
                 "source": "ktox",
                 "message": f"Stopped control session for {self.profile.get('name')}",
             })
+        self.process_manager.stop()
         self.running = False
         self.profile = None
         self.started_at = 0.0

@@ -27,6 +27,8 @@
     captureList: document.getElementById('captureList'),
     waterfallStatus: document.getElementById('waterfallStatus'),
     settingsStatus: document.getElementById('settingsStatus'),
+    diagnosticsStatus: document.getElementById('diagnosticsStatus'),
+    diagnosticsOutput: document.getElementById('diagnosticsOutput'),
     connectStatus: document.getElementById('connectStatus'),
     usbStatus: document.getElementById('usbStatus'),
     serialPort: document.getElementById('serialPort'),
@@ -42,7 +44,9 @@
     trunkProfileSelect: document.getElementById('trunkProfileSelect'),
     trunkProfiles: document.getElementById('trunkProfiles'),
     trunkStatus: document.getElementById('trunkStatus'),
+    trunkProcessStatus: document.getElementById('trunkProcessStatus'),
     trunkDecoderStatus: document.getElementById('trunkDecoderStatus'),
+    trunkSummary: document.getElementById('trunkSummary'),
     trunkEvents: document.getElementById('trunkEvents')
   };
 
@@ -206,6 +210,19 @@
     }
   }
 
+  async function loadDiagnostics(){
+    if (!els.diagnosticsOutput) return;
+    els.diagnosticsStatus.textContent = 'Running SDR diagnostics...';
+    try {
+      const data = await api.diagnostics();
+      els.diagnosticsStatus.textContent = data.ok ? 'SDR Suite readiness checks passed.' : 'SDR Suite needs attention; see next_steps.';
+      els.diagnosticsOutput.textContent = pretty(data);
+    } catch (err) {
+      els.diagnosticsStatus.textContent = `Diagnostics failed: ${err.message}`;
+      els.diagnosticsOutput.textContent = err.message;
+    }
+  }
+
   function receiverPayload(extra){
     return Object.assign({
       frequency: numeric('rxFrequency') || 162550000,
@@ -327,18 +344,54 @@
     if (!els.trunkEvents) return;
     els.trunkEvents.innerHTML = rows.length ? rows.map(item => {
       const status = item.encrypted ? 'encrypted - playback blocked' : (item.status || 'decoded');
-      return `<div class="capture-row trunk-event"><strong>${escapeHtml(status)}</strong><span>${escapeHtml(item.protocol || '')}</span><span>${item.frequency || ''} Hz</span><span>TG ${escapeHtml(item.talkgroup || '-')}</span><span>${escapeHtml(item.message || '')}</span></div>`;
+      const className = item.encrypted ? 'capture-row trunk-event encrypted' : 'capture-row trunk-event clear';
+      const talkgroup = item.talkgroup_label ? `${item.talkgroup} ${item.talkgroup_label}` : (item.talkgroup || '-');
+      const source = item.source_label ? `${item.source} ${item.source_label}` : (item.source || '-');
+      return `<div class="${className}"><strong>${escapeHtml(status)}</strong><span>${escapeHtml(item.protocol || '')}</span><span>${item.frequency || ''} Hz</span><span>TG ${escapeHtml(talkgroup)}</span><span>SRC ${escapeHtml(source)}</span><span>${escapeHtml(item.message || '')}</span></div>`;
     }).join('') : '<div class="empty">No trunking events logged.</div>';
+  }
+
+  function trunkEventParams(){
+    const params = {};
+    const tg = document.getElementById('trunkTalkgroupFilter') && document.getElementById('trunkTalkgroupFilter').value.trim();
+    const src = document.getElementById('trunkSourceFilter') && document.getElementById('trunkSourceFilter').value.trim();
+    const enc = document.getElementById('trunkEncryptedFilter') && document.getElementById('trunkEncryptedFilter').value;
+    const query = document.getElementById('trunkEventFilter') && document.getElementById('trunkEventFilter').value.trim();
+    if (tg) params.talkgroup = tg;
+    if (src) params.source = src;
+    if (enc !== '') params.encrypted = enc;
+    if (query) params.q = query;
+    return params;
+  }
+
+  function renderTrunkSummary(summary){
+    if (!els.trunkSummary) return;
+    const totals = summary || {};
+    const talkgroups = totals.talkgroups || [];
+    const sources = totals.sources || [];
+    const statRows = [
+      `<article class="tile"><span>Total Events</span><strong>${Number(totals.total_events || 0)}</strong></article>`,
+      `<article class="tile"><span>Clear Voice</span><strong>${Number(totals.clear_events || 0)}</strong></article>`,
+      `<article class="tile"><span>Encrypted</span><strong>${Number(totals.encrypted_events || 0)}</strong></article>`
+    ].join('');
+    const talkgroupRows = talkgroups.slice(0, 8).map(item => (
+      `<div class="capture-row trunk-summary-row"><strong>TG ${escapeHtml(item.talkgroup)}</strong><span>${item.events} events</span><span>${item.clear} clear</span><span>${item.encrypted} encrypted</span><span>${item.last_frequency || ''} Hz</span></div>`
+    )).join('');
+    const sourceRows = sources.slice(0, 6).map(item => (
+      `<div class="capture-row trunk-summary-row"><strong>SRC ${escapeHtml(item.source)}</strong><span>${item.events} events</span><span>${item.encrypted} encrypted</span><span>TG ${escapeHtml(item.last_talkgroup || '-')}</span><span></span></div>`
+    )).join('');
+    els.trunkSummary.innerHTML = `<div class="grid">${statRows}</div>${talkgroupRows || '<div class="empty">No talkgroup activity yet.</div>'}${sourceRows}`;
   }
 
   async function loadTrunking(){
     if (!els.trunkStatus) return;
     try {
-      const [agreement, profiles, status, events] = await Promise.all([
+      const [agreement, profiles, status, events, summary] = await Promise.all([
         api.trunkingAgreement(),
         api.trunkingProfiles(),
         api.trunkingStatus(),
-        api.trunkingEvents()
+        api.trunkingEvents(trunkEventParams()),
+        api.trunkingSummary()
       ]);
       const accepted = agreement.agreement && agreement.agreement.accepted;
       els.trunkAgreementStatus.textContent = accepted
@@ -346,9 +399,16 @@
         : 'Agreement has not been accepted.';
       renderTrunkProfiles(profiles.profiles || []);
       renderTrunkEvents(events.events || []);
+      renderTrunkSummary(summary.summary || {});
       els.trunkStatus.textContent = status.running
         ? `Running ${status.profile && status.profile.name ? status.profile.name : 'profile'} (${status.decoder_state})`
         : 'Stopped';
+      if (els.trunkProcessStatus) {
+        const process = status.process || {};
+        els.trunkProcessStatus.textContent = process.running
+          ? `Decoder process running: ${process.engine || 'engine'} pid ${process.pid}`
+          : `Decoder process stopped${process.error ? `: ${process.error}` : '.'}`;
+      }
       if (els.trunkDecoderStatus) {
         els.trunkDecoderStatus.textContent = pretty({
           engines: status.decoder_tools || {},
@@ -357,6 +417,9 @@
       }
     } catch (err) {
       els.trunkStatus.textContent = `Trunking backend unavailable: ${err.message}`;
+      if (els.trunkProcessStatus) {
+        els.trunkProcessStatus.textContent = 'Decoder process status unavailable.';
+      }
       if (els.trunkDecoderStatus) {
         els.trunkDecoderStatus.textContent = `Decoder engine status unavailable: ${err.message}`;
       }
@@ -417,6 +480,20 @@
       await loadTrunking();
     } catch (err) {
       els.trunkStatus.textContent = `Stop failed: ${err.message}`;
+    }
+  }
+
+  async function saveTrunkAlias(){
+    try {
+      await api.trunkingAliasUpsert({
+        kind: document.getElementById('trunkAliasKind').value,
+        key: document.getElementById('trunkAliasKey').value,
+        label: document.getElementById('trunkAliasLabel').value,
+        color: document.getElementById('trunkAliasColor').value
+      });
+      await loadTrunking();
+    } catch (err) {
+      els.trunkStatus.textContent = `Alias failed: ${err.message}`;
     }
   }
 
@@ -545,6 +622,7 @@
   document.getElementById('runCapture').addEventListener('click', runCapture);
   document.getElementById('refreshSerial').addEventListener('click', loadSerialPorts);
   document.getElementById('probeSerial').addEventListener('click', probeSerial);
+  document.getElementById('refreshDiagnostics').addEventListener('click', loadDiagnostics);
   document.getElementById('startAudio').addEventListener('click', startAudio);
   document.getElementById('stopAudio').addEventListener('click', stopAudio);
   document.getElementById('runReceiverScan').addEventListener('click', runReceiverScan);
@@ -554,6 +632,8 @@
   document.getElementById('addTrunkProfile').addEventListener('click', addTrunkProfile);
   document.getElementById('trunkStart').addEventListener('click', startTrunking);
   document.getElementById('trunkStop').addEventListener('click', stopTrunking);
+  document.getElementById('applyTrunkFilter').addEventListener('click', loadTrunking);
+  document.getElementById('saveTrunkAlias').addEventListener('click', saveTrunkAlias);
   if (els.trunkProfiles) {
     els.trunkProfiles.addEventListener('click', async (event) => {
       const del = event.target.closest('[data-delete-trunk-profile]');
@@ -610,4 +690,5 @@
   loadSerialPorts();
   loadBookmarks();
   loadTrunking();
+  loadDiagnostics();
 })();

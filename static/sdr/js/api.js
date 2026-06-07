@@ -33,6 +33,7 @@
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload || {})
     }),
+    diagnostics: () => requestJson('/api/diagnostics'),
     receiverStart: (payload) => requestJson('/api/receiver/start', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -105,7 +106,17 @@
     }),
     trunkingStop: () => requestJson('/api/trunking/stop', { method: 'POST' }),
     trunkingStatus: () => requestJson('/api/trunking/status'),
-    trunkingEvents: () => requestJson('/api/trunking/events'),
+    trunkingEvents: (params) => {
+      const query = new URLSearchParams(params || {}).toString();
+      return requestJson(`/api/trunking/events${query ? `?${query}` : ''}`);
+    },
+    trunkingSummary: () => requestJson('/api/trunking/summary'),
+    trunkingAliases: () => requestJson('/api/trunking/aliases'),
+    trunkingAliasUpsert: (payload) => requestJson('/api/trunking/aliases', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload || {})
+    }),
     trunkingAddEvent: (payload) => requestJson('/api/trunking/events', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

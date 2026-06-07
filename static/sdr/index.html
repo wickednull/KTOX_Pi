@@ -24,6 +24,7 @@
         <button class="tab" data-tab="capture">Capture</button>
         <button class="tab" data-tab="trunking">Trunking</button>
         <button class="tab" data-tab="serial">USB / Serial</button>
+        <button class="tab" data-tab="diagnostics">Diagnostics</button>
         <button class="tab" data-tab="settings">Settings</button>
       </nav>
       <div class="device-card">
@@ -220,7 +221,10 @@
                 <h3>Profile</h3>
                 <p>Use local frequency and talkgroup data for unencrypted systems.</p>
               </div>
-              <button id="addTrunkProfile" class="primary">Save Profile</button>
+              <div class="actions">
+                <a id="trunkExportProfiles" class="export-link" href="./api/trunking/profiles.json">Export Profiles</a>
+                <button id="addTrunkProfile" class="primary">Save Profile</button>
+              </div>
             </div>
             <div class="form-grid">
               <label>Name<input id="trunkProfileName" type="text" value="Local P25"></label>
@@ -240,7 +244,51 @@
           </section>
         </div>
         <div id="trunkStatus" class="status-line">Stopped</div>
+        <div id="trunkProcessStatus" class="status-line">Decoder process is stopped.</div>
         <pre id="trunkDecoderStatus" class="output compact">Decoder engine status will appear here.</pre>
+        <div class="section-head compact-head">
+          <div>
+            <h3>Activity Summary</h3>
+            <p>Talkgroup and source activity for the current event history.</p>
+          </div>
+          <a id="trunkExportCsv" class="export-link" href="./api/trunking/events.csv">Export events CSV</a>
+        </div>
+        <div id="trunkSummary" class="capture-list">Activity summary will appear here.</div>
+        <div class="receiver-tools">
+          <section>
+            <div class="section-head compact-head">
+              <div>
+                <h3>Event Filter</h3>
+                <p>Filter by talkgroup, source, encryption state, or text.</p>
+              </div>
+              <button id="applyTrunkFilter" class="primary">Apply</button>
+            </div>
+            <div class="form-grid">
+              <label>Talkgroup<input id="trunkTalkgroupFilter" type="text" placeholder="1001"></label>
+              <label>Source<input id="trunkSourceFilter" type="text" placeholder="2002"></label>
+              <label>Encrypted<select id="trunkEncryptedFilter"><option value="">Any</option><option value="1">Encrypted</option><option value="0">Clear</option></select></label>
+              <label>Search<input id="trunkEventFilter" type="text" placeholder="dispatch, voice, p25"></label>
+            </div>
+          </section>
+          <section>
+            <div class="section-head compact-head">
+              <div>
+                <h3>Alias</h3>
+                <p>Label talkgroups and source IDs for the current investigation.</p>
+              </div>
+              <div class="actions">
+                <a id="trunkExportAliases" class="export-link" href="./api/trunking/aliases.json">Export Aliases</a>
+                <button id="saveTrunkAlias" class="primary">Save Alias</button>
+              </div>
+            </div>
+            <div class="form-grid">
+              <label>Kind<select id="trunkAliasKind"><option value="talkgroup">Talkgroup</option><option value="source">Source</option></select></label>
+              <label>Key<input id="trunkAliasKey" type="text" placeholder="1001"></label>
+              <label>Label<input id="trunkAliasLabel" type="text" placeholder="Dispatch"></label>
+              <label>Color<input id="trunkAliasColor" type="color" value="#ff0040"></label>
+            </div>
+          </section>
+        </div>
         <div id="trunkEvents" class="capture-list">Trunking events will appear here.</div>
       </section>
 
@@ -260,6 +308,18 @@
           <button id="probeSerial" class="primary">Probe Serial</button>
         </div>
         <pre id="serialStatus" class="output compact">Serial ports will appear here.</pre>
+      </section>
+
+      <section id="diagnostics" class="panel">
+        <div class="section-head">
+          <div>
+            <h2>Diagnostics</h2>
+            <p>One-shot SDR Suite readiness report for HackRF, receiver, trunking, files, and decoder engines.</p>
+          </div>
+          <button id="refreshDiagnostics" class="primary">Run Diagnostics</button>
+        </div>
+        <div id="diagnosticsStatus" class="status-line">Run diagnostics after install or OTA update.</div>
+        <pre id="diagnosticsOutput" class="output">Diagnostics report will appear here.</pre>
       </section>
 
       <section id="settings" class="panel">

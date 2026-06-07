@@ -26,6 +26,7 @@ try:
 
     from sdr.database import CaptureDatabase
     from sdr.demod import demodulate_audio
+    from sdr.diagnostics import build_sdr_diagnostics
     from sdr.device import HackRFManager
     from sdr.handlers import (
         build_capture_path,
@@ -37,7 +38,7 @@ try:
     from sdr.processing import waterfall_row
     from sdr.receiver import ReceiverConfig, ReceiverSession
     from sdr.signals import BookmarkStore, scan_hits_from_rows
-    from sdr.trunking import DecoderToolchain, LicensedOperationStore, TrunkingEventLog, TrunkingProfileStore, TrunkingRuntime
+    from sdr.trunking import DecoderToolchain, LicensedOperationStore, TalkgroupAliasStore, TrunkingEventLog, TrunkingProfileStore, TrunkingRuntime
 except Exception as exc:
     Flask = Any
     SocketIO = Any
@@ -267,6 +268,7 @@ def create_app(
     trunk_agreement = LicensedOperationStore(CAPTURES_DIR / "licensed_operation.json")
     trunk_profiles = TrunkingProfileStore(CAPTURES_DIR / "trunking_profiles.json")
     trunk_events = TrunkingEventLog(CAPTURES_DIR / "trunking_events.json")
+    trunk_aliases = TalkgroupAliasStore(CAPTURES_DIR / "trunking_aliases.json")
     trunking = TrunkingRuntime(
         trunk_agreement,
         trunk_profiles,
@@ -323,6 +325,31 @@ def create_app(
     def serial_probe():
         data = request.get_json(silent=True) or {}
         return jsonify(hackrf.serial_probe(str(data.get("port") or ""), int(data.get("baudrate") or 115200)))
+
+    @app.get("/api/diagnostics")
+    @app.get("/sdr/api/diagnostics")
+    def diagnostics():
+        trunking.collect_decoder_events()
+        required_files = [
+            ROOT_DIR / "services" / "sdr_server.py",
+            ROOT_DIR / "sdr" / "device.py",
+            ROOT_DIR / "sdr" / "receiver.py",
+            ROOT_DIR / "sdr" / "trunking.py",
+            ROOT_DIR / "sdr" / "diagnostics.py",
+            ROOT_DIR / "static" / "sdr" / "index.html",
+            ROOT_DIR / "tools" / "validate_sdr_suite.py",
+        ]
+        return jsonify(
+            build_sdr_diagnostics(
+                manager=hackrf,
+                receiver_status=receiver.status(),
+                trunking=trunking,
+                captures_dir=CAPTURES_DIR,
+                required_files=required_files,
+                aliases=trunk_aliases,
+                events=trunk_events,
+            )
+        )
 
     @app.post("/api/receiver/start")
     @app.post("/sdr/api/receiver/start")
@@ -437,6 +464,11 @@ def create_app(
     def trunking_profiles_list():
         return jsonify({"ok": True, "profiles": trunk_profiles.list()})
 
+    @app.get("/api/trunking/profiles.json")
+    @app.get("/sdr/api/trunking/profiles.json")
+    def trunking_profiles_export():
+        return Response(trunk_profiles.export_json(), mimetype="application/json")
+
     @app.post("/api/trunking/profiles")
     @app.post("/sdr/api/trunking/profiles")
     def trunking_profile_add():
@@ -445,6 +477,15 @@ def create_app(
         except (TypeError, ValueError) as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
         return jsonify({"ok": True, "profile": row})
+
+    @app.post("/api/trunking/profiles/import")
+    @app.post("/sdr/api/trunking/profiles/import")
+    def trunking_profiles_import():
+        try:
+            result = trunk_profiles.import_json(request.get_json(silent=True) or {})
+        except (TypeError, ValueError) as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        return jsonify(result)
 
     @app.delete("/api/trunking/profiles/<profile_id>")
     @app.delete("/sdr/api/trunking/profiles/<profile_id>")
@@ -471,13 +512,66 @@ def create_app(
     @app.get("/api/trunking/status")
     @app.get("/sdr/api/trunking/status")
     def trunking_status():
+        trunking.collect_decoder_events()
         return jsonify(trunking.status())
 
     @app.get("/api/trunking/events")
     @app.get("/sdr/api/trunking/events")
     def trunking_events_list():
+        trunking.collect_decoder_events()
         limit = int(request.args.get("limit") or 200)
-        return jsonify({"ok": True, "events": trunk_events.list(limit=limit)})
+        encrypted_arg = request.args.get("encrypted")
+        encrypted = None
+        if encrypted_arg is not None and encrypted_arg != "":
+            encrypted = encrypted_arg.lower() in {"1", "true", "yes", "on"}
+        rows = trunk_events.list(
+            limit=limit,
+            talkgroup=str(request.args.get("talkgroup") or ""),
+            source=str(request.args.get("source") or ""),
+            encrypted=encrypted,
+            query=str(request.args.get("q") or ""),
+        )
+        return jsonify({"ok": True, "events": trunk_aliases.apply(rows)})
+
+    @app.get("/api/trunking/summary")
+    @app.get("/sdr/api/trunking/summary")
+    def trunking_summary():
+        trunking.collect_decoder_events()
+        return jsonify({"ok": True, "summary": trunk_events.summary()})
+
+    @app.get("/api/trunking/aliases")
+    @app.get("/sdr/api/trunking/aliases")
+    def trunking_aliases_list():
+        return jsonify({"ok": True, "aliases": trunk_aliases.list()})
+
+    @app.get("/api/trunking/aliases.json")
+    @app.get("/sdr/api/trunking/aliases.json")
+    def trunking_aliases_export():
+        return Response(trunk_aliases.export_json(), mimetype="application/json")
+
+    @app.post("/api/trunking/aliases")
+    @app.post("/sdr/api/trunking/aliases")
+    def trunking_alias_upsert():
+        try:
+            row = trunk_aliases.upsert(request.get_json(silent=True) or {})
+        except (TypeError, ValueError) as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        return jsonify({"ok": True, "alias": row})
+
+    @app.post("/api/trunking/aliases/import")
+    @app.post("/sdr/api/trunking/aliases/import")
+    def trunking_aliases_import():
+        try:
+            result = trunk_aliases.import_json(request.get_json(silent=True) or {})
+        except (TypeError, ValueError) as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        return jsonify(result)
+
+    @app.get("/api/trunking/events.csv")
+    @app.get("/sdr/api/trunking/events.csv")
+    def trunking_events_csv():
+        trunking.collect_decoder_events()
+        return Response(trunk_events.to_csv(), mimetype="text/csv")
 
     @app.post("/api/trunking/events")
     @app.post("/sdr/api/trunking/events")

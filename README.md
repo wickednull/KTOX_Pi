@@ -312,6 +312,13 @@ Decoder engine requirements:
 
 The Trunking tab reports OP25 and DSD-FME availability under decoder engine status. If an engine is missing, the profile and event log still work, but the status will show the missing engine instead of pretending audio decode is active.
 
+Use the SDR Suite `Diagnostics` tab after OTA or install. It reports HackRF USB/tool status, receiver state, trunking agreement state, decoder engine availability, required SDR files, event summary, aliases, and next steps. The Trunking tab also supports:
+
+- event filters by talkgroup, source, encrypted state, and text
+- talkgroup/source aliases
+- CSV export for event history
+- JSON export for trunking profiles and aliases
+
 ### What the installer does
 
 1. Detects `/boot/firmware/config.txt` or `/boot/config.txt` (Bookworm-compatible)
