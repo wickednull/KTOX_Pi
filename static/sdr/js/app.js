@@ -40,6 +40,10 @@
     overviewVfos: document.getElementById('overviewVfos'),
     overviewAlerts: document.getElementById('overviewAlerts'),
     overviewDecoders: document.getElementById('overviewDecoders'),
+    presetSearch: document.getElementById('presetSearch'),
+    presetModeFilter: document.getElementById('presetModeFilter'),
+    presetCategoryFilter: document.getElementById('presetCategoryFilter'),
+    presetSummary: document.getElementById('presetSummary'),
     quickStartList: document.getElementById('quickStartList'),
     customPresetList: document.getElementById('customPresetList'),
     presetList: document.getElementById('presetList'),
@@ -162,6 +166,76 @@
     }
   }
 
+  function presetSearchText(key, group){
+    const values = [key, group.label, group.mode, group.category];
+    (group.frequencies || []).forEach(raw => {
+      const item = typeof raw === 'number' ? { hz: raw, label: mhz(raw) } : raw;
+      values.push(item.label, item.hz, item.start, item.stop, item.mode);
+    });
+    return values.filter(value => value != null).join(' ').toLowerCase();
+  }
+
+  function renderPresetNavigator(){
+    if (!els.presetList) return;
+    const presets = els.presetList._presets || {};
+    const query = (els.presetSearch && els.presetSearch.value || '').trim().toLowerCase();
+    const modeFilter = els.presetModeFilter && els.presetModeFilter.value;
+    const categoryFilter = els.presetCategoryFilter && els.presetCategoryFilter.value;
+    const keys = Object.keys(presets).filter(key => {
+      const group = presets[key] || {};
+      const mode = group.mode || (key === 'fm' ? 'wfm' : 'nfm');
+      const category = group.category || key;
+      if (modeFilter && mode !== modeFilter) return false;
+      if (categoryFilter && category !== categoryFilter) return false;
+      return !query || presetSearchText(key, group).includes(query);
+    });
+    els.presetList.innerHTML = keys.length ? keys.map(key => {
+      const group = presets[key];
+      const mode = group.mode || (key === 'fm' ? 'wfm' : 'nfm');
+      const category = group.category || key;
+      const buttons = (group.frequencies || []).map(raw => {
+        const item = typeof raw === 'number' ? { hz: raw, label: mhz(raw) } : raw;
+        const itemMode = item.mode || mode;
+        const bandwidth = item.bandwidth || group.bandwidth || 12500;
+        const sampleRate = item.sample_rate || group.sample_rate || 2000000;
+        const step = item.step || group.step || 12500;
+        if (item.hz) {
+          return `<button data-preset-frequency="${Number(item.hz)}" data-preset-mode="${escapeHtml(itemMode)}" data-preset-bandwidth="${Number(bandwidth)}" data-preset-sample-rate="${Number(sampleRate)}" data-preset-step="${Number(step)}">${escapeHtml(item.label || mhz(item.hz))}</button>`;
+        }
+        return `<button data-preset-start="${Number(item.start)}" data-preset-stop="${Number(item.stop)}" data-preset-mode="${escapeHtml(itemMode)}" data-preset-bandwidth="${Number(bandwidth)}" data-preset-sample-rate="${Number(sampleRate)}" data-preset-step="${Number(step)}">${escapeHtml(item.label || `${mhz(item.start)}-${mhz(item.stop)}`)}</button>`;
+      }).join('');
+      return `<article class="preset-card" data-category="${escapeHtml(category)}" data-mode="${escapeHtml(mode)}"><strong>${escapeHtml(group.label)}</strong><span>${(group.frequencies || []).length} presets · ${escapeHtml(String(mode).toUpperCase())} · ${escapeHtml(category)}</span><div class="preset-buttons">${buttons}</div></article>`;
+    }).join('') : '<div class="empty">No presets match the current filters.</div>';
+    if (els.presetSummary) {
+      const totalChannels = keys.reduce((sum, key) => sum + ((presets[key].frequencies || []).length), 0);
+      els.presetSummary.textContent = `${keys.length} packs · ${totalChannels} entries`;
+    }
+  }
+
+  function populatePresetFilters(presets){
+    const modes = new Set();
+    const categories = new Set();
+    Object.keys(presets).forEach(key => {
+      const group = presets[key] || {};
+      modes.add(group.mode || (key === 'fm' ? 'wfm' : 'nfm'));
+      categories.add(group.category || key);
+    });
+    if (els.presetModeFilter) {
+      const selected = els.presetModeFilter.value;
+      els.presetModeFilter.innerHTML = '<option value="">All modes</option>' + Array.from(modes).sort().map(mode => (
+        `<option value="${escapeHtml(mode)}">${escapeHtml(String(mode).toUpperCase())}</option>`
+      )).join('');
+      els.presetModeFilter.value = modes.has(selected) ? selected : '';
+    }
+    if (els.presetCategoryFilter) {
+      const selected = els.presetCategoryFilter.value;
+      els.presetCategoryFilter.innerHTML = '<option value="">All categories</option>' + Array.from(categories).sort().map(category => (
+        `<option value="${escapeHtml(category)}">${escapeHtml(category)}</option>`
+      )).join('');
+      els.presetCategoryFilter.value = categories.has(selected) ? selected : '';
+    }
+  }
+
   async function loadPresets(){
     let presets;
     try {
@@ -174,22 +248,9 @@
         adsb: { label: 'ADS-B', mode: 'raw', bandwidth: 2000000, sample_rate: 2000000, step: 1000000, frequencies: [{ label: '1090ES', hz: 1090000000 }] }
       };
     }
-    els.presetList.innerHTML = Object.keys(presets).map(key => {
-      const group = presets[key];
-      const mode = group.mode || (key === 'fm' ? 'wfm' : 'nfm');
-      const buttons = (group.frequencies || []).map(raw => {
-        const item = typeof raw === 'number' ? { hz: raw, label: mhz(raw) } : raw;
-        const itemMode = item.mode || mode;
-        const bandwidth = item.bandwidth || group.bandwidth || 12500;
-        const sampleRate = item.sample_rate || group.sample_rate || 2000000;
-        const step = item.step || group.step || 12500;
-        if (item.hz) {
-          return `<button data-preset-frequency="${Number(item.hz)}" data-preset-mode="${escapeHtml(itemMode)}" data-preset-bandwidth="${Number(bandwidth)}" data-preset-sample-rate="${Number(sampleRate)}" data-preset-step="${Number(step)}">${escapeHtml(item.label || mhz(item.hz))}</button>`;
-        }
-        return `<button data-preset-start="${Number(item.start)}" data-preset-stop="${Number(item.stop)}" data-preset-mode="${escapeHtml(itemMode)}" data-preset-bandwidth="${Number(bandwidth)}" data-preset-sample-rate="${Number(sampleRate)}" data-preset-step="${Number(step)}">${escapeHtml(item.label || `${mhz(item.start)}-${mhz(item.stop)}`)}</button>`;
-      }).join('');
-      return `<article class="preset-card"><strong>${escapeHtml(group.label)}</strong><span>${(group.frequencies || []).length} presets · ${escapeHtml(String(mode).toUpperCase())}</span><div class="preset-buttons">${buttons}</div></article>`;
-    }).join('');
+    els.presetList._presets = presets;
+    populatePresetFilters(presets);
+    renderPresetNavigator();
   }
 
   async function loadQuickStarts(){
@@ -357,6 +418,15 @@
     els.overviewDevicePill.textContent = label;
     els.overviewDevicePill.classList.toggle('ok', !!ok);
     els.overviewDevicePill.classList.toggle('warn', !ok);
+  }
+
+  function activateTab(tab){
+    if (!tab) return;
+    document.querySelectorAll('.tab').forEach(item => item.classList.toggle('active', item.dataset.tab === tab));
+    document.querySelectorAll('.panel').forEach(panel => panel.classList.toggle('active', panel.id === tab));
+    if (tab === 'receiver') {
+      renderOperatorOverview();
+    }
   }
 
   function tuneFrequency(frequency, mode){
@@ -1423,10 +1493,14 @@
 
   document.querySelectorAll('.tab').forEach(button => {
     button.addEventListener('click', () => {
-      const tab = button.dataset.tab;
-      document.querySelectorAll('.tab').forEach(item => item.classList.toggle('active', item === button));
-      document.querySelectorAll('.panel').forEach(panel => panel.classList.toggle('active', panel.id === tab));
+      activateTab(button.dataset.tab);
     });
+  });
+
+  document.addEventListener('click', (event) => {
+    const target = event.target.closest('[data-open-tab]');
+    if (!target) return;
+    activateTab(target.getAttribute('data-open-tab'));
   });
 
   document.getElementById('refreshInfo').addEventListener('click', loadInfo);
@@ -1569,6 +1643,15 @@
       applyPresetDefaults(button);
       tuneFrequency(button.getAttribute('data-preset-frequency'), button.getAttribute('data-preset-mode') || 'nfm');
     });
+  }
+  if (els.presetSearch) {
+    els.presetSearch.addEventListener('input', renderPresetNavigator);
+  }
+  if (els.presetModeFilter) {
+    els.presetModeFilter.addEventListener('change', renderPresetNavigator);
+  }
+  if (els.presetCategoryFilter) {
+    els.presetCategoryFilter.addEventListener('change', renderPresetNavigator);
   }
   if (els.quickStartList) {
     els.quickStartList.addEventListener('click', async (event) => {

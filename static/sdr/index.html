@@ -88,18 +88,18 @@
             </article>
           </div>
           <div id="workflowStrip" class="workflow-strip" aria-label="SDR operator workflow">
-            <span class="status-pill">Connect</span>
-            <span class="status-pill">Apply setup</span>
-            <span class="status-pill">Listen</span>
-            <span class="status-pill">Scan</span>
-            <span class="status-pill">Decode / export</span>
+            <button class="status-pill" data-open-tab="serial">Connect</button>
+            <button class="status-pill" data-open-tab="dashboard">Apply setup</button>
+            <button class="status-pill" data-open-tab="receiver">Listen</button>
+            <button class="status-pill" data-open-tab="sweep">Scan</button>
+            <button class="status-pill" data-open-tab="decoders">Decode / export</button>
           </div>
           <div id="capabilityGrid" class="capability-grid">
-            <article class="capability-card"><strong>Receiver</strong><span>Live spectrum, waterfall, demodulated audio, and tuning controls.</span></article>
-            <article class="capability-card"><strong>Scan Plans</strong><span>Preset multi-range sweeps that can save discovered hits.</span></article>
-            <article class="capability-card"><strong>Decoders</strong><span>Utility decoder planning for POCSAG, RDS, and transcription paths.</span></article>
-            <article class="capability-card"><strong>Trunking</strong><span>Licensed unencrypted P25, DMR, and NXDN workflow planning.</span></article>
-            <article class="capability-card"><strong>Activity</strong><span>Persistent RF history, watch rules, and promoted VFO/bookmark hits.</span></article>
+            <article class="capability-card"><strong>Receiver</strong><span>Live spectrum, waterfall, demodulated audio, and tuning controls.</span><button data-open-tab="receiver">Open Receiver</button></article>
+            <article class="capability-card"><strong>Scan Plans</strong><span>Preset multi-range sweeps that can save discovered hits.</span><button data-open-tab="receiver">Open Scan Tools</button></article>
+            <article class="capability-card"><strong>Decoders</strong><span>Utility decoder planning for POCSAG, RDS, and transcription paths.</span><button data-open-tab="decoders">Open Decoders</button></article>
+            <article class="capability-card"><strong>Trunking</strong><span>Licensed unencrypted P25, DMR, and NXDN workflow planning.</span><button data-open-tab="trunking">Open Trunking</button></article>
+            <article class="capability-card"><strong>Activity</strong><span>Persistent RF history, watch rules, and promoted VFO/bookmark hits.</span><button data-open-tab="receiver">Open Activity</button></article>
           </div>
         </div>
         <div id="connectStatus" class="status-line">Connect a HackRF over USB, then press Connect HackRF.</div>
@@ -129,6 +129,18 @@
           <label>Category<input id="customPresetCategory" type="text" value="custom"></label>
         </div>
         <div id="customPresetList" class="capture-list">Custom presets will appear here.</div>
+        <div class="section-head compact-head">
+          <div>
+            <h3>Preset Navigator</h3>
+            <p>Filter built-in frequency packs by service, mode, or band before tuning or scanning.</p>
+          </div>
+          <span id="presetSummary" class="status-pill">Loading presets</span>
+        </div>
+        <div class="preset-navigator">
+          <label>Search<input id="presetSearch" type="search" placeholder="weather, airband, ADS-B, 433, P25"></label>
+          <label>Mode<select id="presetModeFilter"><option value="">All modes</option></select></label>
+          <label>Category<select id="presetCategoryFilter"><option value="">All categories</option></select></label>
+        </div>
         <div id="presetList" class="preset-list"></div>
       </section>
 
