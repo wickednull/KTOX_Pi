@@ -292,6 +292,8 @@ sudo systemctl status ktox-sdr --no-pager
 curl -I http://127.0.0.1:8081/
 ```
 
+If you do not need SDR during a session, use the main WebUI `SDR Service` toggle or `Kill SDR` button. Turning it off runs `systemctl disable --now ktox-sdr.service`, which stops the SDR sidecar and keeps it disabled across reboot to save memory. Turning the toggle back on enables and starts the service again.
+
 If `sudo systemctl restart ktox-sdr` says `Unit ktox-sdr.service not found`, the SDR service has not been installed yet. Run `sudo bash scripts/install_sdr.sh`.
 
 If the service is installed but the page still cannot be reached, run:

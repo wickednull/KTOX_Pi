@@ -496,6 +496,20 @@
         <button id="navPentest" type="button" class="w-full px-3 py-2 rounded-xl text-left text-sm font-semibold border border-slate-400/20 bg-slate-800/40 text-slate-300 hover:text-white hover:bg-slate-700/50 transition"><i class="fa-solid fa-shield-halved mr-2"></i>Pentest Suite</button>
         <button id="navLoki" type="button" class="w-full px-3 py-2 rounded-xl text-left text-sm font-semibold border border-slate-400/20 bg-slate-800/40 text-slate-300 hover:text-white hover:bg-slate-700/50 transition"><i class="fa-solid fa-bolt mr-2"></i>Loki WebUI</button>
         <a id="navSdr" href="/sdr-suite" target="_blank" rel="noopener noreferrer" class="w-full px-3 py-2 rounded-xl text-left text-sm font-semibold border border-slate-400/20 bg-slate-800/40 text-slate-300 hover:text-white hover:bg-slate-700/50 transition block"><i class="fa-solid fa-satellite-dish mr-2"></i>SDR Suite</a>
+        <div class="rounded-lg border border-cyan-400/20 bg-slate-950/50 p-2 text-[10px] text-slate-300 space-y-2">
+          <div class="flex items-center justify-between gap-2">
+            <div class="font-semibold text-cyan-300">SDR Service</div>
+            <label class="inline-flex items-center gap-2 text-[10px] text-slate-300">
+              <input id="sdrServiceToggle" type="checkbox" class="accent-cyan-400">
+              <span id="sdrServiceState">checking</span>
+            </label>
+          </div>
+          <div id="sdrServiceStatus" class="text-[10px] text-slate-400">Checking ktox-sdr.service...</div>
+          <div class="grid grid-cols-2 gap-2">
+            <button id="sdrServiceRefresh" type="button" class="px-2 py-1 rounded bg-slate-800/80 border border-slate-600/50 text-slate-200 hover:bg-slate-700/80">Refresh</button>
+            <button id="sdrServiceKill" type="button" class="px-2 py-1 rounded bg-red-950/70 border border-red-400/30 text-red-100 hover:bg-red-900/80">Kill SDR</button>
+          </div>
+        </div>
         <button id="navLoot" type="button" class="w-full px-3 py-2 rounded-xl text-left text-sm font-semibold border border-slate-400/20 bg-slate-800/40 text-slate-300 hover:text-white hover:bg-slate-700/50 transition"><i class="fa-solid fa-vault mr-2"></i>Loot</button>
         <button id="navSettings" type="button" class="w-full px-3 py-2 rounded-xl text-left text-sm font-semibold border border-slate-400/20 bg-slate-800/40 text-slate-300 hover:text-white hover:bg-slate-700/50 transition"><i class="fa-solid fa-sliders mr-2"></i>Settings</button>
         <a id="navPayloadStudio" href="./ide.html" class="w-full px-3 py-2 rounded-xl text-left text-sm font-semibold border border-slate-400/20 bg-slate-800/40 text-slate-300 hover:text-white hover:bg-slate-700/50 transition block"><i class="fa-solid fa-code mr-2"></i>Payload Studio</a>

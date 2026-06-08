@@ -46,6 +46,11 @@
   const navPentest = document.getElementById('navPentest');
   const navLoki = document.getElementById('navLoki');
   const navSdr = document.getElementById('navSdr');
+  const sdrServiceToggle = document.getElementById('sdrServiceToggle');
+  const sdrServiceState = document.getElementById('sdrServiceState');
+  const sdrServiceStatus = document.getElementById('sdrServiceStatus');
+  const sdrServiceRefresh = document.getElementById('sdrServiceRefresh');
+  const sdrServiceKill = document.getElementById('sdrServiceKill');
   const navLoot = document.getElementById('navLoot');
   const navSettings = document.getElementById('navSettings');
   const navPayloadStudio = document.getElementById('navPayloadStudio');
@@ -1442,6 +1447,85 @@
     }
   }
 
+  function applySdrServiceData(sdr){
+    const data = sdr || {};
+    const installed = data.installed !== false;
+    const running = !!data.running;
+    const disabled = !!data.disabled;
+    const state = running ? 'running' : (disabled ? 'disabled' : String(data.active_state || 'stopped'));
+    if (sdrServiceToggle){
+      sdrServiceToggle.dataset.installed = installed ? '1' : '0';
+      sdrServiceToggle.checked = running && !disabled;
+      sdrServiceToggle.disabled = !installed;
+    }
+    if (sdrServiceState){
+      sdrServiceState.textContent = state;
+      sdrServiceState.classList.toggle('text-emerald-300', running);
+      sdrServiceState.classList.toggle('text-amber-300', disabled);
+      sdrServiceState.classList.toggle('text-slate-400', !running && !disabled);
+    }
+    if (sdrServiceStatus){
+      if (!installed){
+        sdrServiceStatus.textContent = 'SDR service is not installed. Run scripts/install_sdr.sh before enabling it.';
+      } else if (running){
+        sdrServiceStatus.textContent = 'SDR Suite is active. Turn this off to stop ktox-sdr and save memory.';
+      } else if (disabled){
+        sdrServiceStatus.textContent = 'SDR is disabled and stopped. Memory-saving mode is active.';
+      } else {
+        sdrServiceStatus.textContent = `SDR service is ${state}. Toggle on to start it when needed.`;
+      }
+      applyStatusTone(sdrServiceStatus, running ? 'running' : (disabled ? 'disabled' : state));
+    }
+    if (navSdr){
+      navSdr.classList.toggle('opacity-50', !running);
+      navSdr.title = running ? 'Open SDR Suite' : 'SDR service is not running. Toggle SDR Service on first.';
+    }
+  }
+
+  async function loadSdrServiceStatus(){
+    try{
+      const res = await apiFetch(getApiUrl('/api/sdr/status'), { cache: 'no-store' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data && data.error ? data.error : 'sdr_status_failed');
+      applySdrServiceData(data);
+    } catch(e){
+      if (sdrServiceStatus) {
+        sdrServiceStatus.textContent = e && e.message ? e.message : 'SDR status unavailable';
+        applyStatusTone(sdrServiceStatus, 'failed');
+      }
+    }
+  }
+
+  async function controlSdrService(action){
+    const controls = [sdrServiceToggle, sdrServiceRefresh, sdrServiceKill].filter(Boolean);
+    controls.forEach(control => { control.disabled = true; control.classList.add('opacity-60'); });
+    if (sdrServiceStatus) sdrServiceStatus.textContent = action === 'disable' ? 'Stopping and disabling SDR...' : 'Starting SDR service...';
+    try{
+      const res = await apiFetch(getApiUrl('/api/sdr/control'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action })
+      });
+      const data = await res.json();
+      if (!res.ok || (data && data.ok === false)){
+        throw new Error(data && data.error ? data.error : 'sdr_control_failed');
+      }
+      applySdrServiceData(data);
+      await loadSystemStatus();
+    } catch(e){
+      if (sdrServiceStatus) {
+        sdrServiceStatus.textContent = e && e.message ? e.message : 'SDR control failed';
+        applyStatusTone(sdrServiceStatus, 'failed');
+      }
+      await loadSdrServiceStatus();
+    } finally {
+      controls.forEach(control => {
+        control.disabled = control === sdrServiceToggle && control.dataset.installed === '0';
+        control.classList.remove('opacity-60');
+      });
+    }
+  }
+
   function applySystemData(data, target = 'desktop'){
     const cpu = Number(data.cpu_percent || 0);
     const memUsed = Number(data.mem_used || 0);
@@ -1459,6 +1543,7 @@
     applyPentestData(data.pentest || {}, target);
     applyLokiData(data.loki || {});
     applyDesktopData(data.desktop || {});
+    applySdrServiceData(data.sdr || {});
     const interfacesHtml = ifaces.length
       ? ifaces.map(i => `<div><span class="text-red-400">${escapeHtml(String(i.name || '-'))}</span>: ${escapeHtml(String(i.ipv4 || '-'))}</div>`).join('')
       : '<div class="text-slate-500">No active interfaces</div>';
@@ -2513,6 +2598,17 @@
       }
     });
   }
+  if (sdrServiceToggle) {
+    sdrServiceToggle.addEventListener('change', () => {
+      controlSdrService(sdrServiceToggle.checked ? 'enable-start' : 'disable');
+    });
+  }
+  if (sdrServiceKill) {
+    sdrServiceKill.addEventListener('click', () => controlSdrService('disable'));
+  }
+  if (sdrServiceRefresh) {
+    sdrServiceRefresh.addEventListener('click', loadSdrServiceStatus);
+  }
   if (navPayloadStudio) navPayloadStudio.href = './ide.html' + getForwardSearch();
   themeButtons.forEach(btn => {
     btn.addEventListener('click', () => {
@@ -2736,6 +2832,7 @@
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden){
       if (systemOpen) loadSystemStatus();
+      loadSdrServiceStatus();
       pollPayloadStatus();
       ensureSocketLive();
     }
@@ -2770,6 +2867,7 @@
       startHeartbeatMonitor();
       connect();
       loadPayloads();
+      loadSdrServiceStatus();
       schedulePayloadPoll();
       scheduleSystemPoll();
     });

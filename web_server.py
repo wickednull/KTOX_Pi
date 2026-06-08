@@ -64,6 +64,7 @@ SESSION_TTL_SECONDS = int(os.environ.get("RJ_WEB_SESSION_TTL", str(8 * 60 * 60))
 WS_TICKET_TTL_SECONDS = int(os.environ.get("RJ_WEB_WS_TICKET_TTL", "120"))
 TAILSCALE_KEY_PATH = ROOT_DIR / ".tailscale_auth_key"
 TAILSCALE_STATUS_PATH = Path("/dev/shm/rj_tailscale_status.json")
+SDR_SERVICE_NAME = "ktox-sdr.service"
 
 
 # ── Payload compatibility converter helpers ──────────────────────────────────
@@ -934,6 +935,89 @@ def _is_text_file(path: Path) -> bool:
     return False
 
 
+def _systemctl(args: list[str], timeout: int = 8) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["systemctl", *args],
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+
+
+def _sdr_service_payload() -> dict:
+    unit_path = Path("/etc/systemd/system/ktox-sdr.service")
+    installed = unit_path.exists() or (ROOT_DIR / "scripts/ktox-sdr.service").exists()
+    active_state = "unknown"
+    enabled_state = "unknown"
+    error = ""
+
+    try:
+        active = _systemctl(["is-active", SDR_SERVICE_NAME])
+        active_state = (active.stdout or active.stderr or "unknown").strip() or "unknown"
+        if active.returncode not in (0, 3):
+            error = (active.stderr or active.stdout or "").strip()
+    except Exception as exc:
+        error = str(exc)
+
+    try:
+        enabled = _systemctl(["is-enabled", SDR_SERVICE_NAME])
+        enabled_state = (enabled.stdout or enabled.stderr or "unknown").strip() or "unknown"
+    except Exception:
+        pass
+
+    disabled = enabled_state in {"disabled", "masked"}
+    return {
+        "ok": True,
+        "service": SDR_SERVICE_NAME,
+        "installed": installed,
+        "running": active_state == "active",
+        "active_state": active_state,
+        "enabled": enabled_state == "enabled",
+        "enabled_state": enabled_state,
+        "disabled": disabled,
+        "memory_saving": disabled or active_state != "active",
+        "url": "http://127.0.0.1:8081/",
+        "error": error,
+    }
+
+
+def _control_sdr_service(action: str) -> dict:
+    action = action.strip().lower()
+    command_map = {
+        "start": ["start", SDR_SERVICE_NAME],
+        "stop": ["stop", SDR_SERVICE_NAME],
+        "restart": ["restart", SDR_SERVICE_NAME],
+        "enable": ["enable", SDR_SERVICE_NAME],
+        "disable": ["disable", "--now", SDR_SERVICE_NAME],
+    }
+    if action in {"enable-start", "enable_start"}:
+        for step in (["enable", SDR_SERVICE_NAME], ["start", SDR_SERVICE_NAME]):
+            result = _systemctl(step, timeout=20)
+            if result.returncode != 0:
+                detail = (result.stderr or result.stdout or "").strip() or "systemctl enable/start failed"
+                raise RuntimeError(detail)
+        payload = _sdr_service_payload()
+        payload.update({
+            "ok": True,
+            "action": action,
+            "message": "SDR service enabled and started.",
+        })
+        return payload
+    if action not in command_map:
+        raise ValueError("invalid SDR control action")
+    result = _systemctl(command_map[action], timeout=20)
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "").strip() or f"systemctl {action} failed"
+        raise RuntimeError(detail)
+    payload = _sdr_service_payload()
+    payload.update({
+        "ok": True,
+        "action": action,
+        "message": "SDR service disabled and stopped to save memory." if action == "disable" else f"SDR service {action} complete.",
+    })
+    return payload
+
+
 class KTOxHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(WEB_DIR), **kwargs)
@@ -964,6 +1048,7 @@ class KTOxHandler(SimpleHTTPRequestHandler):
             or parsed.path.startswith("/api/payloads/")
             or parsed.path.startswith("/api/system/")
             or parsed.path.startswith("/api/desktop/")
+            or parsed.path.startswith("/api/sdr/")
             or parsed.path.startswith("/api/settings/")
             or parsed.path.startswith("/api/auth/")
             or parsed.path.startswith("/api/stealth/")
@@ -1019,6 +1104,9 @@ class KTOxHandler(SimpleHTTPRequestHandler):
                 return
             if parsed.path == "/api/desktop/status":
                 self._handle_desktop_status()
+                return
+            if parsed.path == "/api/sdr/status":
+                self._handle_sdr_status()
                 return
             if parsed.path == "/api/settings/discord_webhook":
                 self._handle_settings_webhook_get()
@@ -1092,6 +1180,14 @@ class KTOxHandler(SimpleHTTPRequestHandler):
                 self._handle_desktop_stop()
                 return
             self._handle_desktop_install_deps()
+            return
+
+        if parsed.path == "/api/sdr/control":
+            query = parse_qs(parsed.query or "")
+            if not _auth_ok(self, query):
+                _json_response(self, {"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
+                return
+            self._handle_sdr_control()
             return
 
         if parsed.path in ("/api/payloads/start", "/api/payloads/run"):
@@ -1677,6 +1773,7 @@ class KTOxHandler(SimpleHTTPRequestHandler):
                 "payload_running": payload_running,
                 "payload_path": payload_path,
                 "desktop": self._desktop_status_payload(),
+                "sdr": _sdr_service_payload(),
             })
         except Exception as exc:
             _json_response(self, {"error": f"status error: {exc}"}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
@@ -1695,6 +1792,26 @@ class KTOxHandler(SimpleHTTPRequestHandler):
 
     def _handle_desktop_status(self) -> None:
         _json_response(self, self._desktop_status_payload())
+
+    def _handle_sdr_status(self) -> None:
+        _json_response(self, _sdr_service_payload())
+
+    def _handle_sdr_control(self) -> None:
+        body = _read_json(self)
+        if body is None:
+            _json_response(self, {"error": "invalid json"}, status=HTTPStatus.BAD_REQUEST)
+            return
+        action = str(body.get("action") or "").strip().lower()
+        try:
+            _json_response(self, _control_sdr_service(action))
+        except ValueError as exc:
+            _json_response(self, {"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+        except RuntimeError as exc:
+            payload = _sdr_service_payload()
+            payload.update({"ok": False, "action": action, "error": str(exc)})
+            _json_response(self, payload, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+        except Exception as exc:
+            _json_response(self, {"ok": False, "error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
 
     def _handle_desktop_start(self) -> None:
         try:
