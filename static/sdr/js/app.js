@@ -17,6 +17,11 @@
   let vfos = [];
   let activeVfoId = null;
   let vfoActivity = [];
+  const dashboardState = {
+    decoderReady: 0,
+    decoderTotal: 0,
+    alertRules: 0
+  };
 
   const els = {
     deviceDot: document.getElementById('deviceDot'),
@@ -26,6 +31,17 @@
     firmwareValue: document.getElementById('firmwareValue'),
     captureCount: document.getElementById('captureCount'),
     captureBytes: document.getElementById('captureBytes'),
+    operatorOverview: document.getElementById('operatorOverview'),
+    workflowStrip: document.getElementById('workflowStrip'),
+    dashboardMetrics: document.getElementById('dashboardMetrics'),
+    overviewDevicePill: document.getElementById('overviewDevicePill'),
+    overviewFrequency: document.getElementById('overviewFrequency'),
+    overviewMode: document.getElementById('overviewMode'),
+    overviewVfos: document.getElementById('overviewVfos'),
+    overviewAlerts: document.getElementById('overviewAlerts'),
+    overviewDecoders: document.getElementById('overviewDecoders'),
+    quickStartList: document.getElementById('quickStartList'),
+    customPresetList: document.getElementById('customPresetList'),
     presetList: document.getElementById('presetList'),
     sweepOutput: document.getElementById('sweepOutput'),
     captureStatus: document.getElementById('captureStatus'),
@@ -51,6 +67,8 @@
     activityList: document.getElementById('activityList'),
     activityMinPeak: document.getElementById('activityMinPeak'),
     activitySearch: document.getElementById('activitySearch'),
+    scanPlanSelect: document.getElementById('scanPlanSelect'),
+    scanPlanOutput: document.getElementById('scanPlanOutput'),
     alertSummary: document.getElementById('alertSummary'),
     alertRules: document.getElementById('alertRules'),
     alertEvents: document.getElementById('alertEvents'),
@@ -89,6 +107,7 @@
     els.deviceSerial.textContent = ok ? (info.serial_number || 'serial unknown') : (info.error || 'not detected');
     els.boardValue.textContent = info.board || '-';
     els.firmwareValue.textContent = info.firmware || '-';
+    setOverviewDevice(ok, ok ? 'HackRF online' : 'HackRF offline');
     if (els.connectStatus) {
       els.connectStatus.textContent = ok ? 'HackRF connected and ready.' : (info.error || 'HackRF is not connected.');
     }
@@ -169,8 +188,143 @@
         }
         return `<button data-preset-start="${Number(item.start)}" data-preset-stop="${Number(item.stop)}" data-preset-mode="${escapeHtml(itemMode)}" data-preset-bandwidth="${Number(bandwidth)}" data-preset-sample-rate="${Number(sampleRate)}" data-preset-step="${Number(step)}">${escapeHtml(item.label || `${mhz(item.start)}-${mhz(item.stop)}`)}</button>`;
       }).join('');
-      return `<article><strong>${escapeHtml(group.label)}</strong><span>${(group.frequencies || []).length} presets · ${escapeHtml(String(mode).toUpperCase())}</span><div class="preset-buttons">${buttons}</div></article>`;
+      return `<article class="preset-card"><strong>${escapeHtml(group.label)}</strong><span>${(group.frequencies || []).length} presets · ${escapeHtml(String(mode).toUpperCase())}</span><div class="preset-buttons">${buttons}</div></article>`;
     }).join('');
+  }
+
+  async function loadQuickStarts(){
+    if (!els.quickStartList) return;
+    let profiles;
+    try {
+      profiles = await api.quickStarts();
+    } catch {
+      profiles = {
+        weather_watch: {
+          label: 'Weather Watch',
+          description: 'NOAA weather receiver, VFO, scan range, and watch rule.',
+          receiver: { frequency: 162550000, mode: 'nfm', bandwidth: 12500, sample_rate: 2000000, step: 25000 },
+          scan_ranges: [{ label: 'NOAA Weather', start: 162400000, stop: 162550000, threshold_db: -70 }],
+          vfos: [{ label: 'NOAA WX 1', frequency: 162550000, mode: 'nfm', bandwidth: 12500, squelch: -85 }],
+          alert_rules: [{ label: 'NOAA WX 1 open', frequency: 162550000, tolerance_hz: 25000, min_peak_db: -75 }]
+        }
+      };
+    }
+    els.quickStartList.innerHTML = Object.keys(profiles).map(key => {
+      const item = profiles[key];
+      return `<article class="preset-card">
+        <strong>${escapeHtml(item.label || key)}</strong>
+        <span>${escapeHtml(item.description || '')}</span>
+        <div class="preset-buttons"><button data-quick-start="${escapeHtml(key)}">Apply Setup</button></div>
+      </article>`;
+    }).join('');
+    els.quickStartList._profiles = profiles;
+  }
+
+  async function applyQuickStart(key){
+    const profiles = els.quickStartList && els.quickStartList._profiles;
+    const profile = profiles && profiles[key];
+    if (!profile) return;
+    const receiver = profile.receiver || {};
+    if (receiver.frequency) tuneFrequency(receiver.frequency, receiver.mode || 'nfm');
+    if (receiver.bandwidth) document.getElementById('rxBandwidth').value = String(receiver.bandwidth);
+    if (receiver.sample_rate) document.getElementById('rxSampleRate').value = String(receiver.sample_rate);
+    if (receiver.step) document.getElementById('rxStep').value = String(receiver.step);
+    const firstRange = (profile.scan_ranges || [])[0];
+    if (firstRange) {
+      document.getElementById('scanStart').value = String(firstRange.start);
+      document.getElementById('scanStop').value = String(firstRange.stop);
+      document.getElementById('scanThreshold').value = String(firstRange.threshold_db == null ? -60 : firstRange.threshold_db);
+      document.getElementById('sweepStart').value = String(firstRange.start);
+      document.getElementById('sweepStop').value = String(firstRange.stop);
+    }
+    (profile.vfos || []).forEach((row, index) => {
+      vfos.unshift(Object.assign({
+        id: `vfo-quick-${Date.now().toString(36)}-${index}`,
+        activity: 0,
+        source: 'quick-start'
+      }, row));
+    });
+    if ((profile.vfos || []).length) {
+      activeVfoId = vfos[0].id;
+      saveVfos();
+      renderVfos();
+    }
+    for (const rule of (profile.alert_rules || [])) {
+      try {
+        await api.receiverAlertRuleAdd(rule);
+      } catch {}
+    }
+    if (profile.decoder && document.getElementById('decoderType')) {
+      document.getElementById('decoderType').value = profile.decoder.decoder || 'rds';
+      document.getElementById('decoderFrequency').value = String(profile.decoder.frequency || receiver.frequency || 98100000);
+      document.getElementById('decoderMode').value = profile.decoder.mode || receiver.mode || 'wfm';
+    }
+    if (els.connectStatus) els.connectStatus.textContent = `Applied Quick Start: ${profile.label || key}`;
+    await loadAlerts();
+    renderOperatorOverview();
+  }
+
+  function renderCustomPresets(data){
+    if (!els.customPresetList) return;
+    const rows = data.presets || [];
+    els.customPresetList.innerHTML = rows.length ? rows.map(item => (
+      `<div class="capture-row">
+        <strong>${escapeHtml(item.label)}</strong>
+        <span>${mhz(item.frequency)}</span>
+        <span>${escapeHtml(String(item.mode || 'nfm').toUpperCase())}</span>
+        <span>${escapeHtml(item.category || 'custom')}</span>
+        <button data-apply-custom-preset="${escapeHtml(item.id)}">Apply</button>
+        <button data-delete-custom-preset="${escapeHtml(item.id)}">Delete</button>
+      </div>`
+    )).join('') : '<div class="empty">No custom presets saved.</div>';
+    els.customPresetList._presets = rows;
+  }
+
+  async function loadCustomPresets(){
+    if (!els.customPresetList) return;
+    try {
+      renderCustomPresets(await api.customPresets());
+    } catch (err) {
+      els.customPresetList.innerHTML = `<div class="empty">Custom preset load failed: ${escapeHtml(err.message)}</div>`;
+    }
+  }
+
+  function applyCustomPreset(id){
+    const rows = els.customPresetList && els.customPresetList._presets || [];
+    const preset = rows.find(item => item.id === id);
+    if (!preset) return;
+    tuneFrequency(preset.frequency, preset.mode || 'nfm');
+    document.getElementById('rxBandwidth').value = String(preset.bandwidth || 12500);
+    document.getElementById('rxSampleRate').value = String(preset.sample_rate || 2000000);
+    document.getElementById('rxStep').value = String(preset.step || 12500);
+    if (els.connectStatus) els.connectStatus.textContent = `Applied custom preset: ${preset.label}`;
+  }
+
+  async function saveCustomPreset(){
+    try {
+      const settings = currentReceiverSettings();
+      await api.customPresetAdd(Object.assign({
+        label: document.getElementById('customPresetLabel').value,
+        category: document.getElementById('customPresetCategory').value || 'custom',
+        step: numeric('rxStep') || 12500
+      }, settings));
+      await loadCustomPresets();
+    } catch (err) {
+      if (els.customPresetList) els.customPresetList.innerHTML = `<div class="empty">Custom preset save failed: ${escapeHtml(err.message)}</div>`;
+    }
+  }
+
+  async function importCustomPresets(){
+    if (!els.customPresetList) return;
+    els.customPresetList.innerHTML = '<div class="empty">Importing custom presets...</div>';
+    try {
+      const payload = await readJsonFile('customPresetImportFile');
+      const result = await api.customPresetsImport(payload);
+      els.customPresetList.innerHTML = `<div class="empty">Imported ${Number(result.imported || 0)} custom presets.</div>`;
+      await loadCustomPresets();
+    } catch (err) {
+      els.customPresetList.innerHTML = `<div class="empty">Custom preset import failed: ${escapeHtml(err.message)}</div>`;
+    }
   }
 
   function numeric(id){
@@ -183,6 +337,26 @@
 
   function mhz(value){
     return `${(Number(value) / 1000000).toFixed(3)} MHz`;
+  }
+
+  function renderOperatorOverview(){
+    if (!els.operatorOverview) return;
+    const frequency = numeric('rxFrequency') || 162550000;
+    const mode = document.getElementById('rxMode') ? document.getElementById('rxMode').value : 'nfm';
+    if (els.overviewFrequency) els.overviewFrequency.textContent = mhz(frequency);
+    if (els.overviewMode) els.overviewMode.textContent = String(mode || 'nfm').toUpperCase();
+    if (els.overviewVfos) els.overviewVfos.textContent = String(vfos.length);
+    if (els.overviewAlerts) els.overviewAlerts.textContent = String(dashboardState.alertRules || 0);
+    if (els.overviewDecoders) {
+      els.overviewDecoders.textContent = `${dashboardState.decoderReady || 0}/${dashboardState.decoderTotal || 0} ready`;
+    }
+  }
+
+  function setOverviewDevice(ok, label){
+    if (!els.overviewDevicePill) return;
+    els.overviewDevicePill.textContent = label;
+    els.overviewDevicePill.classList.toggle('ok', !!ok);
+    els.overviewDevicePill.classList.toggle('warn', !ok);
   }
 
   function tuneFrequency(frequency, mode){
@@ -206,6 +380,7 @@
     }
     if (els.receiverStatus) els.receiverStatus.textContent = `Tuned ${mhz(value)}`;
     if (els.audioStatus) els.audioStatus.textContent = `Ready at ${mhz(value)}`;
+    renderOperatorOverview();
   }
 
   function applyPresetDefaults(button){
@@ -411,6 +586,7 @@
     if (els.vfoActivity) {
       els.vfoActivity.textContent = vfoActivity.length ? vfoActivity.join('\n') : 'No VFO activity yet.';
     }
+    renderOperatorOverview();
   }
 
   function renderActivity(data){
@@ -476,6 +652,8 @@
   function renderAlerts(data){
     if (!els.alertRules || !els.alertEvents) return;
     const summary = data.summary || {};
+    dashboardState.alertRules = Number(summary.enabled_rules || summary.total_rules || 0);
+    renderOperatorOverview();
     if (els.alertSummary) {
       els.alertSummary.innerHTML = [
         `<article class="tile"><span>Rules</span><strong>${Number(summary.total_rules || 0)}</strong></article>`,
@@ -796,9 +974,63 @@
     }
   }
 
+  async function loadScanPlans(){
+    if (!els.scanPlanSelect) return;
+    try {
+      const plans = await api.scanPlans();
+      els.scanPlanSelect.innerHTML = Object.keys(plans).map(key => (
+        `<option value="${escapeHtml(key)}">${escapeHtml(plans[key].label || key)}</option>`
+      )).join('');
+      els.scanPlanSelect._plans = plans;
+    } catch (err) {
+      els.scanPlanSelect.innerHTML = '<option value="">Scan plans unavailable</option>';
+      if (els.scanPlanOutput) els.scanPlanOutput.textContent = `Scan plan load failed: ${err.message}`;
+    }
+  }
+
+  async function runScanPlan(){
+    if (!els.scanPlanSelect || !els.scanPlanOutput) return;
+    const plans = els.scanPlanSelect._plans || {};
+    const key = els.scanPlanSelect.value;
+    const plan = plans[key];
+    if (!plan) {
+      els.scanPlanOutput.textContent = 'Choose a scan plan first.';
+      return;
+    }
+    const results = [];
+    els.scanPlanOutput.textContent = `Running ${plan.label || key}...`;
+    for (const range of (plan.ranges || [])) {
+      document.getElementById('scanStart').value = String(range.start);
+      document.getElementById('scanStop').value = String(range.stop);
+      document.getElementById('scanThreshold').value = String(range.threshold_db == null ? -60 : range.threshold_db);
+      if (range.mode || plan.mode) document.getElementById('rxMode').value = range.mode || plan.mode;
+      if (plan.sample_rate) document.getElementById('rxSampleRate').value = String(plan.sample_rate);
+      try {
+        const data = await api.receiverScan({
+          start: Number(range.start),
+          stop: Number(range.stop),
+          threshold_db: Number(range.threshold_db == null ? -60 : range.threshold_db),
+          save_hits: range.save_hits !== false,
+          mode: range.mode || plan.mode || document.getElementById('rxMode').value || 'nfm',
+          sample_rate: Number(plan.sample_rate || numeric('rxSampleRate') || 2000000)
+        });
+        results.push({ range: range.label || `${range.start}-${range.stop}`, hits: data.hits || [], saved: data.saved || [] });
+        els.scanPlanOutput.textContent = pretty(results);
+      } catch (err) {
+        results.push({ range: range.label || `${range.start}-${range.stop}`, error: err.message });
+        els.scanPlanOutput.textContent = pretty(results);
+      }
+    }
+    await loadBookmarks();
+    await loadActivity();
+  }
+
   function renderDecoderStatus(data){
     if (!els.decoderStatus) return;
     const decoders = data.decoders || {};
+    dashboardState.decoderTotal = Object.keys(decoders).length;
+    dashboardState.decoderReady = Object.keys(decoders).filter(key => decoders[key] && decoders[key].available).length;
+    renderOperatorOverview();
     const rows = Object.keys(decoders).map(key => {
       const item = decoders[key];
       return `<div class="capture-row decoder-row ${item.available ? 'clear' : 'encrypted'}">
@@ -1201,6 +1433,8 @@
   document.getElementById('connectHackrf').addEventListener('click', connectHackrf);
   document.getElementById('readinessHackrf').addEventListener('click', runReadiness);
   document.getElementById('testHackrf').addEventListener('click', testHackrf);
+  document.getElementById('saveCustomPreset').addEventListener('click', saveCustomPreset);
+  document.getElementById('importCustomPresets').addEventListener('click', importCustomPresets);
   document.getElementById('runSweep').addEventListener('click', runSweep);
   document.getElementById('runCapture').addEventListener('click', runCapture);
   document.getElementById('refreshSerial').addEventListener('click', loadSerialPorts);
@@ -1214,6 +1448,7 @@
   document.getElementById('refreshActivity').addEventListener('click', loadActivity);
   document.getElementById('refreshAlerts').addEventListener('click', loadAlerts);
   document.getElementById('saveAlertRule').addEventListener('click', saveAlertRule);
+  document.getElementById('runScanPlan').addEventListener('click', runScanPlan);
   document.getElementById('runReceiverScan').addEventListener('click', runReceiverScan);
   document.getElementById('refreshBookmarks').addEventListener('click', loadBookmarks);
   document.getElementById('importBookmarks').addEventListener('click', importBookmarks);
@@ -1335,6 +1570,27 @@
       tuneFrequency(button.getAttribute('data-preset-frequency'), button.getAttribute('data-preset-mode') || 'nfm');
     });
   }
+  if (els.quickStartList) {
+    els.quickStartList.addEventListener('click', async (event) => {
+      const button = event.target.closest('[data-quick-start]');
+      if (!button) return;
+      await applyQuickStart(button.getAttribute('data-quick-start'));
+    });
+  }
+  if (els.customPresetList) {
+    els.customPresetList.addEventListener('click', async (event) => {
+      const apply = event.target.closest('[data-apply-custom-preset]');
+      if (apply) {
+        applyCustomPreset(apply.getAttribute('data-apply-custom-preset'));
+        return;
+      }
+      const del = event.target.closest('[data-delete-custom-preset]');
+      if (del) {
+        await api.customPresetDelete(del.getAttribute('data-delete-custom-preset'));
+        await loadCustomPresets();
+      }
+    });
+  }
 
   if (socket && !socketStub) {
     socket.on('waterfall_row', data => {
@@ -1351,16 +1607,25 @@
     els.waterfallStatus.textContent = 'Ready';
   }
 
+  ['rxFrequency', 'rxMode', 'rxBandwidth', 'rxStep'].forEach(id => {
+    const control = document.getElementById(id);
+    if (control) control.addEventListener('change', renderOperatorOverview);
+  });
+
   loadSettings();
   loadVfos();
   loadInfo();
   loadCaptures();
   loadPresets();
+  loadQuickStarts();
+  loadCustomPresets();
   loadSerialPorts();
   loadBookmarks();
+  loadScanPlans();
   loadActivity();
   loadAlerts();
   loadDecoders();
   loadTrunking();
   loadDiagnostics();
+  renderOperatorOverview();
 })();

@@ -57,9 +57,78 @@
           <article class="tile"><span>Captures</span><strong id="captureCount">0</strong></article>
           <article class="tile"><span>Storage</span><strong id="captureBytes">0 B</strong></article>
         </div>
+        <div id="operatorOverview" class="dashboard-band operator-overview">
+          <div class="section-head compact-head">
+            <div>
+              <h3>Operator Overview</h3>
+              <p>Current tuning, active workflow status, and capability readiness.</p>
+            </div>
+            <span id="overviewDevicePill" class="status-pill">HackRF checking</span>
+          </div>
+          <div id="dashboardMetrics" class="metric-strip">
+            <article>
+              <span>Frequency</span>
+              <strong id="overviewFrequency">162.550 MHz</strong>
+            </article>
+            <article>
+              <span>Mode</span>
+              <strong id="overviewMode">NFM</strong>
+            </article>
+            <article>
+              <span>VFOs</span>
+              <strong id="overviewVfos">0</strong>
+            </article>
+            <article>
+              <span>Watch Rules</span>
+              <strong id="overviewAlerts">0</strong>
+            </article>
+            <article>
+              <span>Decoders</span>
+              <strong id="overviewDecoders">0 ready</strong>
+            </article>
+          </div>
+          <div id="workflowStrip" class="workflow-strip" aria-label="SDR operator workflow">
+            <span class="status-pill">Connect</span>
+            <span class="status-pill">Apply setup</span>
+            <span class="status-pill">Listen</span>
+            <span class="status-pill">Scan</span>
+            <span class="status-pill">Decode / export</span>
+          </div>
+          <div id="capabilityGrid" class="capability-grid">
+            <article class="capability-card"><strong>Receiver</strong><span>Live spectrum, waterfall, demodulated audio, and tuning controls.</span></article>
+            <article class="capability-card"><strong>Scan Plans</strong><span>Preset multi-range sweeps that can save discovered hits.</span></article>
+            <article class="capability-card"><strong>Decoders</strong><span>Utility decoder planning for POCSAG, RDS, and transcription paths.</span></article>
+            <article class="capability-card"><strong>Trunking</strong><span>Licensed unencrypted P25, DMR, and NXDN workflow planning.</span></article>
+            <article class="capability-card"><strong>Activity</strong><span>Persistent RF history, watch rules, and promoted VFO/bookmark hits.</span></article>
+          </div>
+        </div>
         <div id="connectStatus" class="status-line">Connect a HackRF over USB, then press Connect HackRF.</div>
         <pre id="usbStatus" class="output compact">USB status will appear here.</pre>
         <pre id="readinessOutput" class="output compact">RX readiness results will appear here.</pre>
+        <div class="section-head compact-head">
+          <div>
+            <h3>Quick Start</h3>
+            <p>One-click setups that load receiver defaults, VFOs, scan ranges, and watch rules.</p>
+          </div>
+        </div>
+        <div id="quickStartList" class="preset-list">Quick Start setups will appear here. Apply Setup to load receiver defaults, VFOs, scan ranges, and watch rules.</div>
+        <div class="section-head compact-head">
+          <div>
+            <h3>Custom Presets</h3>
+            <p>Save the current receiver setup and reuse or import preset packs.</p>
+          </div>
+          <div class="actions">
+            <a class="export-link" href="./api/hackrf/custom-presets.json">Export Custom</a>
+            <input id="customPresetImportFile" class="hidden-file" type="file" accept="application/json,.json">
+            <button id="importCustomPresets">Import Custom</button>
+            <button id="saveCustomPreset" class="primary">Save Preset</button>
+          </div>
+        </div>
+        <div class="bookmark-filters">
+          <label>Name<input id="customPresetLabel" type="text" value="My SDR preset"></label>
+          <label>Category<input id="customPresetCategory" type="text" value="custom"></label>
+        </div>
+        <div id="customPresetList" class="capture-list">Custom presets will appear here.</div>
         <div id="presetList" class="preset-list"></div>
       </section>
 
@@ -169,6 +238,19 @@
           </section>
         </div>
         <div class="receiver-tools">
+          <section>
+            <div class="section-head compact-head">
+              <div>
+                <h3>Scan Plans</h3>
+                <p>Run multi-range preset scans and save discovered hits.</p>
+              </div>
+              <button id="runScanPlan" class="primary">Run Plan</button>
+            </div>
+            <div class="form-grid">
+              <label>Plan<select id="scanPlanSelect"></select></label>
+            </div>
+            <pre id="scanPlanOutput" class="output compact">Scan plan results will appear here.</pre>
+          </section>
           <section>
             <div class="section-head compact-head">
               <div>

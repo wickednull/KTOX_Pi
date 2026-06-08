@@ -191,7 +191,7 @@ def validate_receiver() -> None:
 
 
 def validate_handlers() -> None:
-    from sdr.handlers import build_capture_path, get_frequency_presets, parse_hackrf_sweep
+    from sdr.handlers import PresetStore, build_capture_path, get_frequency_presets, get_quickstart_profiles, get_scan_plans, parse_hackrf_sweep
     from sdr.signals import ActivityStore, AlertRuleStore, BookmarkStore, scan_hits_from_rows
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -230,6 +230,15 @@ def validate_handlers() -> None:
         require(alerts.evaluate({"frequency": 162551000, "peak_db": -80.0, "squelch_open": True}) == [], "alert rule should not trigger below threshold")
         require(alerts.summary()["total_alerts"] == 1, "alert summary should count triggered events")
         require("rule_id,label,frequency,peak_db" in alerts.events_csv(), "alert event CSV should include stable headers")
+        custom_presets = PresetStore(captures_dir / "custom_presets.json")
+        custom = custom_presets.add({"label": "Local repeater", "frequency": 146520000, "mode": "nfm", "bandwidth": 12500, "sample_rate": 2000000, "category": "ham"})
+        require(custom["id"] and custom["category"] == "ham", "custom preset should persist receiver defaults")
+        require(custom_presets.list(category="ham")[0]["frequency"] == 146520000, "custom preset list should filter category")
+        exported_custom = custom_presets.export_json()
+        require("custom_presets" in exported_custom and "Local repeater" in exported_custom, "custom preset export should include rows")
+        imported_custom = PresetStore(captures_dir / "imported_custom_presets.json")
+        require(imported_custom.import_json(exported_custom)["imported"] == 1, "custom preset import should report count")
+        require(imported_custom.delete(custom["id"]) is True, "custom preset delete should return true")
     presets = get_frequency_presets()
     for group in ("weather", "airband", "marine", "rail", "ham_2m", "ham_70cm", "public_safety", "fm", "adsb", "ais", "ism_433", "ism_915", "wifi_2g"):
         require(group in presets, f"preset group missing {group}")
@@ -238,6 +247,17 @@ def validate_handlers() -> None:
     require(any(item.get("hz") == 162550000 for item in presets["weather"]["frequencies"]), "weather presets should include NOAA 162.550")
     require(any(item.get("start") == 118000000 and item.get("stop") == 137000000 for item in presets["airband"]["frequencies"]), "airband presets should include scan range")
     require(any(item.get("hz") == 1090000000 for item in presets["adsb"]["frequencies"]), "ADS-B presets should include 1090 MHz")
+    quickstarts = get_quickstart_profiles()
+    for profile in ("weather_watch", "airband_watch", "public_safety_survey", "adsb_tracker", "fm_rds"):
+        require(profile in quickstarts, f"quick start profile missing {profile}")
+        require(quickstarts[profile]["vfos"], f"quick start {profile} should include VFOs")
+        require(quickstarts[profile]["scan_ranges"], f"quick start {profile} should include scan ranges")
+    require(quickstarts["weather_watch"]["alert_rules"][0]["frequency"] == 162550000, "weather quick start should create NOAA alert rule")
+    scan_plans = get_scan_plans()
+    for plan in ("weather_sweep", "airband_sweep", "public_safety_sweep", "ham_sweep", "ism_sweep"):
+        require(plan in scan_plans, f"scan plan missing {plan}")
+        require(scan_plans[plan]["ranges"], f"scan plan {plan} should include ranges")
+    require(scan_plans["public_safety_sweep"]["ranges"][0]["save_hits"] is True, "scan plans should default to saving hits")
     rows = parse_hackrf_sweep("2026-05-29, 00:00:00, 2400000000, 2401000000, 1000000, 1, -55.0, -42.0")
     require(rows[0]["start_hz"] == 2400000000, "sweep start parse failed")
     require(rows[0]["powers_db"] == [-55.0, -42.0], "sweep powers parse failed")
@@ -481,6 +501,22 @@ def validate_server() -> None:
         require(connect.get_json()["connected"] is True, "connect endpoint should report connected fake HackRF")
         require(client.get("/api/hackrf/captures").status_code == 200, "captures endpoint failed")
         require(client.get("/api/hackrf/presets").status_code == 200, "presets endpoint failed")
+        quickstarts = client.get("/api/hackrf/quickstarts")
+        require(quickstarts.status_code == 200 and "weather_watch" in quickstarts.get_json(), "quick start endpoint failed")
+        scan_plans = client.get("/api/hackrf/scan-plans")
+        require(scan_plans.status_code == 200 and "public_safety_sweep" in scan_plans.get_json(), "scan plan endpoint failed")
+        custom_preset = client.post(
+            "/api/hackrf/custom-presets",
+            data=json.dumps({"label": "Server custom", "frequency": 146520000, "mode": "nfm", "bandwidth": 12500, "category": "ham"}),
+            content_type="application/json",
+        )
+        require(custom_preset.status_code == 200 and custom_preset.get_json()["preset"]["id"], "custom preset create endpoint failed")
+        custom_presets = client.get("/api/hackrf/custom-presets?category=ham")
+        require(custom_presets.status_code == 200 and custom_presets.get_json()["presets"], "custom preset list endpoint should filter category")
+        custom_export = client.get("/api/hackrf/custom-presets.json")
+        require(custom_export.status_code == 200 and "custom_presets" in custom_export.get_data(as_text=True), "custom preset export endpoint failed")
+        custom_import = client.post("/api/hackrf/custom-presets/import", data=custom_export.get_data(), content_type="application/json")
+        require(custom_import.status_code == 200 and custom_import.get_json()["imported"] >= 1, "custom preset import endpoint failed")
         payload = {"start": 2400000000, "stop": 2401000000, "bin_width": 1000000, "dwell_ms": 10}
         response = client.post("/api/hackrf/sweep", data=json.dumps(payload), content_type="application/json")
         require(response.status_code == 200, "sweep endpoint failed")
@@ -649,8 +685,14 @@ def validate_static_assets() -> None:
     for rel in required:
         require((ROOT / rel).exists(), f"missing {rel}")
     html = (ROOT / "static/sdr/index.html").read_text(encoding="utf-8")
-    for token in ["Dashboard", "Receiver", "Listen", "NFM", "WFM", "AM", "USB", "LSB", "receiverSpectrum", "receiverWaterfall", "rxStep", "rxBandwidth", "rxSquelch", "receiverStatus", "VFO Deck", "Add VFO", "Export VFOs", "Import VFOs", "vfoList", "vfoActivity", "Activity Intelligence", "activityList", "activitySummary", "activityMinPeak", "Promote", "Watch Rules", "alertRuleLabel", "alertRules", "alertEvents", "Save Watch", "Scan Range", "Bookmarks", "bookmarkSearch", "bookmarkCategory", "bookmarkImportFile", "Import Bookmarks", "Decoders", "POCSAG", "RDS", "Transcription", "decoderStatus", "decoderEvents", "decoderPlanOutput", "Connect HackRF", "RX Readiness", "readinessOutput", "Test RX/Sweep", "USB / Serial", "Diagnostics", "diagnosticsOutput", "Waterfall", "Sweep", "Capture", "Settings", "js/api.js", "css/style.css"]:
+    style = (ROOT / "static/sdr/css/style.css").read_text(encoding="utf-8")
+    sdr_app = (ROOT / "static/sdr/js/app.js").read_text(encoding="utf-8")
+    for token in ["Dashboard", "Receiver", "Listen", "NFM", "WFM", "AM", "USB", "LSB", "receiverSpectrum", "receiverWaterfall", "rxStep", "rxBandwidth", "rxSquelch", "receiverStatus", "Quick Start", "quickStartList", "Apply Setup", "Custom Presets", "customPresetLabel", "customPresetList", "saveCustomPreset", "Import Custom", "Operator Overview", "operatorOverview", "workflowStrip", "capabilityGrid", "overviewFrequency", "overviewVfos", "overviewAlerts", "overviewDecoders", "Scan Plans", "scanPlanSelect", "runScanPlan", "scanPlanOutput", "VFO Deck", "Add VFO", "Export VFOs", "Import VFOs", "vfoList", "vfoActivity", "Activity Intelligence", "activityList", "activitySummary", "activityMinPeak", "Promote", "Watch Rules", "alertRuleLabel", "alertRules", "alertEvents", "Save Watch", "Scan Range", "Bookmarks", "bookmarkSearch", "bookmarkCategory", "bookmarkImportFile", "Import Bookmarks", "Decoders", "POCSAG", "RDS", "Transcription", "decoderStatus", "decoderEvents", "decoderPlanOutput", "Connect HackRF", "RX Readiness", "readinessOutput", "Test RX/Sweep", "USB / Serial", "Diagnostics", "diagnosticsOutput", "Waterfall", "Sweep", "Capture", "Settings", "js/api.js", "css/style.css"]:
         require(token in html, f"missing SDR UI token {token!r}")
+    for token in [".dashboard-band", ".operator-overview", ".workflow-strip", ".status-pill", ".capability-grid", ".capability-card", ".metric-strip", ".preset-card"]:
+        require(token in style, f"missing SDR visual style token {token!r}")
+    for token in ["renderOperatorOverview", "overviewFrequency", "overviewDecoders", "dashboardMetrics", "workflowStrip"]:
+        require(token in sdr_app, f"missing SDR overview script token {token!r}")
     for token in ["Trunking", "Licensed Operation", "Encrypted traffic is logged", "trunkOperator", "trunkProfileName", "trunkControlChannel", "trunkStart", "trunkSummary", "trunkEventFilter", "trunkEncryptedFilter", "trunkAliasKey", "trunkExportCsv", "trunkExportProfiles", "trunkImportProfiles", "trunkProfileImportFile", "trunkExportAliases", "trunkImportAliases", "trunkAliasImportFile", "trunkProcessStatus", "trunkDecoderStatus", "trunkEvents"]:
         require(token in html, f"missing trunking UI token {token!r}")
     require('href="./api/hackrf/captures.csv"' in html, "SDR export link must be relative for /sdr proxying")
@@ -710,6 +752,9 @@ def validate_integration() -> None:
     require("/api/hackrf/waterfall-row" in server and "read_iq_samples" in server, "sdr_server.py must expose HTTP waterfall row endpoint")
     require("/api/hackrf/demodulate" in server and "demodulate_audio" in server, "sdr_server.py must expose demodulation endpoint")
     require("/api/hackrf/test" in server and "hardware_test" in server, "sdr_server.py must expose HackRF hardware test endpoint")
+    require("/api/hackrf/quickstarts" in server and "get_quickstart_profiles" in server, "sdr_server.py must expose quick start profiles")
+    require("/api/hackrf/scan-plans" in server and "get_scan_plans" in server, "sdr_server.py must expose scan plans")
+    require("/api/hackrf/custom-presets" in server and "PresetStore" in server, "sdr_server.py must expose custom preset APIs")
     require("/api/serial/ports" in server and "/api/serial/probe" in server, "sdr_server.py must expose serial port endpoints")
     require("/api/diagnostics" in server and "build_sdr_diagnostics" in server, "sdr_server.py must expose SDR diagnostics endpoint")
     require('@app.get("/sdr")' in server and 'redirect("/sdr/")' in server, "SDR server should redirect /sdr to /sdr/")
@@ -728,6 +773,9 @@ def validate_integration() -> None:
     require("readiness" in sdr_api and "runReadiness" in sdr_app and "readinessOutput" in sdr_app, "SDR UI must expose HackRF readiness checks")
     require("data-preset-frequency" in sdr_app and "tuneFrequency" in sdr_app, "SDR preset cards should tune the receiver")
     require("data-preset-start" in sdr_app and "applyPresetRange" in sdr_app and "applyPresetDefaults" in sdr_app, "SDR preset cards should support scan ranges and receiver defaults")
+    require("quickStarts" in sdr_api and "loadQuickStarts" in sdr_app and "applyQuickStart" in sdr_app and "quickStartList" in sdr_app, "SDR UI must expose one-click quick start profiles")
+    require("customPresets" in sdr_api and "customPresetAdd" in sdr_api and "loadCustomPresets" in sdr_app and "saveCustomPreset" in sdr_app and "renderCustomPresets" in sdr_app, "SDR UI must expose custom presets")
+    require("scanPlans" in sdr_api and "loadScanPlans" in sdr_app and "runScanPlan" in sdr_app and "scanPlanOutput" in sdr_app, "SDR UI must expose multi-range scan plans")
     require("vfos" in sdr_app and "renderVfos" in sdr_app and "addVfo" in sdr_app and "selectVfo" in sdr_app and "recordVfoActivity" in sdr_app, "SDR app must expose multi-VFO deck and activity tracking")
     require("serialPorts" in sdr_api and "serialProbe" in sdr_api and "testHackrf" in sdr_app, "SDR UI must expose hardware and serial tests")
     require("diagnostics" in sdr_api and "loadDiagnostics" in sdr_app, "SDR UI must expose diagnostics")

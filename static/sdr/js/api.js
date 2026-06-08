@@ -92,6 +92,23 @@
     }),
     receiverAlertRuleDelete: (id) => requestJson(`/api/receiver/alerts/rules/${encodeURIComponent(id)}`, { method: 'DELETE' }),
     presets: () => requestJson('/api/hackrf/presets'),
+    quickStarts: () => requestJson('/api/hackrf/quickstarts'),
+    scanPlans: () => requestJson('/api/hackrf/scan-plans'),
+    customPresets: (params) => {
+      const query = new URLSearchParams(params || {}).toString();
+      return requestJson(`/api/hackrf/custom-presets${query ? `?${query}` : ''}`);
+    },
+    customPresetAdd: (payload) => requestJson('/api/hackrf/custom-presets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload || {})
+    }),
+    customPresetsImport: (payload) => requestJson('/api/hackrf/custom-presets/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload || {})
+    }),
+    customPresetDelete: (id) => requestJson(`/api/hackrf/custom-presets/${encodeURIComponent(id)}`, { method: 'DELETE' }),
     captures: () => requestJson('/api/hackrf/captures'),
     deleteCapture: (id) => requestJson(`/api/hackrf/captures/${encodeURIComponent(id)}`, { method: 'DELETE' }),
     sweep: (payload) => requestJson('/api/hackrf/sweep', {

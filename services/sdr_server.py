@@ -34,7 +34,10 @@ try:
         capture_metadata,
         capture_stats,
         get_frequency_presets,
+        get_quickstart_profiles,
+        get_scan_plans,
         parse_hackrf_sweep,
+        PresetStore,
     )
     from sdr.processing import waterfall_row
     from sdr.receiver import ReceiverConfig, ReceiverSession
@@ -66,6 +69,46 @@ def fallback_presets() -> dict[str, dict[str, Any]]:
         "adsb": {"label": "ADS-B", "mode": "raw", "bandwidth": 2000000, "sample_rate": 2000000, "step": 1000000, "frequencies": [{"label": "1090ES", "hz": 1090000000}]},
         "fm": {"label": "FM Broadcast", "mode": "wfm", "bandwidth": 180000, "sample_rate": 2400000, "step": 200000, "frequencies": [{"label": "88-108 MHz", "start": 88000000, "stop": 108000000}, {"label": "98.1", "hz": 98100000}]},
         "wifi_2g": {"label": "WiFi 2.4 GHz", "mode": "raw", "bandwidth": 20000000, "sample_rate": 20000000, "step": 5000000, "frequencies": [{"label": "CH 6", "hz": 2437000000}]},
+    }
+
+
+def fallback_quickstarts() -> dict[str, dict[str, Any]]:
+    return {
+        "weather_watch": {
+            "label": "Weather Watch",
+            "description": "NOAA weather VFOs and a starter watch rule.",
+            "receiver": {"frequency": 162550000, "mode": "nfm", "bandwidth": 12500, "sample_rate": 2000000, "step": 25000},
+            "scan_ranges": [{"label": "NOAA Weather", "start": 162400000, "stop": 162550000, "threshold_db": -70}],
+            "vfos": [{"label": "NOAA WX 1", "frequency": 162550000, "mode": "nfm", "bandwidth": 12500, "squelch": -85}],
+            "alert_rules": [{"label": "NOAA WX 1 open", "frequency": 162550000, "tolerance_hz": 25000, "min_peak_db": -75}],
+        },
+        "airband_watch": {
+            "label": "Airband Watch",
+            "description": "AM airband monitor and civil scan range.",
+            "receiver": {"frequency": 121500000, "mode": "am", "bandwidth": 25000, "sample_rate": 2000000, "step": 25000},
+            "scan_ranges": [{"label": "Civil Airband", "start": 118000000, "stop": 137000000, "threshold_db": -65}],
+            "vfos": [{"label": "Air Emergency", "frequency": 121500000, "mode": "am", "bandwidth": 25000, "squelch": -90}],
+            "alert_rules": [{"label": "Air emergency active", "frequency": 121500000, "tolerance_hz": 25000, "min_peak_db": -70}],
+        },
+    }
+
+
+def fallback_scan_plans() -> dict[str, dict[str, Any]]:
+    return {
+        "weather_sweep": {
+            "label": "Weather Sweep",
+            "description": "Scan NOAA weather channels.",
+            "mode": "nfm",
+            "sample_rate": 2000000,
+            "ranges": [{"label": "NOAA Weather", "start": 162400000, "stop": 162550000, "threshold_db": -75, "save_hits": True}],
+        },
+        "airband_sweep": {
+            "label": "Airband Sweep",
+            "description": "Scan civil airband.",
+            "mode": "am",
+            "sample_rate": 2000000,
+            "ranges": [{"label": "Civil Airband", "start": 118000000, "stop": 137000000, "threshold_db": -65, "save_hits": True}],
+        },
     }
 
 
@@ -164,6 +207,18 @@ class StaticSdrHandler(SimpleHTTPRequestHandler):
         if path in {"/api/hackrf/presets", "/sdr/api/hackrf/presets"}:
             self.send_json(fallback_presets())
             return
+        if path in {"/api/hackrf/quickstarts", "/sdr/api/hackrf/quickstarts"}:
+            self.send_json(fallback_quickstarts())
+            return
+        if path in {"/api/hackrf/scan-plans", "/sdr/api/hackrf/scan-plans"}:
+            self.send_json(fallback_scan_plans())
+            return
+        if path in {"/api/hackrf/custom-presets", "/sdr/api/hackrf/custom-presets"}:
+            self.send_json({"ok": True, "presets": [], "categories": []})
+            return
+        if path in {"/api/hackrf/custom-presets.json", "/sdr/api/hackrf/custom-presets.json"}:
+            self.send_json({"schema": "ktox-sdr-custom-presets-v1", "custom_presets": []})
+            return
         if path in {"/api/hackrf/captures", "/sdr/api/hackrf/captures"}:
             self.send_json({"captures": [], "stats": {"total_size": 0}})
             return
@@ -198,6 +253,8 @@ class StaticSdrHandler(SimpleHTTPRequestHandler):
             "/api/receiver/scan",
             "/api/receiver/bookmarks",
             "/api/receiver/bookmarks/import",
+            "/api/hackrf/custom-presets",
+            "/api/hackrf/custom-presets/import",
             "/sdr/api/receiver/start",
             "/sdr/api/receiver/stop",
             "/sdr/api/receiver/frame",
@@ -205,6 +262,8 @@ class StaticSdrHandler(SimpleHTTPRequestHandler):
             "/sdr/api/receiver/scan",
             "/sdr/api/receiver/bookmarks",
             "/sdr/api/receiver/bookmarks/import",
+            "/sdr/api/hackrf/custom-presets",
+            "/sdr/api/hackrf/custom-presets/import",
             "/api/trunking/agreement",
             "/sdr/api/trunking/agreement",
             "/api/trunking/profiles",
@@ -278,6 +337,7 @@ def create_app(
     hackrf = manager or HackRFManager()
     db = database or CaptureDatabase(DB_PATH)
     receiver = ReceiverSession(hackrf)
+    custom_presets = PresetStore(CAPTURES_DIR / "custom_presets.json")
     activity = ActivityStore(CAPTURES_DIR / "receiver_activity.json")
     alerts = AlertRuleStore(CAPTURES_DIR / "receiver_alert_rules.json", CAPTURES_DIR / "receiver_alert_events.json")
     bookmarks = BookmarkStore(CAPTURES_DIR / "bookmarks.json")
@@ -742,6 +802,56 @@ def create_app(
     @app.get("/sdr/api/hackrf/presets")
     def presets():
         return jsonify(get_frequency_presets())
+
+    @app.get("/api/hackrf/quickstarts")
+    @app.get("/sdr/api/hackrf/quickstarts")
+    def quickstarts():
+        return jsonify(get_quickstart_profiles())
+
+    @app.get("/api/hackrf/scan-plans")
+    @app.get("/sdr/api/hackrf/scan-plans")
+    def scan_plans():
+        return jsonify(get_scan_plans())
+
+    @app.get("/api/hackrf/custom-presets")
+    @app.get("/sdr/api/hackrf/custom-presets")
+    def custom_presets_list():
+        return jsonify({
+            "ok": True,
+            "presets": custom_presets.list(
+                category=request.args.get("category") or None,
+                query=str(request.args.get("q") or ""),
+            ),
+            "categories": custom_presets.categories(),
+        })
+
+    @app.get("/api/hackrf/custom-presets.json")
+    @app.get("/sdr/api/hackrf/custom-presets.json")
+    def custom_presets_export():
+        return Response(custom_presets.export_json(), mimetype="application/json")
+
+    @app.post("/api/hackrf/custom-presets")
+    @app.post("/sdr/api/hackrf/custom-presets")
+    def custom_preset_add():
+        try:
+            preset = custom_presets.add(request.get_json(silent=True) or {})
+        except (TypeError, ValueError) as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        return jsonify({"ok": True, "preset": preset})
+
+    @app.post("/api/hackrf/custom-presets/import")
+    @app.post("/sdr/api/hackrf/custom-presets/import")
+    def custom_presets_import():
+        try:
+            result = custom_presets.import_json(request.get_json(silent=True) or {})
+        except (TypeError, ValueError) as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        return jsonify(result)
+
+    @app.delete("/api/hackrf/custom-presets/<preset_id>")
+    @app.delete("/sdr/api/hackrf/custom-presets/<preset_id>")
+    def custom_preset_delete(preset_id: str):
+        return jsonify({"ok": custom_presets.delete(preset_id)})
 
     @app.get("/api/hackrf/captures")
     @app.get("/sdr/api/hackrf/captures")

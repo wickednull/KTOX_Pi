@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import time
+import uuid
 from pathlib import Path
+from typing import Any
 from typing import Iterable
 
 
@@ -28,6 +31,84 @@ def capture_metadata(path: str | Path, frequency: int, sample_rate: int, notes: 
         "size": target.stat().st_size if target.exists() else 0,
         "notes": notes,
     }
+
+
+class PresetStore:
+    """Stores user-defined receiver presets."""
+
+    def __init__(self, path: str | Path):
+        self.path = Path(path)
+
+    def _read(self) -> list[dict[str, Any]]:
+        if not self.path.exists():
+            return []
+        try:
+            data = json.loads(self.path.read_text(encoding="utf-8"))
+        except Exception:
+            return []
+        return data if isinstance(data, list) else []
+
+    def _write(self, rows: list[dict[str, Any]]) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.write_text(json.dumps(rows, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    def list(self, category: str | None = None, query: str = "") -> list[dict[str, Any]]:
+        rows = self._read()
+        if category:
+            wanted = category.strip().lower()
+            rows = [row for row in rows if str(row.get("category") or "custom").lower() == wanted]
+        if query:
+            needle = query.strip().lower()
+            rows = [row for row in rows if needle in json.dumps(row, sort_keys=True).lower()]
+        return sorted(rows, key=lambda row: (str(row.get("category") or "custom"), str(row.get("label") or ""), int(row.get("frequency") or 0)))
+
+    def categories(self) -> list[str]:
+        return sorted({str(row.get("category") or "custom") for row in self._read()})
+
+    def add(self, payload: dict[str, Any]) -> dict[str, Any]:
+        frequency = int(payload.get("frequency") or 0)
+        if frequency <= 0:
+            raise ValueError("frequency is required")
+        row = {
+            "id": str(payload.get("id") or uuid.uuid4().hex),
+            "label": str(payload.get("label") or f"Custom {frequency} Hz"),
+            "frequency": frequency,
+            "mode": str(payload.get("mode") or "nfm").lower(),
+            "bandwidth": int(payload.get("bandwidth") or 12500),
+            "sample_rate": int(payload.get("sample_rate") or 2000000),
+            "step": int(payload.get("step") or 12500),
+            "category": str(payload.get("category") or "custom").strip().lower() or "custom",
+            "notes": str(payload.get("notes") or ""),
+            "created_at": float(payload.get("created_at") or time.time()),
+        }
+        rows = [item for item in self._read() if item.get("id") != row["id"]]
+        rows.append(row)
+        self._write(rows)
+        return row
+
+    def delete(self, preset_id: str) -> bool:
+        rows = self._read()
+        kept = [item for item in rows if item.get("id") != preset_id]
+        if len(kept) == len(rows):
+            return False
+        self._write(kept)
+        return True
+
+    def export_json(self) -> str:
+        return json.dumps({"schema": "ktox-sdr-custom-presets-v1", "custom_presets": self.list()}, indent=2, sort_keys=True) + "\n"
+
+    def import_json(self, payload: str | dict[str, Any]) -> dict[str, Any]:
+        data = json.loads(payload) if isinstance(payload, str) else payload
+        rows = data.get("custom_presets") if isinstance(data, dict) else data
+        if not isinstance(rows, list):
+            raise ValueError("custom_presets list is required")
+        imported = 0
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            self.add(row)
+            imported += 1
+        return {"ok": True, "imported": imported}
 
 
 def get_frequency_presets() -> dict:
@@ -217,6 +298,129 @@ def get_frequency_presets() -> dict:
             "frequencies": [
                 {"label": "NOAA APT", "start": 137000000, "stop": 138000000},
                 {"label": "L-Band Inmarsat", "start": 1525000000, "stop": 1559000000, "mode": "raw", "bandwidth": 2000000},
+            ],
+        },
+    }
+
+
+def get_quickstart_profiles() -> dict:
+    """One-click SDR setups that combine tuning, scan ranges, VFOs, and watch rules."""
+    return {
+        "weather_watch": {
+            "label": "Weather Watch",
+            "description": "NOAA weather VFOs plus alerting on the primary weather channel.",
+            "receiver": {"frequency": 162550000, "mode": "nfm", "bandwidth": 12500, "sample_rate": 2000000, "step": 25000},
+            "scan_ranges": [{"label": "NOAA Weather", "start": 162400000, "stop": 162550000, "threshold_db": -70}],
+            "vfos": [
+                {"label": "NOAA WX 1", "frequency": 162550000, "mode": "nfm", "bandwidth": 12500, "squelch": -85},
+                {"label": "NOAA WX 2", "frequency": 162400000, "mode": "nfm", "bandwidth": 12500, "squelch": -85},
+                {"label": "NOAA WX 3", "frequency": 162475000, "mode": "nfm", "bandwidth": 12500, "squelch": -85},
+            ],
+            "alert_rules": [{"label": "NOAA WX 1 open", "frequency": 162550000, "tolerance_hz": 25000, "min_peak_db": -75}],
+        },
+        "airband_watch": {
+            "label": "Airband Watch",
+            "description": "AM airband monitoring with emergency frequency and civil band scan range.",
+            "receiver": {"frequency": 121500000, "mode": "am", "bandwidth": 25000, "sample_rate": 2000000, "step": 25000},
+            "scan_ranges": [{"label": "Civil Airband", "start": 118000000, "stop": 137000000, "threshold_db": -65}],
+            "vfos": [
+                {"label": "Air Emergency", "frequency": 121500000, "mode": "am", "bandwidth": 25000, "squelch": -90},
+                {"label": "Air Common", "frequency": 123450000, "mode": "am", "bandwidth": 25000, "squelch": -90},
+            ],
+            "alert_rules": [{"label": "Air emergency active", "frequency": 121500000, "tolerance_hz": 25000, "min_peak_db": -70}],
+        },
+        "public_safety_survey": {
+            "label": "Public Safety Survey",
+            "description": "Survey common VHF/UHF/700/800 public-safety ranges for authorized unencrypted traffic.",
+            "receiver": {"frequency": 155000000, "mode": "nfm", "bandwidth": 12500, "sample_rate": 2000000, "step": 12500},
+            "scan_ranges": [
+                {"label": "VHF Public Safety", "start": 150000000, "stop": 174000000, "threshold_db": -70},
+                {"label": "UHF Public Safety", "start": 450000000, "stop": 470000000, "threshold_db": -70},
+                {"label": "800 MHz Public Safety", "start": 851000000, "stop": 869000000, "threshold_db": -75},
+            ],
+            "vfos": [
+                {"label": "VHF Survey", "frequency": 155000000, "mode": "nfm", "bandwidth": 12500, "squelch": -85},
+                {"label": "UHF Survey", "frequency": 460000000, "mode": "nfm", "bandwidth": 12500, "squelch": -85},
+                {"label": "800 Survey", "frequency": 855000000, "mode": "raw", "bandwidth": 12500, "squelch": -80},
+            ],
+            "alert_rules": [{"label": "VHF survey active", "frequency": 155000000, "tolerance_hz": 100000, "min_peak_db": -75}],
+        },
+        "adsb_tracker": {
+            "label": "ADS-B Tracker",
+            "description": "Configure HackRF for 1090 MHz ADS-B capture and watch activity.",
+            "receiver": {"frequency": 1090000000, "mode": "raw", "bandwidth": 2000000, "sample_rate": 2000000, "step": 1000000},
+            "scan_ranges": [{"label": "ADS-B 1090", "start": 1089000000, "stop": 1091000000, "threshold_db": -80}],
+            "vfos": [{"label": "ADS-B 1090ES", "frequency": 1090000000, "mode": "raw", "bandwidth": 2000000, "squelch": -90}],
+            "alert_rules": [{"label": "ADS-B active", "frequency": 1090000000, "tolerance_hz": 1000000, "min_peak_db": -85}],
+        },
+        "fm_rds": {
+            "label": "FM + RDS",
+            "description": "Wide FM broadcast setup with RDS-ready defaults.",
+            "receiver": {"frequency": 98100000, "mode": "wfm", "bandwidth": 180000, "sample_rate": 2400000, "step": 200000},
+            "scan_ranges": [{"label": "FM Broadcast", "start": 88000000, "stop": 108000000, "threshold_db": -55}],
+            "vfos": [
+                {"label": "FM 88.1", "frequency": 88100000, "mode": "wfm", "bandwidth": 180000, "squelch": -95},
+                {"label": "FM 98.1", "frequency": 98100000, "mode": "wfm", "bandwidth": 180000, "squelch": -95},
+                {"label": "FM 107.9", "frequency": 107900000, "mode": "wfm", "bandwidth": 180000, "squelch": -95},
+            ],
+            "alert_rules": [{"label": "FM 98.1 active", "frequency": 98100000, "tolerance_hz": 200000, "min_peak_db": -60}],
+            "decoder": {"decoder": "rds", "frequency": 98100000, "mode": "wfm"},
+        },
+    }
+
+
+def get_scan_plans() -> dict:
+    """Reusable multi-range scan plans for common discovery tasks."""
+    return {
+        "weather_sweep": {
+            "label": "Weather Sweep",
+            "description": "Scan all NOAA weather channels and save active transmitters.",
+            "mode": "nfm",
+            "sample_rate": 2000000,
+            "ranges": [
+                {"label": "NOAA Weather", "start": 162400000, "stop": 162550000, "threshold_db": -75, "save_hits": True},
+            ],
+        },
+        "airband_sweep": {
+            "label": "Airband Sweep",
+            "description": "Scan civil and UHF airband ranges with AM defaults.",
+            "mode": "am",
+            "sample_rate": 2000000,
+            "ranges": [
+                {"label": "Civil Airband", "start": 118000000, "stop": 137000000, "threshold_db": -65, "save_hits": True},
+                {"label": "Military UHF Air", "start": 225000000, "stop": 400000000, "threshold_db": -70, "save_hits": True},
+            ],
+        },
+        "public_safety_sweep": {
+            "label": "Public Safety Sweep",
+            "description": "Survey common authorized public-safety ranges and save clear activity candidates.",
+            "mode": "nfm",
+            "sample_rate": 2000000,
+            "ranges": [
+                {"label": "VHF Public Safety", "start": 150000000, "stop": 174000000, "threshold_db": -70, "save_hits": True},
+                {"label": "UHF Public Safety", "start": 450000000, "stop": 470000000, "threshold_db": -70, "save_hits": True},
+                {"label": "700 MHz Public Safety", "start": 769000000, "stop": 775000000, "threshold_db": -75, "save_hits": True, "mode": "raw"},
+                {"label": "800 MHz Public Safety", "start": 851000000, "stop": 869000000, "threshold_db": -75, "save_hits": True, "mode": "raw"},
+            ],
+        },
+        "ham_sweep": {
+            "label": "Ham Sweep",
+            "description": "Scan 2m and 70cm amateur ranges plus APRS/calling activity.",
+            "mode": "nfm",
+            "sample_rate": 2000000,
+            "ranges": [
+                {"label": "2m Amateur", "start": 144000000, "stop": 148000000, "threshold_db": -70, "save_hits": True},
+                {"label": "70cm Amateur", "start": 420000000, "stop": 450000000, "threshold_db": -70, "save_hits": True},
+            ],
+        },
+        "ism_sweep": {
+            "label": "ISM Sweep",
+            "description": "Scan common ISM/IoT ranges for active devices.",
+            "mode": "raw",
+            "sample_rate": 2000000,
+            "ranges": [
+                {"label": "433 MHz ISM", "start": 433050000, "stop": 434790000, "threshold_db": -65, "save_hits": True},
+                {"label": "902-928 MHz ISM", "start": 902000000, "stop": 928000000, "threshold_db": -70, "save_hits": True},
             ],
         },
     }
