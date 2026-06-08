@@ -8,6 +8,7 @@
   const socketStub = !socket || !!socket.__ktoxStub;
   const settingsKey = 'ktox:sdr:settings';
   const vfoKey = 'ktox:sdr:vfos';
+  const runQueueKey = 'ktox:sdr:runQueue';
   let waterfallTimer = null;
   let audioCtx = null;
   let audioTimer = null;
@@ -17,6 +18,8 @@
   let vfos = [];
   let activeVfoId = null;
   let vfoActivity = [];
+  let runQueue = [];
+  let activeRunQueueId = null;
   const dashboardState = {
     decoderReady: 0,
     decoderTotal: 0,
@@ -44,6 +47,7 @@
     presetModeFilter: document.getElementById('presetModeFilter'),
     presetCategoryFilter: document.getElementById('presetCategoryFilter'),
     presetSummary: document.getElementById('presetSummary'),
+    bandMap: document.getElementById('bandMap'),
     quickStartList: document.getElementById('quickStartList'),
     customPresetList: document.getElementById('customPresetList'),
     presetList: document.getElementById('presetList'),
@@ -64,6 +68,7 @@
     receiverSignal: document.getElementById('receiverSignal'),
     receiverStatus: document.getElementById('receiverStatus'),
     receiverOutput: document.getElementById('receiverOutput'),
+    runQueueList: document.getElementById('runQueueList'),
     vfoList: document.getElementById('vfoList'),
     vfoActivity: document.getElementById('vfoActivity'),
     vfoImportFile: document.getElementById('vfoImportFile'),
@@ -175,13 +180,11 @@
     return values.filter(value => value != null).join(' ').toLowerCase();
   }
 
-  function renderPresetNavigator(){
-    if (!els.presetList) return;
-    const presets = els.presetList._presets || {};
+  function filteredPresetKeys(presets){
     const query = (els.presetSearch && els.presetSearch.value || '').trim().toLowerCase();
     const modeFilter = els.presetModeFilter && els.presetModeFilter.value;
     const categoryFilter = els.presetCategoryFilter && els.presetCategoryFilter.value;
-    const keys = Object.keys(presets).filter(key => {
+    return Object.keys(presets).filter(key => {
       const group = presets[key] || {};
       const mode = group.mode || (key === 'fm' ? 'wfm' : 'nfm');
       const category = group.category || key;
@@ -189,6 +192,87 @@
       if (categoryFilter && category !== categoryFilter) return false;
       return !query || presetSearchText(key, group).includes(query);
     });
+  }
+
+  function presetBandRows(presets, keys){
+    const rows = [];
+    keys.forEach(key => {
+      const group = presets[key] || {};
+      const mode = group.mode || (key === 'fm' ? 'wfm' : 'nfm');
+      (group.frequencies || []).forEach(raw => {
+        const item = typeof raw === 'number' ? { hz: raw, label: mhz(raw) } : raw;
+        const center = Number(item.hz || 0);
+        const start = Number(item.start || center);
+        const stop = Number(item.stop || center);
+        if (!Number.isFinite(start) || !Number.isFinite(stop) || start <= 0 || stop <= 0) return;
+        const span = Math.max(stop - start, Number(group.step || item.step || 25000));
+        rows.push({
+          label: item.label || group.label || key,
+          group: group.label || key,
+          mode: item.mode || mode,
+          bandwidth: item.bandwidth || group.bandwidth || 12500,
+          sampleRate: item.sample_rate || group.sample_rate || 2000000,
+          step: item.step || group.step || 12500,
+          start: center ? Math.max(1, center - Math.round(span / 2)) : start,
+          stop: center ? center + Math.round(span / 2) : stop,
+          frequency: center || Math.round((start + stop) / 2)
+        });
+      });
+    });
+    return rows.sort((a, b) => a.frequency - b.frequency).slice(0, 18);
+  }
+
+  function renderBandMap(presets, keys){
+    if (!els.bandMap) return;
+    const rows = presetBandRows(presets, keys);
+    if (!rows.length) {
+      els.bandMap.innerHTML = '<div class="empty">No band map ranges match the current filters.</div>';
+      return;
+    }
+    const minHz = 80000000;
+    const maxHz = 6000000000;
+    const minLog = Math.log10(minHz);
+    const maxLog = Math.log10(maxHz);
+    const pct = value => Math.max(0, Math.min(100, ((Math.log10(Math.max(minHz, Math.min(maxHz, value))) - minLog) / (maxLog - minLog)) * 100));
+    els.bandMap.innerHTML = rows.map(row => {
+      const left = pct(row.start);
+      const right = pct(row.stop);
+      const width = Math.max(1.6, right - left);
+      return `<button class="band-row" data-band-start="${Math.round(row.start)}" data-band-stop="${Math.round(row.stop)}" data-band-frequency="${Math.round(row.frequency)}" data-band-mode="${escapeHtml(row.mode)}" data-band-bandwidth="${Number(row.bandwidth)}" data-band-sample-rate="${Number(row.sampleRate)}" data-band-step="${Number(row.step)}">
+        <strong>${escapeHtml(row.label)}</strong>
+        <span class="band-track"><span class="band-fill" style="left:${left.toFixed(2)}%;width:${width.toFixed(2)}%"></span></span>
+        <span>${mhz(row.frequency)} · ${escapeHtml(String(row.mode).toUpperCase())}</span>
+      </button>`;
+    }).join('');
+  }
+
+  function applyBandMapSelection(button){
+    if (!button) return;
+    const start = Number(button.getAttribute('data-band-start'));
+    const stop = Number(button.getAttribute('data-band-stop'));
+    const frequency = Number(button.getAttribute('data-band-frequency'));
+    const mode = button.getAttribute('data-band-mode') || 'nfm';
+    document.getElementById('rxBandwidth').value = button.getAttribute('data-band-bandwidth') || document.getElementById('rxBandwidth').value;
+    document.getElementById('rxSampleRate').value = button.getAttribute('data-band-sample-rate') || document.getElementById('rxSampleRate').value;
+    document.getElementById('rxStep').value = button.getAttribute('data-band-step') || document.getElementById('rxStep').value;
+    if (Number.isFinite(start) && Number.isFinite(stop) && stop > start) {
+      document.getElementById('scanStart').value = String(Math.round(start));
+      document.getElementById('scanStop').value = String(Math.round(stop));
+      document.getElementById('sweepStart').value = String(Math.round(start));
+      document.getElementById('sweepStop').value = String(Math.round(stop));
+    }
+    tuneFrequency(frequency, mode);
+    addRunQueueItem(Object.assign(queueItemFromControls(button.textContent.trim() || 'Band map target'), {
+      source: 'band-map'
+    }));
+    activateTab('receiver');
+  }
+
+  function renderPresetNavigator(){
+    if (!els.presetList) return;
+    const presets = els.presetList._presets || {};
+    const keys = filteredPresetKeys(presets);
+    renderBandMap(presets, keys);
     els.presetList.innerHTML = keys.length ? keys.map(key => {
       const group = presets[key];
       const mode = group.mode || (key === 'fm' ? 'wfm' : 'nfm');
@@ -476,6 +560,113 @@
     document.getElementById('sweepStop').value = String(Math.round(stop));
     tuneFrequency(Math.round((start + stop) / 2), button.getAttribute('data-preset-mode') || 'nfm');
     if (els.receiverStatus) els.receiverStatus.textContent = `Range loaded ${mhz(start)}-${mhz(stop)}`;
+  }
+
+  function queueItemFromControls(label){
+    const settings = currentReceiverSettings();
+    const start = numeric('scanStart');
+    const stop = numeric('scanStop');
+    return Object.assign({
+      id: `run-${Date.now().toString(36)}-${Math.random().toString(16).slice(2, 6)}`,
+      label: label || `${mhz(settings.frequency)} ${String(settings.mode || 'nfm').toUpperCase()}`,
+      created_at: new Date().toISOString(),
+      start: Number.isFinite(start) && start > 0 ? start : null,
+      stop: Number.isFinite(stop) && stop > 0 ? stop : null
+    }, settings);
+  }
+
+  function saveRunQueue(){
+    localStorage.setItem(runQueueKey, JSON.stringify({
+      activeRunQueueId,
+      queue: runQueue
+    }));
+  }
+
+  function loadRunQueue(){
+    try {
+      const saved = JSON.parse(localStorage.getItem(runQueueKey) || '{}');
+      runQueue = Array.isArray(saved.queue) ? saved.queue.filter(item => item && Number(item.frequency) > 0) : [];
+      activeRunQueueId = saved.activeRunQueueId || (runQueue[0] && runQueue[0].id) || null;
+    } catch {
+      runQueue = [];
+      activeRunQueueId = null;
+    }
+    renderRunQueue();
+  }
+
+  function renderRunQueue(){
+    if (!els.runQueueList) return;
+    els.runQueueList.innerHTML = runQueue.length ? runQueue.map((item, index) => {
+      const active = item.id === activeRunQueueId;
+      const range = item.start && item.stop && item.stop > item.start ? `${mhz(item.start)}-${mhz(item.stop)}` : mhz(item.frequency);
+      return `<div class="capture-row ${active ? 'active' : ''}">
+        <strong>${escapeHtml(item.label || `Queue ${index + 1}`)}</strong>
+        <span>${range}</span>
+        <span>${escapeHtml(String(item.mode || 'nfm').toUpperCase())}</span>
+        <button data-apply-run-queue="${escapeHtml(item.id)}">${active ? 'Active' : 'Apply'}</button>
+        <button data-run-queue-next="${escapeHtml(item.id)}">Next</button>
+        <button data-delete-run-queue="${escapeHtml(item.id)}">Delete</button>
+      </div>`;
+    }).join('') : '<div class="empty">Run queue is empty. Add the current receiver setup, a preset, or a band map row.</div>';
+  }
+
+  function addRunQueueItem(item){
+    runQueue.push(item);
+    activeRunQueueId = activeRunQueueId || item.id;
+    saveRunQueue();
+    renderRunQueue();
+  }
+
+  function addRunQueueCurrent(){
+    addRunQueueItem(queueItemFromControls());
+  }
+
+  function applyRunQueueItem(id){
+    const item = runQueue.find(row => row.id === id);
+    if (!item) return;
+    activeRunQueueId = item.id;
+    tuneFrequency(item.frequency, item.mode || 'nfm');
+    if (document.getElementById('rxBandwidth')) document.getElementById('rxBandwidth').value = String(item.bandwidth || 12500);
+    if (document.getElementById('rxSampleRate')) document.getElementById('rxSampleRate').value = String(item.sample_rate || 2000000);
+    if (document.getElementById('rxSquelch')) document.getElementById('rxSquelch').value = String(item.squelch == null ? -90 : item.squelch);
+    if (item.start && item.stop && item.stop > item.start) {
+      document.getElementById('scanStart').value = String(Math.round(item.start));
+      document.getElementById('scanStop').value = String(Math.round(item.stop));
+      document.getElementById('sweepStart').value = String(Math.round(item.start));
+      document.getElementById('sweepStop').value = String(Math.round(item.stop));
+    }
+    saveRunQueue();
+    renderRunQueue();
+  }
+
+  function applyNextRunQueue(id){
+    if (!runQueue.length) return;
+    const current = runQueue.findIndex(item => item.id === id);
+    const next = runQueue[(current + 1 + runQueue.length) % runQueue.length];
+    applyRunQueueItem(next.id);
+  }
+
+  function deleteRunQueueItem(id){
+    runQueue = runQueue.filter(item => item.id !== id);
+    if (activeRunQueueId === id) activeRunQueueId = runQueue[0] && runQueue[0].id || null;
+    saveRunQueue();
+    renderRunQueue();
+  }
+
+  function clearRunQueue(){
+    runQueue = [];
+    activeRunQueueId = null;
+    saveRunQueue();
+    renderRunQueue();
+  }
+
+  function exportRunQueue(){
+    downloadJson('ktox-sdr-run-queue.json', {
+      schema: 'ktox-sdr-run-queue-v1',
+      exported_at: new Date().toISOString(),
+      activeRunQueueId,
+      queue: runQueue
+    });
   }
 
   function currentReceiverSettings(){
@@ -1519,6 +1710,9 @@
   document.getElementById('addVfo').addEventListener('click', addVfo);
   document.getElementById('exportVfos').addEventListener('click', exportVfos);
   document.getElementById('importVfos').addEventListener('click', importVfos);
+  document.getElementById('addRunQueueCurrent').addEventListener('click', addRunQueueCurrent);
+  document.getElementById('exportRunQueue').addEventListener('click', exportRunQueue);
+  document.getElementById('clearRunQueue').addEventListener('click', clearRunQueue);
   document.getElementById('refreshActivity').addEventListener('click', loadActivity);
   document.getElementById('refreshAlerts').addEventListener('click', loadAlerts);
   document.getElementById('saveAlertRule').addEventListener('click', saveAlertRule);
@@ -1585,6 +1779,24 @@
       }
     });
   }
+  if (els.runQueueList) {
+    els.runQueueList.addEventListener('click', (event) => {
+      const apply = event.target.closest('[data-apply-run-queue]');
+      if (apply) {
+        applyRunQueueItem(apply.getAttribute('data-apply-run-queue'));
+        return;
+      }
+      const next = event.target.closest('[data-run-queue-next]');
+      if (next) {
+        applyNextRunQueue(next.getAttribute('data-run-queue-next'));
+        return;
+      }
+      const del = event.target.closest('[data-delete-run-queue]');
+      if (del) {
+        deleteRunQueueItem(del.getAttribute('data-delete-run-queue'));
+      }
+    });
+  }
   if (els.activityList) {
     els.activityList.addEventListener('click', async (event) => {
       const button = event.target.closest('[data-promote-activity]');
@@ -1636,12 +1848,18 @@
       const rangeButton = event.target.closest('[data-preset-start]');
       if (rangeButton) {
         applyPresetRange(rangeButton);
+        addRunQueueItem(Object.assign(queueItemFromControls(rangeButton.textContent.trim() || 'Preset range'), {
+          source: 'preset-range'
+        }));
         return;
       }
       const button = event.target.closest('[data-preset-frequency]');
       if (!button) return;
       applyPresetDefaults(button);
       tuneFrequency(button.getAttribute('data-preset-frequency'), button.getAttribute('data-preset-mode') || 'nfm');
+      addRunQueueItem(Object.assign(queueItemFromControls(button.textContent.trim() || 'Preset frequency'), {
+        source: 'preset'
+      }));
     });
   }
   if (els.presetSearch) {
@@ -1652,6 +1870,12 @@
   }
   if (els.presetCategoryFilter) {
     els.presetCategoryFilter.addEventListener('change', renderPresetNavigator);
+  }
+  if (els.bandMap) {
+    els.bandMap.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-band-start]');
+      if (button) applyBandMapSelection(button);
+    });
   }
   if (els.quickStartList) {
     els.quickStartList.addEventListener('click', async (event) => {
@@ -1696,6 +1920,7 @@
   });
 
   loadSettings();
+  loadRunQueue();
   loadVfos();
   loadInfo();
   loadCaptures();

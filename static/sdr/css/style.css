@@ -247,6 +247,51 @@ p, small, span { color: var(--muted); }
   margin-bottom: 0.85rem;
 }
 
+.band-map {
+  display: grid;
+  gap: 0.55rem;
+  margin-bottom: 1rem;
+}
+
+.band-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.32fr) minmax(220px, 1fr) minmax(130px, 0.22fr);
+  gap: 0.7rem;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(2, 6, 23, 0.58);
+  padding: 0.75rem;
+  text-align: left;
+}
+
+.band-row:hover {
+  border-color: rgba(34, 211, 238, 0.45);
+}
+
+.band-row strong,
+.band-row span {
+  overflow-wrap: anywhere;
+}
+
+.band-track {
+  position: relative;
+  height: 22px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(15, 23, 42, 0.95), rgba(30, 41, 59, 0.8));
+  overflow: hidden;
+}
+
+.band-fill {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  min-width: 0.5rem;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(34, 211, 238, 0.85), rgba(52, 211, 153, 0.75));
+}
+
 .preset-buttons {
   display: flex;
   flex-wrap: wrap;
@@ -389,6 +434,15 @@ canvas {
   gap: 0.5rem;
 }
 
+.run-queue .capture-row {
+  grid-template-columns: minmax(180px, 1fr) minmax(130px, 0.45fr) minmax(90px, 0.25fr) repeat(3, auto);
+}
+
+.run-queue .capture-row.active {
+  border-color: rgba(34, 211, 238, 0.65);
+  box-shadow: inset 0 0 0 1px rgba(34, 211, 238, 0.14);
+}
+
 .receiver-tools {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
@@ -472,7 +526,7 @@ h3 {
   .app-shell { grid-template-columns: 1fr; }
   .side { border-right: 0; border-bottom: 1px solid var(--border); }
   .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .receiver-tools, .trunk-grid, .bookmark-filters, .preset-navigator { grid-template-columns: 1fr; }
+  .receiver-tools, .trunk-grid, .bookmark-filters, .preset-navigator, .band-row { grid-template-columns: 1fr; }
   .vfo-meter, .vfo-actions { grid-template-columns: 1fr; }
   .section-head, .capture-row { grid-template-columns: 1fr; display: grid; }
 }
