@@ -45,10 +45,13 @@ from http import HTTPStatus
 from http.cookies import SimpleCookie
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, urlparse, unquote
+from urllib.request import Request, urlopen
 
 from nmap_parser import parse_nmap_xml_file
 from payloads.offensive import novnc_manager
+from payloads.offensive import loki_manager
 from ktox_pi.runtime_control import resource_saver
 
 ROOT_DIR = Path(__file__).resolve().parent
@@ -56,7 +59,6 @@ WEB_DIR = ROOT_DIR / "web"
 LOOT_DIR = ROOT_DIR / "loot"
 PAYLOADS_DIR = ROOT_DIR / "payloads"
 PAYLOAD_STATE_PATH = Path("/dev/shm/ktox_payload_state.json")
-GUI_CONF_PATH = ROOT_DIR / "gui_conf.json"
 DISCORD_WEBHOOK_PATH = ROOT_DIR / "discord_webhook.txt"
 TOKEN_FILE = Path(os.environ.get("RJ_WS_TOKEN_FILE", str(ROOT_DIR / ".webui_token")))
 AUTH_FILE = Path(os.environ.get("RJ_WEB_AUTH_FILE", "/root/KTOx/.webui_auth.json"))
@@ -1045,11 +1047,20 @@ class KTOxHandler(SimpleHTTPRequestHandler):
             super().do_GET()
             return
 
+        if parsed.path == "/loki" or parsed.path.startswith("/loki/"):
+            query = parse_qs(parsed.query or "")
+            if not _auth_ok(self, query):
+                _json_response(self, {"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
+                return
+            self._proxy_loki(parsed)
+            return
+
         if (
             parsed.path.startswith("/api/loot/")
             or parsed.path.startswith("/api/payloads/")
             or parsed.path.startswith("/api/system/")
             or parsed.path.startswith("/api/desktop/")
+            or parsed.path.startswith("/api/loki/")
             or parsed.path.startswith("/api/sdr/")
             or parsed.path.startswith("/api/settings/")
             or parsed.path.startswith("/api/auth/")
@@ -1107,6 +1118,9 @@ class KTOxHandler(SimpleHTTPRequestHandler):
             if parsed.path == "/api/desktop/status":
                 self._handle_desktop_status()
                 return
+            if parsed.path == "/api/loki/status":
+                self._handle_loki_status()
+                return
             if parsed.path == "/api/sdr/status":
                 self._handle_sdr_status()
                 return
@@ -1124,6 +1138,14 @@ class KTOxHandler(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         parsed = urlparse(self.path)
+        if parsed.path == "/loki" or parsed.path.startswith("/loki/"):
+            query = parse_qs(parsed.query or "")
+            if not _auth_ok(self, query):
+                _json_response(self, {"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
+                return
+            self._proxy_loki(parsed)
+            return
+
         if parsed.path == "/api/auth/bootstrap":
             self._handle_auth_bootstrap()
             return
@@ -1190,6 +1212,15 @@ class KTOxHandler(SimpleHTTPRequestHandler):
                 self._handle_desktop_stop()
                 return
             self._handle_desktop_install_deps()
+            return
+
+        if parsed.path in ("/api/loki/start", "/api/loki/stop", "/api/loki/restart"):
+            query = parse_qs(parsed.query or "")
+            if not _auth_ok(self, query):
+                _json_response(self, {"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
+                return
+            action = parsed.path.rsplit("/", 1)[-1]
+            self._handle_loki_control(action)
             return
 
         if parsed.path == "/api/sdr/control":
@@ -1783,6 +1814,7 @@ class KTOxHandler(SimpleHTTPRequestHandler):
                 "payload_running": payload_running,
                 "payload_path": payload_path,
                 "desktop": self._desktop_status_payload(),
+                "loki": self._loki_status_payload(),
                 "sdr": _sdr_service_payload(),
             })
         except Exception as exc:
@@ -1802,6 +1834,75 @@ class KTOxHandler(SimpleHTTPRequestHandler):
 
     def _handle_desktop_status(self) -> None:
         _json_response(self, self._desktop_status_payload())
+
+    def _loki_status_payload(self) -> dict:
+        try:
+            return loki_manager.status()
+        except Exception as exc:
+            return {
+                "running": False,
+                "installed": False,
+                "ok": False,
+                "error": str(exc),
+            }
+
+    def _handle_loki_status(self) -> None:
+        _json_response(self, self._loki_status_payload())
+
+    def _handle_loki_control(self, action: str) -> None:
+        try:
+            if action == "start":
+                payload = loki_manager.start_server()
+            elif action == "stop":
+                payload = loki_manager.stop_server()
+            elif action == "restart":
+                loki_manager.stop_server()
+                payload = loki_manager.start_server()
+            else:
+                _json_response(self, {"ok": False, "error": "invalid action"}, status=HTTPStatus.BAD_REQUEST)
+                return
+            status = HTTPStatus.OK if payload.get("ok") else HTTPStatus.BAD_GATEWAY
+            _json_response(self, payload, status=status)
+        except Exception as exc:
+            _json_response(self, {"ok": False, "error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+
+    def _proxy_loki(self, parsed) -> None:
+        suffix = parsed.path[5:] if parsed.path.startswith("/loki") else "/"
+        if not suffix:
+            suffix = "/"
+        if not suffix.startswith("/"):
+            suffix = "/" + suffix
+        target = f"http://127.0.0.1:{int(loki_manager.LOKI_PORT)}{suffix}"
+        if parsed.query:
+            target += "?" + parsed.query
+        try:
+            headers = {"User-Agent": "KTOx-WebUI-Loki-Proxy/1.0"}
+            data = None
+            method = self.command.upper()
+            if method in {"POST", "PUT", "PATCH"}:
+                length = int(self.headers.get("Content-Length", "0") or "0")
+                data = self.rfile.read(length) if length > 0 else b""
+                content_type = self.headers.get("Content-Type")
+                if content_type:
+                    headers["Content-Type"] = content_type
+            req = Request(target, data=data, headers=headers, method=method)
+            with urlopen(req, timeout=15) as resp:
+                body = resp.read()
+                content_type = resp.headers.get("Content-Type", "application/octet-stream")
+                self.send_response(resp.status)
+                self.send_header("Content-Type", content_type)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+        except HTTPError as exc:
+            body = exc.read()
+            self.send_response(exc.code)
+            self.send_header("Content-Type", exc.headers.get("Content-Type", "text/plain; charset=utf-8"))
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        except URLError:
+            _json_response(self, {"ok": False, "error": "loki unavailable"}, status=HTTPStatus.BAD_GATEWAY)
 
     def _handle_sdr_status(self) -> None:
         _json_response(self, _sdr_service_payload())

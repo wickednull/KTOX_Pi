@@ -156,6 +156,7 @@ cp -r "$FIRMWARE_DIR/payloads"                         "$KTOX_DIR/"
 [[ -d "$FIRMWARE_DIR/services" ]] && cp -r "$FIRMWARE_DIR/services" "$KTOX_DIR/"
 [[ -d "$FIRMWARE_DIR/static" ]]   && cp -r "$FIRMWARE_DIR/static"   "$KTOX_DIR/"
 [[ -d "$FIRMWARE_DIR/tools" ]]    && cp -r "$FIRMWARE_DIR/tools"    "$KTOX_DIR/"
+[[ -d "$FIRMWARE_DIR/vendor" ]]   && cp -r "$FIRMWARE_DIR/vendor"   "$KTOX_DIR/"
 [[ -d "$FIRMWARE_DIR/img" ]]      && cp -r "$FIRMWARE_DIR/img"      "$KTOX_DIR/"
 
 mkdir -p "$KTOX_DIR/img"
