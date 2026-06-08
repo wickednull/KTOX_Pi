@@ -80,6 +80,7 @@
   const sysLoad = document.getElementById('sysLoad');
   const sysPayload = document.getElementById('sysPayload');
   const sysInterfaces = document.getElementById('sysInterfaces');
+  const resourceSaverBtn = document.getElementById('resourceSaverBtn');
   const mobileSystemStatus = document.getElementById('mobileSystemStatus');
   const mobSysCpuValue = document.getElementById('mobSysCpuValue');
   const mobSysCpuBar = document.getElementById('mobSysCpuBar');
@@ -1626,6 +1627,32 @@
     }
   }
 
+  async function runResourceSaver(){
+    if (!resourceSaverBtn) return;
+    resourceSaverBtn.disabled = true;
+    resourceSaverBtn.classList.add('opacity-60');
+    setSystemStatus('Saving resources...');
+    try {
+      const res = await apiFetch(getApiUrl('/api/system/resource-saver'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        throw new Error(data && data.error ? data.error : 'resource_saver_failed');
+      }
+      const killed = Array.isArray(data.killed_pids) ? data.killed_pids.length : 0;
+      setSystemStatus(killed ? `Saved resources, stopped ${killed}` : 'Resources saved');
+      await loadSystemStatus();
+    } catch (e) {
+      setSystemStatus('Resource saver failed');
+    } finally {
+      resourceSaverBtn.disabled = false;
+      resourceSaverBtn.classList.remove('opacity-60');
+    }
+  }
+
 
   async function installDesktopDeps(){
     const buttons = [desktopFrameInstallDeps].filter(Boolean);
@@ -2630,6 +2657,9 @@
   }
   if (sdrServiceRefresh) {
     sdrServiceRefresh.addEventListener('click', loadSdrServiceStatus);
+  }
+  if (resourceSaverBtn) {
+    resourceSaverBtn.addEventListener('click', runResourceSaver);
   }
   if (navPayloadStudio) navPayloadStudio.href = './ide.html' + getForwardSearch();
   themeButtons.forEach(btn => {

@@ -3360,6 +3360,34 @@ _STEALTH_THEMES = [
 _stealth_theme_idx = 0
 
 
+def _load_stealth_theme_idx() -> int:
+    try:
+        data = json.loads(Path(default.config_file).read_text())
+        raw = data.get("LOCK", {}).get("stealth_theme", 0)
+        return max(0, int(raw)) % len(_STEALTH_THEMES)
+    except Exception:
+        return 0
+
+
+def _save_stealth_theme_idx(idx: int):
+    try:
+        path = default.config_file
+        try:
+            data = json.loads(Path(path).read_text())
+        except Exception:
+            data = {}
+        data.setdefault("LOCK", {})["stealth_theme"] = max(0, int(idx)) % len(_STEALTH_THEMES)
+        tmp = path + ".tmp"
+        Path(tmp).write_text(json.dumps(data, indent=4, sort_keys=True))
+        os.replace(tmp, path)
+        try:
+            os.chmod(path, 0o600)
+        except Exception:
+            pass
+    except Exception as e:
+        print(f"[LOCK] save stealth theme error: {e}")
+
+
 def _draw_stealth_theme(ts):
     """Call the active stealth theme renderer."""
     global _stealth_theme_idx
@@ -3391,7 +3419,7 @@ def enter_stealth():
         pass
 
     global _stealth_theme_idx
-    _stealth_theme_idx = 0          # always start on clock theme
+    _stealth_theme_idx = _load_stealth_theme_idx()
     _sysmon_start = [None]          # reset sysmon uptime counter each entry
     key2_held_since = None          # for 5-second theme-switch hold
     THEME_HOLD_SEC  = 5.0
@@ -3428,6 +3456,7 @@ def enter_stealth():
                         elif time.time() - key2_held_since >= THEME_HOLD_SEC:
                             _stealth_theme_idx = (
                                 _stealth_theme_idx + 1) % len(_STEALTH_THEMES)
+                            _save_stealth_theme_idx(_stealth_theme_idx)
                             key2_held_since = None   # require re-hold for next
                             # Brief flash to confirm theme change
                             with draw_lock:

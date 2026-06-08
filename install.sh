@@ -14,6 +14,39 @@ grep -q $'\r' "$0" && { command -v dos2unix >/dev/null 2>&1 || apt-get install -
 
 FIRMWARE_DIR="$(cd "$(dirname "$0")" && pwd)"
 KTOX_DIR="/root/KTOx"
+USER_STATE_BACKUP=""
+
+backup_user_state() {
+    [[ -d "$KTOX_DIR" ]] || return 0
+    USER_STATE_BACKUP="$(python3 - "$FIRMWARE_DIR" "$KTOX_DIR" <<'PY' || true
+import sys
+sys.path.insert(0, sys.argv[1])
+try:
+    from ktox_pi.persistent_state import backup_user_state
+    backup_dir, copied = backup_user_state(sys.argv[2])
+    print(backup_dir if copied else "")
+except Exception:
+    print("")
+PY
+)"
+    [[ -n "$USER_STATE_BACKUP" ]] && info "Saved user settings for restore"
+}
+
+restore_user_state() {
+    [[ -n "$USER_STATE_BACKUP" ]] || return 0
+    python3 - "$FIRMWARE_DIR" "$KTOX_DIR" "$USER_STATE_BACKUP" <<'PY' || true
+import sys
+sys.path.insert(0, sys.argv[1])
+try:
+    from ktox_pi.persistent_state import restore_user_state
+    ok, restored = restore_user_state(sys.argv[3], sys.argv[2])
+    print(f"restored {len(restored)} user state entries" if ok else "restore skipped")
+except Exception as exc:
+    print(f"restore failed: {exc}")
+PY
+}
+
+backup_user_state
 
 printf "\e[1;31m"
 cat << 'BANNER'
@@ -140,6 +173,7 @@ for f in "${KTOX_SUITE[@]}"; do
 done
 [[ -d "$FIRMWARE_DIR/assets" ]] && cp -r "$FIRMWARE_DIR/assets" "$KTOX_DIR/"
 fi
+restore_user_state
 info "KTOx main suite installed"
 
 # Install Python dependencies from requirements.txt

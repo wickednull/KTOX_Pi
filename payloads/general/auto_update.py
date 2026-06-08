@@ -43,6 +43,15 @@ REQUIRED_FILES = [
     "payloads/utilities/auto_update.py",
 ]
 
+sys.path.insert(0, KTOX_DIR)
+try:
+    from ktox_pi.persistent_state import backup_user_state, restore_user_state
+except Exception:
+    def backup_user_state(root=KTOX_DIR):
+        return "", []
+    def restore_user_state(backup_dir, root=KTOX_DIR):
+        return False, []
+
 PINS = {"KEY1": 21, "KEY3": 16}
 W, H = 128, 128
 
@@ -369,12 +378,17 @@ def run_update() -> None:
         time.sleep(4)
         return
 
+    user_state_dir, user_state_items = backup_user_state(KTOX_DIR)
+
     _show("UPDATING", [("Fetching GitHub...", DIM), ("Fallback enabled", TEXT)])
     ok, msg = git_update()
     if not ok:
         _show("UPDATE FAILED", [(msg[:22], YELLOW), (msg[22:44], TEXT), (msg[44:66], TEXT)], YELLOW)
         time.sleep(6)
         return
+
+    if user_state_items:
+        restore_user_state(user_state_dir, KTOX_DIR)
 
     _show("INSTALLING", [(msg, GREEN), ("Running install.sh", DIM)])
     ok, msg = run_installer()

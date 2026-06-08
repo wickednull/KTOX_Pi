@@ -49,12 +49,14 @@ from urllib.parse import parse_qs, urlparse, unquote
 
 from nmap_parser import parse_nmap_xml_file
 from payloads.offensive import novnc_manager
+from ktox_pi.runtime_control import resource_saver
 
 ROOT_DIR = Path(__file__).resolve().parent
 WEB_DIR = ROOT_DIR / "web"
 LOOT_DIR = ROOT_DIR / "loot"
 PAYLOADS_DIR = ROOT_DIR / "payloads"
 PAYLOAD_STATE_PATH = Path("/dev/shm/ktox_payload_state.json")
+GUI_CONF_PATH = ROOT_DIR / "gui_conf.json"
 DISCORD_WEBHOOK_PATH = ROOT_DIR / "discord_webhook.txt"
 TOKEN_FILE = Path(os.environ.get("RJ_WS_TOKEN_FILE", str(ROOT_DIR / ".webui_token")))
 AUTH_FILE = Path(os.environ.get("RJ_WEB_AUTH_FILE", "/root/KTOx/.webui_auth.json"))
@@ -1168,6 +1170,14 @@ class KTOxHandler(SimpleHTTPRequestHandler):
             self._handle_system_restart_ui()
             return
 
+        if parsed.path == "/api/system/resource-saver":
+            query = parse_qs(parsed.query or "")
+            if not _auth_ok(self, query):
+                _json_response(self, {"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
+                return
+            self._handle_system_resource_saver()
+            return
+
         if parsed.path in ("/api/desktop/start", "/api/desktop/stop", "/api/desktop/install-deps"):
             query = parse_qs(parsed.query or "")
             if not _auth_ok(self, query):
@@ -1850,6 +1860,14 @@ class KTOxHandler(SimpleHTTPRequestHandler):
             _json_response(self, {"error": err}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
         except Exception as exc:
             _json_response(self, {"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+
+    def _handle_system_resource_saver(self) -> None:
+        try:
+            payload = resource_saver()
+            payload["ok"] = True
+            _json_response(self, payload)
+        except Exception as exc:
+            _json_response(self, {"ok": False, "error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
 
     def _client_ip(self) -> str:
         try:

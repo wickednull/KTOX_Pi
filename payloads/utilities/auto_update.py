@@ -64,6 +64,14 @@ REQUIRED_SDR_FILES = [
     "scripts/install_sdr.sh",
 ]
 
+try:
+    from ktox_pi.persistent_state import backup_user_state, restore_user_state
+except Exception:
+    def backup_user_state(root=RASPYJACK_DIR):
+        return "", []
+    def restore_user_state(backup_dir, root=RASPYJACK_DIR):
+        return False, []
+
 PINS = {"KEY1": 21, "KEY3": 16}
 
 # ---------------------------------------------------------------------------
@@ -530,6 +538,7 @@ try:
             ok, payloads_backup = backup_payloads()
             if not ok:
                 show(["Payload save fail", payloads_backup], invert=True); time.sleep(4); break
+            user_state_dir, user_state_items = backup_user_state(RASPYJACK_DIR)
 
             # 2. Pull latest
             show(["Updating…"])
@@ -542,6 +551,8 @@ try:
             ok, info = restore_custom_payloads(payloads_backup)
             if not ok:
                 show(["Restore failed", info], invert=True); time.sleep(4); break
+            if user_state_items:
+                restore_user_state(user_state_dir, RASPYJACK_DIR)
 
             # 3. Restart service
             show(["Restarting…"])
