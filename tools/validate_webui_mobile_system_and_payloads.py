@@ -47,6 +47,16 @@ def main() -> None:
     require("setActiveTab('system')" in app, "mobile system nav does not open the system panel")
     require("tab === 'device' || tab === 'terminal';" in app, "system monitor must be a real mobile tab, not part of the device tab")
     require("mobile-system-overlay" not in app, "mobile system overlay state should not be used")
+
+    loki_index = index.find("Loki WebUI")
+    sdr_index = index.find('id="sdrServiceStart"')
+    interfaces_index = index.find('id="sysInterfaces"')
+    require(loki_index != -1 and sdr_index != -1 and interfaces_index != -1, "desktop System SDR controller placement markers are missing")
+    require(loki_index < sdr_index < interfaces_index, "desktop SDR controller must sit between Loki WebUI and Interfaces in System")
+    require('id="sdrServiceOpen"' in index and 'id="sdrServiceStop"' in index, "desktop SDR controller needs open and stop buttons")
+    require("sdrServiceStart" in app and "'enable-start'" in app, "SDR Start button must enable and start ktox-sdr.service")
+    require("sdrServiceStop" in app and "'disable'" in app, "SDR Stop button must stop/disable ktox-sdr.service")
+
     css = read("web/ui.css")
     require("#systemTab.mobile-system-tab" in css, "mobile system tab styling is missing")
     require("body.mobile-system-overlay #systemTab" not in css, "old mobile system overlay CSS returned")

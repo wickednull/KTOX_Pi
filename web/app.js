@@ -49,8 +49,10 @@
   const sdrServiceToggle = document.getElementById('sdrServiceToggle');
   const sdrServiceState = document.getElementById('sdrServiceState');
   const sdrServiceStatus = document.getElementById('sdrServiceStatus');
+  const sdrServiceStart = document.getElementById('sdrServiceStart');
+  const sdrServiceOpen = document.getElementById('sdrServiceOpen');
+  const sdrServiceStop = document.getElementById('sdrServiceStop');
   const sdrServiceRefresh = document.getElementById('sdrServiceRefresh');
-  const sdrServiceKill = document.getElementById('sdrServiceKill');
   const navLoot = document.getElementById('navLoot');
   const navSettings = document.getElementById('navSettings');
   const navPayloadStudio = document.getElementById('navPayloadStudio');
@@ -1458,6 +1460,14 @@
       sdrServiceToggle.checked = running && !disabled;
       sdrServiceToggle.disabled = !installed;
     }
+    if (sdrServiceStart) sdrServiceStart.disabled = !installed || running;
+    if (sdrServiceStop) sdrServiceStop.disabled = !installed || (!running && disabled);
+    if (sdrServiceOpen){
+      sdrServiceOpen.href = resolveSdrUrl();
+      sdrServiceOpen.classList.toggle('opacity-50', !running);
+      sdrServiceOpen.classList.toggle('pointer-events-none', !running);
+      sdrServiceOpen.title = running ? 'Open SDR Suite' : 'Start SDR service first';
+    }
     if (sdrServiceState){
       sdrServiceState.textContent = state;
       sdrServiceState.classList.toggle('text-emerald-300', running);
@@ -1468,11 +1478,11 @@
       if (!installed){
         sdrServiceStatus.textContent = 'SDR service is not installed. Run scripts/install_sdr.sh before enabling it.';
       } else if (running){
-        sdrServiceStatus.textContent = 'SDR Suite is active. Turn this off to stop ktox-sdr and save memory.';
+        sdrServiceStatus.textContent = 'SDR Suite is active. Stop it when you need to save memory.';
       } else if (disabled){
         sdrServiceStatus.textContent = 'SDR is disabled and stopped. Memory-saving mode is active.';
       } else {
-        sdrServiceStatus.textContent = `SDR service is ${state}. Toggle on to start it when needed.`;
+        sdrServiceStatus.textContent = `SDR service is ${state}. Start it when needed.`;
       }
       applyStatusTone(sdrServiceStatus, running ? 'running' : (disabled ? 'disabled' : state));
     }
@@ -1497,9 +1507,12 @@
   }
 
   async function controlSdrService(action){
-    const controls = [sdrServiceToggle, sdrServiceRefresh, sdrServiceKill].filter(Boolean);
-    controls.forEach(control => { control.disabled = true; control.classList.add('opacity-60'); });
-    if (sdrServiceStatus) sdrServiceStatus.textContent = action === 'disable' ? 'Stopping and disabling SDR...' : 'Starting SDR service...';
+    const controls = [sdrServiceToggle, sdrServiceStart, sdrServiceOpen, sdrServiceStop, sdrServiceRefresh].filter(Boolean);
+    controls.forEach(control => {
+      if ('disabled' in control) control.disabled = true;
+      control.classList.add('opacity-60');
+    });
+    if (sdrServiceStatus) sdrServiceStatus.textContent = action === 'disable' ? 'Stopping SDR service...' : 'Starting SDR service...';
     try{
       const res = await apiFetch(getApiUrl('/api/sdr/control'), {
         method: 'POST',
@@ -1520,7 +1533,7 @@
       await loadSdrServiceStatus();
     } finally {
       controls.forEach(control => {
-        control.disabled = control === sdrServiceToggle && control.dataset.installed === '0';
+        if ('disabled' in control) control.disabled = control === sdrServiceToggle && control.dataset.installed === '0';
         control.classList.remove('opacity-60');
       });
     }
@@ -2598,13 +2611,22 @@
       }
     });
   }
+  if (sdrServiceOpen) {
+    sdrServiceOpen.href = resolveSdrUrl();
+    sdrServiceOpen.addEventListener('click', () => {
+      sdrServiceOpen.href = resolveSdrUrl();
+    });
+  }
   if (sdrServiceToggle) {
     sdrServiceToggle.addEventListener('change', () => {
       controlSdrService(sdrServiceToggle.checked ? 'enable-start' : 'disable');
     });
   }
-  if (sdrServiceKill) {
-    sdrServiceKill.addEventListener('click', () => controlSdrService('disable'));
+  if (sdrServiceStart) {
+    sdrServiceStart.addEventListener('click', () => controlSdrService('enable-start'));
+  }
+  if (sdrServiceStop) {
+    sdrServiceStop.addEventListener('click', () => controlSdrService('disable'));
   }
   if (sdrServiceRefresh) {
     sdrServiceRefresh.addEventListener('click', loadSdrServiceStatus);
