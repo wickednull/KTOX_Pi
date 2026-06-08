@@ -40,6 +40,14 @@ VERSION      = "1.0"
 sys.path.insert(0, KTOX_DIR)
 sys.path.insert(0, KTOX_DIR + "/ktox_pi")
 
+try:
+    from runtime_control import start_payload_monitor, stop_payload_monitor
+except Exception:
+    def start_payload_monitor(_path):
+        return {"required": False, "started": False, "iface": None}
+    def stop_payload_monitor(_session=None):
+        return {"stopped": False, "iface": None, "errors": []}
+
 # ── WebUI input bridge (independent of physical hardware) ──────────────────────
 
 try:
@@ -1794,6 +1802,7 @@ def exec_payload(filename, *args):
 
     os.makedirs(LOOT_DIR, exist_ok=True)
     log_fh = open(default.payload_log, "ab", buffering=0)
+    monitor_session = start_payload_monitor(full)
 
     try:
         result = subprocess.run(
@@ -1832,6 +1841,7 @@ def exec_payload(filename, *args):
     except Exception as exc:
         print(f"[PAYLOAD] ERROR: {exc!r}")
     finally:
+        stop_payload_monitor(monitor_session)
         log_fh.close()
 
     # ── Restore hardware ────────────────────────────────────────────────────
