@@ -33,6 +33,7 @@ import json
 import base64
 import hmac
 import hashlib
+import http.client
 import mimetypes
 import os
 import secrets
@@ -50,9 +51,13 @@ from urllib.parse import parse_qs, urlparse, unquote
 from urllib.request import Request, urlopen
 
 from nmap_parser import parse_nmap_xml_file
+<<<<<<< HEAD
+from payloads.offensive import loki_manager, novnc_manager
+=======
 from payloads.offensive import novnc_manager
 from payloads.offensive import loki_manager
 from ktox_pi.runtime_control import resource_saver
+>>>>>>> abeb4268602c2725370cc0492bab48e60806bdcc
 
 ROOT_DIR = Path(__file__).resolve().parent
 WEB_DIR = ROOT_DIR / "web"
@@ -69,6 +74,64 @@ WS_TICKET_TTL_SECONDS = int(os.environ.get("RJ_WEB_WS_TICKET_TTL", "120"))
 TAILSCALE_KEY_PATH = ROOT_DIR / ".tailscale_auth_key"
 TAILSCALE_STATUS_PATH = Path("/dev/shm/rj_tailscale_status.json")
 SDR_SERVICE_NAME = "ktox-sdr.service"
+LOKI_PROXY_HOST = os.environ.get("KTOX_LOKI_PROXY_HOST", "127.0.0.1")
+LOKI_PROXY_PORT = int(os.environ.get("LOKI_PORT", "8000"))
+LOKI_PROXY_PREFIXES = (
+    "/api/stats",
+    "/api/vulnerabilities",
+    "/api/host_loot_summary/",
+    "/api/theme",
+    "/api/themes",
+    "/api/theme_font",
+    "/api/v1/",
+    "/api/export_host/",
+    "/events",
+    "/load_config",
+    "/restore_default_config",
+    "/get_web_delay",
+    "/scan_wifi",
+    "/network_data",
+    "/netkb_data",
+    "/netkb_data_json",
+    "/get_networks",
+    "/screen.png",
+    "/favicon.ico",
+    "/manifest.json",
+    "/apple-touch-icon",
+    "/get_logs",
+    "/list_credentials",
+    "/download_credentials",
+    "/list_files",
+    "/download_file",
+    "/download_backup",
+    "/list_logs",
+    "/download_log",
+    "/save_config",
+    "/connect_wifi",
+    "/disconnect_wifi",
+    "/clear_files",
+    "/clear_files_light",
+    "/initialize_csv",
+    "/reboot",
+    "/shutdown",
+    "/restart_loki_service",
+    "/backup",
+    "/restore",
+    "/stop_orchestrator",
+    "/start_orchestrator",
+    "/execute_manual_attack",
+    "/clear_hosts",
+    "/clear_scan_logs",
+    "/clear_stats",
+    "/clear_stolen_files",
+    "/clear_credentials",
+    "/clear_all",
+    "/stop_manual_attack",
+    "/mark_action_start",
+    "/add_manual_target",
+    "/api/terminal",
+    "/api/update_kev",
+)
 
 
 # ── Payload compatibility converter helpers ──────────────────────────────────
@@ -1026,6 +1089,65 @@ class KTOxHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(WEB_DIR), **kwargs)
 
+    def _is_loki_proxy_path(self, path: str) -> bool:
+        return path in {"/loki", "/loki/"} or path.startswith("/loki/") or any(path == prefix or path.startswith(prefix) for prefix in LOKI_PROXY_PREFIXES)
+
+    def _loki_upstream_path(self, parsed) -> str:
+        path = parsed.path
+        if path == "/loki":
+            upstream = "/"
+        elif path.startswith("/loki/"):
+            upstream = path.removeprefix("/loki") or "/"
+        else:
+            upstream = path
+        if parsed.query:
+            upstream = f"{upstream}?{parsed.query}"
+        return upstream
+
+    def _proxy_loki_request(self, parsed, method: str = "GET") -> None:
+        body = None
+        if method in {"POST", "PUT", "PATCH"}:
+            try:
+                length = int(self.headers.get("Content-Length", "0") or "0")
+            except Exception:
+                length = 0
+            body = self.rfile.read(length) if length > 0 else None
+
+        headers = {}
+        for key in ("Accept", "Content-Type", "User-Agent"):
+            value = self.headers.get(key)
+            if value:
+                headers[key] = value
+        headers["Host"] = f"{LOKI_PROXY_HOST}:{LOKI_PROXY_PORT}"
+
+        conn = http.client.HTTPConnection(LOKI_PROXY_HOST, LOKI_PROXY_PORT, timeout=15)
+        try:
+            conn.request(method, self._loki_upstream_path(parsed), body=body, headers=headers)
+            resp = conn.getresponse()
+            data = resp.read()
+        except Exception as exc:
+            _json_response(self, {"ok": False, "error": f"Loki proxy error: {exc}"}, status=HTTPStatus.BAD_GATEWAY)
+            return
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+        self.send_response(resp.status)
+        skipped = {"connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailer", "transfer-encoding", "upgrade", "content-length"}
+        for key, value in resp.getheaders():
+            lower = key.lower()
+            if lower in skipped:
+                continue
+            if lower == "location" and value.startswith("/"):
+                value = "/loki" + value
+            self.send_header(key, value)
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        if data:
+            self.wfile.write(data)
+
     def _redirect_to_sdr_suite(self):
         forwarded_host = (self.headers.get("X-Forwarded-Host") or "").strip()
         raw_host = forwarded_host or (self.headers.get("Host") or "").strip()
@@ -1038,6 +1160,14 @@ class KTOxHandler(SimpleHTTPRequestHandler):
 
     def do_GET(self):
         parsed = urlparse(self.path)
+        if self._is_loki_proxy_path(parsed.path) and not parsed.path.startswith("/api/loki/"):
+            query = parse_qs(parsed.query or "")
+            if not _auth_ok(self, query):
+                _json_response(self, {"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
+                return
+            self._proxy_loki_request(parsed, "GET")
+            return
+
         if parsed.path == "/sdr-suite":
             self._redirect_to_sdr_suite()
             return
@@ -1214,13 +1344,24 @@ class KTOxHandler(SimpleHTTPRequestHandler):
             self._handle_desktop_install_deps()
             return
 
+<<<<<<< HEAD
+        if parsed.path in ("/api/loki/start", "/api/loki/stop"):
+=======
         if parsed.path in ("/api/loki/start", "/api/loki/stop", "/api/loki/restart"):
+>>>>>>> abeb4268602c2725370cc0492bab48e60806bdcc
             query = parse_qs(parsed.query or "")
             if not _auth_ok(self, query):
                 _json_response(self, {"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
                 return
+<<<<<<< HEAD
+            if parsed.path == "/api/loki/start":
+                self._handle_loki_start()
+                return
+            self._handle_loki_stop()
+=======
             action = parsed.path.rsplit("/", 1)[-1]
             self._handle_loki_control(action)
+>>>>>>> abeb4268602c2725370cc0492bab48e60806bdcc
             return
 
         if parsed.path == "/api/sdr/control":
@@ -1251,6 +1392,13 @@ class KTOxHandler(SimpleHTTPRequestHandler):
                 _json_response(self, {"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
                 return
             self._handle_payloads_convert()
+            return
+        if self._is_loki_proxy_path(parsed.path):
+            query = parse_qs(parsed.query or "")
+            if not _auth_ok(self, query):
+                _json_response(self, {"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
+                return
+            self._proxy_loki_request(parsed, "POST")
             return
         _json_response(self, {"error": "not found"}, status=HTTPStatus.NOT_FOUND)
 
@@ -1832,9 +1980,27 @@ class KTOxHandler(SimpleHTTPRequestHandler):
                 "error": str(exc),
             }
 
+    def _loki_status_payload(self) -> dict:
+        try:
+            payload = loki_manager.status()
+            payload.setdefault("ok", True)
+            return payload
+        except Exception as exc:
+            return {
+                "running": False,
+                "installed": False,
+                "ok": False,
+                "error": str(exc),
+            }
+
     def _handle_desktop_status(self) -> None:
         _json_response(self, self._desktop_status_payload())
 
+<<<<<<< HEAD
+    def _handle_loki_status(self) -> None:
+        _json_response(self, self._loki_status_payload())
+
+=======
     def _loki_status_payload(self) -> dict:
         try:
             return loki_manager.status()
@@ -1904,6 +2070,7 @@ class KTOxHandler(SimpleHTTPRequestHandler):
         except URLError:
             _json_response(self, {"ok": False, "error": "loki unavailable"}, status=HTTPStatus.BAD_GATEWAY)
 
+>>>>>>> abeb4268602c2725370cc0492bab48e60806bdcc
     def _handle_sdr_status(self) -> None:
         _json_response(self, _sdr_service_payload())
 
@@ -1941,6 +2108,20 @@ class KTOxHandler(SimpleHTTPRequestHandler):
     def _handle_desktop_install_deps(self) -> None:
         try:
             _json_response(self, novnc_manager.install_dependencies_async())
+        except Exception as exc:
+            _json_response(self, {"ok": False, "error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+
+    def _handle_loki_start(self) -> None:
+        try:
+            payload = loki_manager.start_server()
+            status = HTTPStatus.OK if payload.get("ok") else HTTPStatus.BAD_GATEWAY
+            _json_response(self, payload, status=status)
+        except Exception as exc:
+            _json_response(self, {"ok": False, "error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+
+    def _handle_loki_stop(self) -> None:
+        try:
+            _json_response(self, loki_manager.stop_server())
         except Exception as exc:
             _json_response(self, {"ok": False, "error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
 
