@@ -9,6 +9,14 @@ info()  { printf "\e[1;32m[ ok ]\e[0m %s\n" "$*"; }
 warn()  { printf "\e[1;33m[warn]\e[0m %s\n" "$*"; }
 fail()  { printf "\e[1;31m[FAIL]\e[0m %s\n" "$*"; exit 1; }
 
+AUTO_REBOOT=1
+for arg in "$@"; do
+    case "$arg" in
+        --no-reboot) AUTO_REBOOT=0 ;;
+        *) fail "Unknown option: $arg" ;;
+    esac
+done
+
 grep -q $'\r' "$0" && { command -v dos2unix >/dev/null 2>&1 || apt-get install -y dos2unix; dos2unix "$0"; }
 [[ $EUID -ne 0 ]] && fail "Run as root: sudo bash install.sh"
 
@@ -400,5 +408,9 @@ echo "    Loot    /root/KTOx/loot/"
 echo
 printf "\e[1;31m  authorized eyes only · wickednull\e[0m\n"
 echo
-printf "\e[1;33m  Rebooting in 5s… Ctrl+C to cancel\e[0m\n"
-sleep 5 && reboot
+if [[ "$AUTO_REBOOT" -eq 1 ]]; then
+    printf "\e[1;33m  Rebooting in 5s… Ctrl+C to cancel\e[0m\n"
+    sleep 5 && reboot
+else
+    info "Automatic reboot deferred to caller"
+fi

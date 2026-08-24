@@ -34,6 +34,7 @@ def main() -> int:
         'chmod +x "$KTOX_DIR/ktox_device.py"' in text and text.find('chmod +x "$KTOX_DIR/ktox_device.py"') > close_pos,
         "installer should continue into permissions after skipping copy",
     )
+    require("--no-reboot" in text and '[[ "$AUTO_REBOOT" -eq 1 ]]' in text, "installer should let OTA own the reboot")
     print("install in-place validation passed")
     return 0
 

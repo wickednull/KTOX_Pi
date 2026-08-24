@@ -103,6 +103,7 @@ _temp_c      = 0.0
 
 PAYLOAD_STATE_PATH   = "/dev/shm/ktox_payload_state.json"
 PAYLOAD_REQUEST_PATH = "/dev/shm/ktox_payload_request.json"   # WebUI uses ktox_ prefix
+PAYLOAD_REQUEST_PATHS = (PAYLOAD_REQUEST_PATH, "/dev/shm/rj_payload_request.json")
 
 # ── Global LCD / image / draw (KTOx pattern — must be globals) ───────────
 
@@ -593,16 +594,21 @@ def _write_payload_state(running: bool, path=None):
 
 
 def _check_payload_request():
-    try:
-        if not os.path.isfile(PAYLOAD_REQUEST_PATH):
-            return None
-        with open(PAYLOAD_REQUEST_PATH) as f:
-            data = json.load(f)
-        os.remove(PAYLOAD_REQUEST_PATH)
-        if data.get("action") == "start" and data.get("path"):
-            return str(data["path"])
-    except Exception:
-        pass
+    for request_path in PAYLOAD_REQUEST_PATHS:
+        try:
+            with open(request_path) as f:
+                data = json.load(f)
+            if data.get("action") == "start" and data.get("path"):
+                for stale_path in PAYLOAD_REQUEST_PATHS:
+                    try:
+                        os.remove(stale_path)
+                    except OSError:
+                        pass
+                return str(data["path"])
+        except (FileNotFoundError, OSError):
+            pass
+        except Exception:
+            pass
     return None
 
 

@@ -23,6 +23,7 @@ from datetime import datetime
 
 
 DIAGNOSE_ONLY = "--diagnose" in sys.argv
+ASSUME_YES = "--yes" in sys.argv or "--non-interactive" in sys.argv
 
 KTOX_DIR = "/root/KTOx"
 PAYLOADS_DIR = os.path.join(KTOX_DIR, "payloads")
@@ -39,6 +40,7 @@ REQUIRED_FILES = [
     "install.sh",
     "ktox_device.py",
     "web_server.py",
+    "ktox_pi/persistent_state.py",
     "payloads/general/auto_update.py",
     "payloads/utilities/auto_update.py",
 ]
@@ -242,6 +244,47 @@ def copy_repo_tree(src_root: str, dst_root: str) -> None:
             shutil.copy2(src, dst)
 
 
+def deploy_fetched_tree(fetched_ref: str) -> tuple[bool, str]:
+    """Export a fetched commit and overlay it without resetting the live checkout."""
+    try:
+        with tempfile.TemporaryDirectory(prefix="ktox-ota-git-") as tmp:
+            archive = os.path.join(tmp, "fetched.tar.gz")
+            stage = os.path.join(tmp, "stage")
+            os.makedirs(stage)
+            rc, msg = _run(
+                [
+                    "git", "-C", KTOX_DIR, "archive", "--format=tar.gz",
+                    f"--output={archive}", fetched_ref,
+                ],
+                timeout=TIMEOUT,
+            )
+            if rc != 0:
+                return False, f"git archive failed: {short_msg(msg, f'rc={rc}')}"
+            with tarfile.open(archive, "r:gz") as tar:
+                stage_abs = os.path.abspath(stage)
+                members = []
+                for member in tar.getmembers():
+                    target = os.path.abspath(os.path.join(stage, member.name))
+                    if target == stage_abs or target.startswith(stage_abs + os.sep):
+                        members.append(member)
+                tar.extractall(stage, members=members)
+            missing = [name for name in REQUIRED_FILES if not os.path.isfile(os.path.join(stage, name))]
+            if missing:
+                return False, f"staged update missing {missing[0]}"
+            copy_repo_tree(stage, KTOX_DIR)
+            missing = [name for name in REQUIRED_FILES if not os.path.isfile(os.path.join(KTOX_DIR, name))]
+            if missing:
+                return False, f"installed update missing {missing[0]}"
+            try:
+                with open(os.path.join(KTOX_DIR, ".ktox_version"), "w", encoding="utf-8") as handle:
+                    handle.write(fetched_ref + "\n")
+            except Exception:
+                pass
+            return True, f"git export OK {fetched_ref[:7]}"
+    except Exception as exc:
+        return False, f"git export failed: {str(exc)[:100]}"
+
+
 def archive_update() -> tuple[bool, str]:
     try:
         with tempfile.TemporaryDirectory(prefix="ktox-ota-") as tmp:
@@ -283,7 +326,7 @@ def git_update() -> tuple[bool, str]:
         archive_ok, archive_msg = archive_update()
         return (archive_ok, archive_msg if archive_ok else f"{remote_msg}; {archive_msg}")
 
-    rc, msg = _run(["git", "-C", KTOX_DIR, "fetch", "--prune", REMOTE, f"{BRANCH}:refs/remotes/{REMOTE}/{BRANCH}"])
+    rc, msg = _run(["git", "-C", KTOX_DIR, "fetch", "--prune", REMOTE, f"+{BRANCH}:refs/remotes/{REMOTE}/{BRANCH}"])
     if rc != 0:
         probe_ok, probe_msg = github_probe()
         archive_ok, archive_msg = archive_update()
@@ -309,10 +352,13 @@ def git_update() -> tuple[bool, str]:
     if missing:
         return False, f"remote missing {missing[0]} ({remote_msg})"
 
-    rc, msg = _run(["git", "-C", KTOX_DIR, "reset", "--hard", fetched_ref])
-    if rc != 0:
-        return False, f"reset failed: {short_msg(msg, f'rc={rc}')}"
-    return True, "git reset OK"
+    deploy_ok, deploy_msg = deploy_fetched_tree(fetched_ref)
+    if deploy_ok:
+        return True, deploy_msg
+    archive_ok, archive_msg = archive_update()
+    if archive_ok:
+        return True, archive_msg
+    return False, f"{deploy_msg}; {archive_msg}"
 
 
 def backup_loot() -> tuple[bool, str]:
@@ -331,7 +377,7 @@ def run_installer() -> tuple[bool, str]:
     script = os.path.join(KTOX_DIR, "install.sh")
     if not os.path.isfile(script):
         return False, "install.sh missing"
-    rc, msg = _run(["bash", script], cwd=KTOX_DIR, timeout=900)
+    rc, msg = _run(["bash", script, "--no-reboot"], cwd=KTOX_DIR, timeout=900)
     return (rc == 0), ("installer OK" if rc == 0 else short_msg(msg, f"installer rc={rc}"))
 
 
@@ -420,9 +466,12 @@ def main() -> int:
     _show("OTA UPDATE", [("KEY1 = Update now", TEXT), ("KEY3 = Exit", TEXT), ("github.com/wickednull", DIM)])
 
     try:
-        if not HAS_HW:
+        if not HAS_HW and ASSUME_YES:
             run_update()
             return 0
+        if not HAS_HW:
+            log_status("Hardware UI unavailable; refusing unattended OTA. Re-run with --yes.")
+            return 2
         while True:
             btn = _btn()
             if btn == "KEY1":

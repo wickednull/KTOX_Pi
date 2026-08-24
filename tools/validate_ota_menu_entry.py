@@ -33,8 +33,15 @@ def main() -> int:
     require("def download_archive(" in general_text, "general OTA should include urllib/curl/wget download fallback")
     require('"curl"' in general_text and '"wget"' in general_text, "general OTA should fall back to curl/wget")
     require("NO INTERNET" not in general_text, "general OTA should not show the stale no-internet screen")
+    require("deploy_fetched_tree" in general_text, "general OTA should stage fetched files instead of resetting the live install")
+    require('"reset", "--hard"' not in general_text, "general OTA must not hard-reset the live installation")
+    require('"--no-reboot"' in general_text, "general OTA should keep reboot ownership after install")
+    require("ASSUME_YES" in general_text, "headless OTA should require explicit confirmation")
     require("def archive_update(" in utility_text, "utility OTA should retain archive fallback")
     require("def github_probe(" in utility_text, "utility OTA should retain GitHub probe")
+    require("deploy_fetched_tree" in utility_text, "utility OTA should stage fetched files instead of resetting the live install")
+    require('"reset", "--hard"' not in utility_text, "utility OTA must not hard-reset the live installation")
+    require('"--no-reboot"' in utility_text, "utility OTA should keep reboot ownership after install")
     print("OTA menu entry validation passed")
     return 0
 

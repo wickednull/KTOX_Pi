@@ -37,6 +37,7 @@ def main() -> int:
     require('"install.sh"' in text and '"payloads"' in text, "archive root detection should use repo markers")
     require('startswith("KTOx_Pi-' not in text, "archive fallback should not depend on extracted folder casing")
     require("tarfile.open" in text and "copytree" in text, "archive fallback should unpack and copy repo files")
+    require('"ktox_pi/persistent_state.py"' in text, "OTA should require the user-state preservation module")
     require("archive fallback" in text, "git_update should report when archive fallback is used")
     require("def diagnose_git_update(" in text and "--diagnose" in text, "auto_update.py should expose SSH diagnostic mode")
     require("DIAGNOSE_ONLY" in text and "if not DIAGNOSE_ONLY:" in text, "diagnostic mode should bypass LCD/GPIO setup")

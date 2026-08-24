@@ -63,6 +63,10 @@ def main() -> None:
 
     require("/dev/shm/ktox_payload_request.json" in server, "WebUI no longer writes KTOx payload request path")
     require("/dev/shm/rj_payload_request.json" in server, "WebUI no longer writes compatibility payload request path")
+    for device_path in ("ktox_device.py", "ktox_device_pi.py", "ktox_device_root.py"):
+        device = read(device_path)
+        require("PAYLOAD_REQUEST_PATHS" in device, f"{device_path} must accept both WebUI payload request names")
+        require("for stale_path in PAYLOAD_REQUEST_PATHS" in device, f"{device_path} must clear the duplicate compatibility request")
     require("dos_syn_flood.py" in server or '"dos"' in server, "DoS/SYN flood payload category coverage is missing")
 
     require('"hostname"' in server and '"kernel"' in server and '"tailscale"' in server, "extended system stats are missing")

@@ -36,8 +36,10 @@ import hashlib
 import http.client
 import mimetypes
 import os
+import platform
 import secrets
 import shutil
+import socket
 import subprocess
 import textwrap
 import threading
@@ -1491,6 +1493,7 @@ class KTOxHandler(SimpleHTTPRequestHandler):
         order = [
             "reconnaissance",
             "interception",
+            "dos",
             "evil_portal",
             "exfiltration",
             "remote_access",
@@ -1547,11 +1550,17 @@ class KTOxHandler(SimpleHTTPRequestHandler):
             return
 
         try:
-            request_path = Path("/dev/shm/rj_payload_request.json")
-            request_path.write_text(json.dumps({
+            request_data = json.dumps({
                 "action": "start",
                 "path": rel_path,
-            }))
+            })
+            for request_path in (
+                Path("/dev/shm/rj_payload_request.json"),
+                Path("/dev/shm/ktox_payload_request.json"),
+            ):
+                temp_path = request_path.with_suffix(request_path.suffix + ".tmp")
+                temp_path.write_text(request_data, encoding="utf-8")
+                os.replace(temp_path, request_path)
         except Exception as exc:
             _json_response(self, {"error": f"request failed: {exc}"}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
             return
@@ -1948,6 +1957,9 @@ class KTOxHandler(SimpleHTTPRequestHandler):
                 "interfaces": ifaces,
                 "payload_running": payload_running,
                 "payload_path": payload_path,
+                "hostname": socket.gethostname(),
+                "kernel": platform.release(),
+                "tailscale": _tailscale_status(),
                 "desktop": self._desktop_status_payload(),
                 "loki": self._loki_status_payload(),
                 "sdr": _sdr_service_payload(),

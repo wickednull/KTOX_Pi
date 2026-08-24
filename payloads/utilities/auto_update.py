@@ -52,6 +52,7 @@ DEFAULT_ARCHIVE_URL = "https://codeload.github.com/wickednull/KTOx_Pi/tar.gz/ref
 GIT_TIMEOUT     = 120
 INSTALL_SCRIPT  = "/root/KTOx/install.sh"
 REQUIRED_SDR_FILES = [
+    "ktox_pi/persistent_state.py",
     "services/sdr_server.py",
     "sdr/device.py",
     "sdr/diagnostics.py",
@@ -305,6 +306,45 @@ def _copy_repo_tree(src_root: str, dst_root: str) -> None:
             os.makedirs(os.path.dirname(dst), exist_ok=True)
             shutil.copy2(src, dst)
 
+
+def deploy_fetched_tree(fetched_ref: str) -> tuple[bool, str]:
+    """Export a fetched commit and overlay it without resetting the live checkout."""
+    try:
+        with tempfile.TemporaryDirectory(prefix="ktox-ota-git-") as tmp:
+            archive = os.path.join(tmp, "fetched.tar.gz")
+            stage = os.path.join(tmp, "stage")
+            os.makedirs(stage)
+            result = _git(
+                ["archive", "--format=tar.gz", f"--output={archive}", fetched_ref],
+                check=False,
+                timeout=GIT_TIMEOUT,
+            )
+            if result.returncode != 0:
+                return False, f"git archive failed: {_short_git_error(result, 'archive failed')}"
+            with tarfile.open(archive, "r:gz") as tar:
+                stage_abs = os.path.abspath(stage)
+                members = []
+                for member in tar.getmembers():
+                    target = os.path.abspath(os.path.join(stage, member.name))
+                    if target == stage_abs or target.startswith(stage_abs + os.sep):
+                        members.append(member)
+                tar.extractall(stage, members=members)
+            missing = [name for name in REQUIRED_SDR_FILES if not os.path.isfile(os.path.join(stage, name))]
+            if missing:
+                return False, f"staged update missing {missing[0]}"
+            _copy_repo_tree(stage, RASPYJACK_DIR)
+            missing = [name for name in REQUIRED_SDR_FILES if not os.path.isfile(os.path.join(RASPYJACK_DIR, name))]
+            if missing:
+                return False, f"installed update missing {missing[0]}"
+            try:
+                with open(os.path.join(RASPYJACK_DIR, ".ktox_version"), "w", encoding="utf-8") as handle:
+                    handle.write(fetched_ref + "\n")
+            except Exception:
+                pass
+            return True, f"git export OK {fetched_ref[:7]}"
+    except Exception as exc:
+        return False, f"git export failed: {str(exc)[:120]}"
+
 def _download_archive(archive: str) -> tuple[bool, str]:
     errors = []
     try:
@@ -390,7 +430,7 @@ def git_update() -> tuple[bool, str]:
         if not ok:
             return False, remote_url
         fetch = _git(
-            ["fetch", "--prune", GIT_REMOTE, f"{GIT_BRANCH}:refs/remotes/{GIT_REMOTE}/{GIT_BRANCH}"],
+            ["fetch", "--prune", GIT_REMOTE, f"+{GIT_BRANCH}:refs/remotes/{GIT_REMOTE}/{GIT_BRANCH}"],
             check=False,
             timeout=GIT_TIMEOUT,
         )
@@ -422,12 +462,13 @@ def git_update() -> tuple[bool, str]:
         missing_remote = [name for name in REQUIRED_SDR_FILES if name not in names]
         if missing_remote:
             return False, f"remote missing {missing_remote[0]} ({remote_url})"
-        _git(["reset", "--hard", fetched_ref], check=True, timeout=GIT_TIMEOUT)
-        missing_local = [name for name in REQUIRED_SDR_FILES if not os.path.isfile(os.path.join(RASPYJACK_DIR, name))]
-        if missing_local:
-            head = _git(["rev-parse", "--short", "HEAD"], check=False, timeout=20)
-            return False, f"local missing {missing_local[0]} after {(head.stdout or '').strip()}"
-        return True, "OK"
+        deploy_ok, deploy_msg = deploy_fetched_tree(fetched_ref)
+        if deploy_ok:
+            return True, deploy_msg
+        archive_ok, archive_msg = archive_update()
+        if archive_ok:
+            return True, archive_msg
+        return False, f"{deploy_msg}; {archive_msg}"
     except subprocess.CalledProcessError as exc:
         msg = (exc.stderr or "").strip() or f"git error {exc.returncode}"
         return False, msg
@@ -473,7 +514,7 @@ def run_install_script() -> tuple[bool, str]:
         return False, "install script not executable"
     try:
         res = subprocess.run(
-            ["bash", INSTALL_SCRIPT],
+            ["bash", INSTALL_SCRIPT, "--no-reboot"],
             cwd=RASPYJACK_DIR,
             capture_output=True,
             text=True
@@ -554,17 +595,17 @@ try:
             if user_state_items:
                 restore_user_state(user_state_dir, RASPYJACK_DIR)
 
-            # 3. Restart service
-            show(["Restarting…"])
-            ok, info = restart_service()
-            if not ok:
-                show(["Restart failed", info], invert=True); time.sleep(4); break
-
-            # 4. Re-run installer BEFORE reboot
+            # 3. Re-run installer without allowing it to race our reboot.
             show(["Running installer…"])
             ok, info = run_install_script()
             if not ok:
                 show(["Install failed", info], invert=True); time.sleep(5); break
+
+            # 4. Restart services only after files and units are installed.
+            show(["Restarting…"])
+            ok, info = restart_service()
+            if not ok:
+                show(["Restart failed", info], invert=True); time.sleep(4); break
 
             show(["Update done!", "Reboot…"])
             time.sleep(1.5)
