@@ -254,7 +254,7 @@ HTML = r"""<!doctype html>
                 ${r.emulator === 'psx' && (r.path.endsWith('.cue') || r.path.endsWith('.bin')) ? `<button class="secondary" onclick="convertPsxToChd('${safe}')">Convert to CHD</button>` : ''}
               </div></div>`;
           }).join('')}</div>
-        </div>`).join('') : '<div class="card muted">No ROMs yet. Upload .gb, .gbc, .nes, .sfc, .smc, .gba, .md, .gen, .cue, .chd, .pbp, or .wad files.</div>';
+        </div>`).join('') : '<div class="card muted">No ROMs yet. Upload .gb, .gbc, .nes, .sfc, .smc, .gba, .md, .gen, .cue, .bin, .chd, .pbp, or .wad files.</div>';
       document.getElementById('runStatus').innerHTML = data.running && data.running.active
         ? `<b style="color:var(--green)">Running</b>: ${data.running.rom || ''}<br><button class="danger" style="margin-top:8px" onclick="stopEmulator()">Stop Emulator</button>`
         : 'No emulator launched.';

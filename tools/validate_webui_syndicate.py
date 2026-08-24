@@ -42,7 +42,7 @@ def main() -> None:
     require("inset 0 2px 8px rgba(0, 0, 0, 0.95)" not in css, "removed inner screen shadow returned")
     require("0 0 12px rgba(139, 0, 0, 0.15)" not in css, "removed red screen reflection returned")
     require('id="mobileTopBar"' in index, "mobile top bar must be addressable for safe-area positioning")
-    require("body.mobile-system-overlay #systemTab" in css and "top: calc(58px" in css, "mobile system overlay must start below the top bar")
+    require("#systemTab.mobile-system-tab" in css and "body.mobile-system-overlay #systemTab" not in css, "mobile system monitor must remain a normal tab")
     require("#deviceTab.mobile-device-focus" in css and "overflow: hidden !important" in css, "mobile device tab must not scroll the virtual device")
     require(".status-text[data-state=\"connecting\"]" in css and "ktoxStatusBlink" in css, "WebSocket status must be a blinking LED")
     require("statusEl.textContent = ''" in app and "dataset.state" in app, "WebSocket status text/IP must be hidden behind LED state")

@@ -1121,32 +1121,22 @@
     });
   }
 
-  async function refreshScreenFallback(){
+  function refreshScreenFallback(){
     if (frameFallbackBusy || Date.now() - lastFrameAt < 2500) return;
     frameFallbackBusy = true;
-    try{
-      const res = await fetch(getApiUrl(`/screen.png?t=${Date.now()}`), { cache: 'no-store' });
-      if (!res.ok) return;
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const img = new Image();
-      img.onload = () => {
-        try{
-          drawFrameOnCanvases(img);
-          lastFrameAt = Date.now();
-        } finally {
-          URL.revokeObjectURL(url);
-          frameFallbackBusy = false;
-        }
-      };
-      img.onerror = () => {
-        URL.revokeObjectURL(url);
+    const img = new Image();
+    img.onload = () => {
+      try{
+        drawFrameOnCanvases(img);
+        lastFrameAt = Date.now();
+      } finally {
         frameFallbackBusy = false;
-      };
-      img.src = url;
-    }catch{
+      }
+    };
+    img.onerror = () => {
       frameFallbackBusy = false;
-    }
+    };
+    img.src = getApiUrl(`/screen.png?t=${Date.now()}`);
   }
 
   function scheduleReconnect(){

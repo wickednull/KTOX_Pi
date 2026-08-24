@@ -11,3 +11,4 @@ payloads/offensive/loki_themes/*/images/
 .tmp-edge-profile/Crashpad/metadata
 .tmp-edge-profile/Crashpad/settings.dat
 .tmp-edge-profile/Crashpad/throttle_store.dat
+.codex-webui-qa/*secret*.txt
