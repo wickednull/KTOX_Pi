@@ -16,12 +16,12 @@ def require(condition: bool, message: str) -> None:
 def main() -> None:
     server = read("web_server.py")
     app = read("web/app.js")
-    manager = read("payloads/offensive/novnc_manager.py")
+    manager = read("payloads/servers/novnc_manager.py")
 
     require("/api/desktop/install-deps" in app, "desktop dependency install endpoint is not requested by app.js")
     require("`/api/desktop/${action}`" in app, "desktop start/stop endpoints are not requested by app.js")
 
-    require("payloads.offensive" in server and "novnc_manager" in server, "web_server.py does not import the noVNC manager")
+    require("payloads.servers" in server and "novnc_manager" in server, "web_server.py does not import the noVNC manager")
     for route in (
         "/api/desktop/status",
         "/api/desktop/start",

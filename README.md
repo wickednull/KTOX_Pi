@@ -19,7 +19,7 @@
 
 ## ▐ WHAT IS THIS
 
-KTOx_Pi turns a Raspberry Pi Zero 2W into a standalone network penetration and purple team device. The Waveshare 1.44" LCD HAT gives you a full joystick-controlled attack menu that runs on boot. Every module from the full KTOx suite is bundled — ARP attacks, MITM, WiFi engine, Responder/NTLMv2, purple team defense, DNS spoofing with 30+ phishing sites, and 368 payload scripts across 21 categories.
+KTOx_Pi turns a Raspberry Pi Zero 2W into a standalone network penetration and purple team device. The Waveshare 1.44" LCD HAT gives you a full joystick-controlled attack menu that runs on boot. Every module from the full KTOx suite is bundled — ARP attacks, MITM, WiFi engine, Responder/NTLMv2, purple team defense, DNS spoofing with 30+ phishing sites, and payload scripts across 22 categories.
 
 The WebUI (port 8080) mirrors the LCD screen live so you can control the device from any browser on the same network. The WebSocket server (port 8765) handles real-time frame streaming and virtual button injection. The full KTOx TUI is always accessible over SSH for anything that needs a terminal.
 
@@ -117,7 +117,7 @@ Stealth exit:   hold KEY1 + KEY3 for 3 seconds
 │   ├── Verify Baseline     diff current hosts against saved baseline
 │   └── SMB Probe           launches payloads/reconnaissance/smb_probe.py
 │
-├── Payloads                368 scripts, 21 categories — see below
+├── Payloads                22 categories — see below
 │
 ├── Loot                    browse /root/KTOx/loot/ on LCD
 │
@@ -192,6 +192,7 @@ All payloads are KTOx-compatible. They use `_input_helper.py` for unified button
 | `games` | 27 | Breakout, snake, Tetris, 2048, Conway's Game of Life, Doom demake, clock, pomodoro, video player, web browser |
 | `exfiltration` | 9 | exfiltrate_discord — send loot files to Discord webhook |
 | `remote_access` | 7 | shell (PTY over network), tailscale_control |
+| `servers` | 12 | KTOXFliX, Game Center, file browser/editor, document and USB explorers, yt-ripper, MSF WebUI, Kali Pentest, Loki, noVNC |
 | `evil_portal` | 2 | honeypot — full captive portal credential capture |
 | `examples` | 13 | `_payload_template.py`, `example_show_buttons.py` |
 
@@ -448,9 +449,9 @@ Or from command line:
 
 ```bash
 cd /home/user/KTOX_Pi
-python3 payloads/offensive/loki_manager.py start
-python3 payloads/offensive/loki_manager.py status
-python3 payloads/offensive/loki_manager.py stop
+python3 payloads/servers/loki_manager.py start
+python3 payloads/servers/loki_manager.py status
+python3 payloads/servers/loki_manager.py stop
 ```
 
 Access the web UI at `http://[ip]:8000/`. Loki stores everything in `/home/user/KTOX_Pi/loot/loki_data/` (or `/root/KTOx/loot/loki_data/` on production).

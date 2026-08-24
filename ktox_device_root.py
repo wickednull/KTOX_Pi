@@ -1282,6 +1282,7 @@ PAYLOAD_CATEGORIES = [
     ("social_eng",    "Social Eng"),
     ("exfiltration",  "Exfiltrate"),
     ("remote_access", "Remote"),
+    ("servers",       "Servers"),
     ("evil_portal",   "Evil Portal"),
     ("games",         "Games"),
     ("general",       "General"),
@@ -1399,7 +1400,7 @@ class KTOxMenu:
         # ── SYSTEM ────────────────────────────────────────────────────────────
         "sys": (
             (" WebUI Status",    self._webui_status),
-            (" Pentest WebUI",   partial(exec_payload,"general/pentest_webui")),
+            (" Pentest WebUI",   partial(exec_payload,"servers/pentest_webui")),
             (" Refresh State",   self._refresh),
             (" System Info",     self._sysinfo),
             (" Discord Webhook", self._discord_status),

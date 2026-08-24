@@ -9,7 +9,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-GAME_CENTER = ROOT / "payloads" / "games" / "game_center.py"
+GAME_CENTER = ROOT / "payloads" / "servers" / "game_center.py"
 
 
 def _literal_from_assignment(tree: ast.Module, name: str):

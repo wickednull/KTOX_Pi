@@ -635,6 +635,8 @@
   let systemOpen = false;
   let mobileSystemTabActive = false;
   let wsAuthenticated = true;
+  let lastFrameAt = 0;
+  let frameFallbackBusy = false;
 
   function applyStatusTone(el, txt){
     if (!el) return;
@@ -1026,20 +1028,8 @@
           const img = new Image();
           img.onload = () => {
             try {
-              ctx.clearRect(0,0,canvas.width,canvas.height);
-              ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-              if (ctxGb && canvasGb) {
-                ctxGb.clearRect(0,0,canvasGb.width,canvasGb.height);
-                ctxGb.drawImage(img, 0, 0, canvasGb.width, canvasGb.height);
-              }
-              if (ctxPager && canvasPager) {
-                ctxPager.clearRect(0,0,canvasPager.width,canvasPager.height);
-                ctxPager.drawImage(img, 0, 0, canvasPager.width, canvasPager.height);
-              }
-              if (ctxSyndicate && canvasSyndicate) {
-                ctxSyndicate.clearRect(0,0,canvasSyndicate.width,canvasSyndicate.height);
-                ctxSyndicate.drawImage(img, 0, 0, canvasSyndicate.width, canvasSyndicate.height);
-              }
+              drawFrameOnCanvases(img);
+              lastFrameAt = Date.now();
             } catch {}
           };
           img.src = 'data:image/jpeg;base64,' + msg.data;
@@ -1115,6 +1105,48 @@
     ws.onerror = () => {
       try { ws.close(); } catch {}
     };
+  }
+
+  function drawFrameOnCanvases(img){
+    const targets = [
+      [ctx, canvas],
+      [ctxGb, canvasGb],
+      [ctxPager, canvasPager],
+      [ctxSyndicate, canvasSyndicate],
+    ];
+    targets.forEach(([targetCtx, targetCanvas]) => {
+      if (!targetCtx || !targetCanvas) return;
+      targetCtx.clearRect(0, 0, targetCanvas.width, targetCanvas.height);
+      targetCtx.drawImage(img, 0, 0, targetCanvas.width, targetCanvas.height);
+    });
+  }
+
+  async function refreshScreenFallback(){
+    if (frameFallbackBusy || Date.now() - lastFrameAt < 2500) return;
+    frameFallbackBusy = true;
+    try{
+      const res = await fetch(getApiUrl(`/screen.png?t=${Date.now()}`), { cache: 'no-store' });
+      if (!res.ok) return;
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const img = new Image();
+      img.onload = () => {
+        try{
+          drawFrameOnCanvases(img);
+          lastFrameAt = Date.now();
+        } finally {
+          URL.revokeObjectURL(url);
+          frameFallbackBusy = false;
+        }
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        frameFallbackBusy = false;
+      };
+      img.src = url;
+    }catch{
+      frameFallbackBusy = false;
+    }
   }
 
   function scheduleReconnect(){
@@ -2918,6 +2950,7 @@
       }
       startHeartbeatMonitor();
       connect();
+      window.setInterval(refreshScreenFallback, 1500);
       loadPayloads();
       loadSdrServiceStatus();
       schedulePayloadPoll();

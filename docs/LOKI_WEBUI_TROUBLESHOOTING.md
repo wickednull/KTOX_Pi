@@ -1,14 +1,14 @@
 # Loki WebUI Troubleshooting
 
 KTOX uses the `brainphreak/loki-recon` project as a vendored Git submodule at
-`vendor/loki`. The KTOX launcher is `payloads/offensive/loki_manager.py`.
+`vendor/loki`. The KTOX launcher is `payloads/servers/loki_manager.py`.
 
 ## Quick Checks
 
 ```bash
 cd /root/KTOx
 python3 payloads/offensive/verify_loki_structure.py
-python3 payloads/offensive/loki_manager.py status
+python3 payloads/servers/loki_manager.py status
 ```
 
 Expected vendor files include:
@@ -22,9 +22,9 @@ Expected vendor files include:
 
 ```bash
 cd /root/KTOx
-python3 payloads/offensive/loki_manager.py start
-python3 payloads/offensive/loki_manager.py status
-python3 payloads/offensive/loki_manager.py stop
+python3 payloads/servers/loki_manager.py start
+python3 payloads/servers/loki_manager.py status
+python3 payloads/servers/loki_manager.py stop
 ```
 
 The WebUI listens on `http://<device-ip>:8000/` by default.
@@ -46,13 +46,13 @@ That script validates `vendor/loki`, installs system dependencies, creates
 Check whether Loki is running:
 
 ```bash
-python3 payloads/offensive/loki_manager.py status
+python3 payloads/servers/loki_manager.py status
 ```
 
 If it is stopped, start it:
 
 ```bash
-python3 payloads/offensive/loki_manager.py start
+python3 payloads/servers/loki_manager.py start
 ```
 
 If another process owns the port:
@@ -105,7 +105,7 @@ sudo bash setup_loki.sh /root/KTOx
 ```bash
 cd /root/KTOx
 python3 payloads/offensive/verify_loki_structure.py > /tmp/loki_diag.txt
-python3 payloads/offensive/loki_manager.py status >> /tmp/loki_diag.txt
+python3 payloads/servers/loki_manager.py status >> /tmp/loki_diag.txt
 python3 payloads/offensive/test_loki_webui.py >> /tmp/loki_diag.txt
 tail -n 80 loot/loki.log >> /tmp/loki_diag.txt 2>/dev/null || true
 cat /tmp/loki_diag.txt
@@ -118,7 +118,7 @@ cat /tmp/loki_diag.txt
 | `/root/KTOx/vendor/loki/` | Vendored `brainphreak/loki-recon` checkout |
 | `/root/KTOx/vendor/loki/loki.py` | Loki entry point |
 | `/root/KTOx/vendor/loki/loki/webapp.py` | Loki WebUI application |
-| `/root/KTOx/payloads/offensive/loki_manager.py` | KTOX start/stop/status manager |
+| `/root/KTOx/payloads/servers/loki_manager.py` | KTOX start/stop/status manager |
 | `/root/KTOx/loot/loki.log` | KTOX Loki manager log |
 
 ## Upstream

@@ -3,7 +3,7 @@
 ## Launch
 
 ```bash
-cd /root/KTOx/payloads/offensive
+cd /root/KTOx/payloads/servers
 python3 kali_pentest_webui.py
 ```
 

@@ -806,13 +806,14 @@ def _display_loop():
     last_save = 0.0
 
     while not _stop_evt.is_set():
-        if not screen_lock.is_set() and HAS_HW and LCD and image:
+        if not screen_lock.is_set() and image:
             mirror = None
             with draw_lock:
-                try:
-                    LCD.LCD_ShowImage(image, 0, 0)
-                except Exception:
-                    pass
+                if HAS_HW and LCD:
+                    try:
+                        LCD.LCD_ShowImage(image, 0, 0)
+                    except Exception:
+                        pass
                 if _FRAME_ENABLED:
                     now = time.monotonic()
                     if now - last_save >= _FRAME_INTERVAL:
@@ -4371,6 +4372,7 @@ PAYLOAD_CATEGORIES = [
     ("social",        "Social Eng"),
     ("exfil",         "Exfiltrate"),
     ("remote",        "Remote"),
+    ("servers",       "Servers"),
     ("evil",          "Evil Portal"),
     ("media",         "Media"),
     ("testing",       "Testing"),
@@ -4412,6 +4414,7 @@ _FA_ICONS: dict = {
     "Social Eng":       "\uf007",   # fa-user
     "Exfiltrate":       "\uf019",   # fa-download
     "Remote":           "\uf233",   # fa-server
+    "Servers":          "\uf0ac",   # fa-globe
     "Evil Portal":      "\uf0ac",   # fa-globe
     "Media":            "\uf03e",   # fa-image
     "Testing":          "\uf0c3",   # fa-flask
@@ -4663,7 +4666,7 @@ class KTOxMenu:
         # ── SYSTEM ────────────────────────────────────────────────────────────
         "sys": (
             (" WebUI Status",    self._webui_status),
-            (" Pentest WebUI",   partial(exec_payload,"general/pentest_webui")),
+            (" Pentest WebUI",   partial(exec_payload,"servers/pentest_webui")),
             (" Refresh State",   self._refresh),
             (" System Info",     self._sysinfo),
             (" Network Mgr",     self._network_manager),
@@ -5129,7 +5132,7 @@ class KTOxMenu:
         """Execute Loki manager command."""
         loki_script = os.path.join(
             os.path.dirname(__file__),
-            "payloads", "offensive", "loki_manager.py"
+            "payloads", "servers", "loki_manager.py"
         )
 
         if not os.path.exists(loki_script):

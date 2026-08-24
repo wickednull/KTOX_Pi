@@ -51,7 +51,7 @@ from urllib.parse import parse_qs, urlparse, unquote
 from urllib.request import Request, urlopen
 
 from nmap_parser import parse_nmap_xml_file
-from payloads.offensive import loki_manager, novnc_manager
+from payloads.servers import loki_manager, novnc_manager
 from ktox_pi.runtime_control import resource_saver
 
 ROOT_DIR = Path(__file__).resolve().parent
@@ -59,6 +59,7 @@ WEB_DIR = ROOT_DIR / "web"
 LOOT_DIR = ROOT_DIR / "loot"
 PAYLOADS_DIR = ROOT_DIR / "payloads"
 PAYLOAD_STATE_PATH = Path("/dev/shm/ktox_payload_state.json")
+FRAME_PATH = Path(os.environ.get("KTOX_FRAME_PATH") or os.environ.get("RJ_FRAME_PATH", "/dev/shm/ktox_last.jpg"))
 DISCORD_WEBHOOK_PATH = ROOT_DIR / "discord_webhook.txt"
 TOKEN_FILE = Path(os.environ.get("RJ_WS_TOKEN_FILE", str(ROOT_DIR / ".webui_token")))
 AUTH_FILE = Path(os.environ.get("RJ_WEB_AUTH_FILE", "/root/KTOx/.webui_auth.json"))
@@ -1155,6 +1156,23 @@ class KTOxHandler(SimpleHTTPRequestHandler):
 
     def do_GET(self):
         parsed = urlparse(self.path)
+        if parsed.path == "/screen.png":
+            try:
+                frame = FRAME_PATH.read_bytes()
+            except FileNotFoundError:
+                _json_response(self, {"error": "screen frame unavailable"}, status=HTTPStatus.NOT_FOUND)
+                return
+            except OSError as exc:
+                _json_response(self, {"error": f"screen frame error: {exc}"}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+                return
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "image/jpeg")
+            self.send_header("Content-Length", str(len(frame)))
+            self.send_header("Cache-Control", "no-store, no-cache, must-revalidate")
+            self.end_headers()
+            self.wfile.write(frame)
+            return
+
         if self._is_loki_proxy_path(parsed.path) and not parsed.path.startswith("/api/loki/"):
             query = parse_qs(parsed.query or "")
             if not _auth_ok(self, query):
@@ -1458,17 +1476,16 @@ class KTOxHandler(SimpleHTTPRequestHandler):
             _json_response(self, {"categories": []})
             return
 
-        for root, dirs, files in os.walk(PAYLOADS_DIR):
-            dirs[:] = [d for d in dirs if not d.startswith(".") and d != "__pycache__"]
-            rel_dir = os.path.relpath(root, PAYLOADS_DIR)
-            category = rel_dir.split(os.sep)[0] if rel_dir != "." else "general"
-            for name in files:
-                if not name.endswith(".py") or name.startswith("_"):
+        for category_dir in sorted(PAYLOADS_DIR.iterdir(), key=lambda p: p.name.lower()):
+            if not category_dir.is_dir() or category_dir.name.startswith(".") or category_dir.name == "__pycache__":
+                continue
+            category = category_dir.name
+            for entry in sorted(category_dir.glob("*.py"), key=lambda p: p.name.lower()):
+                if entry.name.startswith("_"):
                     continue
-                rel_path = os.path.join(rel_dir, name) if rel_dir != "." else name
                 categories.setdefault(category, []).append({
-                    "name": os.path.splitext(name)[0],
-                    "path": rel_path.replace("\\", "/"),
+                    "name": entry.stem,
+                    "path": f"{category}/{entry.name}",
                 })
 
         order = [
@@ -1477,6 +1494,7 @@ class KTOxHandler(SimpleHTTPRequestHandler):
             "evil_portal",
             "exfiltration",
             "remote_access",
+            "servers",
             "general",
             "examples",
             "games",

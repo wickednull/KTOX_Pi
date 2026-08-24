@@ -99,7 +99,7 @@ def main() -> int:
     all_ok = all(top_level_ok + package_ok + dir_ok) and webapp_ok
     if all_ok:
         print("\n[OK] Loki vendor structure matches brainphreak/loki-recon.")
-        print("     Start with: python3 payloads/offensive/loki_manager.py start")
+        print("     Start with: python3 payloads/servers/loki_manager.py start")
         return 0
 
     print("\n[FAIL] Loki vendor structure is incomplete.")

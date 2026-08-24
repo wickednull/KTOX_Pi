@@ -66,7 +66,7 @@ The Pentest tab can now start an optional browser-hosted Kali Linux desktop. Thi
 
 This is **not** another KTOX screen mirror. The existing LCD/WebUI mirror still streams the KTOX menu frame from `/dev/shm/ktox_last.jpg`; noVNC controls a Kali X desktop session on the same device. In the default `virtual` mode, that desktop is a headless X session that can launch Kali GUI tools and modify the same filesystem, network interfaces, loot, and processes as the rest of KTOX. If a real Kali desktop is already running on HDMI/console, set `KTOX_DESKTOP_MODE=existing` and `KTOX_DESKTOP_DISPLAY=:0` to attach noVNC to that existing X display instead.
 
-Runtime pieces started by `payloads/offensive/novnc_manager.py`:
+Runtime pieces started by `payloads/servers/novnc_manager.py`:
 - Default `virtual` mode: `Xvfb` creates the virtual display (default `:1`, `1280x720x24`).
 - Default `virtual` mode: a lightweight window manager is selected automatically (`startxfce4`, `openbox-session`, `lxsession`, `fluxbox`, `icewm-session`, or `xterm`).
 - Existing-display mode: skips `Xvfb` and the window manager, then points `x11vnc` at `KTOX_DESKTOP_DISPLAY`.

@@ -109,7 +109,7 @@ def main():
     # Test connectivity
     if not check_port_open():
         print("\n[!] Cannot connect to Loki on port 8000")
-        print("    Make sure Loki is running: python3 /root/KTOx/payloads/offensive/loki_manager.py start")
+        print("    Make sure Loki is running: python3 /root/KTOx/payloads/servers/loki_manager.py start")
         return
 
     time.sleep(1)

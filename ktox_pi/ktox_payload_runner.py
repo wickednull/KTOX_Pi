@@ -17,6 +17,7 @@
 #   interception/
 #   exfiltration/
 #   remote_access/
+#   servers/
 #   wifi/
 #   general/
 #   custom/          ← user-added payloads
@@ -42,6 +43,7 @@ CATEGORIES = [
     ("interception",   "Intercept",   "🕵"),
     ("exfiltration",   "Exfiltrate",  "📤"),
     ("remote_access",  "Remote",      "🔌"),
+    ("servers",        "Servers",     "🌐"),
     ("wifi",           "WiFi",        "📡"),
     ("general",        "General",     "⚙"),
     ("custom",         "Custom",      "🔧"),
